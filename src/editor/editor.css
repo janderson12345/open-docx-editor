@@ -1,0 +1,745 @@
+/* open-docx-editor: page and toolbar styles.
+
+   Custom properties, two kinds:
+
+   Theme (a host page may set these on the editor's container or anywhere above it; the defaults are in the Theme block below):
+     --odx-bar, --odx-bar-fg      ribbon background and text        --odx-line       ribbon and panel lines
+     --odx-field, --odx-field-line inputs and their border          --odx-hover      hovered control
+     --odx-on, --odx-on-line      a pressed toggle and its border   --odx-muted      secondary text
+     --odx-canvas                 behind the pages                  --odx-sheet      the page's own colour
+     --odx-page-color             the document's page colour (w:background)
+     --odx-markup                 the comments and changes column   --odx-accent     focus ring, current tab, chosen style
+
+   Layout (written by the editor on paragraphs, runs and cells; not for hosts):
+     --odx-lh            a font's line factor (line height per em, from its metrics); --odx-lh-minor/-major and
+                         --odx-font-minor/-major for the theme's fonts
+     --odx-mult          "multiple" line spacing (1.15 ...); --odx-runmult 0 under exact spacing (runs can't make the
+                         line taller), else 1; --odx-lhlen 1 when the spacing is a length (exact or at least);
+                         --odx-atleast that length; --odx-flh a tall font's own line factor on its run
+     --odx-bl, --odx-bla the print baseline shift of a paragraph (baseline.js); -bla for one holding anchored pictures
+     --odx-sb            space before, where a paragraph-relative picture offset starts
+     --odx-mark          the paragraph mark's size, for an empty last line
+     --odx-hang, --odx-lsize, --odx-lfont, --odx-lbl-up, --odx-lbl-down   a list label: its indent, size, font, and
+                         the room a larger bullet adds above or below its line
+     --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr   a picture's effect extent (room for a shadow or glow) per side
+     --odx-band          a picture that takes a band of its own (text above and below)
+     --odx-lrel, --odx-ly, --odx-lyalign        a floating picture lifted out of the flow: what it's placed against
+     --odx-fy, --odx-fyt, --odx-fyb, --odx-fyrel  a floating table set down on its page
+     --odx-trh, --odx-trh-add   a table row's height and the room added to it (a page's push, a border below);
+                         --odx-pt, --odx-pb a cell's padding (pagination adds to it); --odx-lastadd the room a last exact
+                         row's border takes
+     --odx-bdb, --odx-bdl, --odx-bdr   border widths (bottom, left, right) taken out of a box's size or indent
+     --odx-page-left, --odx-page-right          the page's side margins */
+/* ==== Theme: the defaults of the colours a host may set (see the list above), on the root so that they also reach
+   what the editor puts on the body (print copies, field pickers). :where() gives them no specificity, so the
+   host's own declaration wins wherever it is. (--odx-muted and --odx-page-color are worked out from others, so
+   they keep their fallbacks where used: declared here they would ignore a host's colours set lower down.) ==== */
+:where(:root) {
+  --odx-bar: #f8f9fb;
+  --odx-bar-fg: #222;
+  --odx-line: #d9dde3;
+  --odx-field: #fff;
+  --odx-field-line: #7f8792;
+  --odx-hover: #e8ebf0;
+  --odx-on: #dbe6fb;
+  --odx-on-line: #a9c1f0;
+  --odx-canvas: #e9ebee;
+  --odx-sheet: #fff;
+  --odx-markup: #e4e4e4;
+  --odx-accent: #2b6cdf;
+}
+/* ==== The page and the document: sheets, paragraphs, runs, tables, fields, tracked changes in the text ==== */
+.odx-canvas { background: var(--odx-canvas); padding: 24px 16px; overflow: auto; }
+.odx-page { position: relative; margin: 0 auto; color: #000; }
+.odx-sheets { position: absolute; inset: 0; pointer-events: none; }
+.odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
+.odx-content .odx-push { display: block; width: 0; pointer-events: none; }
+.odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
+.odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.odx-gaps > div { position: absolute; left: -2px; right: -2px; background: var(--odx-canvas); }
+.odx-repeat table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+.odx-repeat td { vertical-align: top; box-sizing: border-box; padding: 0 7px; }
+.odx-repeat { position: absolute; white-space: pre-wrap; word-wrap: break-word; font-variant-ligatures: none; font-kerning: none; }
+:where(.odx-repeat) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); }
+.odx-hf p { margin: 0; }
+/* An empty header line (or one holding only a floating picture) still takes a line, as in Word. */
+.odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]:only-child)::after { content: "\200b"; }
+.odx-content { position: relative; box-sizing: border-box; outline: none; white-space: pre-wrap; word-wrap: break-word; min-height: 1em; }
+:where(.odx-content, .odx-hf) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
+/* Lines as tall as the text on them, as in Word (textspans.js): a paragraph's line height is carried in --odx-lhv, which
+   inherits as line-height does; the paragraph and the elements around its text have line-height 0 (no strut of their
+   own on each line), and the text (odx-t), content drawn as it is (fields, labels) and an empty paragraph's line take
+   --odx-lhv. Set line heights in document content with --odx-lhv, not line-height. */
+@property --odx-lhv { syntax: '<number> | <length> | normal'; inherits: true; initial-value: normal; }
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p { line-height: 0; }
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :where(span, strong, em, s, u, a, del, ins, sup, sub):not(.odx-t, .odx-opaque-inline, .odx-opaque-inline *, .odx-math, .odx-math *) { line-height: 0; }
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :is(span.odx-t, .odx-opaque-inline:not(:empty, [data-kind$="Ref"], [data-kind$="Reference"]), .odx-page-break, :where(span, strong, em, s, u, a, del, ins):has(> br)) { line-height: var(--odx-lhv); } /* (a line break counts as text for the element it's in, as in quirks mode) */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
+/* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
+   paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
+.odx-content p.odx-endbreak::after { content: "\200b"; }
+.odx-content p.odx-endbreak > br.ProseMirror-trailingBreak { display: none; }
+/* Word doesn't apply ligatures or kerning unless the document asks for them (w:kern). */
+.odx-content, .odx-hf td, .odx-notes, .odx-noteedit { font-variant-ligatures: none; font-kerning: none; } /* (Notes and header tables too: footnote text kerned came out 0.6% narrow, corpus 3, taking a word Word wraps; sample S109's header cells. Not header and footer paragraphs: their print shifts were fitted kerned.) */
+/* Stand-in for Consolas where it isn't installed, scaled to Consolas' narrower advance (0.55em vs 0.6em). */
+@font-face { font-family: 'odx-consolas'; src: local('Liberation Mono'), local('LiberationMono'), local('DejaVu Sans Mono'), local('Courier New'); size-adjust: 91.6%; }
+/* Aptos is an Office cloud font browsers rarely have: Arial stands in, scaled to Aptos's widths as measured from the words
+   in Word's own PDFs (least squares per character group): Aptos's lowercase is as wide as
+   Arial's (99.5%) but its capitals are narrow (89.8%), digits 98.5%, the rest 96.25%; its space is 0.2027em (Arial's
+   0.27em broke lines early), taken from Calibri's scaled. The overrides keep every piece at 97% Arial's line height and
+   baseline (they scale with size-adjust). Bold 97% (Arial synthesized bold keeps regular widths, 7% narrow); Aptos
+   Display 92.5%. */
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); size-adjust: 96.25%; ascent-override: 91.21%; descent-override: 21.37%; line-gap-override: 3.30%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0061-007A; size-adjust: 99.5%; ascent-override: 88.23%; descent-override: 20.67%; line-gap-override: 3.19%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0041-005A; size-adjust: 89.8%; ascent-override: 97.76%; descent-override: 22.90%; line-gap-override: 3.53%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0030-0039; size-adjust: 98.5%; ascent-override: 89.12%; descent-override: 20.88%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Calibri'), local('Carlito'); unicode-range: U+0020; size-adjust: 89.65%; ascent-override: 97.92%; descent-override: 22.94%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); font-weight: 700; size-adjust: 96.1%; }
+@font-face { font-family: 'odx-aptos'; src: local('Calibri Bold'), local('Calibri-Bold'), local('Carlito Bold'); unicode-range: U+0020; font-weight: 700; size-adjust: 89.65%; ascent-override: 97.92%; descent-override: 22.94%; line-gap-override: 3.54%; }
+/* Aptos Narrow stands in as Arial Narrow, every face with the same ascent and descent (its hhea's): the faces' own Windows
+   metrics round differently, so a line with an italic run in it came out a pixel taller (sample S093's tables). */
+@font-face { font-family: 'odx-aptos-narrow'; src: local('Arial Narrow'), local('ArialNarrow'); ascent-override: 93.55%; descent-override: 21.19%; line-gap-override: 0%; }
+@font-face { font-family: 'odx-aptos-narrow'; src: local('Arial Narrow Bold'), local('ArialNarrow-Bold'); font-weight: 700; ascent-override: 93.55%; descent-override: 21.19%; line-gap-override: 0%; }
+@font-face { font-family: 'odx-aptos-narrow'; src: local('Arial Narrow Italic'), local('ArialNarrow-Italic'); font-style: italic; ascent-override: 93.55%; descent-override: 21.19%; line-gap-override: 0%; }
+@font-face { font-family: 'odx-aptos-narrow'; src: local('Arial Narrow Bold Italic'), local('ArialNarrow-BoldItalic'); font-weight: 700; font-style: italic; ascent-override: 93.55%; descent-override: 21.19%; line-gap-override: 0%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); size-adjust: 91.45%; }
+/* Open Sans (a free font Word fetches; rarely installed): Arial at Open Sans's average width (Word's PDFs: 105.4%, the
+   median over the ftd documents' ragged lines, refitted from 108.8%),
+   with Open Sans's own ascent and descent (1.069em, 0.293em). */
+@font-face { font-family: 'odx-open-sans'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); size-adjust: 105.4%; ascent-override: 101.42%; descent-override: 27.8%; line-gap-override: 0%; }
+@font-face { font-family: 'odx-open-sans'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); font-weight: 700; size-adjust: 105.4%; ascent-override: 101.42%; descent-override: 27.8%; line-gap-override: 0%; }
+/* Generated (once, from Word's PDFs): Arial scaled per character to Aptos's advance widths. */
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004A; font-weight: normal; font-style: normal; size-adjust: 65.75%; ascent-override: 133.52%; descent-override: 31.29%; line-gap-override: 4.83%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0020; font-weight: normal; font-style: normal; size-adjust: 72.75%; ascent-override: 120.67%; descent-override: 28.27%; line-gap-override: 4.36%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0054; font-weight: normal; font-style: normal; size-adjust: 78%; ascent-override: 112.55%; descent-override: 26.37%; line-gap-override: 4.07%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0059; font-weight: normal; font-style: normal; size-adjust: 80.5%; ascent-override: 109.06%; descent-override: 25.55%; line-gap-override: 3.94%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+2026; font-weight: normal; font-style: normal; size-adjust: 81.5%; ascent-override: 107.72%; descent-override: 25.24%; line-gap-override: 3.9%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+005F, U+2013; font-weight: normal; font-style: normal; size-adjust: 82.25%; ascent-override: 106.74%; descent-override: 25.01%; line-gap-override: 3.86%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0045; font-weight: normal; font-style: normal; size-adjust: 83%; ascent-override: 105.77%; descent-override: 24.78%; line-gap-override: 3.83%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0052; font-weight: normal; font-style: normal; size-adjust: 83.5%; ascent-override: 105.14%; descent-override: 24.63%; line-gap-override: 3.8%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+005A; font-weight: normal; font-style: normal; size-adjust: 84%; ascent-override: 104.51%; descent-override: 24.49%; line-gap-override: 3.78%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0053; font-weight: normal; font-style: normal; size-adjust: 84.5%; ascent-override: 103.89%; descent-override: 24.34%; line-gap-override: 3.76%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004B; font-weight: normal; font-style: normal; size-adjust: 84.75%; ascent-override: 103.59%; descent-override: 24.27%; line-gap-override: 3.75%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0046; font-weight: normal; font-style: normal; size-adjust: 85.25%; ascent-override: 102.98%; descent-override: 24.13%; line-gap-override: 3.72%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0050; font-weight: normal; font-style: normal; size-adjust: 86%; ascent-override: 102.08%; descent-override: 23.92%; line-gap-override: 3.69%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0067; font-weight: normal; font-style: normal; size-adjust: 86.5%; ascent-override: 101.49%; descent-override: 23.78%; line-gap-override: 3.67%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0056, U+007A; font-weight: normal; font-style: normal; size-adjust: 87.25%; ascent-override: 100.62%; descent-override: 23.58%; line-gap-override: 3.64%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0028, U+0029, U+007B, U+007D; font-weight: normal; font-style: normal; size-adjust: 87.5%; ascent-override: 100.33%; descent-override: 23.51%; line-gap-override: 3.63%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0040, U+0041; font-weight: normal; font-style: normal; size-adjust: 87.75%; ascent-override: 100.05%; descent-override: 23.44%; line-gap-override: 3.62%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0078; font-weight: normal; font-style: normal; size-adjust: 88%; ascent-override: 99.76%; descent-override: 23.38%; line-gap-override: 3.61%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004C; font-weight: normal; font-style: normal; size-adjust: 89.5%; ascent-override: 98.09%; descent-override: 22.98%; line-gap-override: 3.55%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+003F; font-weight: normal; font-style: normal; size-adjust: 89.75%; ascent-override: 97.82%; descent-override: 22.92%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0042, U+0076, U+0079; font-weight: normal; font-style: normal; size-adjust: 90%; ascent-override: 97.54%; descent-override: 22.86%; line-gap-override: 3.53%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0047; font-weight: normal; font-style: normal; size-adjust: 90.5%; ascent-override: 97.01%; descent-override: 22.73%; line-gap-override: 3.51%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002B, U+003C, U+003D, U+003E; font-weight: normal; font-style: normal; size-adjust: 91%; ascent-override: 96.47%; descent-override: 22.6%; line-gap-override: 3.49%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0025; font-weight: normal; font-style: normal; size-adjust: 92.5%; ascent-override: 94.91%; descent-override: 22.24%; line-gap-override: 3.43%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0049; font-weight: normal; font-style: normal; size-adjust: 93%; ascent-override: 94.4%; descent-override: 22.12%; line-gap-override: 3.41%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004F, U+0051, U+0055; font-weight: normal; font-style: normal; size-adjust: 93.75%; ascent-override: 93.64%; descent-override: 21.94%; line-gap-override: 3.39%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0057; font-weight: normal; font-style: normal; size-adjust: 94%; ascent-override: 93.39%; descent-override: 21.88%; line-gap-override: 3.38%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004D, U+0065; font-weight: normal; font-style: normal; size-adjust: 94.25%; ascent-override: 93.15%; descent-override: 21.82%; line-gap-override: 3.37%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0044; font-weight: normal; font-style: normal; size-adjust: 94.5%; ascent-override: 92.9%; descent-override: 21.77%; line-gap-override: 3.36%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0061; font-weight: normal; font-style: normal; size-adjust: 95%; ascent-override: 92.41%; descent-override: 21.65%; line-gap-override: 3.34%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0043; font-weight: normal; font-style: normal; size-adjust: 95.25%; ascent-override: 92.17%; descent-override: 21.6%; line-gap-override: 3.33%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0024, U+0030, U+0031, U+0032, U+0033, U+0034, U+0035, U+0036, U+0037, U+0038; font-weight: normal; font-style: normal; size-adjust: 95.5%; ascent-override: 91.93%; descent-override: 21.54%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0023, U+0026; font-weight: normal; font-style: normal; size-adjust: 96%; ascent-override: 91.45%; descent-override: 21.43%; line-gap-override: 3.31%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0073; font-weight: normal; font-style: normal; size-adjust: 96.75%; ascent-override: 90.74%; descent-override: 21.26%; line-gap-override: 3.28%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006B; font-weight: normal; font-style: normal; size-adjust: 97%; ascent-override: 90.51%; descent-override: 21.21%; line-gap-override: 3.27%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004E; font-weight: normal; font-style: normal; size-adjust: 97.25%; ascent-override: 90.27%; descent-override: 21.15%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0048; font-weight: normal; font-style: normal; size-adjust: 97.5%; ascent-override: 90.04%; descent-override: 21.1%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0068, U+006E; font-weight: normal; font-style: normal; size-adjust: 98.5%; ascent-override: 89.13%; descent-override: 20.88%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006F; font-weight: normal; font-style: normal; size-adjust: 98.75%; ascent-override: 88.9%; descent-override: 20.83%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0077; font-weight: normal; font-style: normal; size-adjust: 99.25%; ascent-override: 88.45%; descent-override: 20.73%; line-gap-override: 3.2%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0072; font-weight: normal; font-style: normal; size-adjust: 99.75%; ascent-override: 88.01%; descent-override: 20.62%; line-gap-override: 3.18%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0075; font-weight: normal; font-style: normal; size-adjust: 100%; ascent-override: 87.79%; descent-override: 20.57%; line-gap-override: 3.17%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0062, U+0064, U+0070, U+0071; font-weight: normal; font-style: normal; size-adjust: 100.25%; ascent-override: 87.57%; descent-override: 20.52%; line-gap-override: 3.17%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002D; font-weight: normal; font-style: normal; size-adjust: 101.5%; ascent-override: 86.49%; descent-override: 20.27%; line-gap-override: 3.13%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006D; font-weight: normal; font-style: normal; size-adjust: 102%; ascent-override: 86.07%; descent-override: 20.17%; line-gap-override: 3.11%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002C, U+002E, U+003A; font-weight: normal; font-style: normal; size-adjust: 102.5%; ascent-override: 85.65%; descent-override: 20.07%; line-gap-override: 3.1%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+007C; font-weight: normal; font-style: normal; size-adjust: 103.5%; ascent-override: 84.82%; descent-override: 19.87%; line-gap-override: 3.07%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0022; font-weight: normal; font-style: normal; size-adjust: 103.75%; ascent-override: 84.62%; descent-override: 19.83%; line-gap-override: 3.06%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0063; font-weight: normal; font-style: normal; size-adjust: 104.5%; ascent-override: 84.01%; descent-override: 19.68%; line-gap-override: 3.04%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+005B, U+005D; font-weight: normal; font-style: normal; size-adjust: 105.25%; ascent-override: 83.41%; descent-override: 19.54%; line-gap-override: 3.02%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0069, U+006A; font-weight: normal; font-style: normal; size-adjust: 107%; ascent-override: 82.05%; descent-override: 19.22%; line-gap-override: 2.97%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0066; font-weight: normal; font-style: normal; size-adjust: 107.75%; ascent-override: 81.48%; descent-override: 19.09%; line-gap-override: 2.95%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0027; font-weight: normal; font-style: normal; size-adjust: 109.5%; ascent-override: 80.17%; descent-override: 18.79%; line-gap-override: 2.9%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0074; font-weight: normal; font-style: normal; size-adjust: 115.75%; ascent-override: 75.84%; descent-override: 17.77%; line-gap-override: 2.74%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006C; font-weight: normal; font-style: normal; size-adjust: 116.5%; ascent-override: 75.36%; descent-override: 17.66%; line-gap-override: 2.73%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002A; font-weight: normal; font-style: normal; size-adjust: 116.75%; ascent-override: 75.19%; descent-override: 17.62%; line-gap-override: 2.72%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+2018, U+2019; font-weight: normal; font-style: normal; size-adjust: 121%; ascent-override: 72.55%; descent-override: 17%; line-gap-override: 2.62%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002F, U+005C; font-weight: normal; font-style: normal; size-adjust: 121.5%; ascent-override: 72.26%; descent-override: 16.93%; line-gap-override: 2.61%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+201C; font-weight: normal; font-style: normal; size-adjust: 135%; ascent-override: 65.03%; descent-override: 15.24%; line-gap-override: 2.35%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+201D; font-weight: normal; font-style: normal; size-adjust: 135.25%; ascent-override: 64.91%; descent-override: 15.21%; line-gap-override: 2.35%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004A; font-weight: 700; font-style: normal; size-adjust: 65.75%; ascent-override: 133.52%; descent-override: 31.29%; line-gap-override: 4.83%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0020; font-weight: 700; font-style: normal; size-adjust: 72.75%; ascent-override: 120.67%; descent-override: 28.27%; line-gap-override: 4.36%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0054; font-weight: 700; font-style: normal; size-adjust: 82.25%; ascent-override: 106.74%; descent-override: 25.01%; line-gap-override: 3.86%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0067; font-weight: 700; font-style: normal; size-adjust: 83.25%; ascent-override: 105.45%; descent-override: 24.71%; line-gap-override: 3.81%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004C; font-weight: 700; font-style: normal; size-adjust: 83.5%; ascent-override: 105.14%; descent-override: 24.63%; line-gap-override: 3.8%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0042; font-weight: 700; font-style: normal; size-adjust: 85.25%; ascent-override: 102.98%; descent-override: 24.13%; line-gap-override: 3.72%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0041, U+0045; font-weight: 700; font-style: normal; size-adjust: 85.5%; ascent-override: 102.68%; descent-override: 24.06%; line-gap-override: 3.71%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0052; font-weight: 700; font-style: normal; size-adjust: 87.25%; ascent-override: 100.62%; descent-override: 23.58%; line-gap-override: 3.64%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0028, U+0029, U+0046; font-weight: 700; font-style: normal; size-adjust: 87.5%; ascent-override: 100.33%; descent-override: 23.51%; line-gap-override: 3.63%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0076, U+0078, U+0079; font-weight: 700; font-style: normal; size-adjust: 88.5%; ascent-override: 99.2%; descent-override: 23.24%; line-gap-override: 3.59%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0053; font-weight: 700; font-style: normal; size-adjust: 89.25%; ascent-override: 98.36%; descent-override: 23.05%; line-gap-override: 3.56%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+003A; font-weight: 700; font-style: normal; size-adjust: 89.75%; ascent-override: 97.82%; descent-override: 22.92%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0050; font-weight: 700; font-style: normal; size-adjust: 90.25%; ascent-override: 97.27%; descent-override: 22.79%; line-gap-override: 3.52%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+003C, U+003D, U+003E; font-weight: 700; font-style: normal; size-adjust: 91%; ascent-override: 96.47%; descent-override: 22.6%; line-gap-override: 3.49%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0047; font-weight: 700; font-style: normal; size-adjust: 91.75%; ascent-override: 95.68%; descent-override: 22.42%; line-gap-override: 3.46%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0056; font-weight: 700; font-style: normal; size-adjust: 92%; ascent-override: 95.42%; descent-override: 22.36%; line-gap-override: 3.45%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0073; font-weight: 700; font-style: normal; size-adjust: 92.25%; ascent-override: 95.17%; descent-override: 22.3%; line-gap-override: 3.44%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006F; font-weight: 700; font-style: normal; size-adjust: 93.25%; ascent-override: 94.14%; descent-override: 22.06%; line-gap-override: 3.4%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004F, U+0051, U+0068, U+006E, U+0072; font-weight: 700; font-style: normal; size-adjust: 94.25%; ascent-override: 93.15%; descent-override: 21.82%; line-gap-override: 3.37%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0075; font-weight: 700; font-style: normal; size-adjust: 94.75%; ascent-override: 92.65%; descent-override: 21.71%; line-gap-override: 3.35%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0030, U+0031, U+0032, U+0033, U+0034, U+0035, U+0036, U+0039, U+0062, U+0064, U+006B, U+0070, U+0071; font-weight: 700; font-style: normal; size-adjust: 95.5%; ascent-override: 91.93%; descent-override: 21.54%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0023, U+0055, U+0069, U+006A; font-weight: 700; font-style: normal; size-adjust: 96%; ascent-override: 91.45%; descent-override: 21.43%; line-gap-override: 3.31%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0027; font-weight: 700; font-style: normal; size-adjust: 97%; ascent-override: 90.51%; descent-override: 21.21%; line-gap-override: 3.27%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0077; font-weight: 700; font-style: normal; size-adjust: 97.25%; ascent-override: 90.27%; descent-override: 21.15%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0043, U+0044; font-weight: 700; font-style: normal; size-adjust: 97.5%; ascent-override: 90.04%; descent-override: 21.1%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004D; font-weight: 700; font-style: normal; size-adjust: 98%; ascent-override: 89.58%; descent-override: 20.99%; line-gap-override: 3.24%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0063; font-weight: 700; font-style: normal; size-adjust: 98.25%; ascent-override: 89.35%; descent-override: 20.94%; line-gap-override: 3.23%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0061; font-weight: 700; font-style: normal; size-adjust: 98.75%; ascent-override: 88.9%; descent-override: 20.83%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0057; font-weight: 700; font-style: normal; size-adjust: 99%; ascent-override: 88.68%; descent-override: 20.78%; line-gap-override: 3.21%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004E, U+0065, U+006D; font-weight: 700; font-style: normal; size-adjust: 99.5%; ascent-override: 88.23%; descent-override: 20.67%; line-gap-override: 3.19%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0066; font-weight: 700; font-style: normal; size-adjust: 100%; ascent-override: 87.79%; descent-override: 20.57%; line-gap-override: 3.17%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0048; font-weight: 700; font-style: normal; size-adjust: 100.5%; ascent-override: 87.35%; descent-override: 20.47%; line-gap-override: 3.16%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+002D; font-weight: 700; font-style: normal; size-adjust: 101.5%; ascent-override: 86.49%; descent-override: 20.27%; line-gap-override: 3.13%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0049; font-weight: 700; font-style: normal; size-adjust: 105.25%; ascent-override: 83.41%; descent-override: 19.54%; line-gap-override: 3.02%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006C, U+0074; font-weight: 700; font-style: normal; size-adjust: 106%; ascent-override: 82.82%; descent-override: 19.41%; line-gap-override: 3%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+002C, U+002E; font-weight: 700; font-style: normal; size-adjust: 107.5%; ascent-override: 81.67%; descent-override: 19.13%; line-gap-override: 2.95%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0020; font-weight: normal; font-style: italic; size-adjust: 72.75%; ascent-override: 120.67%; descent-override: 28.27%; line-gap-override: 4.36%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0054; font-weight: normal; font-style: italic; size-adjust: 78%; ascent-override: 112.55%; descent-override: 26.37%; line-gap-override: 4.07%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0045; font-weight: normal; font-style: italic; size-adjust: 83%; ascent-override: 105.77%; descent-override: 24.78%; line-gap-override: 3.83%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0052; font-weight: normal; font-style: italic; size-adjust: 83.5%; ascent-override: 105.14%; descent-override: 24.63%; line-gap-override: 3.8%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0053; font-weight: normal; font-style: italic; size-adjust: 84.5%; ascent-override: 103.89%; descent-override: 24.34%; line-gap-override: 3.76%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0067; font-weight: normal; font-style: italic; size-adjust: 86.5%; ascent-override: 101.49%; descent-override: 23.78%; line-gap-override: 3.67%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0041; font-weight: normal; font-style: italic; size-adjust: 87.75%; ascent-override: 100.05%; descent-override: 23.44%; line-gap-override: 3.62%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0050; font-weight: normal; font-style: italic; size-adjust: 88.25%; ascent-override: 99.48%; descent-override: 23.31%; line-gap-override: 3.6%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+003F; font-weight: normal; font-style: italic; size-adjust: 89.75%; ascent-override: 97.82%; descent-override: 22.92%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0076, U+0079; font-weight: normal; font-style: italic; size-adjust: 90%; ascent-override: 97.54%; descent-override: 22.86%; line-gap-override: 3.53%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0047; font-weight: normal; font-style: italic; size-adjust: 90.5%; ascent-override: 97.01%; descent-override: 22.73%; line-gap-override: 3.51%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+003C, U+003D, U+003E; font-weight: normal; font-style: italic; size-adjust: 91%; ascent-override: 96.47%; descent-override: 22.6%; line-gap-override: 3.49%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0049; font-weight: normal; font-style: italic; size-adjust: 93%; ascent-override: 94.4%; descent-override: 22.12%; line-gap-override: 3.41%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+004F; font-weight: normal; font-style: italic; size-adjust: 93.75%; ascent-override: 93.64%; descent-override: 21.94%; line-gap-override: 3.39%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0044; font-weight: normal; font-style: italic; size-adjust: 94.5%; ascent-override: 92.9%; descent-override: 21.77%; line-gap-override: 3.36%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0065; font-weight: normal; font-style: italic; size-adjust: 94.75%; ascent-override: 92.65%; descent-override: 21.71%; line-gap-override: 3.35%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0061; font-weight: normal; font-style: italic; size-adjust: 95.25%; ascent-override: 92.17%; descent-override: 21.6%; line-gap-override: 3.33%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0024; font-weight: normal; font-style: italic; size-adjust: 95.5%; ascent-override: 91.93%; descent-override: 21.54%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0043; font-weight: normal; font-style: italic; size-adjust: 96%; ascent-override: 91.45%; descent-override: 21.43%; line-gap-override: 3.31%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0073; font-weight: normal; font-style: italic; size-adjust: 96.5%; ascent-override: 90.97%; descent-override: 21.32%; line-gap-override: 3.29%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+006B; font-weight: normal; font-style: italic; size-adjust: 97%; ascent-override: 90.51%; descent-override: 21.21%; line-gap-override: 3.27%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+004E; font-weight: normal; font-style: italic; size-adjust: 97.25%; ascent-override: 90.27%; descent-override: 21.15%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+002A, U+0048; font-weight: normal; font-style: italic; size-adjust: 97.5%; ascent-override: 90.04%; descent-override: 21.1%; line-gap-override: 3.26%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0068, U+006E, U+0075; font-weight: normal; font-style: italic; size-adjust: 98.5%; ascent-override: 89.13%; descent-override: 20.88%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+006F; font-weight: normal; font-style: italic; size-adjust: 98.75%; ascent-override: 88.9%; descent-override: 20.83%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0072; font-weight: normal; font-style: italic; size-adjust: 99.5%; ascent-override: 88.23%; descent-override: 20.67%; line-gap-override: 3.19%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0062, U+0064, U+0070; font-weight: normal; font-style: italic; size-adjust: 100.25%; ascent-override: 87.57%; descent-override: 20.52%; line-gap-override: 3.17%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+006D; font-weight: normal; font-style: italic; size-adjust: 102%; ascent-override: 86.07%; descent-override: 20.17%; line-gap-override: 3.11%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0069; font-weight: normal; font-style: italic; size-adjust: 103.5%; ascent-override: 84.82%; descent-override: 19.87%; line-gap-override: 3.07%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0063; font-weight: normal; font-style: italic; size-adjust: 105.5%; ascent-override: 83.21%; descent-override: 19.5%; line-gap-override: 3.01%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+0074; font-weight: normal; font-style: italic; size-adjust: 112%; ascent-override: 78.38%; descent-override: 18.37%; line-gap-override: 2.83%; }
+@font-face { font-family: 'odx-aptos'; src: local('Arial Italic'), local('Arial-ItalicMT'), local('Liberation Sans Italic'), local('LiberationSans-Italic'); unicode-range: U+006C; font-weight: normal; font-style: italic; size-adjust: 116.5%; ascent-override: 75.36%; descent-override: 17.66%; line-gap-override: 2.73%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004A; font-weight: normal; font-style: normal; size-adjust: 63%; ascent-override: 139.35%; descent-override: 32.65%; line-gap-override: 5.04%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0020; font-weight: normal; font-style: normal; size-adjust: 69%; ascent-override: 127.23%; descent-override: 29.81%; line-gap-override: 4.6%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0067; font-weight: normal; font-style: normal; size-adjust: 78.5%; ascent-override: 111.83%; descent-override: 26.2%; line-gap-override: 4.04%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0045; font-weight: normal; font-style: normal; size-adjust: 80.75%; ascent-override: 108.72%; descent-override: 25.47%; line-gap-override: 3.93%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0052; font-weight: normal; font-style: normal; size-adjust: 81.25%; ascent-override: 108.05%; descent-override: 25.32%; line-gap-override: 3.91%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0053; font-weight: normal; font-style: normal; size-adjust: 81.5%; ascent-override: 107.72%; descent-override: 25.24%; line-gap-override: 3.9%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0046, U+0050; font-weight: normal; font-style: normal; size-adjust: 83%; ascent-override: 105.77%; descent-override: 24.78%; line-gap-override: 3.83%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0049; font-weight: normal; font-style: normal; size-adjust: 84.25%; ascent-override: 104.2%; descent-override: 24.42%; line-gap-override: 3.77%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0047, U+0056; font-weight: normal; font-style: normal; size-adjust: 85.75%; ascent-override: 102.38%; descent-override: 23.99%; line-gap-override: 3.7%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0076, U+0079; font-weight: normal; font-style: normal; size-adjust: 86.25%; ascent-override: 101.79%; descent-override: 23.85%; line-gap-override: 3.68%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0041, U+004C; font-weight: normal; font-style: normal; size-adjust: 86.5%; ascent-override: 101.49%; descent-override: 23.78%; line-gap-override: 3.67%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0042; font-weight: normal; font-style: normal; size-adjust: 87%; ascent-override: 100.91%; descent-override: 23.64%; line-gap-override: 3.65%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0061; font-weight: normal; font-style: normal; size-adjust: 87.5%; ascent-override: 100.33%; descent-override: 23.51%; line-gap-override: 3.63%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002C, U+002E, U+003A; font-weight: normal; font-style: normal; size-adjust: 88%; ascent-override: 99.76%; descent-override: 23.38%; line-gap-override: 3.61%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0065; font-weight: normal; font-style: normal; size-adjust: 88.5%; ascent-override: 99.2%; descent-override: 23.24%; line-gap-override: 3.59%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004F, U+0051, U+006B; font-weight: normal; font-style: normal; size-adjust: 89%; ascent-override: 98.64%; descent-override: 23.11%; line-gap-override: 3.57%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0055; font-weight: normal; font-style: normal; size-adjust: 89.75%; ascent-override: 97.82%; descent-override: 22.92%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0044; font-weight: normal; font-style: normal; size-adjust: 90.25%; ascent-override: 97.27%; descent-override: 22.79%; line-gap-override: 3.52%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0043, U+0068, U+006E, U+0075; font-weight: normal; font-style: normal; size-adjust: 90.5%; ascent-override: 97.01%; descent-override: 22.73%; line-gap-override: 3.51%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004D; font-weight: normal; font-style: normal; size-adjust: 91.5%; ascent-override: 95.95%; descent-override: 22.48%; line-gap-override: 3.47%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006F; font-weight: normal; font-style: normal; size-adjust: 91.75%; ascent-override: 95.68%; descent-override: 22.42%; line-gap-override: 3.46%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0073; font-weight: normal; font-style: normal; size-adjust: 92.25%; ascent-override: 95.17%; descent-override: 22.3%; line-gap-override: 3.44%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0062, U+0064, U+0070, U+0071, U+0072; font-weight: normal; font-style: normal; size-adjust: 92.75%; ascent-override: 94.65%; descent-override: 22.18%; line-gap-override: 3.42%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0031, U+0032, U+0033, U+0034, U+0035, U+0036, U+0037, U+0038; font-weight: normal; font-style: normal; size-adjust: 93.5%; ascent-override: 93.89%; descent-override: 22%; line-gap-override: 3.4%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+004E; font-weight: normal; font-style: normal; size-adjust: 93.75%; ascent-override: 93.64%; descent-override: 21.94%; line-gap-override: 3.39%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0069, U+006A; font-weight: normal; font-style: normal; size-adjust: 94%; ascent-override: 93.39%; descent-override: 21.88%; line-gap-override: 3.38%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006D; font-weight: normal; font-style: normal; size-adjust: 95.5%; ascent-override: 91.93%; descent-override: 21.54%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0063; font-weight: normal; font-style: normal; size-adjust: 98%; ascent-override: 89.58%; descent-override: 20.99%; line-gap-override: 3.24%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0077; font-weight: normal; font-style: normal; size-adjust: 98.75%; ascent-override: 88.9%; descent-override: 20.83%; line-gap-override: 3.22%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0066; font-weight: normal; font-style: normal; size-adjust: 101.25%; ascent-override: 86.71%; descent-override: 20.32%; line-gap-override: 3.14%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+002D; font-weight: normal; font-style: normal; size-adjust: 104.25%; ascent-override: 84.21%; descent-override: 19.73%; line-gap-override: 3.05%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+0074; font-weight: normal; font-style: normal; size-adjust: 108.75%; ascent-override: 80.73%; descent-override: 18.91%; line-gap-override: 2.92%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial'), local('Liberation Sans'), local('LiberationSans'); unicode-range: U+006C; font-weight: normal; font-style: normal; size-adjust: 109.25%; ascent-override: 80.36%; descent-override: 18.83%; line-gap-override: 2.91%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0020; font-weight: 700; font-style: normal; size-adjust: 69%; ascent-override: 127.23%; descent-override: 29.81%; line-gap-override: 4.6%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0067; font-weight: 700; font-style: normal; size-adjust: 77%; ascent-override: 114.01%; descent-override: 26.71%; line-gap-override: 4.12%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+003A; font-weight: 700; font-style: normal; size-adjust: 78%; ascent-override: 112.55%; descent-override: 26.37%; line-gap-override: 4.07%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0042; font-weight: 700; font-style: normal; size-adjust: 82.5%; ascent-override: 106.41%; descent-override: 24.93%; line-gap-override: 3.85%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0041, U+0052; font-weight: 700; font-style: normal; size-adjust: 84%; ascent-override: 104.51%; descent-override: 24.49%; line-gap-override: 3.78%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0046; font-weight: 700; font-style: normal; size-adjust: 84.25%; ascent-override: 104.2%; descent-override: 24.42%; line-gap-override: 3.77%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0076, U+0079; font-weight: 700; font-style: normal; size-adjust: 85%; ascent-override: 103.28%; descent-override: 24.2%; line-gap-override: 3.74%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0053; font-weight: 700; font-style: normal; size-adjust: 85.75%; ascent-override: 102.38%; descent-override: 23.99%; line-gap-override: 3.7%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0069; font-weight: 700; font-style: normal; size-adjust: 86%; ascent-override: 102.08%; descent-override: 23.92%; line-gap-override: 3.69%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006F; font-weight: 700; font-style: normal; size-adjust: 86.25%; ascent-override: 101.79%; descent-override: 23.85%; line-gap-override: 3.68%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0073; font-weight: 700; font-style: normal; size-adjust: 86.5%; ascent-override: 101.49%; descent-override: 23.78%; line-gap-override: 3.67%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0068, U+006E; font-weight: 700; font-style: normal; size-adjust: 86.75%; ascent-override: 101.2%; descent-override: 23.71%; line-gap-override: 3.66%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0075; font-weight: 700; font-style: normal; size-adjust: 87%; ascent-override: 100.91%; descent-override: 23.64%; line-gap-override: 3.65%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0050; font-weight: 700; font-style: normal; size-adjust: 87.25%; ascent-override: 100.62%; descent-override: 23.58%; line-gap-override: 3.64%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0047, U+0072; font-weight: 700; font-style: normal; size-adjust: 87.75%; ascent-override: 100.05%; descent-override: 23.44%; line-gap-override: 3.62%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0062, U+0064, U+0070; font-weight: 700; font-style: normal; size-adjust: 88.25%; ascent-override: 99.48%; descent-override: 23.31%; line-gap-override: 3.6%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006B, U+007A; font-weight: 700; font-style: normal; size-adjust: 89.5%; ascent-override: 98.09%; descent-override: 22.98%; line-gap-override: 3.55%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0056; font-weight: 700; font-style: normal; size-adjust: 89.75%; ascent-override: 97.82%; descent-override: 22.92%; line-gap-override: 3.54%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004F; font-weight: 700; font-style: normal; size-adjust: 90.25%; ascent-override: 97.27%; descent-override: 22.79%; line-gap-override: 3.52%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0061; font-weight: 700; font-style: normal; size-adjust: 90.75%; ascent-override: 96.74%; descent-override: 22.67%; line-gap-override: 3.5%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0063; font-weight: 700; font-style: normal; size-adjust: 91%; ascent-override: 96.47%; descent-override: 22.6%; line-gap-override: 3.49%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0055, U+0065; font-weight: 700; font-style: normal; size-adjust: 92.25%; ascent-override: 95.17%; descent-override: 22.3%; line-gap-override: 3.44%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0043; font-weight: 700; font-style: normal; size-adjust: 93%; ascent-override: 94.4%; descent-override: 22.12%; line-gap-override: 3.41%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0044; font-weight: 700; font-style: normal; size-adjust: 93.5%; ascent-override: 93.89%; descent-override: 22%; line-gap-override: 3.4%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006D; font-weight: 700; font-style: normal; size-adjust: 94%; ascent-override: 93.39%; descent-override: 21.88%; line-gap-override: 3.38%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004D; font-weight: 700; font-style: normal; size-adjust: 94.75%; ascent-override: 92.65%; descent-override: 21.71%; line-gap-override: 3.35%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0066; font-weight: 700; font-style: normal; size-adjust: 95%; ascent-override: 92.41%; descent-override: 21.65%; line-gap-override: 3.34%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0049; font-weight: 700; font-style: normal; size-adjust: 95.5%; ascent-override: 91.93%; descent-override: 21.54%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0077; font-weight: 700; font-style: normal; size-adjust: 95.75%; ascent-override: 91.69%; descent-override: 21.48%; line-gap-override: 3.32%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+004E; font-weight: 700; font-style: normal; size-adjust: 96%; ascent-override: 91.45%; descent-override: 21.43%; line-gap-override: 3.31%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0030, U+0031, U+0032, U+0036, U+0037, U+0038; font-weight: 700; font-style: normal; size-adjust: 96.5%; ascent-override: 90.97%; descent-override: 21.32%; line-gap-override: 3.29%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+0074; font-weight: 700; font-style: normal; size-adjust: 99.5%; ascent-override: 88.23%; descent-override: 20.67%; line-gap-override: 3.19%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+006C; font-weight: 700; font-style: normal; size-adjust: 100%; ascent-override: 87.79%; descent-override: 20.57%; line-gap-override: 3.17%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+002D; font-weight: 700; font-style: normal; size-adjust: 109%; ascent-override: 80.54%; descent-override: 18.87%; line-gap-override: 2.91%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); unicode-range: U+002F; font-weight: 700; font-style: normal; size-adjust: 138.5%; ascent-override: 63.39%; descent-override: 14.85%; line-gap-override: 2.29%; }
+@font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); font-weight: 700; size-adjust: 92%; }
+/* Skip layout and paint for blocks far off screen: large documents open and type fast. */
+.odx-large > .odx-content > p, .odx-large > .odx-content > table, .odx-large > .odx-content > .odx-opaque { content-visibility: auto; contain-intrinsic-size: auto 1.5em; }
+.odx-large > .odx-content > .odx-active { content-visibility: visible; }
+/* Exporting a PDF (src/pdf.js) reads every page, as printing does. */
+.odx-exporting .odx-content > * { content-visibility: visible !important; }
+.odx-content { tab-size: 0.5in; }
+.odx-content .odx-page-break { display: inline; }
+.odx-content img { max-width: 100%; vertical-align: bottom; }
+/* A picture's line: Word adds only the extra space of "multiple" line spacing below the picture (no font descent). */
+.odx-content p > img:not(.ProseMirror-separator):not([style*="position"]) { margin-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 1em + var(--odx-fx, 0px)); margin-top: var(--odx-fxt, 0px); margin-left: var(--odx-fxl, 0px); margin-right: var(--odx-fxr, 0px); } /* --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr: room for the picture's effect extent */
+/* On a line with text (editor.js odx-pictext): on the baseline (not raised by half the "multiple" extra, which put each
+   such line 0.7px low in Word terms once the print layer drew it exactly); the text's
+   descent and its share of the extra (the browser centres the leading) come under it, the print shift takes the half back. */
+.odx-content p.odx-pictext > img:not(.ProseMirror-separator):not([style*="position"]) { vertical-align: baseline; margin-bottom: var(--odx-fx, 0px); }
+.odx-hf img, .odx-content img[style*="position: absolute"] { max-width: none; }
+/* A horizontal rule sits on its line's baseline; the zero-width text gives that line its height (a line of only a picture gets no height from its paragraph: textspans.js). */
+.odx-content p:has(> img[style*="vertical-align: baseline"]) { white-space: nowrap; }
+.odx-content p.odx-mark::after { content: "\200b"; font-size: var(--odx-mark); }
+/* (After a closing break, the mark's character makes that empty line itself, in place of ProseMirror's trailing break.) */
+.odx-content p.odx-tailmark > br.ProseMirror-trailingBreak { display: none; }
+/* ProseMirror's separator between two line breaks is a zero-size image, which Edge doesn't count as content: the empty
+   line between them had no height (sample S067's "<w:br/><w:br/>" lost a line each). This gives it a line's height,
+   from its top (a line of only a picture gets no height from its paragraph: textspans.js). */
+.odx-content br + img.ProseMirror-separator, .odx-hf br + img.ProseMirror-separator { display: inline-block !important; width: 0; height: 1lh; vertical-align: top; }
+/* The separator before a paragraph's closing break (after a marker that ends it, a comment's reference): on the baseline
+   it makes the line a pixel taller (doc 16's commented "Product Group" rows, 0.75pt over Word's). */
+.odx-content img.ProseMirror-separator, .odx-hf img.ProseMirror-separator { vertical-align: top; }
+/* ProseMirror's separator after a zero-width marker (a field's begin and end, a bookmark) mid-text: an image, so the
+   browser may break the line there, inside what Word sees as one word ("R&D:«a.attrTO_RandD»" in sample S109's
+   narrow cells, which Word breaks within the field). Only the one before the paragraph's closing break is needed. */
+.odx-content .odx-opaque-inline + img.ProseMirror-separator:not(:has(+ br)), .odx-hf .odx-opaque-inline + img.ProseMirror-separator:not(:has(+ br)) { display: none !important; }
+/* A cell's empty last paragraph right after a nested table takes no room in Word (calibre-demo: its row is the nested
+   table's height, not that plus a 12pt-spaced empty line). */
+.odx-content td > .tableWrapper + p:last-child:has(> br.ProseMirror-trailingBreak:only-child) { margin-top: 0 !important; margin-bottom: 0 !important; height: 0 !important; min-height: 0 !important; overflow: hidden; }
+.odx-content p:has(> img[style*="vertical-align: baseline"])::before { content: "\200b"; }
+.odx-content img.ProseMirror-selectednode { outline: 2px solid var(--odx-accent); }
+.odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
+.odx-all-markup .odx-content ins.odx-ins { color: #b5179e; text-decoration: underline; }
+.odx-content ins.odx-ins { text-decoration: none; }
+.odx-content del.odx-del, .odx-hf del.odx-del { color: #b5179e; text-decoration: line-through; }
+/* Moved text, as Word marks it: green, double underline where it went, double strike where it was. */
+.odx-all-markup .odx-content ins.odx-move { color: #2e7d32; text-decoration: underline double; }
+.odx-content del.odx-move, .odx-hf del.odx-move { color: #2e7d32; text-decoration: line-through double; }
+/* An inserted row (tracked): tinted, with all markup shown. A deleted one shows struck through only then (below). */
+.odx-all-markup .odx-content tr.odx-row-ins > td { box-shadow: inset 0 0 0 999px rgba(181, 23, 158, .07); }
+.odx-all-markup .odx-content tr.odx-row-del > td { box-shadow: inset 0 0 0 999px rgba(181, 23, 158, .07); text-decoration: line-through; }
+/* A tracked cell insertion or deletion (w:cellIns / w:cellDel), as Word tints it. */
+.odx-all-markup .odx-content td[data-odx-cell="ins"] { box-shadow: inset 0 0 0 999px rgba(80, 140, 255, .14); }
+.odx-all-markup .odx-content td[data-odx-cell="del"] { box-shadow: inset 0 0 0 999px rgba(255, 120, 120, .16); text-decoration: line-through; }
+.odx-page:not(.odx-all-markup) .odx-content del.odx-del, .odx-page:not(.odx-all-markup) .odx-hf del.odx-del, .odx-page:not(.odx-all-markup) .odx-hf p.odx-all-del,
+.odx-page:not(.odx-all-markup) .odx-content p.odx-all-del, .odx-page:not(.odx-all-markup) .odx-content tr.odx-row-del { display: none; }
+.odx-content .odx-fmt { background: rgba(181, 23, 158, .08); }
+/* Tracked changes: a change bar left of the paragraph (two shadows, so it never moves the text). */
+.odx-content p.odx-changed { box-shadow: -8px 0 0 -2px var(--odx-sheet), -10px 0 0 -2px #b5179e; }
+.odx-content .odx-opaque-inline[data-kind="footnoteReference"]::before,
+.odx-content .odx-opaque-inline[data-kind="endnoteReference"]::before { content: '*'; vertical-align: super; font-size: 75%; color: var(--odx-accent); }
+.odx-content .odx-opaque-inline[data-kind="oMath"]:not(.odx-math), .odx-content .odx-opaque-inline[data-kind="oMathPara"]:not(.odx-math) { font-family: 'Cambria Math', serif; font-style: italic; }
+/* Equations (MathML from ooxml/omml.js) in Word's equation font; a display equation (m:oMathPara) is a line of its own, centred. */
+.odx-math math { font-family: 'Cambria Math', 'STIX Two Math', math; font-size: 1em; }
+.odx-math[data-kind="oMathPara"] { display: block; text-align: center; margin: 0.25em 0; }
+/* A paragraph holding only empty markers (bookmarks, comment ranges), or opening with a bare line break, has a first line
+   of its full height, as in Word: the browser leaves such a line empty. A zero-width space before them makes the line. */
+.odx-content p.odx-markers:not(.odx-li)::before { content: "\200b"; }
+.odx-content .odx-opaque { background: repeating-linear-gradient(45deg, #f6f7f9, #f6f7f9 6px, #eef0f3 6px, #eef0f3 12px); border-left: 3px solid #c3c9d2; padding: 4px 8px; white-space: pre-wrap; color: #444; cursor: default; }
+/* Body-level markers Word doesn't show (bookmarks, proofing marks): kept in flow but take no space. */
+.odx-content .odx-opaque[data-kind="bookmarkStart"], .odx-content .odx-opaque[data-kind="bookmarkEnd"], .odx-content .odx-opaque[data-kind="proofErr"], .odx-content .odx-opaque[data-kind="permStart"], .odx-content .odx-opaque[data-kind="permEnd"], .odx-content .odx-opaque[data-kind="commentRangeStart"], .odx-content .odx-opaque[data-kind="commentRangeEnd"], .odx-content .odx-opaque[data-kind="moveFromRangeStart"], .odx-content .odx-opaque[data-kind="moveFromRangeEnd"], .odx-content .odx-opaque[data-kind="moveToRangeStart"], .odx-content .odx-opaque[data-kind="moveToRangeEnd"] { display: none; } /* not even an empty box: one would stop the paragraph spacing around it from collapsing */
+.odx-content li, .odx-content p.odx-li { list-style: none; }
+.odx-content p.odx-bullet::before { font-family: Arial, 'Liberation Sans', sans-serif; }
+.odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); }
+/* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the
+   text's and would push the line apart by a fraction. Only Symbol bullets do, by their own rule (--odx-lbl-up/down). */
+.odx-content p.odx-li:not([style*="--odx-lbl-"])::before { line-height: 0; }
+/* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
+   sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
+.odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); }
+.odx-content table, .odx-hf table { border-collapse: collapse; table-layout: fixed; margin: 0; font: inherit; color: inherit; white-space: inherit; } /* (a quirks-mode page doesn't inherit fonts into tables) */
+.odx-content td, .odx-content th, .odx-hf td, .odx-hf th { padding: 0 7px; vertical-align: top; box-sizing: border-box; position: relative; overflow-x: clip; } /* headers and footers too: Word puts cell text at the top */
+.odx-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(43,108,223,.15); pointer-events: none; }
+.odx-content .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: var(--odx-accent); pointer-events: none; }
+.odx-content.resize-cursor { cursor: col-resize; }
+.ProseMirror-gapcursor { display: none; }
+/* A picture with top-and-bottom wrapping sits at its offset from the paragraph
+   top; ProseMirror's cursor helpers around it would add empty lines Word doesn't. */
+.odx-content p:has(> img.odx-wrap-block) > img.ProseMirror-separator,
+.odx-content p:has(> img.odx-wrap-block) > br.ProseMirror-trailingBreak { display: none; }
+.odx-content p:has(> img.odx-wrap-block) { display: flow-root; }
+.odx-content p:has(> img.odx-wrap-block[style*="--odx-band"]) > br.ProseMirror-trailingBreak { display: inline; }
+.odx-content p:has(> img.odx-wrap-block[style*="--odx-band"]) { line-height: var(--odx-lhv); } /* (that break's line under the picture: the paragraph's, as quirks mode gave it) */
+.odx-row, .odx-line { display: flex; align-items: center; gap: 2px; }
+/* (A paragraph whose text is all deleted keeps its line: the zero-width character gives it its height.) */
+.odx-page:not(.odx-all-markup) .odx-content p.odx-del-text::before { content: "\200b"; }
+.odx-content.odx-dim { opacity: .55; }
+/* Footnotes and endnotes */
+.odx-content { counter-reset: odx-fn odx-en; }
+.odx-content [data-kind="footnoteReference"]::after { counter-increment: odx-fn; content: counter(odx-fn); }
+.odx-content [data-kind="endnoteReference"]::after { counter-increment: odx-en; content: counter(odx-en, lower-roman); }
+.odx-content [data-kind="footnoteReference"], .odx-content [data-kind="endnoteReference"],
+[data-kind="footnoteRef"], [data-kind="endnoteRef"] { vertical-align: super; font-size: .66em; line-height: 0; }
+.odx-notes { position: absolute; }
+.odx-note-sep { width: 33%; border-top: 1px solid currentColor; opacity: .6; margin: 6px 0 7px; }
+.odx-note p, .odx-note-content p { margin: 0; }
+/* The note's reference mark is raised text of its paragraph's size: Word's first line is as tall as that size's line (c3-01:
+   11pt marks over 10pt text, 18px lines, not 16). The mark itself has no line height here, and a paragraph
+   has no line height of its own on a line (textspans.js): a zero-width one in its place. */
+.odx-note p:has(> [data-kind="footnoteRef"]:first-child, > [data-kind="endnoteRef"]:first-child)::before { content: "\200b"; }
+.odx-noteedit { position: absolute; z-index: 3; background: var(--odx-sheet); outline: 1px dashed var(--odx-accent); outline-offset: 2px; }
+.odx-note-content { outline: none; }
+.odx-bmrow { display: flex; gap: 4px; align-items: center; padding: 2px 0; }
+.odx-bmrow span { flex: 1; }
+.odx-toolbar .odx-bmrow button { height: 24px; min-width: 0; border: 1px solid var(--odx-line); }
+.odx-rt { position: absolute; bottom: 5px; width: 1px; height: 3px; background: #888; }
+.odx-rt-h { height: 5px; }
+.odx-rt-n { height: auto; bottom: 3px; width: auto; background: none; transform: translateX(-50%); }
+.odx-rm { position: absolute; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; transform: translateX(-5px); cursor: ew-resize; }
+.odx-rm-first { top: -1px; border-top: 6px solid #5f6b7a; }
+.odx-rm-hang { bottom: 4px; border-bottom: 6px solid #5f6b7a; }
+.odx-rm-left { bottom: -2px; width: 10px; height: 5px; border: 0; background: #5f6b7a; transform: translateX(-5px); }
+.odx-rm-right { bottom: 0; border-bottom: 6px solid #5f6b7a; }
+.odx-sheet { position: absolute; left: 0; right: 0; overflow: clip; box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.08); background: var(--odx-page-color, var(--odx-sheet)); }
+.odx-pgborder { position: absolute; pointer-events: none; }
+.odx-a11y { max-width: 340px; max-height: 60vh; overflow: auto; }
+.odx-a11y > b { display: block; padding: 4px 8px; }
+.odx-a11y-error::before { content: '⛔'; }
+.odx-a11y-warning::before { content: '⚠'; }
+.odx-a11y-tip::before { content: 'ℹ'; }
+.odx-darkpage .odx-page { filter: invert(.92) hue-rotate(180deg); }
+.odx-darkpage .odx-page img, .odx-darkpage .odx-page svg image { filter: invert(1) hue-rotate(180deg); }
+.odx-readonly .odx-content { caret-color: transparent; }
+/* Form fields (content controls) */
+.odx-forms .odx-field { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: text; }
+.odx-forms .odx-field:hover { background: rgba(43,108,223,.18); }
+.odx-forms { caret-color: auto; }
+.odx-field-ph { color: #808080; }
+.odx-forms p[data-field] { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; }
+.odx-tablist { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; } /* (a narrow window, 320px at 400% zoom: the tabs wrap, 1.4.10) */
+.odx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* File drop-down, as in Word for the web */
+.odx-filemenu { width: 250px; padding: 2px 0; }
+.odx-filemenu hr { border: 0; border-top: 1px solid var(--odx-line); margin: 4px 0; }
+/* Grid columns a row leaves empty (w:gridBefore/w:gridAfter): no borders, shading or text. */
+td[data-odx-phantom] { box-shadow: none !important; background: none !important; border: none !important; padding: 0 !important; }
+td[data-odx-phantom] > * { display: none; }
+/* Legacy form fields: Word's grey field shading on screen; in forms mode they look like the other fields. */
+@media screen { :not(.odx-no-ffshade) .odx-ff { background: #d9d9d9; } }
+.odx-forms .odx-ff { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: pointer; }
+.odx-content table.odx-autofit { table-layout: auto; }
+/* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
+   drawn again at the top of a page: sample S057's 864-twip bottom-aligned header, 6.7px short.) */
+.odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }
+/* An exact row height clips what doesn't fit, as in Word (a two-line placeholder in a one-line header row): each paragraph
+   is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */
+.odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { max-height: calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px)); overflow-y: visible; }
+/* The last paragraph's space after is past the row's edge in an exact row: Word clips it, the browser would grow the row. */
+.odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; }
+/* The row's own edge clips (Word shows text into the cell's bottom margin, not past the row). */
+.odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { overflow: clip; }
+/* (A bottom border doesn't lift an exact row's centred text in Word, as a top one lowers it: sample S108's "PLAN RV:" row,
+   over a 1.5pt rule, sits as the rows above it.) */
+.odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { padding-bottom: 0 !important; }
+/* An exact height is the whole row's, its borders and cell margins in it (a minimum leaves them out, above). */
+.odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { height: calc(var(--odx-trh) + var(--odx-trh-add, 0px)); }
+.odx-content table[style*="--odx-lastadd"] > tbody > tr[data-exact]:last-child > td { height: calc(var(--odx-trh) + var(--odx-trh-add, 0px) + var(--odx-lastadd)); }
+.odx-txbxedit .odx-hf { position: static; opacity: 1; }
+/* Superscript and subscript text doesn't make its line taller in Word (sample S062® on every line stays 18.7px apart). */
+:where(.odx-content, .odx-hf) sup, :where(.odx-content, .odx-hf) sub { line-height: 0; --odx-lhv: 0; font-size: 65%; } /* Word's size for raised and lowered text (6.5pt from 10pt) */
+/* Paragraphs joined by a deleted paragraph mark (joins.js): in Word's final view the text runs on into the next paragraph. */
+.odx-content .odx-joined { display: none; }
+/* Style separators (hidden paragraph marks, joins.js): the next paragraph's text runs on in the first one. */
+.odx-content p.odx-sep-away { display: none; }
+.odx-fm { position: absolute; color: var(--odx-accent); font-family: system-ui, sans-serif; pointer-events: none; user-select: none; white-space: nowrap; }
+.odx-show-marks .odx-page-break::after { content: "Page Break"; position: absolute; left: 0; right: 0; margin-top: 0.2em; text-align: center; font: 9px system-ui, sans-serif; color: var(--odx-accent); border-top: 1px dotted var(--odx-accent); pointer-events: none; }
+/* A float placed against its page or margins, drawn again at that page's first paragraph (pages.js liftFloats). */
+.odx-content img.odx-lifted { display: none !important; }
+.odx-lift { display: contents; }
+/* A tall font's run (a font mark with its own line height: Segoe UI's 1.33) under exact or at-least spacing. A
+   paragraph's own line height gives its lines no floor (textspans.js): under exact spacing the run's
+   line height of 0 left the paragraph 0px tall, its lines on top of one another; under at least 18pt its 1.33em (19.5px)
+   made the line, not the 24px (corpus 2's Segoe UI paragraphs). Exact: the paragraph's line. At least: the larger. */
+@container style(--odx-runmult: 0) { .odx-content span[style*="--odx-flh"], .odx-hf span[style*="--odx-flh"] { --odx-lhv: inherit !important; } }
+@container style(--odx-lhlen: 1) and style(--odx-runmult: 1) { .odx-content span[style*="--odx-flh"], .odx-hf span[style*="--odx-flh"] { --odx-lhv: max(var(--odx-atleast, 0px), calc(var(--odx-flh) * 1em)) !important; } }
+/* The empty paragraph carrying a section break into newspaper columns (editor.js): no room, as in Word. */
+.odx-content > p.odx-collapse { display: none; }
+
+/* ==== Comments and changes: the markup column and its balloons ==== */
+/* Markup area: deletions and formatting changes in balloons beside the page, as in Word. */
+.odx-page.odx-has-markup { left: -140px; }
+.odx-markup { position: absolute; top: 0; left: 100%; width: 280px; background: var(--odx-markup); border-left: 1px solid #b8b8b8; box-shadow: 0 1px 3px rgba(0,0,0,.2); font: 11px/1.35 system-ui, sans-serif; color: #222; }
+.odx-balloon { position: absolute; left: 10px; right: 10px; padding: 3px 6px; border-left: 3px solid #b5179e; background: var(--odx-sheet); }
+.odx-balloon-del { border-left-color: #c00; }
+.odx-balloon > b { display: block; }
+/* No markup: show the document as if all changes were accepted */
+.odx-no-markup del.odx-del, .odx-no-markup p.odx-all-del, .odx-no-markup tr.odx-row-del, .odx-no-markup .odx-markup { display: none !important; }
+.odx-no-markup ins { text-decoration: none !important; color: inherit !important; background: none !important; }
+.odx-no-markup p.odx-changed { box-shadow: none !important; }
+.odx-no-markup .odx-has-markup { margin-left: auto !important; transform: none !important; }
+/* Comments */
+.odx-cmt { background: rgba(255, 213, 79, .35); border-bottom: 1px solid rgba(214, 160, 0, .7); }
+.odx-cmt-done { background: rgba(160, 160, 160, .18); border-bottom-color: rgba(140, 140, 140, .5); }
+.odx-cmt-active { background: rgba(255, 196, 0, .55); }
+.odx-balloon-comment { border-left-color: #c9a400; cursor: pointer; font-size: 12px; padding: 6px 8px; }
+.odx-balloon-comment.odx-active { box-shadow: 0 2px 8px rgba(0,0,0,.25); left: 2px; cursor: default; }
+.odx-balloon-comment.odx-resolved { opacity: .7; border-left-color: #999; }
+.odx-cmt-entry + .odx-cmt-entry { margin-top: 6px; padding-top: 6px; border-top: 1px solid #e5e5e5; }
+.odx-cmt-head { display: flex; align-items: center; gap: 6px; }
+.odx-cmt-head small { color: #777; margin-left: auto; font-size: 10px; }
+.odx-cmt-avatar { width: 20px; height: 20px; border-radius: 50%; background: #6b5ea8; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; flex: none; }
+.odx-cmt-text { margin-top: 3px; white-space: pre-wrap; word-wrap: break-word; }
+.odx-cmt-note { margin-top: 3px; color: #777; font-style: italic; }
+.odx-cmt-actions { display: flex; gap: 4px; margin-top: 4px; }
+.odx-no-markup .odx-cmt, .odx-cmt-hidden .odx-cmt { background: none; border-bottom: 0; }
+.odx-reading-doc .odx-markup { display: none; }
+/* Comment balloons keep light colors in dark mode (the markup column is light). */
+.odx-cmt-actions button { font: 11px system-ui, sans-serif; padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; color: #222; }
+.odx-cmt-actions .odx-cmt-post { background: var(--odx-accent); border-color: var(--odx-accent); color: #fff; }
+.odx-cmt-compose textarea { width: 100%; box-sizing: border-box; margin-top: 4px; font: inherit; resize: vertical; border: 1px solid #bbb; border-radius: 4px; padding: 4px; color: #222; background: #fff; color-scheme: light; }
+/* Read-only and feature switches (mountDocxEditor options) */
+.odx-readonly .odx-cmt-actions, .odx-readonly .odx-cmt-compose { display: none; }
+.odx-no-comments .odx-balloon-comment { display: none; }
+.odx-no-comments .odx-cmt { background: none; border-bottom: 0; }
+/* Keyboard focus is always visible (WCAG 2.4.7). */
+.odx-toolbar button:focus-visible, .odx-toolbar select:focus-visible, .odx-toolbar input:focus-visible, .odx-pop button:focus-visible, .odx-balloons button:focus-visible { outline: 2px solid var(--odx-accent) !important; outline-offset: 1px; }
+.odx-page:not(.odx-all-markup) .odx-content .odx-joined, .odx-no-markup .odx-content .odx-joined { display: inline; }
+.odx-page:not(.odx-all-markup) .odx-content p.odx-joined-away, .odx-no-markup .odx-content p.odx-joined-away { display: none; }
+
+/* ==== The ribbon: tabs, groups, buttons, menus, galleries, the find bar and the context menu ==== */
+.odx-content .odx-tab { white-space: pre; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.odx-content p.odx-li.odx-lbl-right::before { text-align: right; position: relative; left: calc(-1 * var(--odx-hang, 18pt)); }
+.odx-group { display: flex; gap: 2px; align-items: center; padding-right: 6px; border-right: 1px solid var(--odx-line); }
+.odx-group:last-child { border-right: 0; }
+.odx-toolbar button { font: inherit; min-width: 28px; height: 28px; padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; color: inherit; }
+.odx-toolbar button:hover { background: var(--odx-hover); }
+.odx-toolbar button.on { background: var(--odx-on); border-color: var(--odx-on-line); }
+.odx-toolbar select { height: 28px; font: inherit; color: var(--odx-bar-fg); border: 1px solid var(--odx-field-line); border-radius: 4px; background: var(--odx-field); }
+.odx-toolbar option { color: var(--odx-bar-fg); background: var(--odx-field); }
+.odx-toolbar .odx-style { width: 130px; }
+.odx-toolbar .odx-font { width: 120px; }
+.odx-toolbar .odx-size { width: 62px; }
+.odx-toolbar input[type=color] { width: 28px; height: 28px; padding: 2px; border: 1px solid var(--odx-field-line); border-radius: 4px; background: var(--odx-field); }
+.odx-toolbar .odx-link-input { height: 26px; width: 200px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-accent); border-radius: 4px; padding: 0 6px; }
+.odx-toolbar [hidden] { display: none !important; }
+/* Word-style ribbon */
+.odx-toolbar { background: var(--odx-bar); color: var(--odx-bar-fg); border-bottom: 1px solid var(--odx-line); font: 13px system-ui, sans-serif; position: sticky; top: 0; z-index: 2; display: block; padding: 0; gap: 0; }
+.odx-toolbar button.odx-rtab { height: 30px; padding: 0 12px; border-radius: 0; border-bottom: 3px solid transparent; }
+.odx-toolbar button.odx-rtab.on { background: transparent; border-color: transparent; border-bottom-color: var(--odx-accent); font-weight: 600; }
+.odx-ribbon { padding: 4px 8px 6px; position: relative; }
+.odx-panel { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; overflow: hidden; position: relative; }
+.odx-panel > .odx-group.odx-cut { visibility: hidden; }
+.odx-ribbon.odx-expand .odx-panel { flex-wrap: wrap; row-gap: 6px; padding-right: 36px; }
+.odx-toolbar .odx-more { position: absolute; right: 8px; top: 6px; min-width: 28px; height: 28px; font-size: 16px; line-height: 1; z-index: 1; }
+.odx-ribbon.odx-expand .odx-more { background: var(--odx-on); }
+.odx-panel > .odx-group { flex: none; }
+.odx-panel > .odx-group[data-feature="styles"] { flex: 0 1 auto; min-width: 140px; overflow: hidden; }
+.odx-panel > .odx-group[data-feature="styles"] > .odx-row, .odx-stylegal, .odx-panel .odx-stiles { min-width: 0; overflow: hidden; }
+.odx-panel .odx-stiles > * { flex: none; }
+.odx-panel .odx-group { flex-direction: column; align-items: stretch; justify-content: space-between; padding: 0 8px 0 4px; }
+.odx-panel .odx-group > :not(.odx-glabel) { flex: 1; display: flex; align-items: center; gap: 2px; }
+.odx-col { display: flex; flex-direction: column; gap: 2px; }
+.odx-glabel { font-size: 11px; color: var(--odx-muted, color-mix(in srgb, var(--odx-bar-fg) 75%, transparent)); text-align: center; padding-top: 2px; }
+.odx-toolbar button.odx-big { height: auto; min-height: 56px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 2px 6px; }
+.odx-big .odx-ico { font-size: 20px; line-height: 1; }
+.odx-lbl { font-size: 12px; white-space: nowrap; }
+.odx-caret { font-size: 9px; margin-left: 2px; opacity: .7; }
+.odx-toolbar button:disabled { opacity: .45; cursor: default; }
+.odx-pop { position: absolute; z-index: 20; min-width: 160px; padding: 4px; background: var(--odx-field); color: var(--odx-bar-fg); border: 1px solid var(--odx-line); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.odx-item { display: block; width: 100%; text-align: left; }
+.odx-swatches, .odx-symbols { display: grid; grid-template-columns: repeat(8, 28px); gap: 2px; }
+.odx-findbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--odx-line); }
+.odx-findbar input[type=text], .odx-num { height: 26px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; }
+.odx-cap { font-size: 12px; }
+.odx-quick { display: flex; gap: 2px; }
+.odx-toolbar .odx-col > button { height: 24px; font-size: 12px; text-align: left; }
+.odx-num { width: 52px; }
+.odx-stats { padding: 6px 10px; line-height: 1.6; min-width: 230px; }
+.odx-stats > b { display: block; margin-bottom: 4px; }
+.odx-stats > div { display: flex; justify-content: space-between; gap: 24px; }
+.odx-stats > div > span:last-child { font-variant-numeric: tabular-nums; }
+body.odx-painting .odx-content { cursor: copy; }
+.odx-gallery { display: grid; grid-template-columns: repeat(4, 64px); gap: 4px; padding: 4px; }
+.odx-toolbar .odx-gal { height: 56px; border: 1px solid var(--odx-line); font-size: 16px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: 4px 8px; }
+.odx-toolbar .odx-gal div { font-size: 11px; line-height: 1.3; }
+/* Styles gallery */
+.odx-stylegal { display: flex; align-items: stretch; font-size: 12px; }
+.odx-stiles { display: flex; gap: 3px; }
+.odx-toolbar button.odx-stile { width: 84px; height: 50px; padding: 2px 6px; border: 1px solid var(--odx-line); background: #fff; overflow: hidden; text-align: left; color: #222; }
+/* Tiles preview the document styles, which are made for white paper, so they stay white in dark mode. */
+.odx-toolbar button.odx-stile.on { border-color: var(--odx-accent); box-shadow: inset 0 0 0 1px var(--odx-accent); }
+.odx-stile p { margin: 0 !important; padding: 0 !important; border: 0 !important; text-indent: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 44px; line-height: 1.2 !important; font-size: min(1em, 15px); }
+.odx-stylepop { display: grid; grid-template-columns: repeat(3, 96px); gap: 3px; max-height: 60vh; overflow: auto; padding: 2px; font-size: 12px; }
+.odx-stylepop .odx-stile { width: 96px; }
+.odx-bm { padding: 4px; min-width: 240px; }
+.odx-bm .odx-bmname { width: 160px; }
+.odx-bm .odx-item { width: auto; display: inline-block; }
+/* Simplified (single-line) ribbon */
+.odx-tabs { display: flex; gap: 2px; padding: 4px 8px 0; align-items: center; }
+.odx-tabs-fill { flex: 1; }
+.odx-toolbar .odx-ribbon-mode { min-width: 28px; font-size: 14px; }
+.odx-simple .odx-ribbon { padding: 3px 8px; }
+.odx-simple .odx-panel { align-items: center; gap: 2px; }
+.odx-simple .odx-more { top: 3px; }
+.odx-simple .odx-panel .odx-group { flex-direction: row; align-items: center; padding: 0 6px 0 2px; }
+.odx-simple .odx-panel .odx-group > :not(.odx-glabel) { flex: none; }
+.odx-simple .odx-glabel { display: none; }
+.odx-simple .odx-col { flex-direction: row; align-items: center; }
+.odx-simple .odx-col > button .odx-lbl, .odx-simple .odx-col > .odx-cap { display: none; }
+.odx-simple .odx-col > button { height: 28px; }
+.odx-simple .odx-row, .odx-simple .odx-line { flex-wrap: nowrap; }
+.odx-toolbar.odx-simple button.odx-big { min-height: 28px; height: 28px; flex-direction: row; gap: 4px; padding: 0 6px; }
+.odx-simple .odx-big .odx-ico { font-size: 15px; }
+.odx-simple .odx-big .odx-caret { margin-left: 0; }
+.odx-simple .odx-stiles .odx-stile { height: 28px; width: 80px; }
+.odx-simple .odx-stile p { font-size: 12px !important; }
+.odx-simple .odx-group .odx-col label { white-space: nowrap; }
+.odx-a11y .odx-item { display: flex; flex-direction: column; align-items: flex-start; height: auto; padding: 4px 8px 4px 22px; position: relative; white-space: normal; }
+.odx-a11y .odx-item small { color: #666; }
+.odx-a11y .odx-item::before { position: absolute; left: 6px; top: 5px; font-size: 11px; }
+/* Reading view and dark page */
+.odx-reading .odx-ribbon, .odx-reading .odx-rtab, .odx-reading .odx-ribbon-mode { display: none; }
+.odx-toolbar .odx-exitread { background: var(--odx-accent); color: #fff; padding: 0 12px; }
+/* Right-click: mini toolbar + context menu, as in Word */
+.odx-ctx { position: absolute; z-index: 40; display: flex; flex-direction: column; gap: 6px; font: 14px 'Segoe UI', system-ui, sans-serif; }
+.odx-mini, .odx-ctxmenu { background: var(--odx-field); color: var(--odx-bar-fg); border: 1px solid var(--odx-line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.22); }
+.odx-mini { display: flex; align-items: center; gap: 2px; padding: 4px 6px; align-self: flex-start; }
+.odx-mini select { height: 28px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--odx-line); border-radius: 4px; }
+.odx-mini .odx-font { width: 110px; }
+.odx-mini .odx-size { width: 56px; }
+.odx-mini button { min-width: 30px; height: 30px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.odx-mini button:hover, .odx-mini button.on { background: var(--odx-hover); }
+.odx-mini button.odx-redline { border-bottom: 3px solid #f00; } /* the font colour button's sample */
+.odx-ctxmenu { width: 320px; padding: 4px 0; }
+.odx-ctxitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.odx-ctxitem:hover:not([disabled]), .odx-ctxitem:focus-visible { background: var(--odx-hover); }
+.odx-ctxico { width: 20px; text-align: center; }
+.odx-ctxlbl { flex: 1; }
+.odx-ctxitem small { opacity: .75; font-size: 12px; }
+.odx-ctxmenu hr { border: 0; border-top: 1px solid var(--odx-line); margin: 4px 0; }
+.odx-ctxnote { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; padding: 8px 14px; border-radius: 6px; background: #323232; color: #fff; font: 13px system-ui, sans-serif; }
+.odx-mini button:focus-visible, .odx-mini select:focus-visible { outline: 2px solid var(--odx-accent); }
+.odx-pop .odx-fileitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; font-size: 14px; }
+.odx-pop .odx-fileitem span:nth-child(2) { flex: 1; text-align: left; }
+.odx-pop .odx-fileitem small { opacity: .7; font-size: 11px; }
+/* Disabled menu items stay legible (3:1 or better) */
+.odx-ctxitem[disabled] { cursor: default; opacity: .62; }
+.odx-mini select option, .odx-toolbar select option { color: var(--odx-bar-fg); background: var(--odx-field); }
+.odx-show-marks .odx-tab { position: relative; }
+.odx-show-marks .odx-tab::before { content: "\2192"; position: absolute; left: 50%; transform: translateX(-50%); color: var(--odx-accent); font-size: 0.8em; pointer-events: none; }
+/* Tab leaders made of characters, cut to the tab's width (a clip, not overflow: the line's baseline stays). */
+.odx-tab[data-leader] { clip-path: inset(-0.5em 0); }
+.odx-tab[data-leader]::after { white-space: pre; letter-spacing: 0; }
+.odx-tab[data-leader="dot"]::after { content: "........................................................................................................................................................................................................"; }
+.odx-tab[data-leader="middleDot"]::after { content: "························································································································"; }
+.odx-tab[data-leader="hyphen"]::after { content: "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"; }
+
+/* ==== Panels, small editors and dialogs: navigation, header/footer and note editing, ruler, picture handles, the chart dialog, field pickers ==== */
+.odx-nav { width: 240px; flex: none; overflow: auto; padding: 8px; background: var(--odx-bar); color: var(--odx-bar-fg); border-right: 1px solid var(--odx-line); font: 13px system-ui, sans-serif; }
+.odx-navitem { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; padding: 4px 6px; cursor: pointer; border-radius: 4px; }
+.odx-navitem:hover { background: var(--odx-hover); }
+/* Header & footer editing */
+.odx-hfedit { position: absolute; z-index: 3; background: var(--odx-sheet); outline: 1px dashed var(--odx-accent); outline-offset: 2px; min-height: 1.2em; }
+.odx-hfedit-content { outline: none; }
+.odx-hfedit-content p { margin: 0; }
+.odx-hfedit-header .odx-hfedit-tag { top: calc(100% + 4px); }
+.odx-hfedit-footer .odx-hfedit-tag { bottom: calc(100% + 4px); }
+.odx-hfedit-tag { position: absolute; left: -2px; display: flex; gap: 8px; align-items: center; font: 11px system-ui, sans-serif; color: #fff; background: var(--odx-accent); padding: 2px 6px; border-radius: 3px; }
+.odx-hfedit-tag button { font: inherit; color: var(--odx-accent); background: #fff; border: 0; border-radius: 3px; padding: 1px 6px; cursor: pointer; }
+.odx-hfedit-opt { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; cursor: pointer; }
+.odx-hfedit-opt input { margin: 0; accent-color: #fff; }
+/* Ruler */
+.odx-ruler { position: sticky; top: 0; z-index: 4; height: 22px; margin: -24px -16px 8px; padding-top: 2px; background: var(--odx-canvas); }
+.odx-ruler-scale { position: relative; height: 18px; background: linear-gradient(to right, #d6d9de var(--ml), #fff var(--ml), #fff calc(100% - var(--mr)), #d6d9de calc(100% - var(--mr))); border: 1px solid #c4c8cf; box-sizing: border-box; font: 9px system-ui, sans-serif; color: #555; user-select: none; }
+.odx-fieldpick { position: fixed; z-index: 30; font: 13px system-ui, sans-serif; border: 1px solid #8aa; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.2); background: #fff; color: #222; }
+/* Picture resize handles (imgresize.js) */
+.odx-imgsize { position: absolute; z-index: 5; pointer-events: none; outline: 1px solid var(--odx-accent); }
+.odx-imgsize-h { position: absolute; width: 8px; height: 8px; margin: -5px 0 0 -5px; background: #fff; border: 1px solid var(--odx-accent); border-radius: 50%; pointer-events: auto; touch-action: none; }
+.odx-imgsize-nw { left: 0; top: 0; cursor: nwse-resize; }
+.odx-imgsize-n { left: 50%; top: 0; cursor: ns-resize; }
+.odx-imgsize-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.odx-imgsize-e { left: 100%; top: 50%; cursor: ew-resize; }
+.odx-imgsize-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.odx-imgsize-s { left: 50%; top: 100%; cursor: ns-resize; }
+.odx-imgsize-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.odx-imgsize-w { left: 0; top: 50%; cursor: ew-resize; }
+/* A floating shape is moved by dragging it (imgresize.js). */
+.odx-imgsize.odx-imgsize-move { pointer-events: auto; cursor: move; touch-action: none; }
+/* Text box editing (txbxedit.js) */
+.odx-txbxedit .odx-hfedit-tag { top: calc(100% + 4px); }
+/* Show/Hide ¶ (marks.js): drawn over the text, taking no room, never printed. */
+.odx-fm-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.odx-fm-sp { transform: translateX(-50%); }
+.odx-fm-sp::after { content: "\00b7"; }
+.odx-fm-para::after { content: "\00b6"; }
+.odx-fm-br::after { content: "\21b5"; }
+.odx-show-marks p.odx-fm-empty:not(.odx-li)::before { content: "\00b6"; position: absolute; color: var(--odx-accent); font-weight: normal; font-style: normal; pointer-events: none; line-height: normal; }
+/* The chart dialog (charts.js): title, type and the data grid, over a dimmed page. */
+.odx-chartdlg-back { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; }
+.odx-chartdlg { background: var(--odx-bar); color: var(--odx-bar-fg); border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .3); padding: 16px 18px; max-width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 10px; font: 14px/1.4 'Segoe UI', system-ui, sans-serif; }
+.odx-chartdlg h2 { margin: 0; font-size: 16px; }
+.odx-chartdlg label { display: flex; gap: 8px; align-items: center; }
+.odx-chartdlg input, .odx-chartdlg select { height: 28px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; font: inherit; min-width: 0; }
+.odx-chartdlg label input { flex: 1; }
+.odx-chartdlg-scroll { overflow: auto; border: 1px solid var(--odx-field-line); border-radius: 4px; }
+.odx-chartdlg-grid { border-collapse: collapse; }
+.odx-chartdlg-grid th, .odx-chartdlg-grid td { padding: 2px; }
+.odx-chartdlg-grid input { width: 96px; }
+.odx-chartdlg-grid input[aria-invalid="true"] { border-color: #c00; outline: 1px solid #c00; }
+.odx-chartdlg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.odx-chartdlg-end { justify-content: flex-end; }
+.odx-chartdlg button { min-height: 28px; padding: 0 12px; border: 1px solid var(--odx-field-line); border-radius: 4px; background: var(--odx-field); color: inherit; font: inherit; cursor: pointer; }
+.odx-chartdlg button.odx-primary { background: #2b579a; border-color: #2b579a; color: #fff; }
+.odx-chartdlg button:focus-visible, .odx-chartdlg input:focus-visible, .odx-chartdlg select:focus-visible { outline: 2px solid #2b579a; outline-offset: 1px; }
+
+/* ==== Print: the print layer and printing (last: it overrides the screen rules above) ==== */
+/* The print relayer's lines (src/engine/printlines.js), built for printing only, over their hidden paragraphs. */
+.odx-printlines { position: absolute; inset: 0; pointer-events: none; font-kerning: none; font-variant-ligatures: none; }
+.odx-printlines > .odx-pl-host { position: absolute; inset: 0; min-height: 0; }
+.odx-pl-hide { visibility: hidden !important; }
+/* Printing (and Save as PDF): only the pages, one sheet per printed page. */
+@media print {
+  .odx-toolbar { display: none !important; }
+  .odx-canvas { padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; }
+  /* One unbreakable (inline-block) box, sliced at each page edge: the layout already put content where each
+     page starts (block margins at a page break would otherwise be dropped by the browser). */
+  .odx-page { margin: 0 !important; display: inline-block; vertical-align: top; }
+  .odx-sheet { box-shadow: none !important; }
+  .odx-content { content-visibility: visible !important; }
+  .odx-content > * { content-visibility: visible !important; }
+  .odx-content .ProseMirror-selectednode, .odx-content .selectedCell::after { outline: none !important; background: none !important; }
+}
+@media print { .odx-markup { display: none; } .odx-page.odx-has-markup { left: 0; } }
+@media print { .odx-nav, .odx-findbar { display: none !important; } }
+@media print { .odx-cmt { background: none !important; border-bottom: 0 !important; } }
+@media print { .odx-hfedit-tag { display: none; } .odx-hfedit { outline: 0; } .odx-hf { opacity: 1; } .odx-content.odx-dim { opacity: 1; } }
+@media print { .odx-ruler { display: none; } }
+/* (Edge prints the blinking caret of a focused document: none on paper.) */
+@media print { .odx-content, .odx-content * { caret-color: transparent !important; } }
+@media print { .odx-imgsize { display: none; } }
+@media print { .odx-fm-layer, .odx-show-marks p.odx-fm-empty::before, .odx-show-marks .odx-tab::before, .odx-show-marks .odx-page-break::after { display: none !important; } }
