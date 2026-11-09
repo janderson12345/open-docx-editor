@@ -1,0 +1,6 @@
+node_modules/
+dist/
+demo/dist/
+test/out/
+test/_*.mjs
+*.tgz

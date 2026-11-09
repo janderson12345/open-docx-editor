@@ -1,0 +1,120 @@
+{
+  "name": "open-docx-editor",
+  "version": "0.5.0",
+  "description": "Open and edit .docx files in the browser. 100% JavaScript, no server, no Office.",
+  "keywords": [
+    "docx",
+    "word",
+    "editor",
+    "office-open-xml",
+    "ooxml",
+    "prosemirror",
+    "wysiwyg",
+    "document-editor",
+    "track-changes",
+    "pdf"
+  ],
+  "license": "MIT",
+  "author": "open-docx-editor contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janderson12345/open-docx-editor.git"
+  },
+  "homepage": "https://github.com/janderson12345/open-docx-editor#readme",
+  "bugs": {
+    "url": "https://github.com/janderson12345/open-docx-editor/issues"
+  },
+  "type": "module",
+  "main": "src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./react": "./src/wrappers/react.js",
+    "./vue": "./src/wrappers/vue.js",
+    "./pdf": {
+      "types": "./src/pdf.d.ts",
+      "default": "./src/pdf.js"
+    },
+    "./collab": {
+      "types": "./src/collab.d.ts",
+      "default": "./src/collab.js"
+    },
+    "./angular": "./src/wrappers/angular/docx-editor.component.ts",
+    "./style.css": "./src/editor/editor.css"
+  },
+  "files": [
+    "src",
+    "dist/open-docx-editor.js",
+    "dist/open-docx-editor.css",
+    "THIRD-PARTY-NOTICES.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node build.mjs",
+    "dev": "node build.mjs --serve",
+    "test:e2e": "npm run build && node test/e2e.mjs && node test/a11y.mjs && node test/a11y-more.mjs && node test/wrappers.mjs && node test/pdf.mjs && node test/collab.mjs && node test/forms.mjs && node test/charts.mjs && node test/textboxes.mjs",
+    "lint": "eslint src test tools",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "fflate": "^0.8.3",
+    "pdf-lib": "^1.17.1",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-history": "^1.5.1",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.12",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-tables": "^1.8.5",
+    "prosemirror-transform": "^1.12.2",
+    "prosemirror-view": "^1.42.6",
+    "y-prosemirror": "1.2",
+    "yjs": "^13.6.33"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=15",
+    "react": ">=17",
+    "vue": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    },
+    "@angular/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@angular/common": "^18.2.14",
+    "@angular/compiler": "^18.2.14",
+    "@angular/core": "^18.2.14",
+    "@angular/platform-browser": "^18.2.14",
+    "@xmldom/xmldom": "^0.9.12",
+    "axe-core": "^4.10.2",
+    "docx": "^9.13.0",
+    "esbuild": "^0.28.2",
+    "eslint": "9.39.1",
+    "globals": "15.15.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "2.16.105",
+    "playwright": "^1.64.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rxjs": "^7.8.2",
+    "typescript": "5.5",
+    "vue": "^3.5.45",
+    "ws": "^8.22.1",
+    "y-websocket": "1.5",
+    "zone.js": "^0.14.10"
+  }
+}

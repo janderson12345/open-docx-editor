@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Mistakes the tests might not reach: names used but undefined, defined but unused.
+      - run: npm run lint
+      # Unit tests: reading, round trips, edits, tracked changes, styles, charts, equations.
+      - run: npm test
+      # Browser tests: open, edit and save each fixture; accessibility (axe, reflow, contrast, text spacing).
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      # Saved documents: well-formed parts, every relationship and content type in place.
+      - run: node tools/check-ooxml.mjs test/out
