@@ -47,8 +47,13 @@ for (const f of fixtures) {
   const bytes = await page.evaluate(() => Array.from(window.odx.save()));
   fs.writeFileSync(`${outDir}/${f.replace('.docx', '.edited.docx')}`, Buffer.from(bytes));
   const { value: html } = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) });
-  // (After a full stop AutoCorrect capitalises the word, as Word does.)
-  const ok = / [tT]yped<strong> bolded<\/strong>/.test(html.replace(/<\/strong><strong>/g, ''));
+  // (After a full stop AutoCorrect capitalises the word, as Word does.) A protected document refuses what it protects
+  // against: the typing when it can only be read, the bold when formatting is limited.
+  const prot = await page.evaluate(() => window.odx.protection);
+  const locked = prot.readOnlyNow || (prot.enforced && (prot.edit === 'readOnly' || prot.edit === 'comments'));
+  const ok = locked ? !/typed/.test(html)
+    : prot.enforced && prot.formatting ? / [tT]yped bolded/.test(html) && !/<strong>/.test(html)
+      : / [tT]yped<strong> bolded<\/strong>/.test(html.replace(/<\/strong><strong>/g, ''));
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${f}`);
   if (!ok) { failed++; console.log(html.slice(0, 400)); }
 }

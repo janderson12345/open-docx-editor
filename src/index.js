@@ -22,6 +22,9 @@ import { createToolbar as makeToolbar } from './editor/toolbar.js';
 import { listFields, fieldValues, setFieldValues as setFV, setForms as setFormsMode } from './editor/fields.js';
 import { missingFonts, fontsSettled } from './editor/fontcheck.js';
 import { saveDraft, loadDraft, clearDraft, pruneDrafts } from './editor/drafts.js';
+import { updateFields } from './editor/refs.js';
+import { editorAgent } from './agent.js';
+import { setProtection } from './editor/protect.js';
 
 const DRAFT_DAYS = 14;
 /** A fingerprint of a file's bytes (FNV-1a and the length): which file a draft was made from. */
@@ -55,9 +58,12 @@ function printOf(bytes) {
  *   saved (`markSaved()`), forgotten after two weeks. Opening the same file again with a draft left
  *   offers it back: a notice above the editor with Restore and Discard, or `onDraft(draft, { restore, discard })` if
  *   given (draft: { name, savedAt, bytes }). Off by default: it keeps the document's content on this computer.
+ * - `editors`: this user's names (besides `author`) as Word names editors in a protected document's editable parts
+ *   (an e-mail address, DOMAIN\name): those parts stay editable for them. `features.protection: false` ignores
+ *   Restrict Editing (and Mark as Final, Always open read-only) for a host that enforces its own rights.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [] } = {}) {
   const bar = document.createElement('div');
   const host = document.createElement('div');
   container.replaceChildren(bar, host);
@@ -88,6 +94,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       // A document Word protects for filling in forms opens in forms mode, unless features.autoForms is false.
       const locked = features.autoForms !== false && session.formsProtected;
       if (locked !== autoForms) { forms = locked; autoForms = locked; } // back to normal editing after the protected form
+      softLock = softLockOf(session);
       applyMode();
       // (Edits in a header, footer, note or text box being edited count as changes too.)
       view.odx.notify = (v) => { toolbar.update(v); if (v !== view) { api.dirty = true; keepDraft(); onChange && onChange(v); } };
@@ -148,7 +155,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       const newName = fname || src.name || name;
       // Reopened (a page setup change, a restored draft): still the same file, with its unsaved changes.
       const print = reopen ? openedPrint : printOf(bytes);
-      const wasDirty = api.dirty;
+      const wasDirty = api.dirty, wasLock = softLock;
       urls.splice(0).forEach((u) => URL.revokeObjectURL(u));
       const session = new Session(bytes, { imageUrl });
       await loadEmbeddedFonts(session.pkg); // laid out in the document's own fonts, as Word does
@@ -157,7 +164,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       api.load(session);
       name = newName;
       openedPrint = print;
-      if (reopen) api.dirty = wasDirty;
+      if (reopen) { api.dirty = wasDirty; softLock = wasLock; applyProtection(); }
       const t3 = performance.now();
       // pagination runs on the next animation frame
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
@@ -175,6 +182,59 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       const session = Session.blank({ imageUrl });
       if (collab && share) { dropView(); collab.publish(session.save(session.doc), session.doc); }
       api.load(session);
+    },
+    /**
+     * Word's Update Fields: page numbers, cross-references (PAGEREF, REF, STYLEREF) and the table of contents in the
+     * body, from the pages as laid out now. One undoable step. Returns how many were updated. (Headers and footers
+     * work theirs out on every page by themselves.)
+     */
+    updateFields() { return view ? updateFields(view, { all: true }) : 0; },
+    /**
+     * An agent's view of the open document ('open-docx-editor/agent''s AgentDocument): read it as paragraphs, Markdown
+     * or an outline, and edit it in plain terms, each edit a tracked change under `author` ('AI') that the person at
+     * the editor sees, accepts or rejects.
+     */
+    agent({ author = 'AI' } = {}) { if (!view) throw new Error('No document is open.'); return editorAgent(view, { author }); },
+    /**
+     * The open document's Restrict Editing: { edit ('readOnly' | 'comments' | 'trackedChanges' | 'forms' | null),
+     * enforced, formatting, password (one is set), readOnlyRecommended, passwordToModify, final, readOnlyNow (the
+     * editor holds it read-only: Mark as Final or Always open read-only, until Edit Anyway) }.
+     */
+    get protection() {
+      if (!view) return null;
+      const p = view.odx.session.protection;
+      return { edit: p.edit, enforced: p.enforced, formatting: p.formatting, password: p.password, readOnlyRecommended: !!p.writeProtection?.recommended, passwordToModify: !!p.writeProtection?.password, final: p.final, readOnlyNow: !!softLock };
+    },
+    /**
+     * Word's Restrict Editing > Start Enforcing Protection: `edit` 'readOnly' (no changes), 'comments', 'trackedChanges'
+     * or 'forms', or null; `formatting`: only the styles not locked (w:locked in styles.xml) and no direct formatting;
+     * `password` (optional) to stop it. Saved with the document; Word enforces it too.
+     */
+    async protect({ edit = null, formatting = false, password = '' } = {}) {
+      if (!view) throw new Error('No document is open.');
+      await view.odx.session.protect({ edit, formatting, password, enforced: true });
+      if (edit === 'forms' && features.autoForms !== false) forms = autoForms = true;
+      changedProtection();
+    },
+    /** Stop Protection: resolves to false (still protected) when the document's password isn't `password`. */
+    async unprotect(password = '') {
+      if (!view) return true;
+      if (!(await view.odx.session.unprotect(password))) return false;
+      if (autoForms) forms = autoForms = false;
+      changedProtection();
+      return true;
+    },
+    /**
+     * Edit Anyway for a document marked final or opened read-only as its author recommends; with a password to modify,
+     * `password` must be it. Resolves to whether it can be edited now.
+     */
+    async editAnyway(password = '') {
+      if (!view || !softLock) return true;
+      if (softLock === 'password' && !(await view.odx.session.checkWritePassword(password))) return false;
+      if (softLock === 'final') { view.odx.session.clearFinal(); api.dirty = true; }
+      softLock = null;
+      applyProtection();
+      return true;
     },
     save() {
       view.odx.flushStories?.(); // (with the text of a header, footer or note still being edited)
@@ -252,9 +312,67 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     container.prepend(draftNote);
   }
   let autoForms = false;
+  // Mark as Final, Always open read-only, a password to modify: the document stays read-only until Edit Anyway.
+  let softLock = null;
+  const softLockOf = (session) => {
+    if (features.protection === false) return null;
+    const p = session.protection;
+    return p.final ? 'final' : p.writeProtection?.password ? 'password' : p.writeProtection?.recommended ? 'recommended' : null;
+  };
+  let protectNote = null;
+  /** The editor enforces the document's protection as it is now; a notice above the ribbon says what it allows. */
+  function applyProtection() {
+    if (!view) return;
+    const p = view.odx.session.protection;
+    const on = features.protection !== false && p.enforced;
+    const edit = softLock ? 'readOnly' : on && p.edit !== 'forms' ? p.edit : null;
+    const formatting = on && p.formatting;
+    setProtection(view, edit || formatting ? { edit, formatting, locked: p.locked, editors: [author, ...editors] } : null);
+    protectNote?.remove();
+    protectNote = null;
+    const say = readOnly ? null
+      : softLock === 'final' ? 'An author has marked this document as final to discourage editing.'
+        : softLock === 'recommended' ? 'The author would like you to open this document as read-only, unless you need to make changes.'
+          : softLock === 'password' ? `${name} is reserved: enter the password to modify it, or read it as it is.`
+            : !on ? null
+              : NOTE[p.edit] || (formatting ? 'Restricted editing: only some styles can be used.' : null);
+    if (!say) return;
+    protectNote = document.createElement('div');
+    protectNote.className = 'odx-protectnote';
+    protectNote.setAttribute('role', 'status');
+    const text = document.createElement('span');
+    text.textContent = say;
+    protectNote.append(text);
+    if (softLock) {
+      const pw = softLock === 'password' ? Object.assign(document.createElement('input'), { type: 'password', autocomplete: 'off' }) : null;
+      if (pw) { pw.setAttribute('aria-label', 'Password to modify'); protectNote.append(pw); }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = pw ? 'Modify' : 'Edit Anyway';
+      const go = () => api.editAnyway(pw ? pw.value : '').then((ok) => { if (!ok) { text.textContent = 'That password isn’t right. Try again, or read the document as it is.'; pw?.focus(); } else view?.focus(); }).catch(fail);
+      b.addEventListener('click', go);
+      pw?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      protectNote.append(b);
+    }
+    container.prepend(protectNote);
+  }
+  const NOTE = {
+    readOnly: 'Restricted editing: this document can only be read, apart from any highlighted parts.',
+    comments: 'Restricted editing: only comments can be added, apart from any highlighted parts.',
+    trackedChanges: 'Restricted editing: every change is tracked.',
+    forms: 'Restricted editing: only the form fields can be filled in.',
+  };
+  function changedProtection() {
+    api.dirty = true;
+    keepDraft();
+    applyMode();
+    toolbar.setDocument(view.odx.session);
+    toolbar.update(view);
+    onChange && onChange(view);
+  }
   const dropView = () => { if (view) view.odx.destroy(); view = null; };
   const fail = (e) => (onError ? onError(e) : console.error(e));
-  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name, { reopen: true }), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null });
+  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name, { reopen: true }), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
   function applyMode() {
     bar.style.display = readOnly || forms || !showToolbar ? 'none' : '';
     container.classList.toggle('odx-readonly', readOnly);
@@ -266,6 +384,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     view.setProps({ editable: () => !readOnly });
     setFormsMode(view, forms && !readOnly);
     container.classList.toggle('odx-no-ffshade', !view.odx.session.shadeFormData);
+    applyProtection();
     view.odx.pages.update();
   }
   toolbar.setFeatures(features);

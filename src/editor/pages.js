@@ -20,6 +20,7 @@ import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
 import { fontsSettled } from './fontcheck.js';
+import { referenceValue, updateFields } from './refs.js';
 import { lineHeightOf } from './util.js';
 import { wrapText } from './textspans.js';
 import { drawBalloons } from './balloons.js';
@@ -1437,16 +1438,24 @@ export function createPages(view, session, { sheet, scope }) {
     el.style.cssText = css.join(';');
     return el;
   }
+  let refsInStories = null;
+  let docSeq = 0;
+  let seqDoc = null;
   function drawSheets() {
+    if (seqDoc !== view.state.doc) { seqDoc = view.state.doc; docSeq++; }
     pageBorder = readPageBorder();
-    const key = `${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}`;
+    // (Headers and footers with reference fields are drawn again as the document changes: a running head follows
+    // its heading's text.)
+    if (refsInStories == null) refsInStories = /\b(?:STYLEREF|PAGEREF|REF)\b/.test(Object.keys(session.pkg.files).filter((k) => /word\/(header|footer)\d*\.xml$/.test(k)).map((k) => session.pkg.text(k)).join(''));
+    const key = `${refsInStories ? view.state.doc.content.size + ':' + docSeq + ':' : ''}${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}`;
     if (drawn === key) return;
     drawn = key;
     const frag = document.createDocumentFragment();
     for (let p = 0; p < pages; p++) {
       const s = document.createElement('div');
       s.className = 'odx-sheet';
-      const numText = numberOf(p);
+      // (With what its header's reference fields need: STYLEREF, PAGEREF and REF are worked out for this page.)
+      const numText = { ...numberOf(p), resolve: (instr) => referenceValue(view, instr, { page: p }) };
       const num = numText.n;
       if (pageBorder) s.append(pageBorder.cloneNode());
       s.style.cssText = `top:${pageTop(p)}px;height:${pageH(p)}px${pageW(p) !== page.width ? `;width:${pageW(p)}px` : ''}`;
@@ -1544,6 +1553,8 @@ export function createPages(view, session, { sheet, scope }) {
   // Sections with different page sizes are printed from copies of the sheet, one per page (printcopies.js).
   let printBox = null;
   const beforePrint = () => {
+    // Word updates the body's fields as it prints (page references, cross-references): so do we, from the pages.
+    updateFields(view, { all: true });
     setGap(0);
     // The print is taken right after this handler: finish the layout now rather than on later frames, which a page
     // printed in the background may not get (its pages kept their on-screen gaps).
@@ -1586,6 +1597,10 @@ export function createPages(view, session, { sheet, scope }) {
       return { p, y: y - pageTop(p), top: pageTop(p), hf, type, sect, m: at[2] && at[1].first ? at[1].first : at[1], page, pitch };
     },
     setGap,
+    /** Page p's number and its format ({ n, fmt }), as its header shows it (sections may restart and format it). */
+    numberAt: (p) => numberOf(p),
+    /** The number of pages laid out. */
+    get count() { return pages; },
     /** The print layer (each line placed exactly, with its print baseline shift) on screen, for the PDF export to read;
      *  returns a function removing it. */
     printLayer() {

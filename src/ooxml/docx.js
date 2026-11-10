@@ -15,6 +15,7 @@ import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
 import { isEmf, emfToSvg } from './emf.js';
 import { isTiff, tiffToPng } from './tiff.js';
+import { readProtection, withProtection, withoutEnforcement, checkPassword, lockedStyles, markedFinal, withoutFinal } from './protect.js';
 import { blankDocxBytes, bulletAbstract, decimalAbstract, abstractFor } from './template.js';
 import { schema } from '../editor/schema.js';
 import { TWIPS_PER_PX, emuToPx, pxToEmu, twipsToPx } from './units.js';
@@ -290,9 +291,59 @@ export class DocxSession {
 
   /** True when Word protects the document so only its form fields can be filled in. */
   get formsProtected() {
-    const set = (this.settingsPath && this.pkg.text(this.settingsPath)) || '';
-    const p = /<w:documentProtection\b[^>]*>/.exec(set)?.[0] || '';
-    return /w:edit="forms"/.test(p) && /w:enforcement="(1|true|on)"/.test(p);
+    const p = this.protection;
+    return p.enforced && p.edit === 'forms';
+  }
+
+  /**
+   * Word's Restrict Editing in this file (ooxml/protect.js): { edit, enforced, formatting, password, writeProtection,
+   * final, locked } (`locked`: the styles a formatting restriction leaves out, by id and lower-case name).
+   */
+  get protection() {
+    const p = readProtection((this.settingsPath && this.pkg.text(this.settingsPath)) || '');
+    const styles = this.pkg.partByType(REL_TYPES.styles);
+    const custom = this._customPath();
+    return { ...p, final: markedFinal(custom && this.pkg.text(custom)), locked: lockedStyles(styles && this.pkg.text(styles)) };
+  }
+
+  /** Turns protection on (see protect.js withProtection), or with no `edit` and no `formatting`, removes it. */
+  async protect(options) {
+    this._ensureSettings();
+    this.pkg.setText(this.settingsPath, await withProtection(this.pkg.text(this.settingsPath), options));
+  }
+
+  /** Protection lifted as Word lifts it, once `password` (if one is set) is right. Resolves to whether it was. */
+  async unprotect(password) {
+    const p = this.protection;
+    if (!p.enforced) return true;
+    if (!(await checkPassword(p.tag, password))) return false;
+    this.pkg.setText(this.settingsPath, withoutEnforcement(this.pkg.text(this.settingsPath)));
+    return true;
+  }
+
+  /** True when `password` is the file's password to modify (w:writeProtection), or it has none. */
+  checkWritePassword(password) {
+    return checkPassword(this.protection.wtag, password);
+  }
+
+  /** Word's Edit Anyway on a document marked final: the mark goes (saved without it). */
+  clearFinal() {
+    const path = this._customPath();
+    if (path) this.pkg.setText(path, withoutFinal(this.pkg.text(path)));
+  }
+
+  _customPath() {
+    return this.pkg.readRels('').find((r) => r.type.endsWith('/custom-properties'))?.target.replace(/^\//, '') || null;
+  }
+
+  /** A settings part for a document without one (protecting it needs it). */
+  _ensureSettings() {
+    if (this.settingsPath) return;
+    const path = `${this.pkg.mainDir}settings.xml`;
+    this.pkg.setText(path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:settings xmlns:w="${NS.w}"></w:settings>`);
+    this.pkg.addOverride(path, 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml');
+    this.pkg.addRel(REL_TYPES.settings, 'settings.xml', false, this.pkg.mainPath);
+    this.settingsPath = path;
   }
 
   /** Word's grey shading of form fields on screen is on unless w:doNotShadeFormData. */

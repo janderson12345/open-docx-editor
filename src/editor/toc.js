@@ -7,6 +7,7 @@ import { schema } from './schema.js';
 import { blocksFromXml } from '../ooxml/reader.js';
 import { esc } from '../ooxml/xml.js';
 import { outlineLevel } from './commands.js';
+import { formatNumber } from '../ooxml/styles.js';
 
 const INSTR = ' TOC \\o "1-3" \\h \\z \\u ';
 const fld = (type) => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
@@ -27,12 +28,14 @@ function headings(view, skip) {
   return out;
 }
 
+/** The page number a heading is on, as its page shows it (a section may restart the numbering or use roman numerals). */
 function pageOf(view, pos) {
   const { pages } = view.odx;
   try {
     const c = view.coordsAtPos(pos + 1);
-    return pages.pageAt(c.top - view.dom.parentElement.getBoundingClientRect().top).p + 1;
-  } catch { return 1; }
+    const { n, fmt } = pages.numberAt(pages.pageAt(c.top - view.dom.parentElement.getBoundingClientRect().top).p);
+    return formatNumber(n, fmt);
+  } catch { return '1'; }
 }
 
 function tocXml(view, skip, title = false) {

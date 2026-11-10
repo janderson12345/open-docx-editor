@@ -48,6 +48,9 @@ export function fillFields(root, values) {
   // A page number in its field's format switch (\* roman, \* ALPHABETIC...), else the section's format.
   const FMT = { roman: 'lowerRoman', Roman: 'upperRoman', ROMAN: 'upperRoman', alphabetic: 'lowerLetter', ALPHABETIC: 'upperLetter', Arabic: null, arabic: null };
   const valueOf = (instr) => {
+    // Reference fields (STYLEREF, PAGEREF, REF), worked out for this page (refs.js).
+    const ref = values.RESOLVE?.(instr.replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+    if (ref !== undefined) return ref;
     const name = nameOf(instr);
     // Property fields Word evaluates again in headers and footers (the body keeps their saved results).
     const props = values.PROPS;

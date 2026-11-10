@@ -98,7 +98,7 @@ export function storyDrawer(session) {
       b.style.borderTop = b.style.paddingTop = '';
     }
     styleTables(doc, el);
-    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, PROPS: props || (props = docProps(session.pkg)) });
+    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, PROPS: props || (props = docProps(session.pkg)), RESOLVE: pageNo?.resolve });
     return el;
   };
 }

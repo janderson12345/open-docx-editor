@@ -7,6 +7,7 @@ import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { now, xmlId } from './util.js';
+import { commentsAllowed } from './protect.js';
 
 const KINDS = new Set(['commentRangeStart', 'commentRangeEnd', 'commentReference']);
 
@@ -73,7 +74,7 @@ export function setActive(view, id) {
   refresh(view);
 }
 
-const marker = (kind, id) => schema.nodes.opaque_inline.create({
+export const marker = (kind, id) => schema.nodes.opaque_inline.create({
   kind,
   xml: kind === 'commentReference'
     ? `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${id}"/></w:r>`
@@ -96,7 +97,7 @@ function nextId(session, doc) {
 
 const initials = (name) => name.split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase()).join('').slice(0, 3);
 
-function newComment(session, doc, author, extra = {}) {
+export function newComment(session, doc, author, extra = {}) {
   const c = { id: nextId(session, doc), author, initials: initials(author), date: now(), text: '', paraId: null, parentId: null, done: false, xml: null, ...extra };
   session.comments.push(c);
   session.commentsDirty = true;
@@ -106,6 +107,7 @@ function newComment(session, doc, author, extra = {}) {
 /** New comment on the selection (or the word at the cursor). Opens it for typing. */
 export function addComment(view) {
   if (view.odx.readOnly || view.odx.features?.comments === false) return null;
+  if (!commentsAllowed(view.state)) { announce('This document is protected: it can only be read'); return null; }
   const { session } = view.odx;
   const { state } = view;
   let { from, to } = state.selection;
@@ -136,6 +138,7 @@ export function addComment(view) {
 
 /** Reply to a thread; the reply gets its own markers next to the parent's, as Word writes them. */
 export function replyTo(view, parentId, text) {
+  if (!commentsAllowed(view.state)) return null;
   const { session } = view.odx;
   const m = commentMarkers(view.state.doc).get(parentId) || {};
   const c = newComment(session, view.state.doc, view.odx.author || 'Author', { parentId, text });
@@ -157,6 +160,7 @@ export function replyTo(view, parentId, text) {
 const thread = (session, id) => [id, ...session.comments.filter((c) => c.parentId === id).map((c) => c.id)];
 
 export function setText(view, id, text) {
+  if (!commentsAllowed(view.state)) return;
   const c = view.odx.session.comments.find((x) => x.id === id);
   if (!c) return;
   c.text = text;
@@ -166,6 +170,7 @@ export function setText(view, id, text) {
 }
 
 export function setResolved(view, id, done) {
+  if (!commentsAllowed(view.state)) return;
   const { session } = view.odx;
   for (const tid of thread(session, id)) {
     const c = session.comments.find((x) => x.id === tid);
@@ -178,6 +183,7 @@ export function setResolved(view, id, done) {
 
 /** Delete a comment (with its replies when it starts a thread) and its markers. */
 export function deleteComment(view, id) {
+  if (!commentsAllowed(view.state)) return;
   const { session } = view.odx;
   const ids = new Set(thread(session, id));
   session.comments = session.comments.filter((c) => !ids.has(c.id));

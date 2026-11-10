@@ -46,12 +46,17 @@
       "types": "./src/wopi.d.ts",
       "default": "./src/wopi.js"
     },
+    "./agent": {
+      "types": "./src/agent.d.ts",
+      "default": "./src/agent.js"
+    },
     "./angular": "./src/wrappers/angular/docx-editor.component.ts",
     "./style.css": "./src/editor/editor.css",
     "./fonts.css": "./src/fonts/fonts.css"
   },
   "files": [
     "src",
+    "bin",
     "dist/open-docx-editor.js",
     "dist/open-docx-editor.css",
     "THIRD-PARTY-NOTICES.md",
@@ -70,6 +75,7 @@
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
+    "@xmldom/xmldom": "^0.9.12",
     "fflate": "^0.8.3",
     "pdf-lib": "^1.17.1",
     "prosemirror-commands": "^1.7.2",
@@ -105,7 +111,6 @@
     "@angular/compiler": "^22.2.5",
     "@angular/core": "^22.2.5",
     "@angular/platform-browser": "^22.2.5",
-    "@xmldom/xmldom": "^0.9.12",
     "axe-core": "^4.10.2",
     "docx": "^9.13.0",
     "esbuild": "^0.28.2",
@@ -122,5 +127,8 @@
     "ws": "^8.22.1",
     "y-websocket": "1.5",
     "zone.js": "^0.16.3"
+  },
+  "bin": {
+    "open-docx-editor-mcp": "bin/odx-mcp.mjs"
   }
 }

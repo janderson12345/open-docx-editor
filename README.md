@@ -118,6 +118,12 @@ fs.writeFileSync('out.docx', s.save());
   was typed. Off with `features: { autocorrect: false }`.
 - **Find and Replace** (Ctrl+F, Ctrl+H): match case, whole words, and patterns (regular expressions: `\d{4}`,
   `colou?r`), with what a pattern's parentheses caught reused in the replacement as `$1`, `$2`.
+- **Fields worked out as Word works them out**: in headers and footers, a running head (STYLEREF "Heading 1"), page
+  references (PAGEREF) and cross-references (REF) on every page, with PAGE and NUMPAGES. In the body, fields keep their
+  saved results, as in Word, until updated: F9, References > Update Fields or `api.updateFields()` gives every page
+  number, page and cross-reference (with its paragraph number, or "above", "below", "on page 3") and the table of
+  contents its value from the pages as laid out (one undoable step). Printing and PDF export update them first, as
+  Word does when it prints.
 - **Drafts** (opt in with `drafts: true`): unsaved changes are kept in the browser a moment after each edit and offered
   back, Restore or Discard, when the same file is opened again after a closed tab or a crash; cleared once saved. They
   stay on that computer, in the site's own browser storage.
@@ -150,6 +156,8 @@ fs.writeFileSync('out.docx', s.save());
 - **Columns**: Layout > Columns sets one, two or three equal columns for the section.
 - **Comments**: add (Ctrl+Alt+M), reply, edit, resolve and delete, in the margin as in Word; replies and
   resolved state are written to Word 2013+'s commentsExtended part so Word shows the threads.
+- **Restricted editing** (Word's Restrict Editing, Mark as Final, Always open read-only) enforced as in Word; see
+  [Restricted editing](#restricted-editing).
 - **New** blank documents, generated in code.
 
 ## Not yet
@@ -279,6 +287,39 @@ sent to servers, for trying things out; the browser's history keeps that address
 checks a signature only a server can make), Save As (PutRelativeFile) and the host frame's message interface.
 Tested against a mock host on another origin (`test/wopi-host.mjs`, `test/wopi.mjs`), not yet against a production one.
 
+## AI agents
+
+An AI assistant (or any program) can read and edit Word documents through `open-docx-editor/agent`, in plain terms
+rather than raw XML: paragraphs with ids (`p12`) that stay with their paragraph through edits, the outline, a Markdown
+view, search, and edits such as replace text, rewrite a paragraph, insert or delete one, comment, reply, and fill form
+fields. **Every edit is a tracked change under the agent's own name** unless asked otherwise, so a person reviews it
+in Word or in the editor and accepts or rejects it. Saving keeps everything else in the file as it was.
+
+```js
+import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { setXmlImpl } from 'open-docx-editor';
+import { openDocument } from 'open-docx-editor/agent';
+setXmlImpl({ DOMParser, XMLSerializer });                    // in Node
+const doc = openDocument(bytes, { author: 'Contract assistant' });
+doc.markdown();                                              // <!-- p0 --> # Agreement ...
+doc.replace('thirty (30) days', 'sixty (60) days', { id: 'p14' });
+doc.addComment('p22', 'This clause conflicts with 4.2.', { quote: 'exclusive' });
+const edited = doc.save();                                   // .docx bytes
+// In the editor: mountDocxEditor's api.agent({ author }) gives the same on the open document, live.
+```
+
+**MCP server.** `open-docx-editor-mcp` makes these tools available to AI assistants that speak the Model Context
+Protocol (Claude Desktop, Claude Code and others): `list_documents`, `read_document`, `get_outline`,
+`get_paragraphs`, `search`, `replace_text`, `set_paragraph_text`, `insert_paragraph`, `delete_paragraph`,
+`add_comment`, `reply_to_comment`, `list_comments`, `list_changes`, `get_fields`, `set_fields` and `save_document`.
+It reads and writes only inside the folder it's given, saves to a new file unless told to overwrite, and makes no
+network requests. In Claude Desktop's configuration:
+
+```json
+{ "mcpServers": { "word": { "command": "npx", "args": ["-y", "-p", "open-docx-editor", "open-docx-editor-mcp",
+  "--root", "C:\\Users\\me\\Documents\\Contracts", "--author", "Claude"] } } }
+```
+
 ## React, Vue and Angular
 
 Thin wrappers around `mountDocxEditor`, taking its main options as props or inputs (`fileName`, `author`, `readOnly`,
@@ -326,6 +367,33 @@ Group names are their labels in lower case with dashes, for example `comments`, 
 `header-and-footer`, `footnotes`, `table-of-contents`, `bookmarks`, `page-background`.
 `comments: false` also hides comments in the margin and blocks adding them.
 Read-only and forms mode show the document with no tracked-change markup (as Word's "No Markup").
+
+## Restricted editing
+
+A document protected with Word's **Review > Restrict Editing** is enforced as Word enforces it:
+
+- **No changes (read only)**: nothing can be changed, except the parts left editable for everyone or for this user
+  (highlighted, as in Word); **Comments**: only comments can be added (and those parts edited); **Tracked changes**:
+  every edit is tracked, Track Changes can't be turned off and changes can't be accepted or rejected; **Filling in
+  forms**: forms mode, with any sections the form leaves unprotected edited freely.
+- **Limit formatting to a selection of styles**: the locked styles aren't offered and direct formatting is refused.
+- **Mark as Final**, **Always open read-only** and a **password to modify** open the document read-only, with Edit
+  Anyway (or the password) in a notice above the ribbon.
+
+Review > Restrict Editing starts and stops protection, with an optional password (hashed as Word hashes it, so Word
+accepts it, and Word's own passwords work here). From code:
+
+```js
+const editor = mountDocxEditor(el, { author: 'Pat Lee', editors: ['pat@example.com'] }); // who may edit which parts
+editor.protection;                                      // { edit: 'comments', enforced: true, password: true, ... }
+await editor.protect({ edit: 'trackedChanges', password: 'secret' });
+await editor.unprotect('secret');                       // false if the password is wrong
+await editor.editAnyway();                              // a document marked final, or to open read-only
+```
+
+Like Word's, this protection steers the editor; it isn't encryption, and anyone with the file can remove it. Where it
+must hold, the server enforces it (a WOPI host that says the user can't write gets a read-only editor);
+`features: { protection: false }` ignores it, for a host that enforces its own rights.
 
 ## Form fields (content controls)
 

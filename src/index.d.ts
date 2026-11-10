@@ -35,6 +35,25 @@ export interface MountOptions {
   drafts?: boolean | { key?: string; delayMs?: number };
   /** In place of the built-in notice: a draft of unsaved changes was found on opening. */
   onDraft?: (draft: Draft, actions: { restore(): Promise<void>; discard(): Promise<void> }) => void;
+  /** This user's names besides `author` (an e-mail address, DOMAIN\name), as Word names the editors of a protected
+   *  document's editable parts. `features.protection: false` ignores Restrict Editing, Mark as Final and Always open
+   *  read-only (for a host that enforces its own rights). */
+  editors?: string[];
+}
+
+/** A document's Restrict Editing (Word's Review > Restrict Editing, Mark as Final, Always open read-only). */
+export interface Protection {
+  edit: 'readOnly' | 'comments' | 'trackedChanges' | 'forms' | null;
+  enforced: boolean;
+  /** Limited to the styles not locked, with no direct formatting. */
+  formatting: boolean;
+  /** A password is needed to stop it. */
+  password: boolean;
+  readOnlyRecommended: boolean;
+  passwordToModify: boolean;
+  final: boolean;
+  /** Held read-only (marked final, read-only recommended, a password to modify) until editAnyway(). */
+  readOnlyNow: boolean;
 }
 
 /** Unsaved changes kept in the browser (see MountOptions.drafts). */
@@ -50,6 +69,14 @@ export interface DocxEditorApi {
   readonly readOnly: boolean;
   readonly forms: boolean;
   readonly formsProtected: boolean;
+  /** The open document's protection, or null with none open. */
+  readonly protection: Protection | null;
+  /** Start enforcing protection (saved with the document; Word enforces it too). */
+  protect(options: { edit?: Protection['edit']; formatting?: boolean; password?: string }): Promise<void>;
+  /** Stop protection: false when `password` isn't the document's. */
+  unprotect(password?: string): Promise<boolean>;
+  /** Edit Anyway (a document marked final or to open read-only; with a password to modify, it): whether it can be edited now. */
+  editAnyway(password?: string): Promise<boolean>;
   /** True once the document has been edited since it was opened or last saved with markSaved(). */
   dirty: boolean;
   timings: OpenTimings | null;
@@ -58,6 +85,10 @@ export interface DocxEditorApi {
   /** `reopen`: the same document again (after a page setup change, or a restored draft): it keeps its unsaved state. */
   open(src: DocxSource, fileName?: string, options?: { share?: boolean; reopen?: boolean }): Promise<OpenTimings>;
   newDocument(options?: { share?: boolean }): void;
+  /** Word's Update Fields for the body (page numbers, PAGEREF, REF, STYLEREF, the table of contents): how many changed. */
+  updateFields(): number;
+  /** An agent's view of the open document: its edits are tracked changes under `author` ('AI') in this editor. */
+  agent(options?: { author?: string }): import('./agent').AgentDocument;
   save(): Uint8Array;
   download(fileName?: string): void;
   /** The pages as a PDF (needs the `pdf` option). */

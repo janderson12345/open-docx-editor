@@ -19,5 +19,7 @@ const st = /<style>([\s\S]*?)<\/style>/.exec(h);
 const keep = st[1].slice(0, st[1].indexOf('.odx-canvas {'));
 const s0 = st.index + '<style>'.length;
 h = h.slice(0, s0) + keep + css + '\n' + h.slice(s0 + st[1].length);
+// (Read as UTF-8 when opened from disk: the bundle's regular expressions hold characters beyond ASCII.)
+if (!/^\s*(<!doctype[^>]*>\s*)?<meta charset=/i.test(h)) h = `<meta charset="utf-8">\n${h}`;
 writeFileSync(page, h);
 console.log('built', page, Math.round(h.length / 1024) + ' KB');

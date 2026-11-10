@@ -16,6 +16,7 @@ import { rPr as rPrXml, pPrXml } from '../ooxml/writer.js';
 import { marksFromRPr, paragraphAttrsFromPPr } from '../ooxml/reader.js';
 import { esc } from '../ooxml/xml.js';
 import { now } from './util.js';
+import { resolvingAllowed } from './protect.js';
 
 export const trackKey = new PluginKey('odx-track');
 
@@ -387,6 +388,7 @@ function changeRange(state) {
  * Formatting changes are kept (accept) or their old formatting restored (reject).
  */
 export function resolveChanges(tr, from, to, accept) {
+  tr.setMeta('odx-resolve', true); // (refused in a document protected for tracked changes: protect.js)
   const doc = tr.doc;
   const removes = [];
   const unmark = [];
@@ -525,10 +527,13 @@ export function resolveChanges(tr, from, to, accept) {
   return tr;
 }
 
+const refused = (dispatch) => { if (dispatch) announce("Changes can't be accepted or rejected: this document is protected for tracked changes"); return true; };
+
 /** Accept or reject the change at the caret, or every change in the selection; then select the next one. */
 export const resolveChange = (accept) => (state, dispatch) => {
   const r = changeRange(state);
   if (!r) return false;
+  if (!resolvingAllowed(state)) return refused(dispatch);
   if (dispatch) {
     const tr = resolveChanges(state.tr.setMeta('odx-untracked', true), r.from, r.to, accept);
     const next = findChange(tr.doc, tr.mapping.map(r.to), 1);
@@ -542,6 +547,7 @@ export const resolveChange = (accept) => (state, dispatch) => {
 /** Accept or reject every change in the document. */
 export const resolveAll = (accept) => (state, dispatch) => {
   if (!findChange(state.doc, 0, 1)) return false;
+  if (!resolvingAllowed(state)) return refused(dispatch);
   if (dispatch) {
     dispatch(resolveChanges(state.tr.setMeta('odx-untracked', true), 0, state.doc.content.size, accept).scrollIntoView());
     announce(`All changes ${accept ? 'accepted' : 'rejected'}`);

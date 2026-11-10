@@ -24,6 +24,9 @@ const SKIP = '.odx-markup, .odx-ruler, .odx-imgsize, .odx-fm-layer, .odx-hfedit-
 export async function exportPdf(editor, { title, author, localFonts = true } = {}) {
   const view = editor.view || editor;
   const pageEl = view.dom.closest('.odx-page') || view.dom.parentElement;
+  // Fields updated first, as Word does when it exports (page references, cross-references), and the pages laid out
+  // again if any changed (pagination waits a moment after a change).
+  if (typeof editor.updateFields === 'function' && editor.updateFields() > 0) await new Promise((r) => setTimeout(r, 450));
   // Long documents skip drawing off-screen paragraphs: draw them all while exporting, as for printing.
   pageEl.classList.add('odx-exporting');
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -484,7 +487,7 @@ function directional(t, from, end, rg, box) {
   for (const m of whole.text.matchAll(LTR_RUN)) {
     // Numbers with spaces or commas between them and no Latin letter ("1 2", "1, 2, 3") read right to left as a whole
     // in right-to-left text (each number left to right): each number a run of its own, at its own place.
-    if (/[\s,]/.test(m[0]) && !/[A-Za-zÀ-ɏ]/.test(m[0])) {
+    if (/[\s,]/.test(m[0]) && !/[A-Za-z\u00C0-\u024F]/.test(m[0])) {
       for (const n of m[0].matchAll(/[^\s,]+/g)) cuts.push([m.index + n.index, m.index + n.index + n[0].length]);
     } else cuts.push([m.index, m.index + m[0].length]);
   }
