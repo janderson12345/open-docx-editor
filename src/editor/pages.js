@@ -1521,6 +1521,16 @@ export function createPages(view, session, { sheet, scope }) {
       const numText = numberOf(p);
       const num = numText.n;
       if (pageBorder) s.append(pageBorder.cloneNode());
+      // Columns with a line between (w:cols w:sep): a thin rule midway in each gap, the text's height, as Word draws it.
+      if (cols?.sep) {
+        const m = marginsAt(p);
+        for (let k = 1; k < cols.num; k++) {
+          const line = document.createElement('div');
+          line.className = 'odx-colsep';
+          line.style.cssText = `position:absolute;left:${(page.left + k * (cols.width + cols.space) - cols.space / 2).toFixed(1)}px;top:${m.top}px;height:${pageH(p) - m.top - m.bottom}px;border-left:0.75pt solid #000`;
+          s.append(line);
+        }
+      }
       s.style.cssText = `top:${pageTop(p)}px;height:${pageH(p)}px${pageW(p) !== page.width ? `;width:${pageW(p)}px` : ''}`;
       // The section's first page, even pages, or the default header and footer.
       let at = margins[0];

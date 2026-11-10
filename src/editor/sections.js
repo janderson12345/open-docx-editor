@@ -23,7 +23,8 @@ export const columnsIn = (xml, page) => {
   if (num < 2) return null;
   const space = Number((/w:space="(\d+)"/.exec(m[0]) || [])[1] ?? 720) / TWIPS_PER_PX;
   const rtl = /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(xml || '');
-  return { num, space, width: (page.width - page.left - page.right - space * (num - 1)) / num, rtl };
+  const sep = /\sw:sep="(?:1|true|on)"/.test(m[0]); // a line between the columns
+  return { num, space, width: (page.width - page.left - page.right - space * (num - 1)) / num, rtl, sep };
 };
 
 /**
