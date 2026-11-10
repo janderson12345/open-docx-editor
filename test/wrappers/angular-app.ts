@@ -1,7 +1,7 @@
 // Angular wrapper test page (JIT): test/wrappers.mjs drives it through window.__wr.
 import 'zone.js';
 import '@angular/compiler';
-import { ApplicationRef, Component, ViewChild } from '@angular/core';
+import { ApplicationRef, ChangeDetectorRef, Component, ViewChild } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { DocxEditorComponent } from '../../src/wrappers/angular/docx-editor.component.ts';
 
@@ -24,7 +24,10 @@ class TestApp {
 bootstrapApplication(TestApp).then((ref) => {
   const app = ref.components[0].instance as TestApp;
   const appRef = ref.injector.get(ApplicationRef);
-  const run = (f: () => void) => { f(); appRef.tick(); };
+  // (Checked explicitly: from Angular 22 a component isn't refreshed on every tick unless marked, and these properties
+  // are set from outside its template.)
+  const cdr = ref.components[0].injector.get(ChangeDetectorRef);
+  const run = (f: () => void) => { f(); cdr.markForCheck(); appRef.tick(); };
   (window as any).__wr = {
     log,
     open: (bytes: Uint8Array) => run(() => { app.src = bytes; }),

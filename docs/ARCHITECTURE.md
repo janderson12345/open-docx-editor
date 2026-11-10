@@ -28,7 +28,8 @@ reads saved files back as an independent check that their text survived.
    assigns them to pages, splitting paragraphs and table rows across pages.
 2. **Every action is a named command**, callable from the ribbon, the keyboard or the API (`src/editor/commands.js`).
 3. **Round-trip tests on every change**: every test document is opened, saved and read back.
-4. **No vendor assets**: no Microsoft code, templates, fonts or icons.
+4. **No vendor assets**: no Microsoft code, templates, fonts or icons; open-licensed fonts with the same widths are
+   bundled for computers without Microsoft's (`src/fonts/`).
 5. **The original package is kept.** Every part and every XML fragment the editor doesn't model is kept as it came,
    and only what the user changed is rewritten, so files go back to Word users intact.
 
@@ -64,6 +65,7 @@ reads saved files back as an independent check that their text survived.
 | `template.js` | A blank document, generated in code |
 | `sectpr.js` | Page setup edits of a `w:sectPr` (margins, orientation, size, columns) as pure functions |
 | `units.js` | Unit conversions (EMU, twips, px) |
+| `strict.js` | Strict Open XML packages turned into the Transitional form as they open |
 
 **`src/editor/`: editing and layout.** ProseMirror plugins and the view.
 
@@ -77,7 +79,7 @@ reads saved files back as an independent check that their text survived.
 | `ribbonkit.js`, `findbar.js`, `ctxmenu.js` | The ribbon's building blocks (buttons, groups, the drop-down menu); the Find and Replace bar; the right-click menu and mini toolbar |
 | `editor.css` | All styles, in sections (page, comments and changes, ribbon, panels, print); the theme variables a host may set are listed at its top |
 | `pages.js` | Pagination: splitting paragraphs and tables over pages, columns, footnotes, floats, drawing the sheets, print setup |
-| `sections.js`, `hfstory.js`, `pagefields.js`, `rowfit.js`, `printcopies.js` | What pagination reads and draws: each section's page, columns and breaks; headers and footers as drawn; their fields (PAGE, NUMPAGES, document properties); Word's row sizing for merged and exact-height rows; print copies for mixed page sizes |
+| `sections.js`, `hfstory.js`, `pagefields.js`, `rowfit.js`, `printcopies.js`, `linenumbers.js` | What pagination reads and draws: each section's page, columns and breaks; headers and footers as drawn; their fields (PAGE, NUMPAGES, document properties); Word's row sizing for merged and exact-height rows; print copies for mixed page sizes; line numbers in the margin |
 | `runs.js`, `lhfix.js`, `widths.js`, `justify.js`, `tablefit.js`, `tabs.js`, `joins.js` | What makes lines match Word's: a paragraph's shared run size, line pitch, text widths, justified squeeze, autofit tables, tab stops, joined paragraphs |
 | `baseline.js` | Print baseline shift per font |
 | `textspans.js` | Each text node in a span of its own, so a line is as tall as its text in any document mode (Word's rule; see docs/LAYOUT.md) |
@@ -86,10 +88,11 @@ reads saved files back as an independent check that their text survived.
 | `hfedit.js`, `notes.js`, `txbxedit.js` | Editing headers and footers, notes and text-box text in their own small editors |
 | `imgresize.js`, `charts.js` | Resizing and moving pictures and shapes; the chart dialog |
 | `find.js`, `bookmarks.js`, `toc.js`, `marks.js`, `ruler.js`, `a11y.js`, `live.js` | Find and replace, bookmarks, table of contents, Show/Hide, ruler, accessibility checker, screen-reader announcements |
+| `autocorrect.js`, `drafts.js`, `fontcheck.js` | AutoCorrect as you type; unsaved changes kept in the browser (IndexedDB); the fonts a document asks for that the computer lacks |
 
 **Elsewhere:** `src/engine/printlines.js` (the print layer), `src/engine/metrics.json` (font metrics),
-`src/index.js` (the public API, `mountDocxEditor`), `src/collab.js` (co-editing over Yjs), `src/pdf.js` (PDF
-export), `src/fieldsNode.js` (form fields without an editor), `src/wrappers/` (React, Vue, Angular).
+`src/index.js` (the public API, `mountDocxEditor`), `src/collab.js` (co-editing over Yjs), `src/wopi.js` (files a
+WOPI host serves), `src/pdf.js` (PDF export), `src/fieldsNode.js` (form fields without an editor), `src/wrappers/` (React, Vue, Angular).
 
 ### From a keystroke to pages
 
@@ -122,7 +125,7 @@ and resize images, paragraph spacing/indent UI, tab stops, borders and shading, 
 with conditional formatting, theme colours, section breaks and columns, comments shown.
 Build a corpus of real-world documents (with permission) and track fidelity per feature.
 
-**Phase 3: exact page layout (done: 99.0% of lines within 1px of Word on 151 documents; see docs/LAYOUT.md).** A layout layer that measures lines (canvas text metrics),
+**Phase 3: exact page layout (done: 99.0% of lines within 1px of Word on 151 documents; see docs/LAYOUT.md).** A layout layer that measures the laid-out lines,
 paginates with widow/orphan control, keep-with-next and table row splitting, and positions
 headers, footers and footnotes per page; render pages as separate sheets. This is the largest
 piece.

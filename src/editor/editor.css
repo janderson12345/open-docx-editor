@@ -56,6 +56,8 @@
 .odx-content .odx-push { display: block; width: 0; pointer-events: none; }
 .odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
 .odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.odx-lnnums { position: absolute; inset: 0; pointer-events: none; color: #000; user-select: none; }
+.odx-lnnum { position: absolute; transform: translateX(-100%); white-space: nowrap; line-height: normal; }
 .odx-gaps > div { position: absolute; left: -2px; right: -2px; background: var(--odx-canvas); }
 .odx-repeat table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .odx-repeat td { vertical-align: top; box-sizing: border-box; padding: 0 7px; }
@@ -376,6 +378,10 @@
 .odx-content li, .odx-content p.odx-li { list-style: none; }
 .odx-content p.odx-bullet::before { font-family: Arial, 'Liberation Sans', sans-serif; }
 .odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); }
+/* Emphasis marks and run borders make their line taller in Word (schema.js rextraCss): a zero-width box of the line's
+   own height at the run's start, padded above or below by that much. */
+:where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-grow-up, 0); padding-bottom: var(--odx-grow-down, 0); }
+.odx-content p.odx-li.odx-picbullet::before { content: var(--odx-picbullet); } /* a picture bullet, its foot on the baseline as in Word */
 /* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the
    text's and would push the line apart by a fraction. Only Symbol bullets do, by their own rule (--odx-lbl-up/down). */
 .odx-content p.odx-li:not([style*="--odx-lbl-"])::before { line-height: 0; }
@@ -574,7 +580,14 @@ td[data-odx-phantom] > * { display: none; }
 .odx-item { display: block; width: 100%; text-align: left; }
 .odx-swatches, .odx-symbols { display: grid; grid-template-columns: repeat(8, 28px); gap: 2px; }
 .odx-findbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--odx-line); }
-.odx-findbar input[type=text], .odx-num { height: 26px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; }
+.odx-findbar label { display: inline-flex; align-items: center; gap: 4px; }
+.odx-findbar input[type=checkbox] { width: 24px; height: 24px; margin: 0; accent-color: var(--odx-accent); } /* (24px targets, WCAG 2.5.8) */
+/* Unsaved changes kept in the browser, offered back on opening (index.js drafts). */
+.odx-draftnote { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; font: 13px system-ui, sans-serif; color: var(--odx-bar-fg); background: var(--odx-on); border-bottom: 1px solid var(--odx-on-line); }
+.odx-draftnote > span { flex: 1 1 20em; }
+.odx-draftnote > button { font: inherit; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 3px 12px; cursor: pointer; }
+.odx-draftnote > button:focus-visible { outline: 2px solid var(--odx-accent); outline-offset: 1px; }
+.odx-findbar input[type=text], .odx-findbar input[type=search], .odx-num { height: 26px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; }
 .odx-cap { font-size: 12px; }
 .odx-quick { display: flex; gap: 2px; }
 .odx-toolbar .odx-col > button { height: 24px; font-size: 12px; text-align: left; }

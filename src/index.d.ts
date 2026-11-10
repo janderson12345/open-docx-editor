@@ -27,7 +27,22 @@ export interface MountOptions {
   collab?: unknown;
   /** Replaces the PDF download (with `pdf`). */
   onSavePdf?: (bytes: Uint8Array, fileName: string) => void;
+  /** After each open, the fonts the document asks for that this computer lacks (only when there are any). Lines set in a
+   *  substitute may break differently from Word's; import 'open-docx-editor/fonts.css' for metric-compatible ones. */
+  onMissingFonts?: (fonts: MissingFont[]) => void;
+  /** Keep unsaved changes in this browser (IndexedDB) and offer them back on opening; off by default. `key` names the
+   *  document (its file name if not given), `delayMs` how long after an edit it's kept (3000). */
+  drafts?: boolean | { key?: string; delayMs?: number };
+  /** In place of the built-in notice: a draft of unsaved changes was found on opening. */
+  onDraft?: (draft: Draft, actions: { restore(): Promise<void>; discard(): Promise<void> }) => void;
 }
+
+/** Unsaved changes kept in the browser (see MountOptions.drafts). */
+export interface Draft { key: string; name: string; savedAt: number; bytes: Uint8Array; }
+
+/** A font the document asks for that isn't available, and the font drawn instead (null: the browser's generic one). */
+/** `standIn`: drawn in one of the editor's own stand-ins, another font sized to this one's widths (substitute null). */
+export interface MissingFont { font: string; substitute: string | null; standIn: boolean; }
 
 export interface DocxEditorApi {
   readonly view: unknown;
@@ -38,14 +53,20 @@ export interface DocxEditorApi {
   /** True once the document has been edited since it was opened or last saved with markSaved(). */
   dirty: boolean;
   timings: OpenTimings | null;
-  open(src: DocxSource, fileName?: string, options?: { share?: boolean }): Promise<OpenTimings>;
+  /** The fonts the open document asks for that this computer lacks. */
+  missingFonts(): Promise<MissingFont[]>;
+  /** `reopen`: the same document again (after a page setup change, or a restored draft): it keeps its unsaved state. */
+  open(src: DocxSource, fileName?: string, options?: { share?: boolean; reopen?: boolean }): Promise<OpenTimings>;
   newDocument(options?: { share?: boolean }): void;
   save(): Uint8Array;
   download(fileName?: string): void;
   /** The pages as a PDF (needs the `pdf` option). */
   exportPdf(): Promise<Uint8Array>;
   downloadPdf(fileName?: string): Promise<Uint8Array>;
+  /** Clears `dirty` and, with `drafts`, the draft kept in the browser. */
   markSaved(): void;
+  /** The draft of unsaved changes kept for the open document, or null (with `drafts`). */
+  draft(): Promise<Draft | null>;
   setReadOnly(on: boolean): void;
   setForms(on: boolean): void;
   setFeatures(features: Record<string, boolean>): void;

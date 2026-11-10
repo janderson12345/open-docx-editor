@@ -69,6 +69,13 @@ export function insertNote(view, kind) {
 
 let open = null;
 
+/** The open note editor's text put into its note, the editor left open (for a save meanwhile). */
+export function flushNote() {
+  if (!open) return;
+  open.note.doc = open.nv.state.doc;
+  open.note.dirty = true;
+}
+
 export function closeNote() {
   if (!open) return;
   const { main, nv, wrap, note, kind } = open;

@@ -7,6 +7,9 @@ Version 0.5: it opens and saves real documents without losing what it doesn't un
 pages as Word does: measured against Word's own PDFs of 151 documents, 99.0% of lines land within 1px of Word's, on
 the same pages. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
 
+**Try it:** [live demo](https://janderson12345.github.io/open-docx-editor/), the editor with a sample document; open your own
+with File > Open or by dragging a .docx onto the page. (It runs entirely in your browser: nothing is uploaded.)
+
 ## Install
 
 ```sh
@@ -89,12 +92,33 @@ fs.writeFileSync('out.docx', s.save());
   so documents land on the same pages as in Word. Checked line by line against PDFs exported by Word itself: 151
   documents, every one on Word's page count, 99.0% of their lines within 1px of Word's (docs/LAYOUT.md). The same in
   a standards-mode page (any page with a doctype) as in a quirks-mode one.
+- **Right-to-left text** (Hebrew, Arabic): right-to-left paragraphs (w:bidi) start at the right margin, with their
+  indents, first-line indents, alignment and tab stops mirrored as in Word, and numbers and English inside them in
+  order; right-to-left tables (w:bidiVisual) put their first column at the right. Checked against Word's PDFs for a
+  Hebrew and an Arabic test document (`test/fixtures/rtl-*.docx`): every line where Word puts it. PDF export draws
+  them shaped and in order when it has the real font (with the PDF standard fonts, Hebrew and Arabic come out as "?").
+- **The smaller things Word draws**, each checked against Word's own PDF of a test document (`test/fixtures/mkfeatures.mjs`):
+  text and picture watermarks, legal numbering ("1.1.1" under a Roman "I."), picture bullets, text effects (outline,
+  shadow, emboss, imprint), emphasis marks, borders round runs of text, a section's vertical alignment (centred,
+  bottom, spread over the page), and line numbers (every line or every nth, restarting each page or section or going
+  on, at the distance the section sets). They print and go into PDF export too.
+- **Strict Open XML** documents (Word's "Strict Open XML Document") open like any other; they are saved in the
+  ordinary (Transitional) form, which every version of Word opens.
 - **Fast on long documents**: a 300-page file opens in about a second in Chromium; off-screen
   pages skip layout, and pagination runs when you pause typing.
 - **Edit** with Word-like keys: Ctrl+B/I/U, Ctrl+E/L/R/J, Enter continues lists and turns a
   heading into its "next" style, Tab / Shift+Tab change list level or move between table cells,
   Shift+Enter line break, Ctrl+Enter page break, undo/redo. Toolbar: styles, font, size, colour,
   lists, links, tables (insert, add/delete rows and columns, merge/split cells).
+- **AutoCorrect as you type**, Word's everyday set: curly quotes, (c) (r) (tm) to © ® ™, three dots to an ellipsis,
+  arrows (--> <-- ==>), dashes (a double hyphen between words to an em dash, a spaced hyphen to an en dash), ½ ¼ ¾, a
+  sentence's first word and a lone "i" capitalised, and common misspellings. Ctrl+Z after a correction gives back what
+  was typed. Off with `features: { autocorrect: false }`.
+- **Find and Replace** (Ctrl+F, Ctrl+H): match case, whole words, and patterns (regular expressions: `\d{4}`,
+  `colou?r`), with what a pattern's parentheses caught reused in the replacement as `$1`, `$2`.
+- **Drafts** (opt in with `drafts: true`): unsaved changes are kept in the browser a moment after each edit and offered
+  back, Restore or Discard, when the same file is opened again after a closed tab or a crash; cleared once saved. They
+  stay on that computer, in the site's own browser storage.
 - **Save** back to `.docx`. Only `word/document.xml` is rewritten (plus relationships or
   numbering when you add a link or a list); every other part of the package is kept byte for
   byte. Content the editor doesn't model (or models only in part: fields, shapes, equations' own XML...) is
@@ -134,7 +158,8 @@ fs.writeFileSync('out.docx', s.save());
   saved and reopened.
 - PDF export falls back to the PDF standard fonts where it can't get the real one: in browsers without Local Font
   Access (Firefox, Safari), when the user declines it, and for fonts neither installed nor embedded in the document.
-  Lines and pages are the layout's either way.
+  Lines and pages are the layout's either way, but characters outside Windows-1252 (Hebrew, Arabic, Greek beyond
+  the Symbol font's) come out as "?".
 - In newspaper columns: a table longer than a whole column.
 
 See the roadmap in docs/ARCHITECTURE.md.
@@ -161,6 +186,32 @@ This is an independent implementation of the published Office Open XML standard
 (ECMA-376 / ISO/IEC 29500). It contains no Microsoft code, templates, fonts or other assets.
 Microsoft Word is a trademark of Microsoft Corporation; this project is not affiliated with
 or endorsed by Microsoft.
+
+## Fonts
+
+Word documents mostly use Microsoft's fonts (Calibri, Cambria, Arial, Times New Roman, Courier New). The editor lays
+text out in the fonts installed on the computer, as Word does, so on a computer without those fonts lines can break
+in different places. Two things help:
+
+- **Metric-compatible fonts**, with the same character widths as Microsoft's: Carlito (Calibri), Caladea (Cambria),
+  and Arimo, Tinos and Cousine (Arial, Times New Roman, Courier New), named in the stylesheet Liberation Sans, Serif
+  and Mono, the names documents use for them. They're bundled (SIL Open Font License
+  and Apache License 2.0, 1.6 MB, Latin and Latin Extended); import them once and they're used wherever the
+  original is missing. Each matches its original's character widths and line height:
+
+  ```js
+  import 'open-docx-editor/fonts.css';
+  ```
+
+  Without a bundler, link the package's `src/fonts/fonts.css` (or `dist/fonts/fonts.css` from a build), keeping its
+  `files/` folder beside it.
+- **Knowing when a font is missing**: `onMissingFonts` reports the fonts a document asks for that the computer lacks,
+  and what it shows instead, so you can tell the user.
+
+  ```js
+  mountDocxEditor(el, { onMissingFonts: (fonts) => console.warn(fonts) }); // [{ font: 'Gill Sans', substitute: null, standIn: false }]
+  const missing = await editor.missingFonts();
+  ```
 
 ## PDF export
 
@@ -197,9 +248,38 @@ provider.once('sync', () => {
 // collaboration(ydoc, { awareness, user, ready: new Promise((r) => provider.once('sync', r)) })
 ```
 
+## Documents in a WOPI host
+
+`open-docx-editor/wopi` edits a file a WOPI host serves (WOPI is the open protocol document stores use to let a web
+editor work on their files). Your host gives the page the file's WOPI URL and an access token for the user; the
+editor reads the file's information and contents, locks it while it's open (refreshing the lock every 15 minutes),
+saves it back a moment after each edit and on Ctrl+S, and unlocks it when the page closes. A user who may only read,
+or a file someone else has locked, opens read-only.
+
+```js
+import { mountWopiEditor } from 'open-docx-editor/wopi';
+const app = await mountWopiEditor(el, {
+  src: 'https://files.example.com/wopi/files/42', // the file's WOPI URL
+  accessToken,                                      // the host's token for this user
+  onSaved: () => showStatus('Saved'),
+  onError: (e) => showStatus(e.message),            // e.status: the host's HTTP status (409: locked by someone else)
+});
+// app.save(), app.close() (saves, unlocks, removes the editor); app.wopi.info: the host's CheckFileInfo
+```
+
+The host must allow the editor page's origin (CORS) on its WOPI URLs, including the `X-WOPI-Override` and
+`X-WOPI-Lock` request headers and the `X-WOPI-Lock`, `X-WOPI-LockFailureReason` and `X-WOPI-ItemVersion` response
+headers. Keep the token out of logs and addresses: hand it to the page the way the protocol suggests (a form POST, or a message
+from your host's frame) and give it a short lifetime. (`demo/wopi.html` takes it in the URL's fragment, which isn't
+sent to servers, for trying things out; the browser's history keeps that address.) Not supported: proof keys (a host that requires them
+checks a signature only a server can make), Save As (PutRelativeFile) and the host frame's message interface.
+Tested against a mock host on another origin (`test/wopi-host.mjs`, `test/wopi.mjs`), not yet against a production one.
+
 ## React, Vue and Angular
 
-Thin wrappers around `mountDocxEditor`, with the same options as props or inputs. A new `src` opens that document;
+Thin wrappers around `mountDocxEditor`, taking its main options as props or inputs (`fileName`, `author`, `readOnly`,
+`features`, `toolbar`, `forms`, and the `onChange`, `onSave`, `onOpened` and `onError` callbacks); for the others
+(`pdf`, `collab`, `drafts`, `onMissingFonts`...) mount with `mountDocxEditor` itself. A new `src` opens that document;
 `readOnly`, `forms` and `features` can change at any time; unmounting destroys the editor. Import the stylesheet once.
 
 ```js
@@ -282,8 +362,16 @@ const { bytes: filled, missing } = fillFields(bytes, values); // merge values in
 ## Browser support
 
 Developed and measured in Microsoft Edge and Chrome (Chromium) on Windows, where the layout matches Word's best: it
-uses the fonts installed on the computer, as Word does. Other Chromium browsers behave the same. Firefox and Safari
-aren't tested; PDF export there uses the PDF standard fonts (no Local Font Access).
+uses the fonts installed on the computer, as Word does. Other Chromium browsers behave the same.
+
+Checked against Edge on all 151 measured documents:
+
+- **Firefox** lays them out the same: every paragraph on the same page with the same lines in all but a few dozen of
+  about 19,000, page counts the same in 150 of 151. Justified lines can differ slightly.
+- **Safari (WebKit)** sets each line's height to a whole pixel, so long documents drift up a little line by line and a
+  page can break a line earlier (page counts the same in 142 of 151, checked with Playwright's WebKit on Windows).
+
+Editing works in all three. PDF export in Firefox and Safari uses the PDF standard fonts (no Local Font Access).
 
 ## Documentation
 

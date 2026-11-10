@@ -1,6 +1,6 @@
 // Browser check: open each fixture in the demo, edit, save, verify with mammoth.
 // Run after `npm run build`: node test/e2e.mjs [outDir]
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,18 +19,24 @@ const server = http.createServer((req, res) => {
 }).listen(0);
 const url = `http://localhost:${server.address().port}/`;
 
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+// BROWSER=firefox or webkit runs it in those engines instead (Playwright's own builds).
+const engine = { firefox, webkit }[process.env.BROWSER];
+const browser = engine ? await engine.launch() : await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
 const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+// (A file that fails to load is reported by its address, from the response; the console's message doesn't name it.
+// The demo looks for a sample document beside the page, which only the published demo has.)
+page.on('console', (m) => m.type() === 'error' && !/^Failed to load resource/.test(m.text()) && errors.push(m.text()));
+page.on('response', (r) => r.status() >= 400 && !r.url().endsWith('/sample.docx') && errors.push(`${r.status()} ${r.url()}`));
 await page.goto(url);
 let failed = 0;
 const fixtures = fs.readdirSync('test/fixtures').filter((f) => f.endsWith('.docx'));
 for (const f of fixtures) {
   await page.setInputFiles('input[type=file]', `test/fixtures/${f}`);
   await page.waitForFunction((n) => window.odx.fileName === n, f);
-  await page.screenshot({ path: `${outDir}/${f}.png`, fullPage: true });
+  // (Not in WebKit: Playwright's screenshot waits for the page's fonts, which WebKit can leave loading for good.)
+  if (process.env.BROWSER !== 'webkit') await page.screenshot({ path: `${outDir}/${f}.png`, fullPage: true });
   // Type at the end of the first paragraph, then add a bold word.
   await page.click('.odx-content p >> nth=0');
   await page.keyboard.press('End');
@@ -41,7 +47,8 @@ for (const f of fixtures) {
   const bytes = await page.evaluate(() => Array.from(window.odx.save()));
   fs.writeFileSync(`${outDir}/${f.replace('.docx', '.edited.docx')}`, Buffer.from(bytes));
   const { value: html } = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) });
-  const ok = / typed<strong> bolded<\/strong>/.test(html.replace(/<\/strong><strong>/g, ''));
+  // (After a full stop AutoCorrect capitalises the word, as Word does.)
+  const ok = / [tT]yped<strong> bolded<\/strong>/.test(html.replace(/<\/strong><strong>/g, ''));
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${f}`);
   if (!ok) { failed++; console.log(html.slice(0, 400)); }
 }

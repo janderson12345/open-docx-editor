@@ -11,6 +11,14 @@ control or magnifier yet.
 NVDA run 5 (2026-10-23): ribbon tabs, Tab through ribbon buttons, Esc/F6, Bold toggle ("toggle button, not pressed" →
 "pressed"), the right-click menu and its items all spoke correctly.
 
+Review of 2026-11-09 (no screen reader run this time: axe-core and reading the code only). New since run 6: the
+drafts notice (role=status, plain buttons, the focus left in the document), Find's Patterns option and its "Not a
+valid pattern" message (in Find's status, read out), the WOPI page's status line, AutoCorrect's changes to words and
+symbols announced, line numbers and watermarks kept from screen readers (aria-hidden; empty alt text), and Find's
+search box and check boxes at least 24px (2.5.8). axe and our own scan pass on every ribbon tab, the menus, Find and
+Replace and the drafts notice, in light and dark. Not yet heard with NVDA: the drafts notice, Patterns and the
+AutoCorrect announcements.
+
 NVDA run 6 (2026-11-06; a harness kept outside the repository, on rich.docx and form.docx). Heard as expected: headings ("heading,
 level 1, Introduction"), the table ("table with 3 rows and 3 columns, row 1, column 1, A1", a merged cell "row 2 through
 3"), a tracked insertion ("added"), a picture's alt text ("graphic, A blue box"), the ribbon tabs ("Insert, tab, selected,

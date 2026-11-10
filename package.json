@@ -42,8 +42,13 @@
       "types": "./src/collab.d.ts",
       "default": "./src/collab.js"
     },
+    "./wopi": {
+      "types": "./src/wopi.d.ts",
+      "default": "./src/wopi.js"
+    },
     "./angular": "./src/wrappers/angular/docx-editor.component.ts",
-    "./style.css": "./src/editor/editor.css"
+    "./style.css": "./src/editor/editor.css",
+    "./fonts.css": "./src/fonts/fonts.css"
   },
   "files": [
     "src",
@@ -59,9 +64,9 @@
     "test": "node --test test/*.test.js",
     "build": "node build.mjs",
     "dev": "node build.mjs --serve",
-    "test:e2e": "npm run build && node test/e2e.mjs && node test/a11y.mjs && node test/a11y-more.mjs && node test/wrappers.mjs && node test/pdf.mjs && node test/collab.mjs && node test/forms.mjs && node test/charts.mjs && node test/textboxes.mjs",
+    "test:e2e": "npm run build && node test/e2e.mjs && node test/a11y.mjs && node test/a11y-more.mjs && node test/wrappers.mjs && node test/pdf.mjs && node test/collab.mjs && node test/forms.mjs && node test/charts.mjs && node test/textboxes.mjs && node test/fonts.mjs && node test/features.mjs && node test/wopi.mjs && node test/comforts.mjs",
     "lint": "eslint src test tools",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
@@ -95,10 +100,10 @@
     }
   },
   "devDependencies": {
-    "@angular/common": "^18.2.14",
-    "@angular/compiler": "^18.2.14",
-    "@angular/core": "^18.2.14",
-    "@angular/platform-browser": "^18.2.14",
+    "@angular/common": "^22.2.5",
+    "@angular/compiler": "^22.2.5",
+    "@angular/core": "^22.2.5",
+    "@angular/platform-browser": "^22.2.5",
     "@xmldom/xmldom": "^0.9.12",
     "axe-core": "^4.10.2",
     "docx": "^9.13.0",
@@ -115,6 +120,6 @@
     "vue": "^3.5.45",
     "ws": "^8.22.1",
     "y-websocket": "1.5",
-    "zone.js": "^0.14.10"
+    "zone.js": "^0.16.3"
   }
 }

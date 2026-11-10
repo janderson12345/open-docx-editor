@@ -55,7 +55,17 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   text's height.
 - Text in the paragraph's own font with the taller ascent sets the line's baseline.
 
+- Emphasis marks make their line taller by about 0.31em: above it, or below for marks under the text.
+- A border round a run makes its line taller by what the border and its space reach past half a point, above and below.
+- Right-to-left paragraphs: their left and right (alignment, indents) are their start and end; tab stops count from
+  the right margin.
+
 **Pages**
+- A section's vertical alignment moves its text on each of its pages: centred between the margins, at the bottom,
+  or with the room left shared out between its paragraphs (both). The empty paragraph that only ends a section takes
+  no room there, and has no line number.
+- Line numbers sit 0.25in left of the text (or w:distance), right-aligned on each line's baseline; they count from
+  w:start + 1, and "continuous" goes on from the section before.
 - A paragraph taller than a page that can't split where it starts moves to the next page and splits there.
 - A table row moves whole when a cell that breaks would keep none of its lines, or when a row with a minimum height
   doesn't fit that height.
@@ -69,6 +79,8 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 - An inline picture's effect extent adds room around it.
 - A column-wide wrapped picture takes a band of its own; floats inside the band overlap it.
 - A floating table longer than a page runs on in the flow.
+- A text watermark is its text fitted to its shape (the advance across, the font's line down), turned as it says and
+  centred on the margins; legal numbering (isLgl) shows every level in Arabic numerals, its own included.
 - A line between two table rows belongs to the lower row; a row's cells share its top and bottom margins.
 
 **Fonts**
@@ -80,6 +92,17 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 **Print**
 - Each font has a fixed print baseline offset (a pixel amount, not a share of the em), fitted on Word's PDFs.
 - Sections with different page sizes print each page as its own named @page.
+
+**Compatibility rules** (settings.xml w:compat, which older documents carry; each checked with Word's PDFs of a test
+document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcompat.mjs`)
+- `splitPgBreakAndParaMark`: the paragraph mark after a page break goes to the next page, an empty line at its top.
+- `doNotUseIndentAsNumberingTabStop`: a hanging indent is a list label's tab stop only when it comes before the next
+  tab stop.
+- `doNotUseHTMLParagraphAutoSpacing`: automatic spacing is a plain 5pt each side, added to its neighbour's and kept at
+  the top of a page. Without it, it is 14pt, shared with the paragraph beside it, none at the top of a page or a cell,
+  and none between two items of one list.
+- `useFELayout`, `doNotBreakWrappedTables`, `forgetLastTabAlignment`, `underlineTabInNumList`: Word draws the test
+  documents the same with them and without them.
 
 ## Tried and dropped
 
@@ -93,6 +116,9 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 - Cambria Math line boxes for symbols the text's font lacks.
 
 ## Open differences
+
+- Text after a floating table that leaves a narrow gap beside it (under an inch): Word sets the text in that gap.
+- A line holding superscript and subscript can break a word earlier than Word's.
 
 - A full-width anchored picture whose following text Word places about 56px lower than the anchor's empty
   paragraphs explain.

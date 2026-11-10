@@ -8,7 +8,7 @@
 // run is drawn at the exact width the layout gave it, so lines, line breaks and pages are the layout's in any font;
 // with a standard font the letter shapes are its own, and characters it lacks are drawn as "?" (it covers
 // Windows-1252's only).
-import { PDFDocument, StandardFonts, rgb, PDFOperator, PDFOperatorNames, PDFNumber, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setTextMatrix, showText, setFillingRgbColor, setWordSpacing } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PDFOperator, PDFOperatorNames, PDFNumber, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setTextMatrix, showText, setFillingRgbColor, setStrokingRgbColor, setLineWidth, setTextRenderingMode, TextRenderingMode, setWordSpacing } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { embeddedFonts } from './ooxml/fonts.js';
 import { formatNumber } from './ooxml/styles.js';
@@ -164,12 +164,22 @@ async function draw(pageEl, { title, author, sources }) {
     const spaces = (safe.match(/ /g) || []).length;
     const page = pages[n];
     const key = page.node.newFontDictionary(font.name, font.ref);
-    const ops = [pushGraphicsState(), beginText(), setFontAndSize(key, size), setFillingRgbColor(c.rgb.red, c.rgb.green, c.rgb.blue)];
-    // Justified lines stretch their spaces; others scale to the width the layout measured (a different font's).
-    if (spaces && want > natural * 1.03 && cs.textAlign === 'justify') ops.push(setWordSpacing((want - natural) / spaces));
-    else if (natural > 0 && Math.abs(want - natural) > 0.1) ops.push(PDFOperator.of(PDFOperatorNames.SetTextHorizontalScaling, [PDFNumber.of(+(100 * want / natural).toFixed(2))]));
-    ops.push(setTextMatrix(1, 0, 0, 1, x, y), showText(font.encodeText(safe)), endText(), popGraphicsState());
-    page.pushOperators(...ops);
+    // Text effects (schema.js rextraCss): a shadow is a copy drawn first, offset; outlined letters are stroked (filled
+    // with the fill colour they show, white for hollow ones).
+    const stroke = el ? parseFloat(cs.webkitTextStrokeWidth) || 0 : 0;
+    const fillColor = stroke ? color(cs.webkitTextFillColor) : null;
+    const shadow = el && cs.textShadow && cs.textShadow !== 'none' ? /^(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px/.exec(cs.textShadow) : null;
+    const run = (dx, dy, fill, outline) => {
+      const ops = [pushGraphicsState(), beginText(), setFontAndSize(key, size), setFillingRgbColor(fill.red, fill.green, fill.blue)];
+      if (outline) ops.push(setStrokingRgbColor(c.rgb.red, c.rgb.green, c.rgb.blue), setLineWidth(outline * PT), setTextRenderingMode(TextRenderingMode.FillAndOutline));
+      // Justified lines stretch their spaces; others scale to the width the layout measured (a different font's).
+      if (spaces && want > natural * 1.03 && cs.textAlign === 'justify') ops.push(setWordSpacing((want - natural) / spaces));
+      else if (natural > 0 && Math.abs(want - natural) > 0.1) ops.push(PDFOperator.of(PDFOperatorNames.SetTextHorizontalScaling, [PDFNumber.of(+(100 * want / natural).toFixed(2))]));
+      ops.push(setTextMatrix(1, 0, 0, 1, x + dx * PT, y - dy * PT), showText(font.encodeText(safe)), endText(), popGraphicsState());
+      page.pushOperators(...ops);
+    };
+    if (shadow && color(shadow[1])) run(Number(shadow[2]), Number(shadow[3]), color(shadow[1]).rgb, 0);
+    run(0, 0, fillColor ? fillColor.rgb : c.rgb, stroke);
     // Underline and strikethrough, from the element that sets them (text-decoration isn't inherited, it's drawn through).
     for (let e = el; e && e !== pageEl; e = e.parentElement) {
       const d = getComputedStyle(e);
@@ -212,7 +222,10 @@ function drawBoxes(d) {
     const bg = color(cs.backgroundColor);
     const sides = ['Top', 'Right', 'Bottom', 'Left'].map((s) => ({ s, w: parseFloat(cs[`border${s}Width`]) || 0, c: color(cs[`border${s}Color`]), style: cs[`border${s}Style`] }))
       .filter((b) => b.w > 0 && b.c && b.style !== 'none' && b.style !== 'hidden');
-    if (!bg && !sides.length) continue;
+    // Table cells' plain lines are inset shadows (ooxml/styles.js): a band along the edge the offset points from.
+    const bands = cs.boxShadow && cs.boxShadow !== 'none' ? [...cs.boxShadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+0px\s+0px\s+inset/g)]
+      .map((m) => ({ c: color(m[1]), x: +m[2], y: +m[3] })).filter((s) => s.c && (s.x || s.y)) : [];
+    if (!bg && !sides.length && !bands.length) continue;
     for (const r of el.getClientRects()) {
       for (let n = 0; n < sheets.length; n++) {
         const sr = sheets[n].r;
@@ -221,6 +234,13 @@ function drawBoxes(d) {
         const page = pages[n];
         const X = (x) => (x - sr.left) * PT, Y = (y) => (sr.bottom - y) * PT;
         if (bg) page.drawRectangle({ x: X(r.left), y: Y(bottom), width: r.width * PT, height: (bottom - top) * PT, color: bg.rgb, opacity: bg.a });
+        for (const s of bands) {
+          const band = (l, t, w, h) => page.drawRectangle({ x: X(l), y: Y(t + h), width: w * PT, height: h * PT, color: s.c.rgb, opacity: s.c.a });
+          if (s.x > 0) band(r.left, top, s.x, bottom - top);
+          if (s.x < 0) band(r.right + s.x, top, -s.x, bottom - top);
+          if (s.y > 0 && r.top >= sr.top) band(r.left, r.top, r.width, s.y);
+          if (s.y < 0 && r.bottom <= sr.bottom) band(r.left, r.bottom + s.y, r.width, -s.y);
+        }
         for (const b of sides) {
           const t = b.w * PT;
           const dash = b.style === 'dashed' ? [3 * t, 2 * t] : b.style === 'dotted' ? [t, t] : undefined;
@@ -245,6 +265,13 @@ async function drawPictures(d) {
     if (!r || r.width < 1 || r.height < 1) continue;
     const n = sheetAt(r.top + r.height / 2);
     if (n < 0) continue;
+    // Turned or faded (a watermark): drawn as it shows, into its box on the page.
+    const cs = getComputedStyle(img);
+    if (cs.transform !== 'none' || parseFloat(cs.opacity) < 1) {
+      const turned = await embedAsShown(pdf, img, r, cs).catch(() => null);
+      if (turned) pages[n].drawImage(turned, { x: (r.left - sheets[n].r.left) * PT, y: (sheets[n].r.bottom - r.bottom) * PT, width: r.width * PT, height: r.height * PT });
+      continue;
+    }
     let embedded = images.get(img.src);
     if (!embedded) {
       embedded = await embedImage(pdf, img).catch(() => null);
@@ -324,6 +351,7 @@ async function drawTextLayer(d, mathDrawn) {
     const cs = getComputedStyle(el);
     if (cs.visibility !== 'visible') continue;
     for (const piece of pieces(t, range)) await drawText(piece.text, clipped(el, piece.r), cs, el);
+    if (cs.textEmphasisStyle && cs.textEmphasisStyle !== 'none') drawEmphasis(d, t, cs, range);
   }
   // Generated text the layout draws in CSS: list labels and note reference numbers.
   for (const p of pageEl.querySelectorAll('p.odx-li[data-label]')) {
@@ -337,6 +365,9 @@ async function drawTextLayer(d, mathDrawn) {
     const left = r.left + (parseFloat(ps.borderLeftWidth) || 0) + (parseFloat(ps.paddingLeft) || 0) + (parseFloat(ps.textIndent) || 0);
     const top = first ? first.baseline - ascent(ls) : r.top;
     const box = { left, top, width: null, height: parseFloat(ls.fontSize) };
+    // A picture bullet (the label's content is its picture): drawn standing on the first line's baseline.
+    const pic = p.classList.contains('odx-picbullet') && /url\("?([^")]+)"?\)/.exec(ls.content)?.[1];
+    if (pic && first) { await drawPicture(d, pic, left, first.baseline); continue; }
     if (!drawBullet(label, box, ls)) await drawText(label, box, ls, p);
   }
   // Tab leaders drawn as characters (CSS content): as many as fit the tab's width.
@@ -432,10 +463,42 @@ function pieces(t, rg) {
     while (end > from + 1 && t.data[end - 1] === ' ' && end < n) end--;
     rg.setStart(t, from); rg.setEnd(t, end);
     const box = rg.getBoundingClientRect();
-    if (box.width > 0) out.push({ text: t.data.slice(from, end), r: { left: box.left, top: box.top, width: box.width, height: box.height } });
+    if (box.width > 0) out.push(...directional(t, from, end, rg, box));
     from = lo + 1;
   }
   return out;
+}
+
+const RTL = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/; // Hebrew, Arabic, Syriac, Thaana and the rest to Arabic Extended-A; Hebrew and Arabic presentation forms
+const LTR_RUN = /[A-Za-z0-9\u00c0-\u024f](?:[A-Za-z0-9\u00c0-\u024f.,:%+\-/ ]*[A-Za-z0-9\u00c0-\u024f%])?/g; // Latin letters (with Latin-1 and Extended-A/B accents) and digits
+
+/**
+ * A piece of one line in its runs of one direction, each at its own box. The font lays out a run with right-to-left
+ * letters (Hebrew, Arabic) right to left, shaped, as a whole; numbers and Latin words inside it read left to right, so
+ * they're drawn apart at the places the browser put them.
+ */
+function directional(t, from, end, rg, box) {
+  const whole = { text: t.data.slice(from, end), r: { left: box.left, top: box.top, width: box.width, height: box.height } };
+  if (!RTL.test(whole.text)) return [whole];
+  const cuts = [];
+  for (const m of whole.text.matchAll(LTR_RUN)) {
+    // Numbers with spaces or commas between them and no Latin letter ("1 2", "1, 2, 3") read right to left as a whole
+    // in right-to-left text (each number left to right): each number a run of its own, at its own place.
+    if (/[\s,]/.test(m[0]) && !/[A-Za-zÀ-ɏ]/.test(m[0])) {
+      for (const n of m[0].matchAll(/[^\s,]+/g)) cuts.push([m.index + n.index, m.index + n.index + n[0].length]);
+    } else cuts.push([m.index, m.index + m[0].length]);
+  }
+  if (!cuts.length) return [whole];
+  const spans = [];
+  let at = 0;
+  for (const [a, b] of cuts) { if (a > at) spans.push([at, a]); spans.push([a, b]); at = b; }
+  if (at < whole.text.length) spans.push([at, whole.text.length]);
+  return spans.flatMap(([a, b]) => {
+    rg.setStart(t, from + a); rg.setEnd(t, from + b);
+    const r = rg.getBoundingClientRect();
+    const text = whole.text.slice(a, b);
+    return r.width > 0 && text.trim() ? [{ text, r: { left: r.left, top: r.top, width: r.width, height: r.height } }] : [];
+  });
 }
 
 /** `r` cut by an inset clip on the element or an ancestor (a paragraph or table split across columns), or null if gone. */
@@ -458,6 +521,76 @@ function color(css) {
   const a = m[4] == null ? 1 : +m[4];
   if (a < 0.02) return null;
   return { rgb: rgb(+m[1] / 255, +m[2] / 255, +m[3] / 255), a };
+}
+
+/**
+ * Emphasis marks (w:em, CSS text-emphasis): a dot, circle or comma-like stroke over each letter (under it for
+ * "under"), as the page shows them.
+ */
+function drawEmphasis(d, t, cs, rg) {
+  const size = parseFloat(cs.fontSize) || 16;
+  const c = (color(cs.textEmphasisColor) || color(cs.color) || { rgb: rgb(0, 0, 0) }).rgb;
+  const under = /under/.test(cs.textEmphasisPosition);
+  const open = /open/.test(cs.textEmphasisStyle), sesame = /sesame/.test(cs.textEmphasisStyle);
+  for (let i = 0; i < t.data.length; i++) {
+    if (!t.data[i].trim()) continue;
+    rg.setStart(t, i); rg.setEnd(t, i + 1);
+    const r = rg.getClientRects()[0];
+    if (!r || !r.width) continue;
+    const n = d.sheetAt(r.top + r.height / 2);
+    if (n < 0) continue;
+    const sr = d.sheets[n].r;
+    const cx = (r.left + r.width / 2 - sr.left) * PT;
+    // (Places and sizes as in Word's PDF of test/fixtures/effects.docx: a mark's centre 0.12em over the letter's box,
+    // or 0.18em under it, 0.09em across.)
+    const cy = (sr.bottom - (under ? r.bottom + size * 0.18 : r.top - size * 0.12)) * PT;
+    const rad = size * 0.09 * PT;
+    if (sesame) d.pages[n].drawLine({ start: { x: cx - rad * 0.5, y: cy + rad }, end: { x: cx + rad * 0.5, y: cy - rad }, thickness: rad * 0.9, color: c });
+    else if (open) d.pages[n].drawCircle({ x: cx, y: cy, size: rad, borderColor: c, borderWidth: rad * 0.35 });
+    else d.pages[n].drawCircle({ x: cx, y: cy, size: rad, color: c });
+  }
+}
+
+/** A picture as the page shows it, turned (its transform) and faded (its opacity), as a PNG the size of its box `r`. */
+async function embedAsShown(pdf, img, r, cs) {
+  const scale = Math.min(2, 2000 / Math.max(r.width, r.height, 1)); // (no more than 2000px a side)
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(r.width * scale));
+  c.height = Math.max(1, Math.round(r.height * scale));
+  const g = c.getContext('2d');
+  const m = cs.transform !== 'none' ? new DOMMatrix(cs.transform) : new DOMMatrix();
+  const alpha = parseFloat(cs.opacity);
+  g.globalAlpha = Number.isFinite(alpha) ? alpha : 1;
+  // About the box's centre, as CSS turns it (transform-origin 50% 50%).
+  g.setTransform(new DOMMatrix().scale(scale).translate(r.width / 2, r.height / 2).multiply(new DOMMatrix([m.a, m.b, m.c, m.d, 0, 0])));
+  g.drawImage(img, -img.offsetWidth / 2, -img.offsetHeight / 2, img.offsetWidth, img.offsetHeight);
+  const png = await new Promise((res) => c.toBlob(res, 'image/png'));
+  return pdf.embedPng(new Uint8Array(await png.arrayBuffer()));
+}
+
+/** A picture from a URL at its own size (CSS px), its left edge at `x` and its foot at `bottom`. */
+async function drawPicture(d, url, x, bottom) {
+  // Each picture made once (a list's bullets share one), at twice its size but no more than 1000px a side.
+  d.pictures ||= new Map();
+  if (!d.pictures.has(url)) {
+    d.pictures.set(url, (async () => {
+      const img = new Image();
+      img.src = url;
+      try { await img.decode(); } catch { return null; }
+      if (!img.naturalWidth) return null;
+      const k = Math.min(2, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const png = await new Promise((r) => c.toBlob(r, 'image/png'));
+      return png && { embedded: await d.pdf.embedPng(new Uint8Array(await png.arrayBuffer())), w: img.naturalWidth, h: img.naturalHeight };
+    })().catch(() => null));
+  }
+  const pic = await d.pictures.get(url);
+  const n = d.sheetAt(bottom - 1);
+  if (!pic || n < 0) return;
+  const sr = d.sheets[n].r;
+  d.pages[n].drawImage(pic.embedded, { x: (x - sr.left) * PT, y: (sr.bottom - bottom) * PT, width: pic.w * PT, height: pic.h * PT });
 }
 
 async function embedImage(pdf, img) {

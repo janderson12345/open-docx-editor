@@ -32,6 +32,17 @@ export const columnsIn = (xml, page) => {
  * Returns { ends: block index of each section end -> { page: new page?, next: next section's margins, index }, first:
  * the first section's margins }.
  */
+/** The section ends a paragraph carries (its w:sectPr), or null. */
+export const sectionEnd = (node) => (node.attrs.extra || []).find((e) => e[0] === 'sectPr')?.[1] ?? null;
+
+/** Every section's w:sectPr XML in order: each one a paragraph ends, then the document's last. */
+export function sectionXmls(doc) {
+  const out = [];
+  doc.forEach((n) => { const x = sectionEnd(n); if (x != null) out.push(x); });
+  out.push(doc.attrs.sectPr || '');
+  return out;
+}
+
 export function sectionBreaks(doc, session, page, storyHeight) {
   const ends = [];
   doc.forEach((node, pos, i) => {

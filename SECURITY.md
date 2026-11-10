@@ -8,7 +8,7 @@ author didn't put there.
 
 Please don't open a public issue for it. Use GitHub's private reporting instead: on the repository's **Security** tab,
 choose **Report a vulnerability**. Include the document (or a small one that shows the problem), the browser, and
-what happened. You'll get an answer within a week.
+what happened.
 
 ## What it does to keep documents safe
 

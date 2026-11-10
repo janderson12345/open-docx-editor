@@ -21,14 +21,46 @@ function blocks(doc) {
   return out;
 }
 
-/** All matches of `query` as [{from, to}]. */
-export function findAll(doc, query, { matchCase = false, wholeWord = false } = {}) {
+/**
+ * The search as a regular expression: the query as typed, or (`regex`) a pattern of its own. Throws on a pattern that
+ * isn't one (findbar.js says so).
+ */
+export function searchPattern(query, { matchCase = false, wholeWord = false, regex = false } = {}) {
+  const body = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(wholeWord ? `\\b(?:${body})\\b` : body, matchCase ? 'gu' : 'giu');
+}
+
+/**
+ * All matches of `query` as [{from, to, groups, named}], within each paragraph. With `regex`, the query is a regular
+ * expression (groups: what its parentheses caught, for a replacement's $1, $2...); matches of nothing are skipped.
+ */
+export function findAll(doc, query, opts = {}) {
   if (!query) return [];
-  const literal = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(wholeWord ? `\\b${literal}\\b` : literal, matchCase ? 'g' : 'gi');
+  const re = searchPattern(query, opts);
   const out = [];
-  for (const b of blocks(doc)) for (const m of b.text.matchAll(re)) out.push({ from: b.at[m.index], to: b.at[m.index + m[0].length - 1] + 1 });
+  for (const b of blocks(doc)) {
+    for (const m of b.text.matchAll(re)) {
+      if (!m[0]) continue;
+      out.push({ from: b.at[m.index], to: b.at[m.index + m[0].length - 1] + 1, groups: opts.regex ? [...m] : null, named: m.groups || null });
+    }
+  }
   return out;
+}
+
+/** The replacement for a match: with a pattern, $& (the match), $1-$99 and $<name> filled in, $$ for a dollar sign. */
+export function replacementFor(m, replacement) {
+  if (!m.groups) return replacement;
+  return replacement.replace(/\$(\$|&|\d{1,2}|<([^>]+)>)/g, (all, k, name) => {
+    if (k === '$') return '$';
+    if (k === '&') return m.groups[0];
+    if (name != null) return m.named?.[name] ?? '';
+    // (Two digits where there aren't that many groups: the first digit's group and the second digit as it is, as
+    // String.prototype.replace reads "$10" with one group.)
+    const n = Number(k);
+    if (n > 0 && n < m.groups.length) return m.groups[n] ?? '';
+    if (k.length === 2 && Number(k[0]) > 0 && Number(k[0]) < m.groups.length) return (m.groups[Number(k[0])] ?? '') + k[1];
+    return all;
+  });
 }
 
 /** Select the next (dir 1) or previous (dir -1) match after the selection. Returns the match count. */
@@ -45,7 +77,7 @@ export function findNext(view, query, opts, dir = 1) {
 export function replaceOne(view, query, replacement, opts) {
   const { from, to } = view.state.selection;
   const hit = findAll(view.state.doc, query, opts).find((x) => x.from === from && x.to === to);
-  if (hit) view.dispatch(view.state.tr.insertText(replacement, from, to));
+  if (hit) view.dispatch(view.state.tr.insertText(replacementFor(hit, replacement), from, to));
   return findNext(view, query, opts, 1);
 }
 
@@ -54,7 +86,7 @@ export function replaceAll(view, query, replacement, opts) {
   const all = findAll(view.state.doc, query, opts);
   if (!all.length) return 0;
   const tr = view.state.tr;
-  for (const m of [...all].reverse()) tr.insertText(replacement, m.from, m.to);
+  for (const m of [...all].reverse()) tr.insertText(replacementFor(m, replacement), m.from, m.to);
   view.dispatch(tr);
   return all.length;
 }

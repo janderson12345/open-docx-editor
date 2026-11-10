@@ -6,7 +6,7 @@ import { Schema } from 'prosemirror-model';
 import { tableNodes } from 'prosemirror-tables';
 import { legacyInfo } from '../ooxml/ffdata.js';
 import { ommlToMathML } from '../ooxml/omml.js';
-import { pPrToCss, scaleCss, sizeCss, highlightColor, fontStack, lineFactor } from '../ooxml/props.js';
+import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineFactor } from '../ooxml/props.js';
 import { TWIPS_PER_PX } from '../ooxml/units.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
@@ -210,7 +210,7 @@ export const schema = new Schema({
       parseDOM: [{ tag: 's' }, { tag: 'del', priority: 40 }, { style: 'text-decoration=line-through' }],
       toDOM: (m) => (m.attrs.on ? ['s', 0] : ['span', { style: 'text-decoration:none' }, 0]),
     },
-    color: { attrs: { val: {} }, toDOM: (m) => ['span', { style: `color:#${m.attrs.val}` }, 0] },
+    color: { attrs: { val: {} }, toDOM: (m) => ['span', { style: `color:#${hexColor(m.attrs.val) || '000000'}` }, 0] },
     size: { attrs: { val: {} }, toDOM: (m) => ['span', { style: sizeCss(m.attrs.val / 2) }, 0] },
     highlight: { attrs: { val: {} }, toDOM: (m) => ['span', { style: `background-color:${highlightColor(m.attrs.val)}` }, 0] },
     underline: {
@@ -229,7 +229,8 @@ export const schema = new Schema({
       toDOM: (m) => {
         const change = m.attrs.items.find((it) => it[0] === 'rPrChange');
         const a = { style: rextraCss(m.attrs.items) };
-        if (change) Object.assign(a, { class: 'odx-fmt', title: revTitle('Formatted', revXmlAttrs(change[1])) });
+        if (a.style.includes('--odx-grow-')) a.class = 'odx-grow'; // (editor.css: a taller line for emphasis marks and run borders)
+        if (change) Object.assign(a, { class: [a.class, 'odx-fmt'].filter(Boolean).join(' '), title: revTitle('Formatted', revXmlAttrs(change[1])) });
         // Text in another language is checked by that language's dictionary, as in Word (w:lang); text Word is told not
         // to check (w:noProof: code, names) isn't checked.
         const lang = m.attrs.items.find((it) => it[0] === 'lang');
@@ -274,9 +275,12 @@ export const schema = new Schema({
   },
 });
 
+const EMPHASIS = { dot: 'filled dot', comma: 'filled sesame', circle: 'open circle', underDot: 'filled dot' };
+
 /** Display-only CSS for run properties we carry as raw XML (character spacing, caps, shading...). */
 function rextraCss(items) {
   const css = [];
+  const effects = new Set();
   const val = (xml) => (/w:val="([^"]*)"/.exec(xml) || [])[1];
   const on = (xml) => !/w:val="(0|false|off)"/.test(xml);
   for (const [name, xml] of items) {
@@ -299,6 +303,33 @@ function rextraCss(items) {
     else if (name === 'position') css.push(`vertical-align:${Number(val(xml)) / 2}pt`);
     // A colour that also names a theme colour (kept raw so saving keeps the theme link): its value still applies.
     else if (name === 'color' && /^[0-9A-Fa-f]{6}$/.test(val(xml) || '')) css.push(`color:#${val(xml)}`);
+    // Text effects as Word 2013+ draws them (compared with its PDFs): outline is hollow letters, shadow a grey copy down
+    // and right; emboss and imprint are outlined letters with that copy down-right or up-left. None moves the text.
+    else if (['outline', 'shadow', 'emboss', 'imprint'].includes(name) && on(xml)) effects.add(name);
+    // Emphasis marks: over the letters (dot, comma, circle) or under them (underDot).
+    // Word makes the line that much taller (0.31em, its PDFs at 11pt and 18pt): above it, or below for underDot.
+    else if (name === 'em' && EMPHASIS[val(xml)]) css.push(`text-emphasis:${EMPHASIS[val(xml)]}`, `text-emphasis-position:${val(xml) === 'underDot' ? 'under' : 'over'} right`, `--odx-grow-${val(xml) === 'underDot' ? 'down' : 'up'}:0.31em`);
+    // A border round the run, with its space beside the text (w:space, points) as in Word.
+    else if (name === 'bdr') {
+      const b = /w:val="([^"]+)"/.exec(xml)?.[1];
+      if (!b || b === 'none' || b === 'nil') continue;
+      const sz = Math.max(0.25, Number(/w:sz="(\d+)"/.exec(xml)?.[1] || 4) / 8), space = Number(/w:space="(\d+)"/.exec(xml)?.[1] || 0);
+      const color = /w:color="([0-9A-Fa-f]{6})"/.exec(xml)?.[1];
+      // (Its line is taller by what the border and its space reach past the line's own room, above and below, as in Word:
+      // a 0.5pt box adds nothing (sample S125), a 1pt one 1px, 1.5pt with 4pt of space 8px (test/fixtures/effects.docx).)
+      const grow = Math.max(0, sz + space - 0.5);
+      css.push(`border:${sz}pt ${b === 'double' ? 'double' : b === 'dotted' ? 'dotted' : /dash/i.test(b) ? 'dashed' : 'solid'} ${color ? '#' + color : 'currentColor'}`, `padding:0 ${space}pt`);
+      if (grow) css.push(`--odx-grow-up:${grow}pt`, `--odx-grow-down:${grow}pt`);
+    }
+  }
+  if (effects.size) {
+    // (Measured on Word's PDF of test/fixtures/effects.docx: the shadow 0.06em down and right in a mid grey, the
+    // outline about 0.03em wide.)
+    const shade = '0.06em 0.06em 0 #a6a6a6';
+    if (effects.has('outline') && !effects.has('emboss') && !effects.has('imprint')) css.push('-webkit-text-stroke:0.03em currentColor', '-webkit-text-fill-color:#fff');
+    if (effects.has('emboss') || effects.has('imprint')) css.push('-webkit-text-stroke:0.03em currentColor');
+    const shadow = effects.has('imprint') ? '-0.06em -0.06em 0 #a6a6a6' : effects.has('shadow') || effects.has('emboss') ? shade : null;
+    if (shadow) css.push(`text-shadow:${shadow}`);
   }
   return css.join(';');
 }
@@ -314,6 +345,6 @@ function revTitle(what, { author, date }) {
 }
 
 function alignFromCss(v) {
-  return { center: 'center', right: 'right', justify: 'both' }[v] || null;
+  return { center: 'center', right: 'right', end: 'right', justify: 'both' }[v] || null;
 }
 

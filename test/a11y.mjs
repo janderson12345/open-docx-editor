@@ -26,7 +26,7 @@ const server = http.createServer((req, res) => {
 const url = `http://localhost:${server.address().port}/`;
 const axe = fs.readFileSync('node_modules/axe-core/axe.min.js', 'utf8');
 const scan = fs.readFileSync('test/a11y-scan.js', 'utf8');
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
 let failed = 0;
 const fail = (msg) => { failed++; console.log('FAIL', msg); };
 
@@ -57,6 +57,26 @@ for (const scheme of ['light', 'dark']) {
   if ((await page.$$('.odx-ctx [role=menuitem]')).length < FLOORS.contextItems) fail('context menu items not found');
   await check('context menu');
   await page.keyboard.press('Escape');
+  // Find and Replace open (with its Patterns option).
+  await page.click('.odx-content p');
+  await page.keyboard.press('Control+h');
+  await page.waitForSelector('.odx-findbar:not([hidden])');
+  await check('Find and Replace');
+  await page.keyboard.press('Escape');
+  // The notice offering a draft of unsaved changes back (the demo keeps drafts): edit, leave, open the file again.
+  await page.setInputFiles('input[type=file]', 'test/fixtures/rich.docx');
+  await page.waitForFunction(() => window.odx?.fileName === 'rich.docx');
+  await page.click('.odx-content p');
+  await page.keyboard.type(' unsaved');
+  for (let t = 0; t < 40 && !(await page.evaluate(() => window.odx.draft().then(Boolean))); t++) await page.waitForTimeout(250); // (kept 3 seconds after the last edit; waitForFunction doesn't wait on a promise)
+  await page.reload();
+  await page.waitForSelector('.odx-content p');
+  await page.addScriptTag({ content: axe });
+  await page.addScriptTag({ content: scan });
+  await page.setInputFiles('input[type=file]', 'test/fixtures/rich.docx');
+  await page.waitForSelector('.odx-draftnote', { timeout: 8000 }).catch(() => fail(`${scheme}: the drafts notice didn't appear`));
+  await check('drafts notice');
+  await page.click('.odx-draftnote button:has-text("Discard")');
   // Toggle state is exposed to screen readers (4.1.2).
   if ((await page.getAttribute('[aria-label^="Bold"]', 'aria-pressed')) == null) fail('Bold has no aria-pressed');
   // Keyboard: F6 reaches the ribbon, arrows move between tabs, Esc returns to the document.

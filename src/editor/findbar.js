@@ -8,12 +8,20 @@ export function createFindBar(getView, withView) {
   const replBox = el('input', { type: 'text', placeholder: 'Replace with', 'aria-label': 'Replace with', class: 'odx-findbox' });
   const matchCase = el('input', { type: 'checkbox', title: 'Match case' });
   const wholeWord = el('input', { type: 'checkbox', title: 'Whole words only' });
+  // Patterns: the query is a regular expression (\d+, colou?r, ^Chapter), and a replacement can use what its
+  // parentheses caught ($1, $2).
+  const regex = el('input', { type: 'checkbox', title: 'Use patterns (regular expressions): \\d for a digit, . for any character, (…) to reuse as $1 in the replacement' });
   const findInfo = el('span', { class: 'odx-findinfo', role: 'status' }); // read out by screen readers (4.1.3)
-  const fOpts = () => ({ matchCase: matchCase.checked, wholeWord: wholeWord.checked });
+  const fOpts = () => ({ matchCase: matchCase.checked, wholeWord: wholeWord.checked, regex: regex.checked });
   const fdo = (fn) => (e) => {
     e.preventDefault();
     const v = getView();
-    const n = fn(v);
+    let n;
+    try { n = fn(v); } catch (err) {
+      if (!(err instanceof SyntaxError)) throw err;
+      findInfo.textContent = `Not a valid pattern: ${err.message.replace(/^Invalid regular expression: /, '')}`;
+      return;
+    }
     findInfo.textContent = n == null ? '' : n ? `${n} result${n === 1 ? '' : 's'}` : 'No results';
   };
   const replRow = el('span', { class: 'odx-replrow' }, replBox,
@@ -23,7 +31,7 @@ export function createFindBar(getView, withView) {
     findBox,
     el('button', { type: 'button', title: 'Previous result', onmousedown: fdo((v) => findNext(v, findBox.value, fOpts(), -1)) }, '↑'),
     el('button', { type: 'button', title: 'Next result', onmousedown: fdo((v) => findNext(v, findBox.value, fOpts(), 1)) }, '↓'),
-    el('label', {}, matchCase, 'Match case'), el('label', {}, wholeWord, 'Whole words'),
+    el('label', {}, matchCase, 'Match case'), el('label', {}, wholeWord, 'Whole words'), el('label', {}, regex, 'Patterns'),
     replRow, findInfo,
     el('button', { type: 'button', title: 'Close', class: 'odx-close', onmousedown: (e) => { e.preventDefault(); findBar.hidden = true; getView()?.focus(); } }, '✕'));
   findBox.addEventListener('keydown', (e) => {

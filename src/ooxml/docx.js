@@ -38,12 +38,17 @@ export class DocxSession {
     const settings = this.pkg.partByType(REL_TYPES.settings);
     const mode = settings && /<w:compatSetting\b[^>]*w:name="compatibilityMode"[^>]*w:val="(\d+)"|<w:compatSetting\b[^>]*w:val="(\d+)"[^>]*w:name="compatibilityMode"/.exec(this.pkg.text(settings) || '');
     this.compatMode = mode ? Number(mode[1] || mode[2]) : 12;
+    // The compatibility rules it names (w:compat's children, by their names: splitPgBreakAndParaMark...), each a
+    // Word version's layout the document asks for; the layout follows those it knows (docs/LAYOUT.md).
+    const compat = settings && /<w:compat>([\s\S]*?)<\/w:compat>/.exec(this.pkg.text(settings) || '')?.[1];
+    this.compat = new Set(compat ? [...compat.matchAll(/<w:(\w+)\b([^>]*)\/?>/g)].filter(([, n, a]) => n !== 'compatSetting' && !/w:val="(?:0|false|off)"/.test(a)).map(([, n]) => n) : []);
     // Track Changes on when the document was saved (the editor updates this as it's toggled).
     this.settingsPath = settings;
     this.trackRevisions = this._trackRevisions0 = !!settings && /<w:trackRevisions(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
     const dts = settings && /<w:defaultTabStop\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
     this.defaultTabStop = dts ? Number(dts[1]) : 720;
     this.numbering = readNumbering(this.pkg);
+    this.pictureBullets = this.picBullets(); // (the session's, not numbering's: numbering is read again as lists are added)
     this.originalXml = this.pkg.text(this.pkg.mainPath);
     this._resolvers = {
       resolveImage: (rId) => {
@@ -62,6 +67,44 @@ export class DocxSession {
     this.comments = readComments(this.pkg);
     this.notes = loadNotes(this.pkg);
     this.commentsDirty = false;
+  }
+
+  /**
+   * Picture bullets (w:numPicBullet): id -> an SVG data URL of the picture at the bullet's size (points), which a list
+   * label shows as its content, on the baseline as in Word. (A data URL, so it sizes itself, and prints.)
+   */
+  picBullets() {
+    const out = new Map();
+    const path = this.pkg.partByType(REL_TYPES.numbering);
+    const doc = path && this.pkg.xml(path);
+    if (!doc) return out;
+    const rels = this.pkg.readRels(path);
+    // (From the parsed part, each bullet's own XML: a pattern over the whole part was slow on a crafted one.)
+    for (const el of kids(doc.documentElement, 'numPicBullet')) {
+      const xml = serializeXml(el);
+      const num = el.getAttributeNS(NS.w, 'numPicBulletId');
+      const id = /<v:imagedata\b[^>]*r:id="([^"]+)"/.exec(xml)?.[1] || /<a:blip\b[^>]*r:embed="([^"]+)"/.exec(xml)?.[1];
+      const rel = id && rels.find((r) => r.id === id);
+      const raw = rel && !rel.external && this.pkg.files[rel.target];
+      // (A bullet is a small picture: one over 512 KB is left out, the level's own bullet character shown instead.)
+      if (!/^\d+$/.test(num || '') || !raw || raw.length > 512 * 1024) continue;
+      // Its size: the VML shape's style (points), or the drawing's extent (EMU); else 9pt, Word's default. At most 72pt.
+      const pt = (k) => Number(new RegExp(`${k}:([\\d.]+)pt`).exec(xml)?.[1]);
+      const ext = /<wp:extent\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(xml);
+      const fit = (v) => Math.min(72, Math.max(1, v || 9));
+      const w = fit(pt('width') || (ext ? Number(ext[1]) / 12700 : 9)), h = fit(pt('height') || (ext ? Number(ext[2]) / 12700 : 9));
+      const [bytes, mime] = shown(raw, /\.jpe?g$/i.test(rel.target) ? 'image/jpeg' : /\.gif$/i.test(rel.target) ? 'image/gif' : 'image/png');
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}pt" height="${h}pt" viewBox="0 0 ${w} ${h}"><image href="data:${mime};base64,${btoa(bin)}" width="${w}" height="${h}" preserveAspectRatio="none"/></svg>`;
+      out.set(num, 'data:image/svg+xml;base64,' + btoa(svg));
+    }
+    return out;
+  }
+
+  /** The picture bullets as CSS, one rule each, which list paragraphs take by class (pararules.js). */
+  picBulletCss(scope) {
+    return [...this.pictureBullets].map(([id, url]) => `${scope} p.odx-pb-${id}{--odx-picbullet:url("${url}")}`).join('\n');
   }
 
   /** A chart part drawn as an SVG data URL (null if it can't be drawn). */

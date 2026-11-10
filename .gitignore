@@ -4,3 +4,4 @@ demo/dist/
 test/out/
 test/_*.mjs
 *.tgz
+demo/sample.docx

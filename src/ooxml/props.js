@@ -21,7 +21,7 @@ export function readRPr(rPr) {
   const sz = kid(rPr, 'sz');
   if (sz) p.size = Number(attr(sz, 'val'));
   const color = kid(rPr, 'color');
-  if (color && attr(color, 'val') && attr(color, 'val') !== 'auto') p.color = attr(color, 'val');
+  if (color && hexColor(attr(color, 'val'))) p.color = attr(color, 'val');
   const hl = kid(rPr, 'highlight');
   if (hl && attr(hl, 'val') !== 'none') p.highlight = attr(hl, 'val');
   const fonts = kid(rPr, 'rFonts');
@@ -47,7 +47,7 @@ export function readBorders(el) {
   if (!el) return out;
   for (const c of kids(el)) {
     const side = { start: 'left', end: 'right' }[c.localName] || c.localName;
-    out[side] = { val: attr(c, 'val'), sz: Number(attr(c, 'sz') || 4), color: attr(c, 'color'), space: Number(attr(c, 'space') || 0) };
+    out[side] = { val: attr(c, 'val'), sz: Number(attr(c, 'sz')) || 4, color: hexColor(attr(c, 'color')), space: Number(attr(c, 'space')) || 0 };
   }
   return out;
 }
@@ -65,9 +65,12 @@ export function borderCss(b) {
 }
 
 export function shdFill(shd) {
-  const fill = shd && attr(shd, 'fill');
-  return fill && fill !== 'auto' ? '#' + fill : null;
+  const fill = hexColor(shd && attr(shd, 'fill'));
+  return fill ? '#' + fill : null;
 }
+
+// Word's paragraph alignments the layout knows (w:jc); anything else is left out.
+const ALIGN = new Set(['left', 'right', 'center', 'both', 'distribute', 'start', 'end', 'justify', 'thaiDistribute', 'lowKashida', 'mediumKashida', 'highKashida']);
 
 export function readPPr(pPr) {
   const p = {};
@@ -75,14 +78,17 @@ export function readPPr(pPr) {
   const st = kid(pPr, 'pStyle');
   if (st) p.styleId = attr(st, 'val');
   const jc = kid(pPr, 'jc');
-  if (jc) p.align = attr(jc, 'val');
+  if (jc && ALIGN.has(attr(jc, 'val'))) p.align = attr(jc, 'val');
+  // Right-to-left (w:bidi): its left and right (alignment, indents) are its start and end, as in Word.
+  const bidi = onOff(kid(pPr, 'bidi'));
+  if (bidi != null) p.bidi = bidi;
   const sp = kid(pPr, 'spacing');
   if (sp) {
     for (const k of ['before', 'after', 'line']) if (attr(sp, k) != null) p[k] = Number(attr(sp, k));
     if (attr(sp, 'lineRule')) p.lineRule = attr(sp, 'lineRule');
     // HTML auto spacing is 14pt each side; Word drops it above the first paragraph of the document or a cell.
     if (/^(1|true|on)$/.test(attr(sp, 'beforeAutospacing') || '')) { p.before = 280; p.beforeAuto = true; }
-    if (/^(1|true|on)$/.test(attr(sp, 'afterAutospacing') || '')) p.after = 280;
+    if (/^(1|true|on)$/.test(attr(sp, 'afterAutospacing') || '')) { p.after = 280; p.afterAuto = true; }
   }
   const ind = kid(pPr, 'ind');
   if (ind) {
@@ -144,7 +150,13 @@ const HIGHLIGHT = {
   darkMagenta: '#800080', darkRed: '#800000', darkYellow: '#808000', darkGray: '#808080',
   lightGray: '#c0c0c0', black: '#000000', white: '#ffffff',
 };
-export const highlightColor = (v) => HIGHLIGHT[v] || v;
+// (A document's values reach CSS only as these allow: a colour as six hex digits, a highlight by name, a font name
+// inside a quoted string it can't end. Anything else would let a crafted file write its own CSS into the page.)
+export const highlightColor = (v) => HIGHLIGHT[v] || (/^[a-z]{3,20}$/i.test(v || '') ? v : 'transparent');
+/** A colour value (w:color, w:fill...) when it's one: six hex digits; else null. */
+export const hexColor = (v) => (/^[0-9a-f]{6}$/i.test(v || '') ? v : null);
+/** A font name as a quoted CSS string: what could end the string or the declaration taken out. */
+const quoted = (name) => `"${String(name).replace(/["\\\r\n\f{}<>]/g, '')}"`;
 
 // Metric-compatible open fonts first-class. DejaVu Sans (Bitstream Vera's
 // metrics) is what Word itself swaps for Verdana when the font is missing.
@@ -165,11 +177,11 @@ export function setFontAlts(map) { for (const [k, v] of map || []) ALTS.set(k, v
 export function fontStack(name) {
   if (listed(name)) return '"Segoe UI", sans-serif';
   if (twin(name)) return fontStack(twin(name));
-  if (!LINE[(name || '').toLowerCase()] && face(name)) return [`"${name}"`, ...fontStack(face(name)).split(', ')].join(', ');
+  if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...fontStack(face(name)).split(', ')].join(', ');
   const alt = !LINE[(name || '').toLowerCase()] && !SUBST[name] && ALTS.get(name);
-  if (alt) return [`"${name}"`, ...fontStack(alt).split(', ')].join(', ');
+  if (alt) return [quoted(name), ...fontStack(alt).split(', ')].join(', ');
   const generic = /mono|courier|consol/i.test(name) ? 'monospace' : /times|cambria|georgia|garamond|serif/i.test(name) && !/sans/i.test(name) ? 'serif' : 'sans-serif';
-  return [`"${name}"`, SUBST[name] && `"${SUBST[name]}"`, generic].filter(Boolean).join(', ');
+  return [quoted(name), SUBST[name] && quoted(SUBST[name]), generic].filter(Boolean).join(', ');
 }
 
 // Word's "single" line height is the font's own ascent + descent (+ line gap),
@@ -242,7 +254,9 @@ export function rPrToCss(p, theme) {
 
 export function pPrToCss(p) {
   const css = [];
-  if (p.align) css.push(`text-align:${{ both: 'justify', distribute: 'justify', start: 'left', end: 'right' }[p.align] || p.align}`);
+  // (Start and end, not left and right: a right-to-left paragraph's 'left' is its start, at the right.)
+  if (p.bidi != null) css.push(`direction:${p.bidi ? 'rtl' : 'ltr'}`);
+  if (p.align) css.push(`text-align:${{ both: 'justify', distribute: 'justify', thaiDistribute: 'justify', lowKashida: 'justify', mediumKashida: 'justify', highKashida: 'justify', left: 'start', right: 'end', center: 'center', start: 'start', end: 'end', justify: 'justify' }[p.align] || 'start'}`);
   if (p.before != null) css.push(`margin-top:${twipsToPt(p.before)}pt;--odx-sb:${twipsToPt(p.before)}pt`); // (--odx-sb: where a picture's paragraph-relative offset starts, reader.js)
   if (p.after != null) css.push(`margin-bottom:${twipsToPt(p.after)}pt`);
   if (p.line != null) {
@@ -252,8 +266,8 @@ export function pPrToCss(p) {
     else css.push(`--odx-lhv:max(${twipsToPt(p.line)}pt, calc(var(--odx-lh, 1.17) * 1em));--odx-mult:1;--odx-runmult:1;--odx-lhlen:1;--odx-atleast:${twipsToPt(p.line)}pt`);
   }
   // A side border and its space sit outside the indent, in Word: the text stays where the indent puts it (--odx-bdl/-bdr).
-  if (p.indLeft != null) css.push(`margin-left:calc(${twipsToPt(p.indLeft)}pt - var(--odx-bdl, 0pt))`);
-  if (p.indRight != null) css.push(`margin-right:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
+  if (p.indLeft != null) css.push(`margin-inline-start:calc(${twipsToPt(p.indLeft)}pt - var(--odx-bdl, 0pt))`);
+  if (p.indRight != null) css.push(`margin-inline-end:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
   if (p.indFirst != null) css.push(`text-indent:${twipsToPt(p.indFirst)}pt`);
   if (p.borders) {
     for (const side of ['top', 'bottom', 'left', 'right']) {

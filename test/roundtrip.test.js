@@ -8,6 +8,7 @@ import { DocxSession } from '../src/ooxml/docx.js';
 import { parseXml } from '../src/ooxml/xml.js';
 import { Transform } from 'prosemirror-transform';
 import { blankDocxBytes } from '../src/ooxml/template.js';
+import { isStrict, fromStrict } from '../src/ooxml/strict.js';
 
 const dir = new URL('./fixtures/', import.meta.url);
 const fixtures = fs.readdirSync(dir).filter((f) => f.endsWith('.docx'));
@@ -16,8 +17,10 @@ const rawText = async (bytes) => (await mammoth.extractRawText({ buffer: Buffer.
 
 for (const f of [...fixtures, '(blank)']) {
   test(`round-trip: ${f}`, async () => {
-    const bytes = f === '(blank)' ? blankDocxBytes() : load(f);
-    const s1 = new DocxSession(bytes);
+    const given = f === '(blank)' ? blankDocxBytes() : load(f);
+    // (A Strict document is saved in the Transitional form: compared with that.)
+    const bytes = isStrict(unzipSync(given)) ? zipSync(fromStrict(unzipSync(given))) : given;
+    const s1 = new DocxSession(given);
     const out = s1.save();
 
     // 1. Every part except the main document is untouched, byte for byte.

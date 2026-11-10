@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-docx-editor: a WOPI host's document</title>
+<link rel="stylesheet" href="./dist/open-docx-editor.css">
+<link rel="stylesheet" href="./dist/fonts/fonts.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #e9ebee; }
+  #app { display: flex; flex-direction: column; height: calc(100% - 30px); }
+  #app > div:last-child { flex: 1; }
+  #status { font: 13px system-ui, sans-serif; height: 30px; box-sizing: border-box; padding: 6px 12px; background: #fff; color: #222; border-bottom: 1px solid #d9dde3; }
+</style>
+</head>
+<body>
+<div id="status" role="status">Opening…</div>
+<div id="app"></div>
+<script type="module" src="./dist/wopi.js"></script>
+</body>
+</html>

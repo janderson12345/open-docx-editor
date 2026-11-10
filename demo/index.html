@@ -5,14 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>open-docx-editor demo</title>
 <link rel="stylesheet" href="./dist/open-docx-editor.css">
+<link rel="stylesheet" href="./dist/fonts/fonts.css">
 <style>
   html, body { margin: 0; height: 100%; background: #e9ebee; }
   #app { display: flex; flex-direction: column; height: 100%; }
   #app > div:last-child { flex: 1; }
   .drop { outline: 3px dashed #2b6cdf; outline-offset: -8px; }
+  #fonts-note { font: 13px system-ui, sans-serif; padding: 6px 12px; background: #fff7e0; color: #4a3b00; border-bottom: 1px solid #e8d9a8; }
+  #fonts-note[hidden] { display: none; }
 </style>
 </head>
 <body>
+<div id="fonts-note" role="status" hidden></div>
 <div id="app"></div>
 <script type="module" src="./dist/demo.js"></script>
 </body>

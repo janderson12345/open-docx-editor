@@ -1,6 +1,6 @@
 // styles.xml, theme fonts and numbering.xml: read once per document, turned
 // into a CSS stylesheet for the editor and a list-label resolver.
-import { kids, kid, attr, NS, REL_TYPES } from './xml.js';
+import { kids, kid, attr, onOff, NS, REL_TYPES } from './xml.js';
 import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss } from './props.js';
 import { twipsToPx } from './units.js';
 
@@ -84,7 +84,7 @@ export function stylesToCss(scope, info, theme) {
     `${scope}{--odx-font-minor:${fontStack(theme.minor || 'Calibri')};--odx-lh-minor:${lineFactor(theme.minor || 'Calibri')};--odx-font-major:${fontStack(theme.major || theme.minor || 'Calibri')};--odx-lh-major:${lineFactor(theme.major || theme.minor || 'Calibri')}}`,
     `${scope}{${fontCss(baseFont || 'Calibri')};${sizeCss((defaults.rPr.size || 20) / 2)};${rPrToCss({ ...defaults.rPr, font: null, themeFont: null, size: null }, theme)}}`,
   );
-  rules.push(`${scope} p{margin:0;margin-left:calc(0pt - var(--odx-bdl, 0pt));margin-right:calc(0pt - var(--odx-bdr, 0pt));${pPrToCss(defaults.pPr)}}`);
+  rules.push(`${scope} p{margin:0;margin-inline-start:calc(0pt - var(--odx-bdl, 0pt));margin-inline-end:calc(0pt - var(--odx-bdr, 0pt));direction:ltr;${pPrToCss(defaults.pPr)}}`); // (left-to-right unless it says otherwise, also in a right-to-left table)
   for (const st of styles.values()) {
     if (st.type !== 'paragraph' && st.type !== 'character') continue;
     const r = resolveStyle(styles, st.id);
@@ -126,6 +126,8 @@ export function readNumbering(pkg) {
     size: Number(attr(kid(kid(l, 'rPr'), 'sz'), 'val')) || null, // half-points
     jc: attr(kid(l, 'lvlJc'), 'val') || 'left', // the label's alignment at its position
     suff: attr(kid(l, 'suff'), 'val') || 'tab', // what follows the label: a tab, a space or nothing
+    legal: onOff(kid(l, 'isLgl')) || false, // legal numbering: every level's number in Arabic numerals ("1.1.1", not "I.1.a")
+    picBullet: attr(kid(l, 'lvlPicBulletId'), 'val') ?? null, // a picture bullet (w:numPicBullet)
   });
   for (const an of kids(doc.documentElement, 'abstractNum')) {
     const levels = [];
@@ -198,7 +200,8 @@ export function listCounter(numbering) {
     return lvl.text.replace(/%(\d)/g, (_, d) => {
       const i = Number(d) - 1;
       const v = c[i] ?? startOf(i);
-      return formatNumber(v, levels[i]?.fmt || 'decimal');
+      const fmt = levels[i]?.fmt || 'decimal';
+      return formatNumber(v, lvl.legal && fmt !== 'none' ? 'decimal' : fmt);
     });
   };
 }
@@ -347,6 +350,9 @@ function placementCss(info, tblPrXml, compatMode, parseXml) {
   else if (jc === 'center') css.push('width:fit-content', 'margin-left:auto', 'margin-right:auto');
   else if (jc === 'right' || jc === 'end') css.push('width:fit-content', 'margin-left:auto');
   else if (left) css.push(`margin-left:${+left.toFixed(2)}px`);
+  // A right-to-left table (w:bidiVisual): its first column at the right, its indent from the right margin. (Its cells'
+  // paragraphs keep their own direction: editor.css and styles.js give every paragraph one.)
+  if (onOff(kid(el, 'bidiVisual'))) return css.join(';').replace(/margin-left:/g, 'margin-inline-start:').replace(/margin-right:/g, 'margin-inline-end:') + ';direction:rtl';
   return css.join(';');
 }
 

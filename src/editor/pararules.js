@@ -21,6 +21,9 @@ export function listLabel(node, session, l, label, attrs, style) {
     const hang = -(node.attrs.view.indFirst ?? ind.indFirst ?? -360);
     attrs.class = lvl && lvl.fmt === 'bullet' ? 'odx-li odx-bullet' : 'odx-li';
     attrs['data-label'] = label;
+    // A picture bullet (w:lvlPicBulletId): the picture in the label's place (editor.css odx-picbullet).
+    // (Its picture is in the document's stylesheet once, docx.js picBulletCss, not in every item's style.)
+    if (lvl && lvl.picBullet != null && session.pictureBullets?.has(lvl.picBullet)) attrs.class += ` odx-picbullet odx-pb-${lvl.picBullet}`;
     // The text after the label starts at the hanging indent; with none (a first-line indent instead), at the
     // next default tab stop after the label's start.
     // (The paragraph's own tab stops come first; then the default ones.)
@@ -30,14 +33,18 @@ export function listLabel(node, session, l, label, attrs, style) {
       .filter((t) => t.val !== 'bar' && t.val !== 'clear' && t.pos > start).map((t) => t.pos);
     // (Nothing after the label, w:suff="nothing": the text follows it at once, doc 24's unnumbered headings starting
     // at the hanging position.)
-    const gap = lvl && lvl.suff === 'nothing' ? 0 : hang > 0 ? hang : (own.length ? Math.min(...own) : (Math.floor(start / dts) + 1) * dts) - start;
-    style.push(`margin-left:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
+    const next = (own.length ? Math.min(...own) : (Math.floor(start / dts) + 1) * dts) - start;
+    // (Word 2003's rule, w:doNotUseIndentAsNumberingTabStop: the hanging indent is the label's stop only when it comes
+    // before the next tab stop; past it, the text after the label goes to that stop.)
+    const viaIndent = hang > 0 ? (session.compat?.has('doNotUseIndentAsNumberingTabStop') ? Math.min(hang, next) : hang) : next;
+    const gap = lvl && lvl.suff === 'nothing' ? 0 : viaIndent;
+    style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
     // A right-aligned number ends at its position, not starts there (roman "i." / "ii." levels): drawn in its box
     // that much to the left, the text still at the indent.
     if (lvl && (lvl.jc === 'right' || lvl.jc === 'end')) attrs.class += ' odx-lbl-right';
   } else if (node.attrs.numId === '0' && node.attrs.styleId && resolveStyle(session.styles.styles, node.attrs.styleId).pPr.numId != null) {
     // Switching off a style's list also drops the style's indent (Word treats it as the list's).
-    style.push(`margin-left:${twipsToPt(node.attrs.view.indLeft ?? 0)}pt`, `text-indent:${twipsToPt(node.attrs.view.indFirst ?? 0)}pt`);
+    style.push(`margin-inline-start:${twipsToPt(node.attrs.view.indLeft ?? 0)}pt`, `text-indent:${twipsToPt(node.attrs.view.indFirst ?? 0)}pt`);
   }
 }
 
@@ -73,8 +80,10 @@ export function lineSize(node, session, run, label, attrs, style) {
     attrs.class = [attrs.class, 'odx-mark'].filter(Boolean).join(' ');
   }
   // Ending in a line break: its empty last line is as tall as the paragraph's font (editor.css odx-endbreak; textspans.js).
-  // (Not a page break, drawn as an element the browser lays out on its own.)
-  else if (node.lastChild?.type.name === 'hard_break' && node.lastChild.attrs.type !== 'page') attrs.class = [attrs.class, 'odx-endbreak'].filter(Boolean).join(' ');
+  // (Not a page break, drawn as an element the browser lays out on its own: its paragraph mark stays on the page before.
+  // Unless the document asks for Word 2003's rule (w:splitPgBreakAndParaMark): there the mark goes to the next page,
+  // an empty line at its top, as in Word.)
+  else if (node.lastChild?.type.name === 'hard_break' && (node.lastChild.attrs.type !== 'page' || session.compat?.has('splitPgBreakAndParaMark'))) attrs.class = [attrs.class, 'odx-endbreak'].filter(Boolean).join(' ');
   // Empty markers alone, or before a bare line break that starts the paragraph: the browser gives that first line no
   // height (ProseMirror puts a zero-size image before a leading break), Word a full line. (A break inside formatting
   // has its span's strut, and its own size.)

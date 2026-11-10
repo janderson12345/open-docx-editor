@@ -97,8 +97,9 @@ export function applyLineFix(view) {
     // The value Edge used before any fix of ours (a decoration from an earlier pass shows in the data attribute).
     const want = el.dataset.odxLh ? Number(el.dataset.odxLh) : parseFloat(lineHeightOf(cs));
     if (!want || !fs) return false;
-    // The text's own elements (Word documents often set the font and size on runs, not the paragraph).
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    // The text's own elements (Word documents often set the font and size on runs, not the paragraph). Not an equation's:
+    // its parts (a script with one of its two children copied) aren't a line of text, and Firefox reports them as errors.
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('math') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
     const text = walk.nextNode();
     const chain = [];
     for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);

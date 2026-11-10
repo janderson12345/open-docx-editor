@@ -1,15 +1,16 @@
 // The editor: a ProseMirror view laid out as a Word page, with Word-style keys
 // and list numbering computed from numbering.xml.
 import { commentsPlugin, addComment, refresh as refreshComments } from './comments.js';
-import { hfDoubleClick, closeStory } from './hfedit.js';
+import { hfDoubleClick, closeStory, flushStory } from './hfedit.js';
 import { formsPlugin } from './fields.js';
-import { noteClicks, closeNote, insertNote } from './notes.js';
+import { noteClicks, closeNote, flushNote, insertNote } from './notes.js';
 import { EditorState, Plugin } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { Fragment } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands } from 'prosemirror-commands';
 import { history, undo, redo } from 'prosemirror-history';
+import { autocorrectPlugin } from './autocorrect.js';
 import { tableEditing, columnResizing, goToNextCell, TableMap, TableView } from 'prosemirror-tables';
 import { listCounter, resolveStyle, tableCellCss, tableStylesCss, tablePlacementCss } from '../ooxml/styles.js';
 import { parseXml } from '../ooxml/xml.js';
@@ -31,7 +32,7 @@ const spoken = (name, label) => (state, dispatch, view) => {
 import { createPages, pagePushPlugin } from './pages.js';
 import { justifyPlugin } from './justify.js';
 import { imageResizePlugin, shapeKeysPlugin } from './imgresize.js';
-import { textBoxPlugin } from './txbxedit.js';
+import { textBoxPlugin, closeTextBox } from './txbxedit.js';
 import { chartPlugin } from './charts.js';
 import { lineFixPlugin } from './lhfix.js';
 import { textSpansPlugin } from './textspans.js';
@@ -247,7 +248,21 @@ function paragraphPlugin(session) {
           attrs.class = [attrs.class, 'odx-dropcap'].filter(Boolean).join(' ');
         }
         const cs = contextual(node.attrs);
-        if (rel === 0 && (node.attrs.view.beforeAuto ?? session.styleProp(node.attrs.styleId, 'beforeAuto'))) style.push('margin-top:0');
+        // HTML-style automatic spacing: 14pt, shared with the paragraph beside it (the margins collapse), none above the
+        // first paragraph of a cell, and none between two items of one list (Word's PDFs). Under Word 2003's rule
+        // (w:doNotUseHTMLParagraphAutoSpacing) it's a plain 5pt each side, added to the next paragraph's.
+        const auto = (n, side) => n.type.name === 'paragraph' && (n.attrs.view[side] ?? session.styleProp(n.attrs.styleId, side));
+        const plainAuto = session.compat?.has('doNotUseHTMLParagraphAutoSpacing');
+        if (plainAuto) {
+          if (auto(node, 'beforeAuto')) style.push(`margin-top:${prev && auto(prev.node, 'afterAuto') ? 10 : 5}pt`);
+          if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt');
+        } else {
+          if (rel === 0 && auto(node, 'beforeAuto')) style.push('margin-top:0');
+          if (prev && node.attrs.numId && node.attrs.numId !== '0' && prev.node.attrs.numId === node.attrs.numId && auto(node, 'beforeAuto') && auto(prev.node, 'afterAuto')) {
+            style.push('margin-top:0');
+            prev.style.push('margin-bottom:0');
+          }
+        }
         const bdr = borderKey(node.attrs);
         // Paragraphs with the same borders form one group, as in Word: its top border above the first, its bottom border
         // under the last (and a "between" line, if any, between them).
@@ -274,7 +289,10 @@ function paragraphPlugin(session) {
         if (sd) {
           // (Added to the paragraph's own indents, the last margin it sets.)
           const own = (k) => { const v = [...style].reverse().find((x) => x.startsWith(`${k}:`)); return v ? v.slice(k.length + 1).trim() : '0pt'; };
-          style.push(`margin-left:calc(${own('margin-left')} + ${sd[0]}px)`, `margin-right:calc(${own('margin-right')} + ${sd[1]}px)`);
+          // (The section's sides are the page's left and right: a right-to-left paragraph's start is its right.)
+          const rtl = (node.attrs.view.bidi ?? session.styleProp(node.attrs.styleId, 'bidi')) === true;
+          const [ds, de] = rtl ? [sd[1], sd[0]] : sd;
+          style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px)`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px)`);
         }
         prev = { node, pos, attrs, style, cs, bdr };
         decos.push(prev);
@@ -340,7 +358,7 @@ const activeBlock = new Plugin({
 export function createEditor(mount, session, { onChange, author = 'Author', collab = null } = {}) {
   const scope = `odx-doc-${++scopeSeq}`;
   const styleEl = document.createElement('style');
-  styleEl.textContent = session.css(`.${scope}`) + '\n' + tableStylesCss(`.${scope}`, session.styles, session.theme);
+  styleEl.textContent = session.css(`.${scope}`) + '\n' + tableStylesCss(`.${scope}`, session.styles, session.theme) + '\n' + session.picBulletCss(`.${scope}`);
   document.head.appendChild(styleEl);
 
   const page = session.page();
@@ -377,7 +395,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session)],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session)],
   });
 
   mount.classList.add('odx-canvas');
@@ -423,6 +441,9 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     session,
     author,
     main: view,
+    // A header, footer or note being edited: its text into the document so far (for a save), or all of them closed.
+    flushStories() { flushStory(); flushNote(); },
+    closeStories() { closeStory(); closeNote(); closeTextBox(); },
     pages,
     collab,
     undo: doUndo,

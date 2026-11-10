@@ -2,7 +2,7 @@
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
 import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, childNamed } from './xml.js';
-import { readPPr } from './props.js';
+import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
 
 // w:pPr children we model as attrs; all others go to `extra`.
@@ -130,7 +130,7 @@ function readParagraph(p, ctx) {
       attrs.ilvl = props.ilvl;
     }
     for (const c of kids(pPr)) if (!(c.namespaceURI === NS.w && PPR_MODELLED.has(c.localName))) attrs.extra.push([c.localName, ctx.xml(c)]);
-    for (const k of ['before', 'beforeAuto', 'after', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs']) if (props[k] != null) attrs.view[k] = props[k];
+    for (const k of ['before', 'beforeAuto', 'after', 'afterAuto', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs', 'bidi']) if (props[k] != null) attrs.view[k] = props[k];
   }
   const content = [];
   readInline(kids(p).filter((c) => c !== pPr), [], ctx, content);
@@ -305,6 +305,8 @@ function readGraphic(el, ctx, rPrXml) {
       // Wider than any column: the image's max-width trims it to the column, the height stays.
       return { type: 'image', attrs: { xml, src, width: 4000, height: Math.max(1, Math.round((h ? Number(h[1]) : 1.5) * 4 / 3)), alt: '', place: 'vertical-align:baseline' } };
     }
+    const wm = watermark(pict, ctx);
+    if (wm) return { type: 'image', attrs: { xml, ...wm } };
     const data = byLocal(pict, 'imagedata').find((d) => d.getAttributeNS(NS.r, 'id'));
     const shape = data && data.parentNode;
     const css = (shape && shape.getAttribute && shape.getAttribute('style')) || '';
@@ -331,6 +333,66 @@ function readGraphic(el, ctx, rPrXml) {
   if (!extent) return null;
   const px = (v) => Math.round(emuToPx(v));
   return { type: 'opaque_inline', attrs: { xml, text: '', kind: 'drawing', width: px(extent.getAttribute('cx')), height: px(extent.getAttribute('cy')) } };
+}
+
+/**
+ * Word's watermark (Design > Watermark): a VML shape in a header, floating behind the text. Text (WordArt: its string
+ * fitted to the shape, in its colour and opacity) is drawn into a picture; a picture is washed out (its gain).
+ * Returned as an image's attrs, `--odx-wm` in its style: pages.js puts it on each page, centred on the margins (or
+ * where the shape says), behind the text. Null for any other shape.
+ */
+function watermark(pict, ctx) {
+  const shape = byLocal(pict, 'shape').find((s) => /position:\s*absolute/.test(s.getAttribute('style') || '') && (/water\s*mark/i.test(s.getAttribute('id') || '') || byLocal(s, 'textpath').some((t) => t.getAttribute('string'))));
+  if (!shape) return null;
+  const css = shape.getAttribute('style') || '';
+  const len = (k) => { const m = new RegExp(`(?:^|;)\\s*${k}:\\s*(-?[\\d.]+)(pt|in|px)?`).exec(css); return m ? Number(m[1]) * ({ in: 96, px: 1 }[m[2]] || 4 / 3) : null; };
+  const w = len('width'), h = len('height');
+  if (!(w > 0 && h > 0 && w < 5000 && h < 5000)) return null; // (a watermark is about a page in size: anything far past it isn't one)
+  const frac = (v) => (v == null || v === '' ? null : /f$/.test(v) ? parseInt(v, 10) / 65536 : Number(v));
+  const at = (axis) => {
+    const pos = new RegExp(`mso-position-${axis}:\\s*(\\w+)`).exec(css)?.[1];
+    const rel = new RegExp(`mso-position-${axis}-relative:\\s*(\\w+)`).exec(css)?.[1] || 'margin';
+    return `--odx-wm-${axis[0]}:${pos === 'center' ? 'center' : len(axis === 'horizontal' ? 'margin-left' : 'margin-top') || 0};--odx-wm-${axis[0]}rel:${rel === 'page' ? 'page' : 'margin'}`;
+  };
+  const rot = Number(/rotation:\s*(-?[\d.]+)/.exec(css)?.[1] || 0);
+  let place = `position:absolute;left:0;top:0;pointer-events:none;--odx-wm:1;${at('horizontal')};${at('vertical')}${rot ? `;transform:rotate(${rot}deg)` : ''}`;
+  const tp = byLocal(shape, 'textpath').find((t) => t.getAttribute('string'));
+  if (tp) {
+    const text = tp.getAttribute('string');
+    const fill = byLocal(shape, 'fill')[0];
+    const src = textPicture(text, /font-family:\s*"?([^";]+)/.exec(tp.getAttribute('style') || '')?.[1] || 'Calibri', /font-weight:\s*bold/.test(tp.getAttribute('style') || ''), (shape.getAttribute('fillcolor') || 'silver').replace(/ \[\d+\]$/, ''), frac(fill?.getAttribute('opacity')) ?? 1, w, h);
+    return src ? { src, width: Math.round(w), height: Math.round(h), alt: '', place } : null;
+  }
+  const data = byLocal(shape, 'imagedata').find((d) => d.getAttributeNS(NS.r, 'id'));
+  const src = data && ctx.resolveImage(data.getAttributeNS(NS.r, 'id'));
+  if (!src) return null;
+  const gain = frac(data.getAttribute('gain'));
+  if (gain != null && gain < 1) place += `;opacity:${+gain.toFixed(3)}`; // (washed out: Word's 30% gain)
+  return { src, width: Math.round(w), height: Math.round(h), alt: '', place };
+}
+
+/** A watermark's text as a PNG data URL, fitted to w x h (px) and centred in it. */
+function textPicture(text, family, bold, color, opacity, w, h) {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const font = `${bold ? 'bold ' : ''}200px "${family}", sans-serif`;
+  g.font = font;
+  const m = g.measureText(text);
+  const bw = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, bh = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+  if (!(bw > 0 && bh > 0)) return null;
+  const scale = Math.min(2, 2000 / Math.max(w, h));
+  c.width = Math.max(1, Math.round(w * scale));
+  c.height = Math.max(1, Math.round(h * scale));
+  // (Its advance across the shape's width, the font's line (ascent and descent) down its height, as Word draws it.)
+  const fh = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
+  g.setTransform(c.width / m.width, 0, 0, c.height / fh, 0, 0);
+  g.font = font;
+  g.fillStyle = color;
+  g.globalAlpha = opacity;
+  g.fillText(text, 0, m.fontBoundingBoxAscent);
+  return c.toDataURL('image/png');
 }
 
 function symChar(sym) {
@@ -362,7 +424,7 @@ function rPrMarks(rPr, ctx) {
       case 'b': m.push({ type: 'bold', attrs: { on: onOff(c) } }); break;
       case 'i': m.push({ type: 'italic', attrs: { on: onOff(c) } }); break;
       case 'strike': m.push({ type: 'strike', attrs: { on: onOff(c) } }); break;
-      case 'color': if (val && val !== 'auto' && c.attributes.length === 1) m.push({ type: 'color', attrs: { val } }); else extra.push([n, ctx.xml(c)]); break;
+      case 'color': if (hexColor(val) && c.attributes.length === 1) m.push({ type: 'color', attrs: { val } }); else extra.push([n, ctx.xml(c)]); break;
       case 'sz': m.push({ type: 'size', attrs: { val: Number(val) } }); break;
       case 'highlight': m.push({ type: 'highlight', attrs: { val } }); break;
       case 'u': if (c.attributes.length <= 1) m.push({ type: 'underline', attrs: { val: val || 'single' } }); else extra.push([n, ctx.xml(c)]); break;

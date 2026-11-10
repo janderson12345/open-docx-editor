@@ -102,6 +102,12 @@ let open = null; // { main, hv, el, rId, kind }
 
 export const editingStory = () => open;
 
+/** The open header/footer editor's text put into the document, the editor left open (for a save meanwhile). */
+export function flushStory() {
+  if (!open) return;
+  open.main.odx.session.setStory(open.rId, open.hv.state.doc);
+}
+
 /** Save and close the open header/footer editor. */
 export function closeStory() {
   if (!open) return;

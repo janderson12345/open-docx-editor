@@ -445,8 +445,9 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     el('span', { class: 'odx-ctxico', 'aria-hidden': 'true' }, icon), el('span', {}, label), hint.startsWith('Ctrl') && el('small', {}, hint));
   function openFileMenu(owner) {
     openMenu(owner, () => [el('div', { class: 'odx-filemenu', role: 'none' },
-      fileItem('⊕', 'New', () => onNew()),
-      fileItem('📂', 'Open', () => fileInput.click()),
+      // (Off with features { newDocument: false, openFile: false }: an editor tied to one file, as a WOPI host's is.)
+      features.newDocument !== false && fileItem('⊕', 'New', () => onNew()),
+      features.openFile !== false && fileItem('📂', 'Open', () => fileInput.click()),
       el('hr'),
       fileItem('⧉', 'Create a Copy', () => onSave(), 'Download a copy as .docx'),
       onExportPdf ? fileItem('↦', 'Export as PDF', () => onExportPdf(), 'Download a PDF of the pages') : fileItem('↦', 'Export', () => window.print(), 'Save as PDF from the print dialog'),

@@ -3,6 +3,7 @@
 // understand (headers, footers, comments, custom XML, macros...) survives.
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { parseXml, serializeXml, kids, NS, REL_TYPES, esc } from './xml.js';
+import { isStrict, fromStrict } from './strict.js';
 
 export class DocxPackage {
   constructor(files) {
@@ -22,7 +23,7 @@ export class DocxPackage {
       throw new Error('Not a .docx file (could not unzip): ' + e.message);
     }
     if (!files['[Content_Types].xml']) throw new Error('Not a .docx file: [Content_Types].xml missing');
-    return new DocxPackage(files);
+    return new DocxPackage(isStrict(files) ? fromStrict(files) : files);
   }
 
   has(path) {

@@ -20,12 +20,24 @@ import { loadEmbeddedFonts } from './ooxml/fonts.js';
 import { createEditor as make } from './editor/editor.js';
 import { createToolbar as makeToolbar } from './editor/toolbar.js';
 import { listFields, fieldValues, setFieldValues as setFV, setForms as setFormsMode } from './editor/fields.js';
+import { missingFonts, fontsSettled } from './editor/fontcheck.js';
+import { saveDraft, loadDraft, clearDraft, pruneDrafts } from './editor/drafts.js';
+
+const DRAFT_DAYS = 14;
+/** A fingerprint of a file's bytes (FNV-1a and the length): which file a draft was made from. */
+function printOf(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 0x01000193);
+  return `${(h >>> 0).toString(16)}-${b.length}`;
+}
 
 /**
  * Options beyond the callbacks:
  * - `readOnly`: show the document without editing (no ribbon, nothing editable; comments still show).
  * - `features`: turn parts off, e.g. `{ review: false }` (a whole tab), `{ comments: false, tracking: false }`
- *   (groups by their label on any tab; `comments: false` also hides comments in the margin).
+ *   (groups by their label on any tab; `comments: false` also hides comments in the margin), `{ autocorrect: false }`
+ *   (AutoCorrect as you type), `{ newDocument: false, openFile: false }` (File > New and Open).
  * - `toolbar`: false to hide the ribbon entirely.
  * - `forms`: fill-in mode: no ribbon, only content controls (form fields) can be changed.
  * - `pdf`: the PDF exporter, `exportPdf` from 'open-docx-editor/pdf' (kept out of the main bundle): with it, File > Export
@@ -34,9 +46,18 @@ import { listFields, fieldValues, setFieldValues as setFV, setForms as setFormsM
  * - `collab`: a room from 'open-docx-editor/collab' (collaboration(ydoc, { awareness, user })): the body is edited
  *   together. Mount after your Yjs provider has synced: the editor opens the room's document, or makes the room's
  *   first one; a document opened here becomes the room's, and one opened elsewhere opens here.
+ * - `onMissingFonts(fonts)`: after each open, the fonts the document asks for that this computer lacks, as
+ *   [{ font, substitute, standIn }] (substitute: the font drawn instead, or null for a generic one; standIn: one of
+ *   the editor's own fonts sized to its widths), when there are any. Lines
+ *   in a substitute may break differently from Word's; 'open-docx-editor/fonts.css' supplies metric-compatible ones.
+ * - `drafts`: true, or { key, delayMs }, to keep unsaved changes in this browser (IndexedDB) a moment after each edit
+ *   (delayMs, 3000) under `key` (the file's name if not given) and the file's fingerprint, cleared when the document is
+ *   saved (`markSaved()`), forgotten after two weeks. Opening the same file again with a draft left
+ *   offers it back: a notice above the editor with Restore and Discard, or `onDraft(draft, { restore, discard })` if
+ *   given (draft: { name, savedAt, bytes }). Off by default: it keeps the document's content on this computer.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft } = {}) {
   const bar = document.createElement('div');
   const host = document.createElement('div');
   container.replaceChildren(bar, host);
@@ -60,6 +81,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
           toolbar.update(v);
           if (!tr.docChanged) return;
           api.dirty = true;
+          keepDraft();
           onChange && onChange(v);
         },
       });
@@ -67,7 +89,8 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       const locked = features.autoForms !== false && session.formsProtected;
       if (locked !== autoForms) { forms = locked; autoForms = locked; } // back to normal editing after the protected form
       applyMode();
-      view.odx.notify = (v) => { toolbar.update(v); if (v !== view) { api.dirty = true; } };
+      // (Edits in a header, footer, note or text box being edited count as changes too.)
+      view.odx.notify = (v) => { toolbar.update(v); if (v !== view) { api.dirty = true; keepDraft(); onChange && onChange(v); } };
       api.dirty = false;
       toolbar.setDocument(session);
       toolbar.update(view);
@@ -87,24 +110,33 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     getFieldValues() { return fieldValues(view.state.doc); },
     /** Fill fields by Tag or Title: { CustomerName: 'Acme', Agree: true }. Returns names that matched no field. */
     setFieldValues(values) { return setFV(view, values); },
-    /** Turn ribbon features on/off (see mountDocxEditor's `features`). */
+    /** Turn features on/off: ribbon tabs and groups, AutoCorrect, File > New and Open (see mountDocxEditor's `features`). */
     setFeatures(f) { features = { ...features, ...f }; toolbar.setFeatures(f); applyMode(); },
     /** True once the document has been edited since it was opened or last saved with markSaved(). */
     dirty: false,
-    markSaved() { api.dirty = false; },
+    markSaved() {
+      api.dirty = false;
+      if (drafts) { clearTimeout(draftTimer); clearDraft(draftKey()); }
+    },
+    /** The draft of unsaved changes kept for the open document ({ key, name, savedAt, bytes }), or null (see `drafts`). */
+    draft() { return drafts ? loadDraft(draftKey()) : Promise.resolve(null); },
     /** Remove the editor and toolbar (e.g. when a Blazor component is disposed). */
     destroy() {
+      clearTimeout(draftTimer);
       stopCollab();
       if (view) view.odx.destroy();
       view = null;
       urls.splice(0).forEach((u) => URL.revokeObjectURL(u));
       container.replaceChildren();
     },
+    /** The fonts the open document asks for that this computer lacks: [{ font, substitute }] (see onMissingFonts). */
+    async missingFonts() { await fontsSettled(); return view ? missingFonts(view.dom) : []; },
     /** Timings of the last open, in ms: read (file to bytes), parse (.docx to model), editor (first render), layout (first pagination). */
     timings: null,
     /** Open a document (with `collab`, it becomes the room's unless `share` is false). */
-    async open(src, fname, { share = true } = {}) {
+    async open(src, fname, { share = true, reopen = false } = {}) {
       const t0 = performance.now();
+      keepDraftNow(); // (the document open now keeps its unsaved changes under its own key)
       // A .docx is a zip: check the first bytes before reading a large file whole.
       if (src?.slice && !(src instanceof Uint8Array) && !(src instanceof ArrayBuffer)) {
         const head = new Uint8Array(await src.slice(0, 2).arrayBuffer());
@@ -112,28 +144,40 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       }
       const bytes = src instanceof Uint8Array || src instanceof ArrayBuffer ? src : await src.arrayBuffer();
       const t1 = performance.now();
-      name = fname || src.name || name;
+      // (Set once it has opened: a file that fails to open, or edits while it loads, leave the open document's.)
+      const newName = fname || src.name || name;
+      // Reopened (a page setup change, a restored draft): still the same file, with its unsaved changes.
+      const print = reopen ? openedPrint : printOf(bytes);
+      const wasDirty = api.dirty;
       urls.splice(0).forEach((u) => URL.revokeObjectURL(u));
       const session = new Session(bytes, { imageUrl });
       await loadEmbeddedFonts(session.pkg); // laid out in the document's own fonts, as Word does
       const t2 = performance.now();
       if (collab && share) { dropView(); collab.publish(bytes, session.doc); } // (the old view mustn't follow the new body)
       api.load(session);
+      name = newName;
+      openedPrint = print;
+      if (reopen) api.dirty = wasDirty;
       const t3 = performance.now();
       // pagination runs on the next animation frame
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
       const t4 = performance.now();
       api.timings = { read: t1 - t0, parse: t2 - t1, editor: t3 - t2, layout: t4 - t3, total: t4 - t0 };
       if (onOpened) onOpened(api.timings, name);
+      if (onMissingFonts) api.missingFonts().then((m) => m.length && onMissingFonts(m), () => {});
+      if (drafts && !reopen) offerDraft();
       return api.timings;
     },
     newDocument({ share = true } = {}) {
+      keepDraftNow();
       name = 'Document.docx';
+      openedPrint = 'new';
       const session = Session.blank({ imageUrl });
       if (collab && share) { dropView(); collab.publish(session.save(session.doc), session.doc); }
       api.load(session);
     },
     save() {
+      view.odx.flushStories?.(); // (with the text of a header, footer or note still being edited)
       return view.odx.session.save(view.state.doc);
     },
     /** The pages as a PDF (with the `pdf` option): Promise of its bytes. */
@@ -159,10 +203,58 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     },
   };
+  // Drafts (src/editor/drafts.js): unsaved changes kept in this browser, offered back on opening.
+  let draftTimer = null;
+  let draftNote = null;
+  // A draft belongs to the file it was made from: keyed by its name (or the host's key) and a fingerprint of the file as
+  // opened, so another file of the same name, or a newer copy of this one, is never offered it.
+  let openedPrint = '';
+  const draftKey = () => `${(typeof drafts === 'object' && drafts.key) || name}#${openedPrint}`;
+  if (drafts) pruneDrafts(DRAFT_DAYS * 864e5);
+  // (Not a new document's: with no file to open again, it could never be offered back.)
+  const keeping = () => drafts && !readOnly && openedPrint && openedPrint !== 'new';
+  const keepDraft = () => {
+    if (!keeping()) return;
+    clearTimeout(draftTimer);
+    // (For the document open now, under its key: if another has opened by then, nothing is kept.)
+    const key = draftKey(), v = view;
+    draftTimer = setTimeout(() => { if (view === v && api.dirty) saveDraft(key, api.save(), name); }, (typeof drafts === 'object' && drafts.delayMs) || 3000);
+  };
+  /** Keeps the open document's unsaved changes at once (before another document takes its place). */
+  const keepDraftNow = () => {
+    clearTimeout(draftTimer);
+    if (keeping() && view && api.dirty) saveDraft(draftKey(), api.save(), name);
+  };
+  async function offerDraft() {
+    const key = draftKey();
+    const draft = await loadDraft(key);
+    if (draftKey() !== key) return; // (another document opened meanwhile)
+    draftNote?.remove();
+    if (!draft) return;
+    if (!(Date.now() - draft.savedAt < DRAFT_DAYS * 864e5)) { await clearDraft(key); return; } // (kept two weeks)
+    // (Each acts on the document the draft was offered for, and only while it's the one open.)
+    const restore = async () => {
+      draftNote?.remove();
+      if (draftKey() !== key) return;
+      await api.open(draft.bytes, draft.name || name, { reopen: true });
+      api.dirty = true; // (still unsaved: the draft stays until it's saved)
+    };
+    const discard = async () => { draftNote?.remove(); await clearDraft(key); };
+    if (onDraft) return onDraft(draft, { restore, discard });
+    // A notice above the ribbon; it doesn't take the focus from the document.
+    draftNote = document.createElement('div');
+    draftNote.className = 'odx-draftnote';
+    draftNote.setAttribute('role', 'status');
+    const text = document.createElement('span');
+    text.textContent = `Unsaved changes to ${draft.name || name} from ${new Date(draft.savedAt).toLocaleString()} were kept in this browser.`;
+    const button = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', () => fn().catch(fail)); return b; };
+    draftNote.append(text, button('Restore', restore), button('Discard', discard));
+    container.prepend(draftNote);
+  }
   let autoForms = false;
   const dropView = () => { if (view) view.odx.destroy(); view = null; };
   const fail = (e) => (onError ? onError(e) : console.error(e));
-  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null });
+  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name, { reopen: true }), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null });
   function applyMode() {
     bar.style.display = readOnly || forms || !showToolbar ? 'none' : '';
     container.classList.toggle('odx-readonly', readOnly);

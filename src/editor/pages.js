@@ -17,7 +17,9 @@ import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
 import { storyDrawer, hfNodes } from './hfstory.js';
 import { printCopies } from './printcopies.js';
-import { sectionBreaks, columnsIn } from './sections.js';
+import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
+import { drawLineNumbers } from './linenumbers.js';
+import { fontsSettled } from './fontcheck.js';
 import { lineHeightOf } from './util.js';
 import { wrapText } from './textspans.js';
 import { drawBalloons } from './balloons.js';
@@ -260,6 +262,11 @@ export function createPages(view, session, { sheet, scope }) {
   const gaps = document.createElement('div');
   gaps.className = 'odx-gaps';
   repeats.after(gaps);
+  // Line numbers in the left margin (linenumbers.js), for sections that have them.
+  const lineNums = document.createElement('div');
+  lineNums.className = 'odx-lnnums';
+  lineNums.setAttribute('aria-hidden', 'true'); // (a reference beside the lines, not part of the text: not read out)
+  gaps.after(lineNums);
 
   /**
    * Rows that have to start a new page, Word-style: a row that doesn't fit moves
@@ -724,8 +731,9 @@ export function createPages(view, session, { sheet, scope }) {
   const breakBefore = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.pageBreakBefore ?? session.styleProp(node.attrs.styleId, 'pageBreakBefore'));
   const spaceBefore = (node) => {
     if (node.type !== schema.nodes.paragraph) return 0;
-    // HTML-style automatic spacing (w:beforeAutospacing) comes to nothing at the top of a page.
-    if (node.attrs.view.beforeAuto ?? session.styleProp(node.attrs.styleId, 'beforeAuto')) return 0;
+    // HTML-style automatic spacing (w:beforeAutospacing) comes to nothing at the top of a page (but Word 2003's plain 5pt,
+    // w:doNotUseHTMLParagraphAutoSpacing, stays).
+    if (node.attrs.view.beforeAuto ?? session.styleProp(node.attrs.styleId, 'beforeAuto')) return session.compat?.has('doNotUseHTMLParagraphAutoSpacing') ? 5 * 4 / 3 : 0;
     const tw = node.attrs.view.before ?? session.styleProp(node.attrs.styleId, 'before') ?? session.styles.defaults.pPr.before ?? 0;
     return (tw / 20) * (4 / 3);
   };
@@ -1013,6 +1021,50 @@ export function createPages(view, session, { sheet, scope }) {
       colCss.push(`.${scope} > .odx-content{height:${pageTop(pages) - gap}px;overflow:visible}`);
     }
     return { colCss, contHeads };
+  }
+
+  /**
+   * A section's vertical alignment (w:vAlign): on each of its pages, its blocks centred between the margins, at the
+   * bottom, or spread over the page (both: the room left goes evenly between them; one block alone stays at the top),
+   * as in Word. Added to `starts`; the next page's first block takes it back off. Pages with a block split across them
+   * keep their place. (The empty paragraph that only ends a section takes no room in Word, nor here.)
+   */
+  function verticalAlign(doc, blocks, starts, pulls, splits, paraSplits) {
+    const how = sectionXmls(doc).map((x) => /<w:vAlign\b[^>]*w:val="(center|bottom|both)"/.exec(x)?.[1] || null);
+    if (!how.some(Boolean)) return;
+    const extra = new Map(starts);
+    for (const list of pulls.values()) for (const [i, d] of list) extra.set(i, (extra.get(i) || 0) + d);
+    // Where each block ends up, and its section.
+    let acc = 0, sect = 0;
+    const at = blocks.map((b) => {
+      acc += extra.get(b.i) || 0;
+      const split = (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0);
+      const r = { b, top: b.top + acc, bottom: b.bottom + acc + split, split: split !== 0, sect, after: parseFloat(getComputedStyle(b.el).marginBottom) || 0 };
+      acc += split;
+      r.p = pageOf(r.top);
+      if (sectCache.ends.get(b.i)) { r.sectEnd = true; sect++; }
+      return r;
+    });
+    const groups = new Map(); // "section:page" -> blocks
+    for (const r of at) {
+      if (!how[r.sect] || (r.sectEnd && !r.b.node.childCount)) continue;
+      const key = `${r.sect}:${r.p}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    for (const g of groups.values()) {
+      const p = g[0].p, v = how[g[0].sect], end = g[g.length - 1];
+      if (g.some((r) => r.split || r.bottom > contentBottom(p) + 1)) continue;
+      // (Nor a page that another section goes on to share, after a continuous break: the room below is that one's.)
+      if (at.some((r) => r.p === p && r.sect !== g[0].sect && r.top > end.top)) continue;
+      const slack = contentBottom(p) - (end.bottom + end.after);
+      if (slack <= 0.5) continue; // (a full page: nothing to move)
+      const moves = v === 'both' ? g.slice(1).map((r) => [r, slack / (g.length - 1)]) : [[g[0], v === 'center' ? (slack - (g[0].top - contentTop(p))) / 2 : slack]];
+      let total = 0;
+      for (const [r, d] of moves) { starts.set(r.b.i, (starts.get(r.b.i) || 0) + d); total += d; }
+      const next = at.find((r) => r.p > p); // (the next page's first block; an empty section-ending paragraph goes down with the rest)
+      if (next && total) starts.set(next.b.i, (starts.get(next.b.i) || 0) - total);
+    }
   }
 
   // The walk's result applied: margin-tops (node decorations), split tables' padded rows and clip paths (CSS), spacer
@@ -1338,6 +1390,7 @@ export function createPages(view, session, { sheet, scope }) {
         }
       }
     }
+    if (!cols && !regs.length) verticalAlign(doc, blocks, starts, pulls, splits, paraSplits);
     const last = blocks.length ? blocks[blocks.length - 1].bottom + shift : 0;
     pages = Math.max(1, pageOf(Math.max(last - 1, 0)) + 1);
     const { colCss, contHeads } = placeColumns(blocks, regs, starts, colSplits, paraSplits, splits);
@@ -1351,6 +1404,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
     drawHeads(heads.concat(contHeads));
+    drawLineNumbers(view, lineNums, pageOf);
     drawBalloons(view, session, sheet, pageTop(pages) - gap);
     lastMs = performance.now() - t0;
     passes++;
@@ -1410,6 +1464,16 @@ export function createPages(view, session, { sheet, scope }) {
           // (In the section's own side margins: sample S106's 0.75in sections under a 1in last one.)
           h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
           s.append(h);
+          // Its watermark (reader.js): on the page itself, centred on the margins or where it says, behind the text.
+          for (const img of h.querySelectorAll('img[style*="--odx-wm"]')) {
+            const st = img.style, w = parseFloat(st.width) || 0, ht = parseFloat(st.height) || 0;
+            const L = at[1].left ?? page.left, R = at[1].right ?? page.right, m = marginsAt(p);
+            const spot = (pos, rel, from, size, room) => (pos === 'center' ? (rel === 'page' ? 0 : from) + ((rel === 'page' ? room : room - from - size.end) - size.self) / 2 : (rel === 'page' ? 0 : from) + Number(pos));
+            const v = (k) => st.getPropertyValue(k).trim();
+            st.left = `${spot(v('--odx-wm-h'), v('--odx-wm-hrel'), L, { end: R, self: w }, pageW(p))}px`;
+            st.top = `${spot(v('--odx-wm-v'), v('--odx-wm-vrel'), m.top, { end: m.bottom, self: ht }, pageH(p))}px`;
+            s.prepend(img);
+          }
         }
         if (footer) {
           const f = story(footer, 'odx-footer', numText, pages);
@@ -1465,7 +1529,7 @@ export function createPages(view, session, { sheet, scope }) {
   const onShown = (e) => { if (!e.skipped) scheduleIdle(); };
   view.dom.addEventListener('contentvisibilityautostatechange', onShown, true);
   window.addEventListener('resize', scheduleIdle);
-  if (document.fonts) document.fonts.ready.then(() => !destroyed && schedule());
+  if (document.fonts) fontsSettled().then(() => !destroyed && schedule());
   let destroyed = false;
   schedule();
 
