@@ -777,5 +777,7 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-protect { padding: 6px; min-width: 260px; display: flex; flex-direction: column; gap: 6px; }
 .odx-protect .odx-num { width: auto; }
 .odx-protect .odx-item { width: auto; }
+.odx-psrow { display: flex; align-items: center; gap: 6px; } .odx-psrow > span { min-width: 72px; } .odx-psrow[hidden] { display: none; } /* Page Setup's rows (pagesetup.js) */
+.odx-pagesetup .odx-num { width: 70px; }
 .odx-protect .odx-check { display: flex; gap: 6px; align-items: center; }
 .odx-protect .odx-check input { width: 24px; height: 24px; margin: 0; } /* (WCAG 2.5.8: at least 24px) */

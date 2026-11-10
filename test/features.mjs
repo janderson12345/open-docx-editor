@@ -311,6 +311,38 @@ check(sq.look.startsWith('left/') && sq.saved === 'anchor wrapSquare', `Wrap Tex
 check(behind.look === 'none/absolute/-1' && behind.saved === 'anchor wrapNone behind', `Wrap Text Behind Text: behind the text, saved so (${JSON.stringify(behind)})`);
 check(inl.look.startsWith('none/static') && inl.saved === 'inline', `Wrap Text In Line with Text: back in line (${JSON.stringify(inl)})`);
 
+// Layout > Page Setup (mkpagesetup.mjs, two sections): margins, orientation and paper for the section the cursor is in,
+// then the whole document, saved in each section's w:sectPr.
+await open('page-setup.docx');
+const sectsSaved = async () => {
+  const xml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+  return [...xml.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map((m) => {
+    const a = (tag, k) => new RegExp(`<w:${tag}\\b[^>]*\\sw:${k}="(\\d+)"`).exec(m[0])?.[1];
+    return `${a('pgSz', 'w')}x${a('pgSz', 'h')}${/w:orient="landscape"/.test(m[0]) ? 'L' : ''} t${a('pgMar', 'top')} l${a('pgMar', 'left')}`;
+  });
+};
+const setup = async (vals, all) => {
+  await page.click('.odx-content p');
+  await page.keyboard.press('Control+Home');
+  await page.click('.odx-rtab:text-is("Layout")');
+  await page.click('button[title^="Page Setup"]');
+  for (const [label, v] of Object.entries(vals)) {
+    const sel = `.odx-pagesetup [aria-label="${label}"]`;
+    if ((await page.$eval(sel, (e) => e.tagName)) === 'SELECT') await page.selectOption(sel, v); else await page.fill(sel, v);
+  }
+  await page.selectOption('.odx-pagesetup [aria-label="Apply to"]', all ? 'all' : 'section');
+  await page.click('.odx-pagesetup button:has-text("OK")');
+  await page.waitForFunction(() => window.odx?.fileName === 'page-setup.docx');
+  await page.waitForTimeout(800);
+};
+await setup({ 'Left (inches)': '1.5', Orientation: 'landscape', 'Paper size': 'A4' }, false);
+const one = await sectsSaved();
+await setup({ 'Top (inches)': '0.5' }, true);
+const both = await sectsSaved();
+await page.click('.odx-rtab:text-is("Home")');
+check(one.join(' / ') === '16838x11906L t1440 l2160 / 12240x15840 t1440 l1440', `Page Setup, this section: A4 landscape, left 1.5in, the other section as it was (${one.join(' / ')})`);
+check(both.join(' / ') === '16838x11906L t720 l2160 / 16838x11906L t720 l2160', `Page Setup, whole document: the dialog's page in both sections (${both.join(' / ')})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Page Setup** (Layout > Page Setup): margins, gutter, header and footer distances, orientation and paper size (a
+  custom one too), applied to the section the cursor is in or to the whole document. Layout's Margins, Orientation,
+  Size and Columns menus change the section the cursor is in (they had changed the last section only).
 - **Wrap Text** (Layout > Wrap Text, and a picture's context menu): In Line with Text, Square, Tight, Through, Top and
   Bottom, Behind Text, In Front of Text, for the selected picture or shape; drawn so and saved as Word writes it.
 - **Original view** (Review > Markup view > Original): the document as it was before its tracked changes, as Word shows
