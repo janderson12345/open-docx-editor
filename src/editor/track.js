@@ -281,11 +281,19 @@ function trackInsert(out, at, slice, attrsFor, own) {
     // Paragraph marks created by the insertion (Enter, pasted paragraphs) are inserted too.
     const marks = [];
     const rows = []; // whole table rows the insertion made (Insert row above / below)
+    const cells = []; // whole cells it made in rows already there
     out.doc.nodesBetween(from, end, (node, pos) => {
       if (node.type === schema.nodes.paragraph && pos + node.nodeSize - 1 >= from && pos + node.nodeSize - 1 < end) marks.push(pos);
       if (node.type === schema.nodes.table_row && pos >= from && pos + node.nodeSize <= end) rows.push(pos);
+      // Whole cells the insertion made in rows that were there (Insert column left / right): a cell insertion each,
+      // as Word records a column inserted with changes tracked (rejected, the cells go again).
+      else if (isCell(node) && pos >= from && pos + node.nodeSize <= end && !rows.some((r) => pos > r && pos < r + out.doc.nodeAt(r).nodeSize)) cells.push(pos);
       return !node.isInline;
     });
+    for (const pos of cells) {
+      const node = out.doc.nodeAt(pos);
+      if (!cellRev(node)) out.setNodeMarkup(pos, null, { ...node.attrs, tcPr: [...(node.attrs.tcPr || []), ['cellIns', revXml('cellIns', { ...insMark.attrs, id: nextId(out.doc) })]] });
+    }
     for (const pos of marks) {
       const node = out.doc.nodeAt(pos);
       if (!markRev(node.attrs)) out.setNodeMarkup(pos, null, withMarkRev(node.attrs, revXml('ins', { ...insMark.attrs, id: nextId(out.doc) })));
@@ -389,6 +397,9 @@ function changeRange(state) {
  */
 export function resolveChanges(tr, from, to, accept) {
   const doc = tr.doc;
+  // Positions in `doc` mapped through the steps made here (the transaction may hold others before them).
+  const begin = tr.steps.length;
+  const mapIn = (p, assoc) => since(tr, begin).map(p, assoc);
   const removes = [];
   const unmark = [];
   const restores = [];
@@ -467,11 +478,11 @@ export function resolveChanges(tr, from, to, accept) {
       attrs = withMarkRev(attrs, '');
       if (removed) joins.push(end);
     }
-    if (attrs !== node.attrs) tr.setNodeMarkup(tr.mapping.map(pos), null, attrs);
+    if (attrs !== node.attrs) tr.setNodeMarkup(mapIn(pos), null, attrs);
   }
-  for (const { pos, node } of rowsKept) tr.setNodeMarkup(tr.mapping.map(pos), null, { ...node.attrs, trPr: withRowRev(node.attrs.trPr, '') });
+  for (const { pos, node } of rowsKept) tr.setNodeMarkup(mapIn(pos), null, { ...node.attrs, trPr: withRowRev(node.attrs.trPr, '') });
   const noCellRev = (attrs) => ({ ...attrs, tcPr: (attrs.tcPr || []).filter((t) => t[0] !== 'cellIns' && t[0] !== 'cellDel') });
-  for (const { pos, node } of cellsKept) tr.setNodeMarkup(tr.mapping.map(pos), null, noCellRev(node.attrs));
+  for (const { pos, node } of cellsKept) tr.setNodeMarkup(mapIn(pos), null, noCellRev(node.attrs));
   // Rows that go: a table left with none goes whole.
   const gone = [];
   const byTable = new Map();
@@ -507,11 +518,11 @@ export function resolveChanges(tr, from, to, accept) {
   // Cells that go, last first: the row's cells after each shift left, and the grid column it leaves is a w:gridAfter
   // at the row's end (a phantom cell here, as Word's "shift cells left").
   for (const c of cellsGone.sort((x, y) => y.pos - x.pos)) {
-    const at = tr.mapping.map(c.pos);
+    const at = mapIn(c.pos);
     const cell = tr.doc.nodeAt(at);
     if (!cell || !isCell(cell)) continue;
     tr.delete(at, at + cell.nodeSize);
-    const rowAt = tr.mapping.map(c.row);
+    const rowAt = mapIn(c.row);
     const row = tr.doc.nodeAt(rowAt);
     if (!row) continue;
     const phantom = schema.nodes.table_cell.create({ colspan: cell.attrs.colspan, rowspan: 1, colwidth: cell.attrs.colwidth, colwidth0: cell.attrs.colwidth, phantom: true }, schema.nodes.paragraph.create());
@@ -521,6 +532,32 @@ export function resolveChanges(tr, from, to, accept) {
     let trailing = 0;
     for (let k = after.length - 1; k >= 0 && after[k].attrs.phantom; k--) trailing += after[k].attrs.colspan;
     tr.setNodeMarkup(rowAt, null, { ...row.attrs, trPr: withGridAfter(row.attrs.trPr, trailing) });
+  }
+  // A whole column gone (a tracked column insertion rejected): every row ends in empty grid columns, which go.
+  const tables = new Set(cellsGone.map((c) => { const $c = doc.resolve(c.pos); return $c.before($c.depth - 1); }));
+  for (const t0 of [...tables].sort((a, b) => b - a)) {
+    const at = mapIn(t0);
+    const table = tr.doc.nodeAt(at);
+    if (!table || table.type !== schema.nodes.table) continue;
+    const trailing = [];
+    table.forEach((row) => { let k = 0; for (let i = row.childCount - 1; i >= 0 && row.child(i).attrs.phantom; i--) k++; trailing.push(k); });
+    const k = Math.min(...trailing);
+    if (!k) continue;
+    // (Last row first, each row's last cells first: what is cut never moves what is still to cut.)
+    const rowStarts = [];
+    let rowAt = at + 1;
+    table.forEach((row) => { rowStarts.push([rowAt, row]); rowAt += row.nodeSize; });
+    for (const [start, row] of rowStarts.reverse()) {
+      let p = start + row.nodeSize - 1;
+      for (let i = row.childCount - 1; i >= row.childCount - k; i--) { p -= row.child(i).nodeSize; tr.delete(p, p + row.child(i).nodeSize); }
+    }
+    rowAt = mapIn(t0) + 1;
+    tr.doc.nodeAt(mapIn(t0)).forEach((row) => {
+      let left = 0;
+      for (let i = row.childCount - 1; i >= 0 && row.child(i).attrs.phantom; i--) left += row.child(i).attrs.colspan;
+      tr.setNodeMarkup(rowAt, null, { ...row.attrs, trPr: withGridAfter(row.attrs.trPr, left) });
+      rowAt += row.nodeSize;
+    });
   }
   // With no moved text left, the moves' range markers go too (Word removes them on accepting or rejecting a move).
   let moves = false;

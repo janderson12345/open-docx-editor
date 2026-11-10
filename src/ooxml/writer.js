@@ -264,7 +264,8 @@ function writeTable(table, ctx) {
     return n.type.name !== 'table_cell';
   });
   let grid = table.attrs.tblGrid;
-  if (!grid || resized) {
+  // (A column added or taken away since: the grid as the table now is.)
+  if (!grid || resized || (grid.match(/<w:gridCol\b/g) || []).length !== map.width) {
     const widths = columnWidths(table, map);
     grid = `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   }

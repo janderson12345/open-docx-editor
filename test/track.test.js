@@ -301,3 +301,19 @@ test('a revision keeps its UTC time (w16du:dateUtc); dates are written and read 
   const d = new Date();
   assert.equal(Number(now().slice(11, 13)), d.getHours() === 23 && d.getMinutes() === 59 ? Number(now().slice(11, 13)) : d.getHours());
 });
+
+test('a column inserted with changes tracked is recorded as cell insertions; rejected, the table is as it was', async () => {
+  const { addColumnAfter } = await import('prosemirror-tables');
+  const tc = (t) => `<w:tc><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const s = new DocxSession(docx(`<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>${tc('a')}${tc('b')}</w:tr><w:tr>${tc('c')}${tc('d')}</w:tr></w:tbl><w:p/>`));
+  const st = EditorState.create({ doc: s.doc, selection: TextSelection.create(s.doc, 4) });
+  let out = st;
+  addColumnAfter(st, (tr) => { out = st.apply(trackTransaction(st, tr, 'Me')); });
+  const tracked = xmlOf(s, out.doc);
+  assert.equal((tracked.match(/<w:cellIns\b/g) || []).length, 2);
+  assert.equal((tracked.match(/<w:gridCol\b/g) || []).length, 3); // (the grid follows the table)
+  const back = xmlOf(s, resolveChanges(out.tr, 0, out.doc.content.size, false).doc);
+  assert.equal((back.match(/<w:tc>/g) || []).length, 4);
+  assert.equal((back.match(/<w:gridCol\b/g) || []).length, 2);
+  assert.doesNotMatch(back, /gridAfter|cellIns/);
+});
