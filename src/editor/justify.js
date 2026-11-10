@@ -169,10 +169,10 @@ export function applySqueeze(view, session) {
     const el = view.nodeDOM(pos);
     if (!el || el.nodeType !== 1 || getComputedStyle(el).textAlign !== 'justify') return false;
     const lines = squeezedLines(view, node, pos, el);
-    for (const l of lines || []) decos.push(Decoration.inline(l.from, l.to, { style: `word-spacing:${(-l.squeeze).toFixed(2)}px` }, { key: `sq:${l.from}:${l.to}:${l.squeeze.toFixed(2)}` }));
+    for (const l of lines || []) decos.push(Decoration.inline(l.from, l.to, { style: `word-spacing:${(-l.squeeze).toFixed(2)}px` }, { key: `sq:${l.squeeze.toFixed(2)}` }));
     return false;
   });
-  const sig = decos.map((d) => d.spec.key).join(',');
+  const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));

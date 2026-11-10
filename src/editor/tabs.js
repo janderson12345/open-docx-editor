@@ -36,6 +36,8 @@ function runWidth(p, tab, decimal) {
   return Math.max(...line.map((x) => x.right)) - Math.min(...line.map((x) => x.left));
 }
 
+const sized = new WeakMap(); // paragraph element -> what its tabs were sized for
+
 export function layoutTabs(view, session) {
   layoutTabsIn(view.dom, session, (p) => view.state.doc.resolve(view.posAtDOM(p, 0)).parent);
 }
@@ -50,10 +52,18 @@ export function layoutTabsIn(root, session, nodeOf) {
     if (!p) continue;
     if (!byPara.has(p)) byPara.set(p, []);
     byPara.get(p).push(s);
-    s.style.cssText = 'display:inline-block;tab-size:0;width:0';
   }
+  // A paragraph whose text, formatting and place are as when its tabs were sized keeps them (sizing every tab again
+  // each pass restyled them all: a keystroke in a long document laid out each of its tabbed lines again).
+  const todo = [...byPara].filter(([p]) => {
+    const sig = `${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}`;
+    if (sized.get(p) === sig) return false;
+    sized.set(p, sig);
+    return true;
+  });
+  for (const [, tabs] of todo) for (const s of tabs) s.style.cssText = 'display:inline-block;tab-size:0;width:0';
   const grid = (session.defaultTabStop || 720) * PX;
-  for (const [p, tabs] of byPara) {
+  for (const [p, tabs] of todo) {
     let stops = [];
     try {
       const node = nodeOf(p);

@@ -63,7 +63,7 @@ export function applyWidths(view) {
     // An unchanged run in an unchanged paragraph keeps its correction (ProseMirror keeps both nodes): no style lookups.
     const known = memo.get(parent)?.get(node);
     if (known !== undefined) {
-      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:${known}px` }, { key: `w:${pos}:${node.nodeSize}:${known}` }));
+      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:${known}px` }, { key: `w:${known}` }));
       return false;
     }
     if (!memo.has(parent)) memo.set(parent, new WeakMap());
@@ -82,7 +82,7 @@ export function applyWidths(view) {
     if (ls) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:${ls}px` }, { key: `w:${pos}:${node.nodeSize}:${ls}` }));
     return false;
   });
-  const sig = decos.map((d) => d.spec.key).join(',');
+  const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));

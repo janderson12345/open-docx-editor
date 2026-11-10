@@ -139,8 +139,12 @@ export function shiftFor(el, host, anchored = false) {
  */
 export function baselineCss(blocks, scope, host) {
   const rules = [];
-  for (const { el, i } of blocks) {
-    const d = shiftFor(el, host);
+  // (An unchanged paragraph keeps its shift, as cellShifts' do: reading every paragraph's formatting again each pass
+  // took 80ms a keystroke in a 750-page document.)
+  if (blockEpoch !== fontLoads) { blockMemo = new WeakMap(); blockEpoch = fontLoads; }
+  for (const { el, i, node } of blocks) {
+    let d = node ? blockMemo.get(node) : undefined;
+    if (d === undefined) { d = shiftFor(el, host); if (node) blockMemo.set(node, d); }
     if (d) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
   }
   // Paragraphs in table cells carry their shift as --odx-bl (see cellShifts), headers' and footers' too (hfShifts).
@@ -188,6 +192,8 @@ export function cellShifts(view, host) {
 // Cell paragraphs' shifts by cell and paragraph node, until fonts load (measuring each one again on every layout pass
 // was a long document's largest cost after the pages' restyling).
 let cellMemo = new WeakMap();
+let blockMemo = new WeakMap(); // top-level paragraph node -> its shift
+let blockEpoch = -1;
 let cellEpoch = -1;
 let fontLoads = 0;
 if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { fontLoads++; });

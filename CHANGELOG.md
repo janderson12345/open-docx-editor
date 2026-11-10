@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Faster typing in long documents**: the layout's own measurements (tab widths, row heights, column widths) no longer
+  look like edits to the editor, which had re-read and redrawn much of a document of tables at each keystroke; tabs,
+  merged rows and print baseline shifts are measured again only where something changed; tracked
+  changes' balloons are drawn in one pass. A keystroke in a 20MB document of tables: about 0.9s, was about 3s; in an
+  800-row table with 7,200 tracked changes: about 0.1s, was about 3s; in a 750-page report: about 0.3s, was 0.5s.
 - **Page Setup** (Layout > Page Setup): margins, gutter, header and footer distances, orientation and paper size (a
   custom one too), applied to the section the cursor is in or to the whole document. Layout's Margins, Orientation,
   Size and Columns menus change the section the cursor is in (they had changed the last section only).

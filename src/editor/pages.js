@@ -799,6 +799,7 @@ export function createPages(view, session, { sheet, scope }) {
   }
 
   let headKey = '';
+  let headEls = new Map(); // a drawn entry's key -> its element
   const nodeIds = new WeakMap(); // block node -> a number (a block whose content changed is a new node)
   let idSeq = 0;
   function drawHeads(list) {
@@ -962,8 +963,8 @@ export function createPages(view, session, { sheet, scope }) {
         copy.style.cssText = style;
         w.append(sp, copy);
         return w;
-      }, { side: -1, key: `lift:${pos}:${at}:${drop}:${style}`, ignoreSelection: true }));
-      out.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-lifted' }, { key: `lifted:${pos}` }));
+      }, { side: -1, key: `lift:${at}:${drop}:${style}`, ignoreSelection: true }));
+      out.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-lifted' }, { key: 'lifted' }));
       return false;
     });
     return out;
@@ -993,19 +994,30 @@ export function createPages(view, session, { sheet, scope }) {
       const [top0, bottom0] = rel === 'page' ? [p0, p1] : rel === 'topMargin' ? [p0, p0 + m.top] : rel === 'bottomMargin' ? [p1 - m.bottom, p1] : [p0 + m.top, p1 - m.bottom];
       const y = align === 'top' ? top0 : align === 'bottom' ? bottom0 - h : align === 'center' ? (top0 + bottom0 - h) / 2 : top0 + off;
       const top = Math.round((y - (cb.getBoundingClientRect().top - base)) * 10) / 10;
-      out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top}px;margin-top:0` }, { key: `onpage:${pos}:${top}` }));
+      out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top}px;margin-top:0` }, { key: `onpage:${top}` }));
       return false;
     });
     return out;
   };
+
+  // The top-level blocks' elements in order, from the view's own tree in one walk (view.nodeDOM finds each by counting
+  // from the start: quadratic, 70ms a pass over 5,000 blocks); null when that tree doesn't line up with the document.
+  function topElements(doc) {
+    const kids = view.docView?.children;
+    if (!kids) return null;
+    const out = [];
+    for (const d of kids) if (d.node) out.push(d.dom);
+    return out.length === doc.childCount ? out : null;
+  }
 
   // The blocks where they are now, less the pushes the last pass applied: the natural (unpaginated) flow, without a
   // second layout. Tables with their rows, so a table can continue on the next page; not in columns (they move whole).
   function measureBlocks(dom, doc, base, inRegion) {
     const blocks = [];
     let undo = 0;
+    const els = topElements(doc);
     doc.forEach((node, pos, i) => {
-      const el = view.nodeDOM(pos);
+      const el = els ? els[i] : view.nodeDOM(pos);
       // Hidden blocks (deleted text with markup off) have no box: measured, they'd sit at the top of the document.
       if (!el || el.nodeType !== 1 || !el.getClientRects().length) return;
       const r = el.getBoundingClientRect();
@@ -1273,7 +1285,7 @@ export function createPages(view, session, { sheet, scope }) {
     doc.forEach((node, pos, i) => posOf.set(i, [pos, pos + node.nodeSize]));
     const blockDecos = [];
     const onBlock = (i, attrs, key) => { const r = posOf.get(i); if (r) blockDecos.push(Decoration.node(r[0], r[1], attrs, { key })); };
-    doc.forEach((node, pos, i) => { if (unfloated.has(node)) onBlock(i, { style: 'float:none !important' }, `nf:${i}`); });
+    doc.forEach((node, pos, i) => { if (unfloated.has(node)) onBlock(i, { style: 'float:none !important' }, 'nf'); });
     const css = [];
     applied = new Map();
     const index = new Map(blocks.map((b, k) => [b.i, k]));
@@ -1288,7 +1300,7 @@ export function createPages(view, session, { sheet, scope }) {
       // one. (Only after a balanced columns section does a block move up past it.)
       const mb = colRegs.length && k > 0 ? parseFloat(getComputedStyle(blocks[k - 1].el).marginBottom) || 0 : 0;
       const set = margin < mb ? Math.round((margin - mb) * 10) / 10 : margin;
-      onBlock(i, { style: `margin-top:${set}px !important` }, `mt:${i}:${set}`);
+      onBlock(i, { style: `margin-top:${set}px !important` }, `mt:${set}`);
     }
     // Split tables: rows that start a page get extra top padding (room for the
     // page gap and the repeated header row), and the table is clipped across
@@ -1324,26 +1336,40 @@ export function createPages(view, session, { sheet, scope }) {
     }
     const decos = [...blockDecos];
     for (const split of splits.values()) {
-      for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${pos}:${delta}`, ignoreSelection: true }));
+      for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
     }
     for (const [i, split] of paraSplits) {
       const a = applied.get(i) || { extra: 0 };
       a.inline = split.total;
       applied.set(i, a);
-      for (const { pos, delta } of split.pushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${pos}:${delta}`, ignoreSelection: true }));
+      for (const { pos, delta } of split.pushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
     }
     // Table-cell paragraphs' print-only baseline shifts ride along as node decorations.
-    for (const c of cellShifts(view, sheet)) decos.push(Decoration.node(c.pos, c.pos + c.size, { style: `--odx-bl:${c.d}px` }, { key: `bl:${c.pos}:${c.d}` }));
+    for (const c of cellShifts(view, sheet)) decos.push(Decoration.node(c.pos, c.pos + c.size, { style: `--odx-bl:${c.d}px` }, { key: `bl:${c.d}` }));
     decos.push(...liftFloats(base));
     decos.push(...placeOnPage(base));
-    const pushSig = decos.map((d) => d.spec.key).join(',');
-    if (pushSig !== lastPush) {
+    // (Keys without positions: a decoration a keystroke only moves stays as it is, rather than its block drawn again;
+    // the positions are in the signature.)
+    const pushSig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
+    // (The set the view has, moved through the edits since: the same as this one when the layout didn't change, as after
+    // most keystrokes, and then it isn't set again: building it afresh took 70ms a keystroke in a 750-page document.)
+    const now = pushKey.getState(view.state)?.find().map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
+    if (pushSig !== now) {
       lastPush = pushSig;
       view.dispatch(view.state.tr.setMeta(pushKey, decos).setMeta('addToHistory', false));
     }
     return { css, heads };
   }
 
+  // The layout's own writes into the document's elements (tab widths, row heights, column widths) with the editor's
+  // change observer paused: it would take them for edits and read back everything between the first and the last of
+  // them, a third of a 20MB document's tables at each keystroke (2.4-4s).
+  const quiet = (fn) => {
+    const o = view.domObserver;
+    if (!o) return fn();
+    o.stop();
+    try { return fn(); } finally { o.start(); }
+  };
   let passed = false; // the last layout() got past its early returns
   function layout() {
     frame = 0;
@@ -1351,19 +1377,19 @@ export function createPages(view, session, { sheet, scope }) {
     if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
     colsRepass = false;
     const t0 = performance.now();
-    layoutTabs(view, session);
-    if (fitAutofitColumns(view)) return schedule(); // column widths changed: measure again once they're drawn
+    quiet(() => layoutTabs(view, session));
+    if (quiet(() => fitAutofitColumns(view))) return schedule(); // column widths changed: measure again once they're drawn
     if (applyLineFix(view)) return schedule(); // line heights changed: measure again once they're drawn
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
     if (applySqueeze(view, session)) return; // lines changed: measure again once they're drawn
-    if (fitRowspans(view.dom)) return schedule(); // merged cells' extra height moved to their last row: measure again
+    if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;
     const dom = view.dom;
     const doc = view.state.doc;
     // Word lets a floating table longer than a page run on in the flow: nothing wraps beside it.
     // Kept as a rule too: redrawing the table's decorations would reset an inline style.
     [...dom.children].forEach((t, i) => {
-      if (getComputedStyle(t).float !== 'none' && t.getBoundingClientRect().height > pageHeight(0) && i < doc.childCount) { t.style.float = 'none'; unfloated.add(doc.child(i)); }
+      if (getComputedStyle(t).float !== 'none' && t.getBoundingClientRect().height > pageHeight(0) && i < doc.childCount) { quiet(() => { t.style.float = 'none'; }); unfloated.add(doc.child(i)); }
     });
     const colRegs = colRegions(doc);
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);

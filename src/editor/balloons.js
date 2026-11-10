@@ -65,6 +65,8 @@ function collect(view, session) {
   return items.filter((i) => i.el);
 }
 
+const drawnSig = new WeakMap(); // markup column -> what its balloons were drawn for
+
 /** Draw the markup column (or remove it when there is nothing to show). */
 export function drawBalloons(view, session, sheet, height) {
   let col = sheet.querySelector(':scope > .odx-markup');
@@ -81,20 +83,17 @@ export function drawBalloons(view, session, sheet, height) {
     sheet.append(col);
   }
   col.style.height = `${height}px`;
+  // (Tracked changes' balloons where they were: left as drawn. Comments' have boxes being typed in: drawn each time.)
+  const sig = items.some((it) => it.kind === 'comment') ? null : items.map((it) => `${it.kind}|${it.author}|${it.label}|${it.text}|${Math.round(it.y)}`).join('\n');
+  if (sig != null && drawnSig.get(col) === sig) return;
+  drawnSig.set(col, sig);
   // A comment box being typed in keeps the keyboard through the redraw (else focus fell to the page for a moment, and
   // NVDA said "document" between "Add a comment" and itself again).
   const had = col.contains(document.activeElement) && document.activeElement.dataset.odxBox ? document.activeElement : null;
-  col.replaceChildren();
-  let next = 0;
-  for (const it of items) {
-    if (it.kind === 'comment') {
-      const b = commentBalloon(view, it.thread);
-      let y = Math.max(next, it.y);
-      b.style.top = `${y}px`;
-      col.append(b);
-      next = y + b.offsetHeight + 4;
-      continue;
-    }
+  // All drawn first, then all measured, then placed: reading each one's height as it went in laid the page out again
+  // for each (7,200 changes' balloons took seconds a keystroke).
+  const balloons = items.map((it) => {
+    if (it.kind === 'comment') return commentBalloon(view, it.thread);
     const b = document.createElement('div');
     b.className = `odx-balloon odx-balloon-${it.kind}`;
     const who = document.createElement('b');
@@ -104,11 +103,16 @@ export function drawBalloons(view, session, sheet, height) {
     lab.textContent = `${it.label}${it.text ? ':' : ''} `;
     what.append(lab, it.text || '');
     b.append(who, what);
+    return b;
+  });
+  col.replaceChildren(...balloons);
+  const heights = balloons.map((b) => b.offsetHeight);
+  let next = 0;
+  items.forEach((it, k) => {
     const y = Math.max(next, it.y);
-    b.style.top = `${y}px`;
-    col.append(b);
-    next = y + b.offsetHeight + 4;
-  }
+    balloons[k].style.top = `${y}px`;
+    next = y + heights[k] + 4;
+  });
   const again = had && col.querySelector(`textarea[data-odx-box="${had.dataset.odxBox}"]`);
   if (again) { again.focus(); again.setSelectionRange(had.selectionStart, had.selectionEnd); }
 }

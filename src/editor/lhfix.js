@@ -86,7 +86,7 @@ export function applyLineFix(view) {
     // An unchanged paragraph keeps its result (ProseMirror keeps the node): no probing again.
     if (memo.has(node)) {
       const r = memo.get(node);
-      if (r) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want) }, { key: `lh:${pos}:${r.value}` }));
+      if (r) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want) }, { key: `lh:${r.value}` }));
       return false;
     }
     const el = view.nodeDOM(pos);
@@ -108,11 +108,11 @@ export function applyLineFix(view) {
     if (best == null) return false;
     const value = length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
     memo.set(node, { value, want });
-    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${value}`, 'data-odx-lh': String(want) }, { key: `lh:${pos}:${value}` }));
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${value}`, 'data-odx-lh': String(want) }, { key: `lh:${value}` }));
     return false;
   });
   box.remove();
-  const sig = decos.map((d) => d.spec.key).join(',');
+  const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));

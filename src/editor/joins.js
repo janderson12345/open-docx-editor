@@ -49,7 +49,7 @@ function compute(doc) {
           for (const j of split) span.append(serializer.serializeFragment(j.node.content));
           wrapText(span);
           return span;
-        }, { side: -2, key: `ojoin:${pos}:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
+        }, { side: -2, key: `ojoin:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
       }
       const del = rev === 'del';
       if (del && allDeleted(node)) return; // hidden whole; the paragraphs around it still join
@@ -66,7 +66,7 @@ function compute(doc) {
         for (const j of joined) span.append(serializer.serializeFragment(j.node.content));
         wrapText(span);
         return span;
-      }, { side: -1, key: `join:${pos}:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
+      }, { side: -1, key: `join:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
     });
   };
   visit(doc, 0);
@@ -100,7 +100,7 @@ function separators(doc, serializer, decos) {
         for (const t of take) span.append(serializer.serializeFragment(t.node.content));
         wrapText(span);
         return span;
-      }, { side: 1, key: `sep:${host.pos}:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
+      }, { side: 1, key: `sep:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
     };
     parent.forEach((node, rel) => {
       const pos = offset + rel;

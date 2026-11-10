@@ -1,6 +1,8 @@
 // Table rows as Word sizes them where the browser doesn't: a merged cell's extra height in the last of its rows, and
 // exact-height rows that cut their content instead of growing.
 
+const fitted = new WeakMap(); // table element -> what it was fitted for (rows, width, text)
+
 /**
  * A cell merged down several rows that needs more height than those rows give: Word puts all the extra in the last of
  * them (sample S099's header: the logo cell spans "Title" and "Document No.", and only the second row grows); the
@@ -17,6 +19,12 @@ export function fitRowspans(root) {
     return last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - r.top + (parseFloat(cs.paddingBottom) || 0);
   };
   for (const table of root.querySelectorAll('table')) {
+    // (Only tables with cells merged down, and of those only one whose text or width changed since it was fitted:
+    // measuring every table each pass took 450ms a keystroke in a 20MB document of tables.)
+    if (!table.querySelector('td[rowspan], th[rowspan]')) continue;
+    const sig = `${document.fonts?.status}|${table.rows.length}|${table.offsetWidth}|${table.textContent}`; // (again once fonts load)
+    if (fitted.get(table) === sig) continue;
+    fitted.set(table, sig);
     const rows = [...table.rows];
     if (rows.some((tr) => tr.hasAttribute('data-exact'))) continue;
     const need = new Map(); // row index -> extra height its last-row role needs
