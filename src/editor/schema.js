@@ -8,6 +8,7 @@ import { legacyInfo } from '../ooxml/ffdata.js';
 import { ommlToMathML } from '../ooxml/omml.js';
 import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineFactor } from '../ooxml/props.js';
 import { TWIPS_PER_PX } from '../ooxml/units.js';
+import { wordDate } from './util.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
  * would run in the page when clicked in read-only mode). The document keeps its address as it was. */
@@ -282,14 +283,14 @@ export const schema = new Schema({
       toDOM: (m) => ['a', { href: safeHref(m.attrs.href) || (m.attrs.anchor ? '#' + m.attrs.anchor : '#'), title: m.attrs.href || '', class: 'odx-link' }, 0],
     },
     ins: {
-      attrs: { id: { default: null }, author: { default: null }, date: { default: null }, move: { default: false } },
+      attrs: { id: { default: null }, author: { default: null }, date: { default: null }, dateUtc: { default: null }, move: { default: false } },
       inclusive: false,
       parseDOM: [{ tag: 'ins.odx-ins', getAttrs: revAttrs }],
       toDOM: (m) => ['ins', { class: m.attrs.move ? 'odx-ins odx-move' : 'odx-ins', 'data-author': m.attrs.author, title: revTitle(m.attrs.move ? 'Moved here' : 'Inserted', m.attrs) }, 0],
     },
     // Tracked deletion: the text stays, struck through, until the change is accepted.
     del: {
-      attrs: { id: { default: null }, author: { default: null }, date: { default: null }, move: { default: false } },
+      attrs: { id: { default: null }, author: { default: null }, date: { default: null }, dateUtc: { default: null }, move: { default: false } },
       inclusive: false,
       parseDOM: [{ tag: 'del.odx-del', priority: 60, getAttrs: revAttrs }],
       toDOM: (m) => ['del', { class: m.attrs.move ? 'odx-del odx-move' : 'odx-del', 'data-author': m.attrs.author, title: revTitle(m.attrs.move ? 'Moved from here' : 'Deleted', m.attrs) }, 0],
@@ -366,8 +367,9 @@ export function revXmlAttrs(xml) {
   const a = (n) => (new RegExp(`^<[^>]*\\sw:${n}="([^"]*)"`).exec(xml) || [])[1] || null;
   return { id: a('id'), author: a('author'), date: a('date') };
 }
-function revTitle(what, { author, date }) {
-  const when = date && !Number.isNaN(Date.parse(date)) ? ' on ' + new Date(date).toLocaleString() : '';
+function revTitle(what, { author, date, dateUtc }) {
+  const d = wordDate(date, dateUtc);
+  const when = d ? ' on ' + d.toLocaleString() : '';
   return `${what} by ${author || 'unknown'}${when}`;
 }
 

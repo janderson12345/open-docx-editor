@@ -286,3 +286,18 @@ test('a row inserted below takes the formatting of the row it is made from', asy
     assert.equal(cell.textContent, '');
   });
 });
+
+test('a revision keeps its UTC time (w16du:dateUtc); dates are written and read as Word\'s wall-clock time', async () => {
+  const { now, wordDate } = await import('../src/editor/util.js');
+  const W16DU = 'http://schemas.microsoft.com/office/word/2023/wordml/word16du';
+  const files = unzipSync(docx(`<w:p><w:ins w:id="3" w:author="Ann" w:date="2024-01-02T09:00:00Z" w16du:dateUtc="2024-01-02T14:00:00Z"><w:r><w:t>new</w:t></w:r></w:ins></w:p>`));
+  const main = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  files[main] = strToU8(strFromU8(files[main]).replace(/<w:document\b/, `<w:document xmlns:w16du="${W16DU}"`));
+  const s = new DocxSession(zipSync(files));
+  assert.match(xmlOf(s, s.doc), /<w:ins w:id="3" w:author="Ann" w:date="2024-01-02T09:00:00Z" w16du:dateUtc="2024-01-02T14:00:00Z">/);
+  // Shown: the UTC time when there is one; else w:date as the wall-clock time it is.
+  assert.equal(wordDate('2024-01-02T09:00:00Z', '2024-01-02T14:00:00Z').toISOString(), '2024-01-02T14:00:00.000Z');
+  assert.equal(wordDate('2024-01-02T09:00:00Z').getHours(), 9);
+  const d = new Date();
+  assert.equal(Number(now().slice(11, 13)), d.getHours() === 23 && d.getMinutes() === 59 ? Number(now().slice(11, 13)) : d.getHours());
+});

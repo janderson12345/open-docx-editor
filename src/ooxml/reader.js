@@ -206,7 +206,9 @@ function readInline(els, marks, ctx, out) {
         // Moved text is a deletion where it was and an insertion where it went, flagged as a move.
         const move = name === 'moveTo' || name === 'moveFrom';
         const type = name === 'moveTo' ? 'ins' : name === 'moveFrom' ? 'del' : name;
-        const rev = { type, attrs: { id: attr(el, 'id'), author: attr(el, 'author'), date: attr(el, 'date'), ...(move ? { move: true } : {}) } };
+        // (Word 2023's true UTC time beside its wall-clock w:date, w16du:dateUtc: kept, and the time shown.)
+        const utc = el.getAttributeNS('http://schemas.microsoft.com/office/word/2023/wordml/word16du', 'dateUtc');
+        const rev = { type, attrs: { id: attr(el, 'id'), author: attr(el, 'author'), date: attr(el, 'date'), ...(utc ? { dateUtc: utc } : {}), ...(move ? { move: true } : {}) } };
         readInline(kids(el), [...marks, rev], ctx, out);
         break;
       }

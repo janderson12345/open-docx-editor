@@ -4,6 +4,7 @@ import { schema, revXmlAttrs } from './schema.js';
 import { paragraphAttrsFromPPr } from '../ooxml/reader.js';
 import { commentMarkers, orderedThreads, setActive, setText, replyTo, setResolved, deleteComment } from './comments.js';
 import { announce } from './live.js';
+import { wordDate } from './util.js';
 
 export const MARKUP_WIDTH = 280;
 
@@ -130,9 +131,9 @@ const h = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
-const when = (iso) => {
-  const d = new Date(iso);
-  return isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const when = (iso, utc) => {
+  const d = wordDate(iso, utc);
+  return !d ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
 /** A text box with Post / Cancel. */
@@ -184,7 +185,7 @@ function commentBalloon(view, c) {
   const entry = (x) => {
     const e = h('div', 'odx-cmt-entry');
     const head = h('div', 'odx-cmt-head');
-    head.append(h('span', 'odx-cmt-avatar', x.initials || (x.author || '?')[0]), h('b', '', x.author || 'Unknown'), h('small', '', when(x.date)));
+    head.append(h('span', 'odx-cmt-avatar', x.initials || (x.author || '?')[0]), h('b', '', x.author || 'Unknown'), h('small', '', when(x.date, x.dateUtc)));
     e.append(head);
     if (session.editingComment === x.id) {
       e.append(composer('e' + x.id, 'Add a comment', x.text, (t) => { session.editingComment = null; setText(view, x.id, t); announce('Comment posted'); back(view); },

@@ -132,7 +132,8 @@ function wrapGroups(nodes, levels, ctx, deleted) {
     else if (name === 'sdt') out += wrapField(mark, nodes.slice(i, j), inner);
     else {
       const tag = mark.attrs.move ? (name === 'del' ? 'moveFrom' : 'moveTo') : name; // (moved text, Word's own elements)
-      out += `<w:${tag}${attrsXml({ 'w:id': revisionId(ctx, mark.attrs.id), 'w:author': mark.attrs.author, 'w:date': mark.attrs.date })}>${inner}</w:${tag}>`;
+      const utc = mark.attrs.dateUtc && ctx.prefixes?.has('w16du') ? mark.attrs.dateUtc : null;
+      out += `<w:${tag}${attrsXml({ 'w:id': revisionId(ctx, mark.attrs.id), 'w:author': mark.attrs.author, 'w:date': mark.attrs.date, 'w16du:dateUtc': utc })}>${inner}</w:${tag}>`;
     }
     i = j;
   }
