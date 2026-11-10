@@ -380,6 +380,10 @@
 .odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); }
 /* Emphasis marks and run borders make their line taller in Word (schema.js rextraCss): a zero-width box of the line's
    own height at the run's start, padded above or below by that much. */
+/* A complex-script run (w:rtl / w:cs: Hebrew, Arabic...) takes the complex-script members of its formatting, as in Word:
+   w:bCs, w:iCs, w:szCs and the w:cs font (set as custom properties by styles and direct formatting), not w:b, w:i, w:sz.
+   An unset size or font is the one around it. */
+.odx-cs { font-weight: var(--odx-bcs, normal); font-style: var(--odx-ics, normal); font-size: var(--odx-szcs); font-family: var(--odx-fcs); }
 :where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-grow-up, 0); padding-bottom: var(--odx-grow-down, 0); }
 .odx-content p.odx-li.odx-picbullet::before { content: var(--odx-picbullet); } /* a picture bullet, its foot on the baseline as in Word */
 /* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the

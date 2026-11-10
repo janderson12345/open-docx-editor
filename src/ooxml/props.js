@@ -30,6 +30,13 @@ export function readRPr(rPr) {
     else if (attr(fonts, 'hAnsi')) p.font = attr(fonts, 'hAnsi');
     else if (attr(fonts, 'asciiTheme')) p.themeFont = attr(fonts, 'asciiTheme');
   }
+  // The complex-script members (Hebrew, Arabic...: runs marked w:rtl or w:cs), which Word uses for such text instead.
+  flag('bCs', 'boldCs');
+  flag('iCs', 'italicCs');
+  const szCs = kid(rPr, 'szCs');
+  if (szCs) p.sizeCs = Number(attr(szCs, 'val'));
+  if (fonts && attr(fonts, 'cs')) p.fontCs = attr(fonts, 'cs');
+  else if (fonts && attr(fonts, 'cstheme')) p.themeFontCs = attr(fonts, 'cstheme');
   const va = kid(rPr, 'vertAlign');
   if (va && attr(va, 'val') !== 'baseline') p.vertAlign = attr(va, 'val');
   const rStyle = kid(rPr, 'rStyle');
@@ -249,7 +256,19 @@ export function rPrToCss(p, theme) {
   if (p.kern != null) css.push(`font-kerning:${p.kern && (p.size == null || p.size >= p.kern) ? 'normal' : 'none'}`);
   if (p.scale && p.scale !== 100) css.push(scaleCss(p.scale));
   if (p.hidden) css.push('display:none');
+  css.push(...csVars(p, theme));
   return css.join(';');
+}
+
+/** The complex-script run properties as custom properties, which a complex-script run (.odx-cs, editor.css) applies. */
+export function csVars(p, theme) {
+  const css = [];
+  if (p.boldCs != null) css.push(`--odx-bcs:${p.boldCs ? 'bold' : 'normal'}`);
+  if (p.italicCs != null) css.push(`--odx-ics:${p.italicCs ? 'italic' : 'normal'}`);
+  if (p.sizeCs) css.push(`--odx-szcs:${p.sizeCs / 2}pt`);
+  const font = p.fontCs || (p.themeFontCs && theme && theme[p.themeFontCs.startsWith('major') ? 'majorCs' : 'minorCs']);
+  if (font) css.push(`--odx-fcs:${fontStack(font)}`);
+  return css;
 }
 
 export function pPrToCss(p) {

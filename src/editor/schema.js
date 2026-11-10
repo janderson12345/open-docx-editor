@@ -195,7 +195,7 @@ export const schema = new Schema({
   marks: {
     // Order here is the w:rPr child order used when writing.
     cstyle: { attrs: { val: {} }, toDOM: (m) => ['span', { 'data-cstyle': m.attrs.val }, 0] },
-    font: { attrs: { val: {}, xml: { default: null } }, toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
+    font: { attrs: { val: {}, xml: { default: null } }, toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${/w:cs="([^"]+)"/.test(m.attrs.xml || '') ? `;--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(m.attrs.xml)[1])}` : ''}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
     bold: {
       attrs: { on: { default: true } },
       parseDOM: [{ tag: 'strong' }, { tag: 'b' }, { style: 'font-weight', getAttrs: (v) => (/^(bold|[6-9]\d\d)$/.test(v) ? {} : false) }],
@@ -231,6 +231,8 @@ export const schema = new Schema({
         const change = m.attrs.items.find((it) => it[0] === 'rPrChange');
         const a = { style: rextraCss(m.attrs.items) };
         if (a.style.includes('--odx-grow-')) a.class = 'odx-grow'; // (editor.css: a taller line for emphasis marks and run borders)
+        // A complex-script run (right-to-left, or marked w:cs) is drawn with the bCs/iCs/szCs/cs-font members, as in Word.
+        if (m.attrs.items.some(([n, x]) => (n === 'rtl' || n === 'cs') && !/w:val="(0|false|off)"/.test(x))) a.class = [a.class, 'odx-cs'].filter(Boolean).join(' ');
         if (change) Object.assign(a, { class: [a.class, 'odx-fmt'].filter(Boolean).join(' '), title: revTitle('Formatted', revXmlAttrs(change[1])) });
         // Text in another language is checked by that language's dictionary, as in Word (w:lang); text Word is told not
         // to check (w:noProof: code, names) isn't checked.
@@ -285,12 +287,17 @@ function rextraCss(items) {
   const val = (xml) => (/w:val="([^"]*)"/.exec(xml) || [])[1];
   const on = (xml) => !/w:val="(0|false|off)"/.test(xml);
   for (const [name, xml] of items) {
+    if (name === 'rFonts' && /w:cs="([^"]+)"/.test(xml)) css.push(`--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(xml)[1])}`);
     if (name === 'spacing') css.push(`letter-spacing:${Number(val(xml)) / 20}pt`);
     else if (name === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(major|minor)/.test(xml)) {
       // A theme font on a run: the theme's body or heading font (variables set with the document's styles).
       const t = /w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(xml)[1];
       css.push(`font-family:var(--odx-font-${t})`, `--odx-lh:var(--odx-lh-${t})`);
     }
+    // Complex-script formatting (editor.css: a run marked w:rtl or w:cs takes it instead of the Latin members).
+    else if (name === 'bCs') css.push(`--odx-bcs:${on(xml) ? 'bold' : 'normal'}`);
+    else if (name === 'iCs') css.push(`--odx-ics:${on(xml) ? 'italic' : 'normal'}`);
+    else if (name === 'szCs' && Number(val(xml))) css.push(`--odx-szcs:${Number(val(xml)) / 2}pt`);
     else if (name === 'caps' && on(xml)) css.push('text-transform:uppercase');
     else if (name === 'smallCaps' && on(xml)) css.push('font-variant:small-caps');
     else if (name === 'vanish' && on(xml)) css.push('display:none');

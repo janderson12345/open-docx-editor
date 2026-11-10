@@ -39,6 +39,7 @@ import { textSpansPlugin } from './textspans.js';
 import { widthsPlugin } from './widths.js';
 import { joinsPlugin } from './joins.js';
 import { marksPlugin, toggleMarks } from './marks.js';
+import { csFormatPlugin } from './csformat.js';
 import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.js';
 import { twipsToPx } from '../ooxml/units.js';
 
@@ -395,7 +396,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session)],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, csFormatPlugin, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session)],
   });
 
   mount.classList.add('odx-canvas');

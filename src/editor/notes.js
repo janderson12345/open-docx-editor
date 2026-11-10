@@ -12,6 +12,7 @@ import { schema } from './schema.js';
 import { NOTE_KINDS } from '../ooxml/notes.js';
 import * as cmd from './commands.js';
 import { xmlId } from './util.js';
+import { csFormatPlugin } from './csformat.js';
 
 const REF = /^(footnote|endnote)Reference$/;
 
@@ -107,7 +108,7 @@ export function editNote(main, kind, id, el) {
     Escape: () => { closeNote(); main.focus(); return true; },
   });
   const nv = new EditorView(wrap, {
-    state: EditorState.create({ doc: note.doc, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin] }),
+    state: EditorState.create({ doc: note.doc, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin, csFormatPlugin] }),
     attributes: { class: 'odx-note-content' },
     dispatchTransaction(tr) {
       nv.updateState(nv.state.apply(tr));

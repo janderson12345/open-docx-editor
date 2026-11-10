@@ -9,6 +9,7 @@ import { keymap } from 'prosemirror-keymap';
 import { baseKeymap } from 'prosemirror-commands';
 import { schema } from './schema.js';
 import * as cmd from './commands.js';
+import { csFormatPlugin } from './csformat.js';
 
 const FIELD = (instr, shown) => schema.nodes.opaque_inline.create({
   kind: 'fldSimple',
@@ -188,7 +189,7 @@ export function editStory(main, kind, p = null) {
     Escape: () => { closeStory(); return true; },
   });
   const hv = new EditorView(el, {
-    state: EditorState.create({ doc, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin] }),
+    state: EditorState.create({ doc, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin, csFormatPlugin] }),
     attributes: { class: 'odx-hf odx-hfedit-content', spellcheck: 'true' },
     dispatchTransaction(tr) {
       hv.updateState(hv.state.apply(tr));

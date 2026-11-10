@@ -8,6 +8,7 @@ import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap } from 'prosemirror-commands';
 import * as cmd from './commands.js';
+import { csFormatPlugin } from './csformat.js';
 
 let open = null; // { main, tv, el, pos, node, k, doc0, outside }
 
@@ -77,7 +78,7 @@ export function editTextBox(main, pos, x = null, y = null) {
     Escape: () => { closeTextBox(); return true; },
   });
   const tv = new EditorView(el, {
-    state: EditorState.create({ doc: doc0, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin] }),
+    state: EditorState.create({ doc: doc0, plugins: [history(), keys, keymap(baseKeymap), textSpansPlugin, csFormatPlugin] }),
     attributes: { class: 'odx-hf odx-hfedit-content', spellcheck: 'true' },
     dispatchTransaction(tr) {
       tv.updateState(tv.state.apply(tr));

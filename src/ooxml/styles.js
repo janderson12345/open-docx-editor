@@ -13,6 +13,8 @@ export function readTheme(pkg) {
     const f = doc.getElementsByTagNameNS(NS.a, kind + 'Font')[0];
     const latin = f && kid(f, 'latin', NS.a);
     if (latin) theme[kind] = latin.getAttribute('typeface');
+    const cs = f && kid(f, 'cs', NS.a);
+    if (cs && cs.getAttribute('typeface')) theme[kind + 'Cs'] = cs.getAttribute('typeface');
   }
   theme.colors = {};
   const scheme = doc.getElementsByTagNameNS(NS.a, 'clrScheme')[0];
