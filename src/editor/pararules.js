@@ -167,7 +167,18 @@ export function deletedWhole(node) {
   return all;
 }
 
-/** Tracked changes' classes: the change bar, the paragraph mark's revision, a paragraph deleted whole, all text deleted. */
+/** True when a paragraph was inserted whole: its mark and all its text (the Original view leaves it out). */
+export function insertedWhole(node) {
+  if (paragraphMarkRev(node.attrs) !== 'ins') return false;
+  let all = true;
+  node.forEach((c) => { if (!c.marks.some((m) => m.type.name === 'ins') && (c.isText ? c.text.trim() : c.type.name !== 'opaque_inline' || c.attrs.width != null)) all = false; });
+  return all;
+}
+
+/**
+ * Tracked changes' classes: the change bar, the paragraph mark's revision, a paragraph deleted whole, all text deleted,
+ * a paragraph inserted whole.
+ */
 export function changeClasses(node) {
   // Tracked changes: a change bar in the margin, and a deleted or inserted paragraph mark.
   const changed = paragraphChanged(node) && ['odx-changed'];
@@ -178,7 +189,7 @@ export function changeClasses(node) {
   // struck paragraphs keep their 240-twip spacing and a line).
   let delText = !allDel && pmark !== 'del' && !!node.textContent.trim();
   if (delText) node.forEach((c) => { if (c.isText && c.text.trim() && !c.marks.some((m) => m.type.name === 'del')) delText = false; });
-  return [...(changed || []), pmark && `odx-pmark-${pmark}`, allDel && 'odx-all-del', delText && 'odx-del-text'];
+  return [...(changed || []), pmark && `odx-pmark-${pmark}`, allDel && 'odx-all-del', delText && 'odx-del-text', insertedWhole(node) && 'odx-all-ins'];
 }
 
 /** A heading to screen readers: its outline level (its own or its style's; Word's built-in Heading 1-9 have theirs). */

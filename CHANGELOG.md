@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Original view** (Review > Markup view > Original): the document as it was before its tracked changes, as Word shows
+  it: insertions left out, deletions as plain text, paragraphs split or joined by a tracked paragraph mark as they were.
 - **Frames** (paragraphs with w:framePr): placed as Word places them, across the page from the page, the margins or the
   text, down the page from its top or below where they come, the text beside them; paragraphs with the same frame
   settings make one frame. They had been drawn in the flow of the text.

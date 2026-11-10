@@ -280,12 +280,14 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   const setMarkupView = (mode) => withView((v) => {
     const page = v.dom.closest('.odx-page');
     page?.classList.toggle('odx-all-markup', mode === 'all');
-    page?.classList.toggle('odx-no-markup', mode === 'none');
+    // (Original, as Word's: the document before the changes, without their markup.)
+    page?.classList.toggle('odx-no-markup', mode === 'none' || mode === 'original');
+    page?.classList.toggle('odx-original', mode === 'original');
     v.odx?.pages.update();
     markupSel.value = mode;
     return true;
   });
-  const markupSel = pick('Markup view', 'odx-markupsel', [el('option', { value: 'simple' }, 'Simple Markup'), el('option', { value: 'all' }, 'All Markup'), el('option', { value: 'none' }, 'No Markup')],
+  const markupSel = pick('Markup view', 'odx-markupsel', [el('option', { value: 'simple' }, 'Simple Markup'), el('option', { value: 'all' }, 'All Markup'), el('option', { value: 'none' }, 'No Markup'), el('option', { value: 'original' }, 'Original')],
     (val, v) => setMarkupView(val)(v.state, v.dispatch, v));
   const trackSel = pick('Track Changes', 'odx-tracksel', [el('option', { value: 'off' }, 'Off'), el('option', { value: 'on' }, 'For Everyone')],
     (val, v) => setTracking(val === 'on')(v.state, v.dispatch));

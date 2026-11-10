@@ -268,6 +268,23 @@ check(Math.abs(fr.a1.x - 432) <= 2 && fr.a1box.top === 192 && fr.a2.left === fr.
 check(fr.b.right === 720 && fr.body6 < fr.b.left && fr.c.left === 12 && fr.c.right <= 96,
   `a frame at the right of the text with the text beside it, and one in the margin (${JSON.stringify([fr.b, fr.body6, fr.c])})`);
 
+// The Original view (mkoriginal.mjs): the document before its tracked changes, as Word's Review > Original shows it.
+await open('original.docx');
+const shown = () => page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].filter((p) => getComputedStyle(p).display !== 'none').map((p) => p.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean));
+await page.click('.odx-rtab:text-is("Review")');
+await page.selectOption('.odx-markupsel', 'original');
+await page.waitForTimeout(400);
+const orig = await shown();
+await page.selectOption('.odx-markupsel', 'none');
+await page.waitForTimeout(400);
+const final = await shown();
+await page.selectOption('.odx-markupsel', 'simple');
+await page.click('.odx-rtab:text-is("Home")');
+check(orig.join(' | ') === 'Alpha words old end. | A paragraph deleted whole. | Split here and joined again. | First of two | Second of two.',
+  `Original: insertions out, deletions in, paragraphs as they were (${orig.join(' | ')})`);
+check(final.join(' | ') === 'Alpha new words end. | A paragraph inserted whole. | Split here by Enter | and joined again. | First of twoSecond of two.',
+  `No Markup still shows the changed document (${final.join(' | ')})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

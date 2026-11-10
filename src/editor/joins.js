@@ -2,12 +2,15 @@
 // paragraph whose mark is deleted runs on into the next paragraph, in that paragraph's formatting (the formatting lives
 // in the mark that's left). Here the joined paragraph's own box is hidden then, and its content is drawn again at the
 // start of the paragraph it joins; with all markup shown, both stay as they are (see editor.css, odx-joined).
+// The Original view (the document before its changes) joins the other way: a paragraph whose mark was inserted runs on
+// into the next one (odx-ojoined), and those whose marks are deleted stay apart.
 import { wrapText } from './textspans.js';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { DOMSerializer } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { paragraphMarkRev } from './track.js';
+import { insertedWhole } from './pararules.js';
 
 const key = new PluginKey('odx-joins');
 
@@ -23,14 +26,32 @@ function compute(doc) {
   const serializer = DOMSerializer.fromSchema(schema);
   const visit = (parent, offset) => {
     let pending = []; // paragraphs (with text) whose marks are deleted, waiting for the paragraph they run into
+    let added = []; // paragraphs whose marks were inserted (the Original view joins them to the next: odx-ojoined)
     parent.forEach((node, rel) => {
       const pos = offset + rel;
       if (node.type !== schema.nodes.paragraph) {
         pending = [];
+        added = [];
         if (!node.isLeaf) visit(node, pos + 1);
         return;
       }
-      const del = paragraphMarkRev(node.attrs) === 'del';
+      const rev = paragraphMarkRev(node.attrs);
+      if (rev === 'ins' && !insertedWhole(node)) added.push({ node, pos });
+      else if (rev !== 'ins' && added.length) {
+        const split = added;
+        added = [];
+        for (const j of split) decos.push(Decoration.node(j.pos, j.pos + j.node.nodeSize, { class: 'odx-ojoined-away' }));
+        const sig = split.map((j) => j.node.textContent).join('\u0001');
+        decos.push(Decoration.widget(pos + 1, () => {
+          const span = document.createElement('span');
+          span.className = 'odx-ojoined';
+          span.contentEditable = 'false';
+          for (const j of split) span.append(serializer.serializeFragment(j.node.content));
+          wrapText(span);
+          return span;
+        }, { side: -2, key: `ojoin:${pos}:${sig.length}:${sig.slice(0, 40)}`, ignoreSelection: true }));
+      }
+      const del = rev === 'del';
       if (del && allDeleted(node)) return; // hidden whole; the paragraphs around it still join
       if (del) { pending.push({ node, pos }); return; }
       if (!pending.length) return;

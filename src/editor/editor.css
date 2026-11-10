@@ -515,6 +515,16 @@ td[data-odx-phantom] > * { display: none; }
 .odx-no-markup ins { text-decoration: none !important; color: inherit !important; background: none !important; }
 .odx-no-markup p.odx-changed { box-shadow: none !important; }
 .odx-no-markup .odx-has-markup { margin-left: auto !important; transform: none !important; }
+/* Original: the document as it was before its tracked changes (with .odx-no-markup): insertions left out, deletions as
+   plain text, paragraphs split by an inserted paragraph mark joined again and those joined by a deleted one apart
+   (joins.js). */
+.odx-original ins.odx-ins, .odx-original p.odx-all-ins, .odx-original tr.odx-row-ins, .odx-original .odx-content p.odx-ojoined-away { display: none !important; }
+.odx-original del.odx-del { display: inline !important; text-decoration: none !important; color: inherit !important; background: none !important; }
+.odx-original p.odx-all-del, .odx-original .odx-content p.odx-joined-away { display: block !important; }
+.odx-original tr.odx-row-del { display: table-row !important; }
+.odx-original tr.odx-row-del > td { text-decoration: none !important; }
+.odx-original .odx-content .odx-joined { display: none !important; }
+.odx-page:not(.odx-original) .odx-ojoined { display: none; }
 /* Comments */
 .odx-cmt { background: rgba(255, 213, 79, .35); border-bottom: 1px solid rgba(214, 160, 0, .7); }
 .odx-cmt-done { background: rgba(160, 160, 160, .18); border-bottom-color: rgba(140, 140, 140, .5); }
