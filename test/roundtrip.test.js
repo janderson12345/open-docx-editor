@@ -247,3 +247,24 @@ test('paragraph identities (w14:paraId, w14:textId, w:rsid*) are kept; a split p
   assert.doesNotMatch(out2, /w14:/);
   assert.match(out2, /<w:p w:rsidR="00A1B2C3">/);
 });
+
+test('a footnote nothing refers to is kept by a save; one whose reference is deleted in the editor is dropped', () => {
+  const files = unzipSync(blankDocxBytes());
+  const main = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  const note = (id, t) => `<w:footnote w:id="${id}"><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:footnote>`;
+  const notes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    + '<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>'
+    + note(1, 'Never referenced') + note(2, 'Referenced') + '</w:footnotes>';
+  files['word/footnotes.xml'] = strToU8(notes);
+  const ct = '[Content_Types].xml', rels = 'word/_rels/document.xml.rels';
+  files[ct] = strToU8(strFromU8(files[ct]).replace('</Types>', '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>'));
+  files[rels] = strToU8(strFromU8(files[rels]).replace('</Relationships>', '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>'));
+  files[main] = strToU8(strFromU8(files[main]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, '<w:body><w:p><w:r><w:t>Text</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="2"/></w:r></w:p>$1'));
+  const s = new DocxSession(zipSync(files));
+  assert.equal(strFromU8(unzipSync(s.save())['word/footnotes.xml']), notes);
+  let at = null;
+  s.doc.descendants((n, pos) => { if (/footnoteReference/.test(n.attrs.xml || '')) at = [pos, pos + n.nodeSize]; });
+  const out = strFromU8(unzipSync(s.save(new Transform(s.doc).delete(...at).doc))['word/footnotes.xml']);
+  assert.match(out, /Never referenced/);
+  assert.doesNotMatch(out, />Referenced</);
+});

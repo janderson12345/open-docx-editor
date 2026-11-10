@@ -67,6 +67,9 @@ export class DocxSession {
     this.doc = Node.fromJSON(schema, json);
     this.comments = readComments(this.pkg);
     this.notes = loadNotes(this.pkg);
+    // Notes nothing referred to when the document opened are not the editor's to prune: a save keeps them as they were.
+    const refs = noteRefs(this.doc);
+    for (const kind of ['footnote', 'endnote']) for (const n of this.notes[kind].values()) if (!refs[kind].has(n.id)) n.orphan = true;
     this.commentsDirty = false;
   }
 
@@ -662,17 +665,22 @@ export class DocxSession {
       }));
     }
     this._dirtyStories?.clear();
-    const used = { footnote: new Set(), endnote: new Set() };
-    doc.descendants((n) => {
-      for (const m of (n.attrs.xml || '').matchAll(/<w:(footnote|endnote)Reference\b[^>]*w:id="([^"]*)"/g)) used[m[1]].add(m[2]);
-    });
-    saveNotes(this.pkg, this.notes, used);
+    saveNotes(this.pkg, this.notes, noteRefs(doc));
     if (this.commentsDirty) {
       writeComments(this.pkg, this.comments);
       this.commentsDirty = false;
     }
     return this.pkg.toBytes();
   }
+}
+
+/** The footnote and endnote ids `doc` refers to: { footnote: Set, endnote: Set }. */
+function noteRefs(doc) {
+  const used = { footnote: new Set(), endnote: new Set() };
+  doc.descendants((n) => {
+    for (const m of (n.attrs.xml || '').matchAll(/<w:(footnote|endnote)Reference\b[^>]*w:id="([^"]*)"/g)) used[m[1]].add(m[2]);
+  });
+  return used;
 }
 
 // w:settings children that come after w:trackRevisions (ECMA-376 Part 1, §17.15.1.78).

@@ -30,11 +30,12 @@ export function loadNotes(pkg) {
 const SEPARATORS = (tag) => `<w:${tag} w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:${tag}>`
   + `<w:${tag} w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:${tag}>`;
 
-/** Write notes that changed, dropping ones no longer referenced from `used` (Set of ids per kind). */
+/** Write notes that changed, dropping ones no longer referenced from `used` (Set of ids per kind); notes marked `orphan`
+ * (unreferenced when the document opened) are kept. */
 export function saveNotes(pkg, notes, used) {
   for (const [kind, k] of Object.entries(NOTE_KINDS)) {
     const map = notes[kind];
-    const changed = [...map.values()].some((n) => n.dirty) || [...map.values()].some((n) => n.type === 'normal' && !used[kind].has(n.id));
+    const changed = [...map.values()].some((n) => n.dirty) || [...map.values()].some((n) => n.type === 'normal' && !n.orphan && !used[kind].has(n.id));
     if (!changed) continue;
     let path = pkg.partByType(k.rel);
     let src = path && pkg.text(path);
@@ -48,7 +49,7 @@ export function saveNotes(pkg, notes, used) {
     const open = new RegExp(`<w:${k.root}\\b[^>]*>`).exec(src);
     const keepSeps = [...src.matchAll(new RegExp(`<w:${tag}\\b[^>]*w:type="(?:separator|continuationSeparator|continuationNotice)"[\\s\\S]*?</w:${tag}>`, 'g'))].map((m) => m[0]).join('') || SEPARATORS(tag);
     const wctx = { prefixes: rootPrefixes(src) };
-    const body = [...map.values()].filter((n) => n.type === 'normal' && used[kind].has(n.id)).map((n) => {
+    const body = [...map.values()].filter((n) => n.type === 'normal' && (n.orphan || used[kind].has(n.id))).map((n) => {
       if (!n.dirty && n.xml) return n.xml;
       return `<w:${tag} w:id="${n.id}">${writeBlocks(n.doc, wctx)}</w:${tag}>`;
     }).join('');
