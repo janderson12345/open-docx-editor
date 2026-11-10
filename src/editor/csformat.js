@@ -18,8 +18,37 @@ function member(node, name) {
   return m.attrs.on === false ? `<w:${CS[name]} w:val="0"/>` : `<w:${CS[name]}/>`;
 }
 
+// Hebrew, Arabic, Syriac, Thaana and N'Ko letters (and their presentation forms).
+const RTL_TEXT = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * Text typed or pasted in a right-to-left script is a right-to-left run (w:rtl), as Word makes it: so Word orders it
+ * and its punctuation right to left, and gives it its complex-script formatting.
+ */
+function markTypedRtl(trs, state, out) {
+  const type = schema.marks.rextra;
+  trs.forEach((tr, t) => tr.steps.forEach((s, i) => {
+    if (!s.slice || !s.slice.size || tr.getMeta('odx-remote')) return;
+    let from = s.from, to = s.from + s.slice.size;
+    const rest = [tr.mapping.slice(i + 1), ...trs.slice(t + 1).map((x) => x.mapping)];
+    for (const m of rest) { from = m.map(from, -1); to = m.map(to, 1); }
+    out.doc.nodesBetween(from, Math.min(to, out.doc.content.size), (node, pos) => {
+      if (!node.isText || !RTL_TEXT.test(node.text)) return;
+      const rx = node.marks.find((k) => k.type === type);
+      if (rx && rx.attrs.items.some(([n]) => n === 'rtl')) return;
+      const s0 = Math.max(pos, from), e0 = Math.min(pos + node.nodeSize, to);
+      out.removeMark(s0, e0, type).addMark(s0, e0, type.create({ items: [...(rx?.attrs.items || []), ['rtl', '<w:rtl/>']] }));
+    });
+  }));
+}
+
 export const csFormatPlugin = new Plugin({
   appendTransaction(trs, _old, state) {
+    if (trs.some((tr) => tr.docChanged)) {
+      const out = state.tr;
+      markTypedRtl(trs, state, out);
+      if (out.docChanged) return out;
+    }
     const ranges = [];
     trs.forEach((tr, t) => tr.steps.forEach((s, i) => {
       if (!(s instanceof AddMarkStep || s instanceof RemoveMarkStep) || !CS[s.mark.type.name]) return;

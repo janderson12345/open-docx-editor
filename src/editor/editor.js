@@ -380,6 +380,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Mod-l': cmd.setAlign('left'),
     'Mod-r': cmd.setAlign('right'),
     'Mod-j': cmd.setAlign('both'),
+    'Mod-Shift-j': cmd.setAlign('distribute'), // Word's Distributed: the last line spread too
     'Shift-Enter': cmd.insertBreak(),
     'Mod-Enter': cmd.insertBreak('page'),
     'Mod-Alt-f': (s, d, v) => (v ? insertNote(v, 'footnote') : true),

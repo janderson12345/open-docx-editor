@@ -270,6 +270,8 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     center: btn('☰', 'Center (Ctrl+E)', cmd.setAlign('center')),
     right: btn('⫸', 'Align right (Ctrl+R)', cmd.setAlign('right')),
     justify: btn('▤', 'Justify (Ctrl+J)', cmd.setAlign('both')),
+    ltr: btn('⁋→', 'Left-to-right text direction', cmd.setDirection(false)),
+    rtl: btn('←¶', 'Right-to-left text direction', cmd.setDirection(true)),
     reading: btn('📖', 'Reading view: read without editing (Esc to leave)', withView(() => { setReading(true); return true; }), { label: 'Reading View', big: true }),
     darkPage: btn('◐', 'Dark mode for the page', () => { const on = !container.classList.contains('odx-darkpage'); container.classList.toggle('odx-darkpage', on); b.darkPage.classList.toggle('on', on); getView()?.dom.parentElement.parentElement.classList.toggle('odx-darkpage', on); return true; }, { label: 'Dark Mode', big: true }),
     ruler: btn('📏', 'Ruler', withView((v) => { b.ruler.classList.toggle('on', ruler.toggle(v)); return true; }), { label: 'Ruler', big: true }),
@@ -298,7 +300,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
           color))),
       grp('Paragraph', col(
         line(btn('•≡', 'Bullets', listCmd('bullet')), gallery('Bullet library', 'bullets'), btn('1≡', 'Numbering', listCmd('decimal')), gallery('Numbering library', 'numbering'), gallery('Multilevel list', 'multilevel', '⋮≡'), btn('⇤', 'Decrease indent', indentCmd(-1)), btn('⇥', 'Increase indent', indentCmd(1))),
-        line(b.left, b.center, b.right, b.justify, b.marks,
+        line(b.left, b.center, b.right, b.justify, b.ltr, b.rtl, b.marks,
           menu('▦', 'Shading', () => [el('div', { class: 'odx-swatches' }, ...SHADES.map((c) => el('button', { type: 'button', title: c, style: `background:#${c}`, onmousedown: run(cmd.setShading(c)) }))), item('No color', cmd.setShading(null))]),
           menu('⊞', 'Borders', () => [['Bottom border', 'bottom'], ['Top border', 'top'], ['Left border', 'left'], ['Right border', 'right'], ['No border', 'none'], ['All borders', 'all'], ['Outside borders', 'outside']].map(([n, w]) => item(n, cmd.setBorders(w)))),
           menu('↕', 'Line and paragraph spacing', () => {

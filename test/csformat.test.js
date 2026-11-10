@@ -63,3 +63,33 @@ test('percentage and solid shading patterns are drawn as the colour they blend t
   assert.equal(shdFill(shd('w:val="clear" w:color="auto" w:fill="D9D9D9"')), '#D9D9D9');
   assert.equal(shdFill(shd('w:val="clear" w:color="auto" w:fill="auto"')), null);
 });
+
+test('a distributed paragraph spreads its last line too', async () => {
+  const { pPrToCss } = await import('../src/ooxml/props.js');
+  assert.match(pPrToCss({ align: 'distribute' }), /text-align-last:justify/);
+  assert.match(pPrToCss({ align: 'thaiDistribute' }), /text-align-last:justify/);
+  assert.doesNotMatch(pPrToCss({ align: 'both' }), /text-align-last/);
+});
+
+test('Hebrew or Arabic typed into a run is made a right-to-left run (w:rtl), as Word does; Latin text is left alone', () => {
+  const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [schema.text('ab')])]);
+  let s = EditorState.create({ doc, plugins: [csFormatPlugin] });
+  s = s.apply(s.tr.insertText('שלום', 3));
+  s = s.apply(s.tr.insertText('cd', 1));
+  assert.match(rPr(s.doc.nodeAt(s.doc.content.size - 5).marks), /<w:rtl\/>/);
+  assert.equal(rPr(s.doc.nodeAt(1).marks), '');
+  const t = s.doc.firstChild.textContent;
+  assert.equal(t, 'cdabשלום');
+});
+
+test('Right-to-Left Text Direction sets the paragraph\'s w:bidi, and Left-to-Right takes it away', async () => {
+  const { setDirection } = await import('../src/editor/commands.js');
+  const { pPrXml } = await import('../src/ooxml/writer.js');
+  const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create({ align: 'left' }, [schema.text('abc')])]);
+  let s = EditorState.create({ doc, selection: TextSelection.create(doc, 2) });
+  setDirection(true)(s, (tr) => { s = s.apply(tr); });
+  assert.equal(pPrXml(s.doc.firstChild.attrs), '<w:pPr><w:bidi/><w:jc w:val="left"/></w:pPr>');
+  assert.match(schema.nodes.paragraph.spec.toDOM(s.doc.firstChild)[1].style, /direction:rtl/);
+  setDirection(false)(s, (tr) => { s = s.apply(tr); });
+  assert.equal(pPrXml(s.doc.firstChild.attrs), '<w:pPr><w:jc w:val="left"/></w:pPr>');
+});

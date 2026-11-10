@@ -285,6 +285,8 @@ export function pPrToCss(p) {
   const css = [];
   // (Start and end, not left and right: a right-to-left paragraph's 'left' is its start, at the right.)
   if (p.bidi != null) css.push(`direction:${p.bidi ? 'rtl' : 'ltr'}`);
+  // (Distributed, w:jc="distribute" / thaiDistribute: its last line spread to both margins as well, as Word does.)
+  if (p.align === 'distribute' || p.align === 'thaiDistribute') css.push('text-align-last:justify');
   if (p.align) css.push(`text-align:${{ both: 'justify', distribute: 'justify', thaiDistribute: 'justify', lowKashida: 'justify', mediumKashida: 'justify', highKashida: 'justify', left: 'start', right: 'end', center: 'center', start: 'start', end: 'end', justify: 'justify' }[p.align] || 'start'}`);
   if (p.before != null) css.push(`margin-top:${twipsToPt(p.before)}pt;--odx-sb:${twipsToPt(p.before)}pt`); // (--odx-sb: where a picture's paragraph-relative offset starts, reader.js)
   if (p.after != null) css.push(`margin-bottom:${twipsToPt(p.after)}pt`);

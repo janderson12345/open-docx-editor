@@ -37,6 +37,15 @@ function updateParagraphs(fn) {
 }
 
 export const setStyle = (styleId) => updateParagraphs(() => ({ styleId }));
+/**
+ * Word's Right-to-Left / Left-to-Right Text Direction: the paragraphs' w:bidi. Their alignment keeps its meaning at the
+ * start or end of the line, so a left-aligned paragraph made right-to-left sits at the right, as in Word.
+ */
+export const setDirection = (rtl) => updateParagraphs((a) => ({
+  extra: [...a.extra.filter((e) => e[0] !== 'bidi'), ...(rtl ? [['bidi', '<w:bidi/>']] : [])],
+  view: { ...a.view, bidi: rtl ? true : undefined },
+}));
+
 export const setAlign = (align) => updateParagraphs((a) => ({ align: a.align === align && align !== 'left' ? null : align }));
 
 /** Effective list of a paragraph: direct numPr, else its style's (numId "0" switches lists off). */
