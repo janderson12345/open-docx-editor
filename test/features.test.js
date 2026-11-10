@@ -147,3 +147,17 @@ test('an autofit table with a placeholder grid and a merged first row takes its 
   assert.deepEqual(cells.map((c) => c.attrs.colwidth[0]), [100, 100, 100]);
   assert.deepEqual(json.content[0].content[0].content[0].attrs.colwidth, [100, 100, 100]);
 });
+
+test('Chinese and Hebrew list numbers, and leading zeros kept under legal numbering', async () => {
+  const { formatNumber } = await import('../src/ooxml/styles.js');
+  assert.deepEqual([1, 2, 10, 11, 20, 21, 101, 110].map((n) => formatNumber(n, 'chineseCounting')), ['一', '二', '十', '十一', '二十', '二十一', '一百零一', '一百一十']);
+  assert.deepEqual([1, 10, 15, 16, 20, 115].map((n) => formatNumber(n, 'hebrew1')), ['א', 'י', 'טו', 'טז', 'כ', 'קטו']);
+  assert.deepEqual([1, 22, 23].map((n) => formatNumber(n, 'hebrew2')), ['א', 'ת', 'אא']);
+  const s = new DocxSession(load('numbering-legal.docx'));
+  const lv = s.numbering.abstract.get([...s.numbering.nums.values()][0].abstractId);
+  lv[0].fmt = 'decimalZero'; lv[1].legal = true; lv[1].fmt = 'decimalZero'; lv[1].text = '%1.%2';
+  const next = listCounter(s.numbering);
+  const id = [...s.numbering.nums.keys()][0];
+  next(id, 0);
+  assert.equal(next(id, 1), '01.01');
+});

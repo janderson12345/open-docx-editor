@@ -168,9 +168,43 @@ export function formatNumber(n, fmt) {
     case 'lowerRoman': return roman(n).toLowerCase();
     case 'upperRoman': return roman(n);
     case 'decimalZero': return n < 10 ? '0' + n : String(n);
+    case 'chineseCounting': case 'chineseCountingThousand': case 'ideographDigital': return chinese(n, fmt === 'ideographDigital');
+    case 'hebrew1': return hebrewNumber(n);
+    case 'hebrew2': return n > 0 ? HEBREW[(n - 1) % 22].repeat(Math.floor((n - 1) / 22) + 1) : '';
     case 'none': return '';
     default: return String(n);
   }
+}
+// Chinese numerals (一、二、三... 十, 十一, 二十, 一百零一), Word's chineseCounting and chineseCountingThousand; digit by
+// digit (一〇一) for ideographDigital.
+const CN = '〇一二三四五六七八九';
+function chinese(n, digital) {
+  if (digital) return String(n).split('').map((d) => CN[d]).join('');
+  if (n <= 0 || n > 9999) return String(n);
+  const units = ['', '十', '百', '千'];
+  const ds = String(n).split('').map(Number);
+  let s = '', zero = false;
+  ds.forEach((d, i) => {
+    const u = units[ds.length - 1 - i];
+    if (!d) { zero = s !== ''; return; }
+    if (zero) { s += '零'; zero = false; }
+    s += (d === 1 && u === '十' && s === '' ? '' : CN[d]) + u;
+  });
+  return s;
+}
+// Hebrew letters as numbers (hebrew1: א=1... י=10... ק=100), 15 and 16 written טו and טז as Word does; hebrew2 is the
+// alphabet in order.
+const HEBREW = 'אבגדהוזחטיכלמנסעפצקרשת';
+function hebrewNumber(n) {
+  if (n <= 0) return String(n);
+  const vals = [[400, 'ת'], [300, 'ש'], [200, 'ר'], [100, 'ק'], [90, 'צ'], [80, 'פ'], [70, 'ע'], [60, 'ס'], [50, 'נ'], [40, 'מ'], [30, 'ל'], [20, 'כ'], [10, 'י'], [9, 'ט'], [8, 'ח'], [7, 'ז'], [6, 'ו'], [5, 'ה'], [4, 'ד'], [3, 'ג'], [2, 'ב'], [1, 'א']];
+  let s = '';
+  let r = n;
+  while (r >= 400) { s += 'ת'; r -= 400; }
+  if (r % 100 === 15) { r -= 15; s += hebrewNumber(r).replace(/^\d+$/, '') + 'טו'; return s; }
+  if (r % 100 === 16) { r -= 16; s += hebrewNumber(r).replace(/^\d+$/, '') + 'טז'; return s; }
+  for (const [v, ch] of vals) while (r >= v) { s += ch; r -= v; }
+  return s;
 }
 // A, B... Z, then AA, BB... ZZ, AAA: Word's letters for list items and page numbers alike.
 const letters = (n) => (n > 0 ? String.fromCharCode(65 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1) : '');
@@ -203,7 +237,8 @@ export function listCounter(numbering) {
       const i = Number(d) - 1;
       const v = c[i] ?? startOf(i);
       const fmt = levels[i]?.fmt || 'decimal';
-      return formatNumber(v, lvl.legal && fmt !== 'none' ? 'decimal' : fmt);
+      // (Legal numbering makes each level Arabic; one with leading zeros keeps them: SECTION 1.07.)
+      return formatNumber(v, lvl.legal && fmt !== 'none' && fmt !== 'decimalZero' ? 'decimal' : fmt);
     });
   };
 }
