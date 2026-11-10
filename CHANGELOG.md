@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Wrap Text** (Layout > Wrap Text, and a picture's context menu): In Line with Text, Square, Tight, Through, Top and
+  Bottom, Behind Text, In Front of Text, for the selected picture or shape; drawn so and saved as Word writes it.
 - **Original view** (Review > Markup view > Original): the document as it was before its tracked changes, as Word shows
   it: insertions left out, deletions as plain text, paragraphs split or joined by a tracked paragraph mark as they were.
 - **Frames** (paragraphs with w:framePr): placed as Word places them, across the page from the page, the margins or the

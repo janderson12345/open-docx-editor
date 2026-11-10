@@ -3,6 +3,8 @@ import { el, iconize } from './ribbonkit.js';
 import { editChart, chartXmlAt } from './charts.js';
 import * as cm from './comments.js';
 import * as cmd from './commands.js';
+import { WRAPS } from '../ooxml/wrap.js';
+import { setWrapText, currentWrap } from './wraptext.js';
 
 /**
  * The menu's element (drawn into the ribbon's container, hidden until opened). `kit` is the ribbon's (ribbonkit.js);
@@ -47,6 +49,7 @@ export function createContextMenu(container, getView, kit, ribbon) {
     // (A chart that's selected: its data, as double-clicking it does.)
     const selView = getView();
     const chartAt = selView && state.selection.node && chartXmlAt(selView, state.selection.node) ? state.selection.from : null;
+    const wrapNow = currentWrap(state);
     const list = el('div', { class: 'odx-ctxmenu', role: 'menu', 'aria-label': 'Context menu' },
       ctxItem('✂', 'Cut', 'Ctrl+X', clip('cut'), { disabled: empty }),
       ctxItem('⧉', 'Copy', 'Ctrl+C', clip('copy'), { disabled: empty }),
@@ -55,6 +58,8 @@ export function createContextMenu(container, getView, kit, ribbon) {
       el('hr'),
       ctxItem('¶', 'Paragraph Options', '', withView(() => { showTab('Layout'); setTimeout(() => panel('Layout').querySelector('input')?.focus()); return true; })),
       chartAt != null ? ctxItem('📊', 'Edit Chart Data...', '', withView((w) => editChart(w, chartAt))) : null,
+      // A selected picture or shape: its Wrap Text choices (the one it has ticked).
+      ...(wrapNow ? [el('hr'), el('div', { class: 'odx-ctxhead', role: 'presentation' }, 'Wrap Text'), ...WRAPS.map(([k, n]) => ctxItem(k === wrapNow ? '✓' : '', n, '', setWrapText(k)))] : []),
       el('hr'),
       ctxItem('🔗', 'Link', 'Ctrl+K', withView((w) => { showTab('Insert'); return editLink(w.state, w.dispatch, w); })),
       !comments() ? null : ctxItem('💬', 'New Comment', 'Ctrl+Alt+M', withView(cm.addComment)));

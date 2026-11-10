@@ -24,6 +24,8 @@ import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
 import { el, iconize, slug, ribbonKit } from './ribbonkit.js';
 import * as sp from '../ooxml/sectpr.js';
+import { WRAPS } from '../ooxml/wrap.js';
+import { setWrapText, currentWrap } from './wraptext.js';
 
 const SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 const FONTS = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana'];
@@ -405,6 +407,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
         menu('▥', 'Columns', () => [['One', 1], ['Two', 2], ['Three', 3]].map(([n, k]) => item(n, setColumns(k), { on: !!getView() && sp.columnCount(getView().state.doc.attrs.sectPr) === k })), { label: 'Columns', big: true }),
         menu('⤓', 'Breaks', () => [item('Page break', cmd.insertBreak('page'), { hint: 'Ctrl+Enter' }), item('Column break', cmd.insertBreak('column')), item('Text wrapping break', cmd.insertBreak(null), { hint: 'Shift+Enter' }), el('hr'),
           item('Section break: next page', cmd.insertSectionBreak('nextPage'), { hint: 'New section on the next page' }), item('Section break: continuous', cmd.insertSectionBreak('continuous'), { hint: 'New section on the same page' })], { label: 'Breaks', big: true })),
+      grp('Arrange', menu('⊡', 'Wrap Text: how the text goes round the selected picture or shape', () => WRAPS.map(([k, n]) => item(n, setWrapText(k), { on: !!getView() && currentWrap(getView().state) === k })), { label: 'Wrap Text', big: true })),
       grp('Page Background',
         menu('🎨', 'Page color', () => [el('div', { class: 'odx-swatches' }, ...PAGE_COLORS.map((c) => el('button', { type: 'button', title: `#${c}`, style: `background:#${c}`, onmousedown: run(setPageColor(c)) }))), item('No Color', setPageColor(null))], { label: 'Page Color', big: true }),
         menu('▢', 'Page borders', () => [['None', 'none'], ['Box', 'box'], ['Double', 'double'], ['Thick', 'thick'], ['Shadow', 'shadow']].map(([n, k]) => item(n, cmd.setPageBorders(k))), { label: 'Page Borders', big: true })),

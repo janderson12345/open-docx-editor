@@ -285,6 +285,32 @@ check(orig.join(' | ') === 'Alpha words old end. | A paragraph deleted whole. | 
 check(final.join(' | ') === 'Alpha new words end. | A paragraph inserted whole. | Split here by Enter | and joined again. | First of twoSecond of two.',
   `No Markup still shows the changed document (${final.join(' | ')})`);
 
+// Wrap Text (Layout > Wrap Text): the selected picture floats with the text square round it, goes behind the text, and
+// back in line; each drawn so and saved as Word writes it.
+await open('rich.docx');
+await page.click('img[alt="A blue box"]'); // (selected; Wrap Text keeps it selected)
+const wrapTo = async (name) => {
+  await page.click('.odx-rtab:text-is("Layout")');
+  await page.click('button[title^="Wrap Text"]');
+  await page.click(`.odx-item:has-text("${name}")`);
+  await page.waitForTimeout(400);
+  const look = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector('img[alt="A blue box"]')); return `${cs.float}/${cs.position}/${cs.zIndex}`; });
+  const saved = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+  const at = saved.indexOf('name="blue box"');
+  const open = Math.max(saved.lastIndexOf('<wp:inline', at), saved.lastIndexOf('<wp:anchor', at));
+  const head = open < 0 ? '' : saved.slice(open, at); // (the drawing's start up to its name: its wrap element comes before)
+  const wrapEl = /<wp:(wrap(?!Polygon)\w+)/.exec(head)?.[1];
+  const saidSo = [head.startsWith('<wp:anchor') ? 'anchor' : 'inline', wrapEl, /behindDoc="1"/.test(head) && 'behind'].filter(Boolean).join(' ');
+  return { look, saved: head ? saidSo : 'missing' };
+};
+const sq = await wrapTo('Square');
+const behind = await wrapTo('Behind Text');
+const inl = await wrapTo('In Line with Text');
+await page.click('.odx-rtab:text-is("Home")');
+check(sq.look.startsWith('left/') && sq.saved === 'anchor wrapSquare', `Wrap Text Square: floated, saved square (${JSON.stringify(sq)})`);
+check(behind.look === 'none/absolute/-1' && behind.saved === 'anchor wrapNone behind', `Wrap Text Behind Text: behind the text, saved so (${JSON.stringify(behind)})`);
+check(inl.look.startsWith('none/static') && inl.saved === 'inline', `Wrap Text In Line with Text: back in line (${JSON.stringify(inl)})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

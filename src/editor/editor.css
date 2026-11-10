@@ -672,6 +672,7 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-ctxlbl { flex: 1; }
 .odx-ctxitem small { opacity: .75; font-size: 12px; }
 .odx-ctxmenu hr { border: 0; border-top: 1px solid var(--odx-line); margin: 4px 0; }
+.odx-ctxhead { padding: 2px 12px; font-size: 12px; font-weight: 600; opacity: .8; } /* a heading in the menu: Wrap Text */
 .odx-ctxnote { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; padding: 8px 14px; border-radius: 6px; background: #323232; color: #fff; font: 13px system-ui, sans-serif; }
 .odx-mini button:focus-visible, .odx-mini select:focus-visible { outline: 2px solid var(--odx-accent); }
 .odx-pop .odx-fileitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; font-size: 14px; }
