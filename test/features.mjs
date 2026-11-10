@@ -56,6 +56,15 @@ await open('effects.docx');
 const grow = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(6, 10).map((p) => p.getBoundingClientRect().height));
 check(grow.every((h) => h > 42.5 && h < 45), `emphasis marks make their line taller (${grow.map((h) => h.toFixed(1)).join(', ')}px)`);
 
+await open('notes-long.docx');
+// (Four notes of 45 paragraphs each, from one paragraph: they continue at the foot of the pages after it, as in Word,
+// each page's notes inside its own margins, never over its body text.)
+const notes = await page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => {
+  const n = s.querySelector('.odx-notes');
+  return n ? n.getBoundingClientRect().top - s.getBoundingClientRect().top : null;
+}));
+check(notes.length >= 5 && notes.every((t) => t != null && t >= 96 + 20), `long footnotes continue over ${notes.length} pages, below each page's text (${notes.map((t) => Math.round(t)).join(',')})`);
+
 await open('rtl-hebrew.docx');
 const rtl = await page.evaluate(() => {
   const p = document.querySelectorAll('.odx-content > p')[1];

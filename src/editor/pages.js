@@ -141,22 +141,58 @@ export function createPages(view, session, { sheet, scope }) {
     el.querySelectorAll(`[data-kind="${kind}Ref"]`).forEach((m) => { m.textContent = noteLabel(kind, n); });
     return el;
   };
+  const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
   const noteHeight = (note, kind, n) => {
     if (!noteHeights.has(note.doc)) {
       const box = document.createElement('div');
       box.className = 'odx-notes';
       box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;right:${page.right}px`;
-      box.append(noteEl(note, kind, n));
+      const el = noteEl(note, kind, n);
+      box.append(el);
       sheet.append(box);
+      const top = box.getBoundingClientRect().top;
       noteHeights.set(note.doc, box.getBoundingClientRect().height);
+      noteBounds.set(note.doc, [...el.children].map((c) => c.getBoundingClientRect().bottom - top).filter((b) => b > 0));
       box.remove();
     }
     return noteHeights.get(note.doc);
   };
-  const sumNotes = (p) => {
-    const list = notesOn.get(p) || [];
-    const h = list.reduce((t, r) => t + r.h, 0);
-    if (h) notesH.set(p, h + NOTE_SEP); else notesH.delete(p);
+  // The notes drawn at each page's foot: those carried on from the pages before (a note longer than the room a page has
+  // for it continues at the foot of the next, as in Word), then the page's own; `skip` px of the first already shown.
+  let noteFlow = new Map(); // page -> { items, skip, h }
+  const NOTE_MIN_BODY = 48; // the room a page keeps for its body text (its reference's line, at least)
+  const sumNotes = () => {
+    notesH = new Map();
+    noteFlow = new Map();
+    const withNotes = [...notesOn.keys()].filter((p) => notesOn.get(p).length).sort((a, b) => a - b);
+    if (!withNotes.length) return;
+    const last = withNotes[withNotes.length - 1];
+    let carry = [], skip = 0;
+    for (let p = withNotes[0]; carry.length || p <= last; p++) {
+      const items = [...carry, ...(notesOn.get(p) || [])];
+      if (!items.length) continue;
+      const total = items.reduce((t, r) => t + r.h, 0) - skip;
+      const room = Math.max(40, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
+      if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
+      // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
+      let at = 0, cut = 0;
+      for (const r of items) {
+        for (const b of noteBounds.get(r.note?.doc) || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
+        at += r.h;
+      }
+      if (!cut) cut = room;
+      noteFlow.set(p, { items, skip, h: cut });
+      notesH.set(p, cut + NOTE_SEP);
+      const rest = [];
+      let acc = 0, next = 0;
+      for (const r of items) {
+        if (acc + r.h > skip + cut + 0.5) { if (!rest.length) next = skip + cut - acc; rest.push(r); }
+        acc += r.h;
+      }
+      carry = rest;
+      skip = next;
+      if (p > last + 500) break; // (a guard: never runs away)
+    }
   };
   let blockNotes = new Map(); // block index -> [{ kind, id, n, h }]
   const placed = new Map(); // note key -> page
@@ -1227,6 +1263,7 @@ export function createPages(view, session, { sheet, scope }) {
     sections = [[0, 0]];
     notesOn = new Map();
     notesH = new Map();
+    noteFlow = new Map();
     cuts = new Map();
     colTops = new Map();
     for (const r of colRegs) {
@@ -1426,6 +1463,8 @@ export function createPages(view, session, { sheet, scope }) {
     if (!cols && !regs.length) verticalAlign(doc, blocks, starts, pulls, splits, paraSplits);
     const last = blocks.length ? blocks[blocks.length - 1].bottom + shift : 0;
     pages = Math.max(1, pageOf(Math.max(last - 1, 0)) + 1);
+    // (Notes continued past the body's last page: pages of their own, as Word adds.)
+    if (noteFlow.size) pages = Math.max(pages, Math.max(...noteFlow.keys()) + 1);
     const { colCss, contHeads } = placeColumns(blocks, regs, starts, colSplits, paraSplits, splits);
 
     const { css, heads } = applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits);
@@ -1514,14 +1553,21 @@ export function createPages(view, session, { sheet, scope }) {
           s.append(f);
         }
       }
-      const notes = notesOn.get(p);
-      if (notes && notes.length) {
+      const flow = noteFlow.get(p);
+      if (flow) {
         const box = document.createElement('div');
         box.className = 'odx-notes';
         box.style.cssText = `top:${pageH(p) - marginsAt(p).bottom - notesH.get(p)}px;left:${page.left}px;right:${page.right}px`;
         const sep = document.createElement('div');
         sep.className = 'odx-note-sep';
-        box.append(sep, ...notes.map((r) => noteEl(r.note, r.kind, r.n)));
+        // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)
+        const clip = document.createElement('div');
+        clip.style.cssText = `overflow:hidden;height:${flow.h}px`;
+        const inner = document.createElement('div');
+        inner.style.marginTop = `${-flow.skip}px`;
+        inner.append(...flow.items.map((r) => noteEl(r.note, r.kind, r.n)));
+        clip.append(inner);
+        box.append(sep, clip);
         s.append(box);
       }
       frag.append(s);
