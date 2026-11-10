@@ -236,7 +236,12 @@ export function rPr(marks) {
       case 'strike': items.push(['strike', onOff('strike', a.on)]); break;
       case 'color': items.push(['color', val('color', a.val)]); break;
       case 'size': items.push(['sz', val('sz', a.val)]); break;
-      case 'highlight': items.push(['highlight', val('highlight', a.val)]); break;
+      // (w:highlight takes Word's named colours only; any other colour is run shading, as Word writes it.)
+      case 'highlight': {
+        const hex = /^#?([0-9a-f]{6})$/i.exec(a.val || '');
+        items.push(hex ? ['shd', `<w:shd w:val="clear" w:color="auto" w:fill="${hex[1].toUpperCase()}"/>`] : ['highlight', val('highlight', a.val)]);
+        break;
+      }
       case 'underline': items.push(['u', val('u', a.val)]); break;
       case 'vertAlign': items.push(['vertAlign', val('vertAlign', a.val)]); break;
       case 'rextra': items.push(...a.items); break;

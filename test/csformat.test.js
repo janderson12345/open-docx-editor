@@ -47,3 +47,9 @@ test('style run properties carry their complex-script members for right-to-left 
   const dom = schema.marks.rextra.spec.toDOM(rtl);
   assert.match(dom[1].class, /odx-cs/);
 });
+
+test('a highlight in a colour Word has no name for is written as run shading', () => {
+  const t = schema.text('x', [schema.marks.highlight.create({ val: '#ffeb3b' })]);
+  assert.equal(rPr(t.marks), '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFEB3B"/></w:rPr>');
+  assert.equal(rPr([schema.marks.highlight.create({ val: 'yellow' })]), '<w:rPr><w:highlight w:val="yellow"/></w:rPr>');
+});
