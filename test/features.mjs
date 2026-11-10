@@ -37,6 +37,7 @@ check(/^url\("data:image\/svg\+xml/.test(pic || ''), 'a picture bullet shows its
 // Bold typed at the end of a list item carries on into the next item made with Enter, as in Word.
 await page.click('.odx-content p.odx-li');
 await page.keyboard.press('End');
+await page.waitForTimeout(100); // (the caret move End makes reaches the editor as a selection change, after the key)
 await page.keyboard.press('Control+b');
 await page.keyboard.type(' more');
 await page.keyboard.press('Enter');
