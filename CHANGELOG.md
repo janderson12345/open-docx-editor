@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Frames** (paragraphs with w:framePr): placed as Word places them, across the page from the page, the margins or the
+  text, down the page from its top or below where they come, the text beside them; paragraphs with the same frame
+  settings make one frame. They had been drawn in the flow of the text.
+- Paragraph borders and shading are printed and exported to PDF (they had been left out).
 - **Columns of their own widths** (Layout > Columns > More Columns with "Equal column width" off): each column at its
   width and place, the line between them midway in each gap; a paragraph going on in a column of another width is laid
   out again at that width, as Word does.

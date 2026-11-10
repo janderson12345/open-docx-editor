@@ -1402,6 +1402,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (balancedDoc !== doc) { balancedDoc = doc; balancePasses = 0; }
     let balanceAgain = false;
     const rec = new Map(); // (columns sections) block k -> { top, bottom, carry } where it was last placed
+    const frameDy = new Map(); // block index -> px a frame set down on its page is moved below where it comes
     placed.clear();
     assignNotes(doc);
     for (let k = 0; k < blocks.length; k++) {
@@ -1410,6 +1411,24 @@ export function createPages(view, session, { sheet, scope }) {
       if (k === 0 || (band && band.k >= k)) { if (band) cuts.delete(band.p); band = null; }
       let top = b.top + shift;
       let p = pageOf(top);
+      // A paragraph in a frame (frames.js) floats beside the text, out of the flow. One anchored to the page or the
+      // margins is set down at its place on the page where it comes: how far below that its float is moved (--odx-fdy).
+      const frame = b.el.dataset?.frame;
+      if (frame && b.node.type === schema.nodes.paragraph && getComputedStyle(b.el).float !== 'none') {
+        if (frame === 'page' || frame === 'margin') {
+          const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-fdy')) || 0;
+          const natural = top - now;
+          const pg = pageOf(natural);
+          const base = frame === 'page' ? pageTop(pg) : contentTop(pg);
+          const room = frame === 'page' ? pageH(pg) : contentBottom(pg) - contentTop(pg);
+          const h = b.bottom - b.top;
+          const al = b.el.dataset.fyalign;
+          const y = al === 'top' ? base : al === 'center' ? base + (room - h) / 2 : al === 'bottom' ? base + room - h : base + Number(b.el.dataset.fy || 0);
+          frameDy.set(b.i, y - natural);
+          if (Math.abs(y - natural - now) > 0.5) colsAgain = true; // (the text beside it moves: lay out again)
+        }
+        continue;
+      }
       // A table set down on its page: there, out of the flow. What follows it starts where it would have (the page above
       // it fills first), and a block reaching into its band goes below it, as in Word.
       const fy = floatAt(b);
@@ -1604,7 +1623,8 @@ export function createPages(view, session, { sheet, scope }) {
     css.push(`.${scope} > .odx-content{min-height:${pageTop(pages) - gap}px}`);
     if (cols || colRegs.length) dom.classList.remove('odx-measure');
     sheet.classList.remove('odx-bl-off');
-    let text = css.concat(colCss, baselineCss(blocks, scope, sheet)).join('\n');
+    const frameCss = [...frameDy].map(([i, dy]) => `.${scope} > .odx-content > :nth-child(${i + 1}){--odx-fdy:${dy.toFixed(2)}px}`);
+    let text = css.concat(colCss, frameCss, baselineCss(blocks, scope, sheet)).join('\n');
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();

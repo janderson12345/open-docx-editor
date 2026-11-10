@@ -238,6 +238,17 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
       const y = ln.top - origin.top - Math.round(off) + d;
       line.style.transform = `translateY(${y.toFixed(3)}px)`;
     });
+    // Its borders and shading: the paragraph is hidden in print, so its box is drawn here, under its lines (a framed
+    // paragraph's box, a ruled heading's line).
+    const edges = ['Top', 'Right', 'Bottom', 'Left'];
+    const shaded = !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor || 'transparent');
+    if (shaded || edges.some((s) => parseFloat(cs[`border${s}Width`]) > 0 && cs[`border${s}Style`] !== 'none')) {
+      const under = document.createElement('div');
+      under.style.cssText = `position:absolute;box-sizing:border-box;left:${box.left - origin.left}px;top:${box.top - origin.top}px;width:${box.width}px;height:${box.height}px;`
+        + edges.map((s) => `border-${s.toLowerCase()}:${cs[`border${s}Width`]} ${cs[`border${s}Style`]} ${cs[`border${s}Color`]}`).join(';')
+        + (shaded ? `;background:${cs.backgroundColor}` : '') + (cs.clipPath && cs.clipPath !== 'none' ? `;clip-path:${cs.clipPath}` : '');
+      layer.insertBefore(under, host);
+    }
     hide.push(`.${scope} > ${pathOf(el, sheet)}`);
   }
   const style = document.createElement('style');

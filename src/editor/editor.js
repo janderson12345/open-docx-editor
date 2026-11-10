@@ -20,6 +20,7 @@ import { borderCss } from '../ooxml/props.js';
 import { schema } from './schema.js';
 import { uniformRun } from './runs.js';
 import { columnsIn } from './sections.js';
+import { frameOf, frameStyle } from './frames.js';
 import { listLabel, lineSize, pictureLine, labelLine, changeClasses, headingRole } from './pararules.js';
 import * as cmd from './commands.js';
 import { announce } from './live.js';
@@ -289,7 +290,14 @@ function paragraphPlugin(session) {
         const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');
         headingRole(node, session, attrs);
-        const sd = parent === doc && sides.get(index);
+        // A paragraph in a frame (frames.js): at its place, the text beside it; one after another in the same frame below it.
+        const fr = parent === doc && frameOf(node);
+        if (fr) {
+          const f = frameStyle(fr, index > 0 && frameOf(doc.child(index - 1)) === fr, page);
+          style.push(...f.style);
+          Object.assign(attrs, f.attrs);
+        }
+        const sd = !fr && parent === doc && sides.get(index);
         if (sd) {
           // (Added to the paragraph's own indents, the last margin it sets.)
           const own = (k) => { const v = [...style].reverse().find((x) => x.startsWith(`${k}:`)); return v ? v.slice(k.length + 1).trim() : '0pt'; };
