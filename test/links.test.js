@@ -18,3 +18,18 @@ test('the document keeps its own address, whatever it is (only the page is guard
   const m = schema.marks.link.create({ href: 'javascript:alert(1)' });
   assert.equal(m.attrs.href, 'javascript:alert(1)');
 });
+
+test('a picture that is a link (a:hlinkClick) keeps its address, shown on the picture for Ctrl+click', async () => {
+  await import('./setup.js');
+  const { readDocument } = await import('../src/ooxml/reader.js');
+  const { parseXml } = await import('../src/ooxml/xml.js');
+  const body = '<w:p><w:r><w:drawing><wp:inline><wp:extent cx="952500" cy="952500"/><wp:docPr id="1" name="Logo"><a:hlinkClick r:id="rIdL"/></wp:docPr>'
+    + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdP"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
+  const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const json = readDocument(parseXml(`<w:document ${ns}><w:body>${body}</w:body></w:document>`), { resolveImage: () => 'blob:p', resolveLink: (id) => (id === 'rIdL' ? 'https://example.com/' : null) });
+  const img = schema.node('image', json.content[0].content[0].attrs);
+  assert.equal(img.attrs.href, 'https://example.com/');
+  assert.equal(schema.nodes.image.spec.toDOM(img)[1]['data-href'], 'https://example.com/');
+  const bad = schema.node('image', { ...img.attrs, href: 'javascript:alert(1)' });
+  assert.equal(schema.nodes.image.spec.toDOM(bad)[1]['data-href'], null);
+});

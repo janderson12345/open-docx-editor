@@ -231,7 +231,7 @@ export class DocxSession {
         resolveImage: (id, crop) => {
           const r = relOf(id);
           const bytes = r && !r.external && this.pkg.files[r.target];
-          const pic = bytes && shown(bytes, /\.jpe?g$/i.test(r.target) ? 'image/jpeg' : 'image/png');
+          const pic = bytes && shown(bytes, /\.jpe?g$/i.test(r.target) ? 'image/jpeg' : /\.svg$/i.test(r.target) ? 'image/svg+xml' : 'image/png');
           return pic && this.opts.imageUrl ? (crop ? croppedUrl(...pic, crop) : this.opts.imageUrl(...pic)) : null;
         },
         resolveLink: (id) => relOf(id)?.rawTarget ?? null,

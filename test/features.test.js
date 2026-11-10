@@ -177,3 +177,34 @@ test('a list number formatted as hidden text is not shown, nor the room after it
   assert.deepEqual(run([]), ['1.', '--odx-hang:18pt']);
   assert.deepEqual(run([['rPr', '<w:rPr><w:vanish/></w:rPr>']]), ['', '--odx-hang:0pt']);
 });
+
+test('a pasted picture given as a data: URL is stored as the document\'s own; a pasted copy gets drawing ids of its own', async () => {
+  const { pastePictures } = await import('../src/editor/pastepics.js');
+  const { schema } = await import('../src/editor/schema.js');
+  const { Slice, Fragment } = await import('prosemirror-model');
+  const { blankDocxBytes } = await import('../src/ooxml/template.js');
+  const s = new DocxSession(blankDocxBytes(), { imageUrl: () => 'blob:stored' });
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEklEQVR42mP8z8DwnwEJMDIgAQBAGgP/8m3SOgAAAABJRU5ErkJggg==';
+  const own = s.addImage(Uint8Array.from(Buffer.from(png, 'base64')), 'image/png', 20, 30);
+  const p = schema.nodes.paragraph.create(null, [
+    schema.nodes.image.create({ src: `data:image/png;base64,${png}`, xml: '' }),
+    schema.nodes.image.create({ src: 'blob:own', xml: own.xml, width: 20, height: 30 }),
+  ]);
+  const out = pastePictures(s).props.transformPasted(new Slice(Fragment.from(p), 0, 0)).content.firstChild;
+  const [pasted, copy] = [out.child(0), out.child(1)];
+  assert.match(pasted.attrs.xml, /<a:blip r:embed="rId\d+"/);
+  assert.deepEqual([pasted.attrs.src, pasted.attrs.width, pasted.attrs.height], ['blob:stored', 2, 3]); // (its own size, from the PNG)
+  const id = (x) => /<wp:docPr id="(\d+)"/.exec(x)[1];
+  assert.notEqual(id(copy.attrs.xml), id(own.xml));
+  assert.ok(Object.keys(s.pkg.files).filter((k) => /media\//.test(k)).length >= 2);
+});
+
+test('an SVG picture is shown from its SVG, not its PNG fallback', async () => {
+  const { readDocument } = await import('../src/ooxml/reader.js');
+  const { parseXml } = await import('../src/ooxml/xml.js');
+  const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const blip = '<a:blip r:embed="rIdPng"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rIdSvg"/></a:ext></a:extLst></a:blip>';
+  const body = `<w:p><w:r><w:drawing><wp:inline><wp:extent cx="952500" cy="952500"/><wp:docPr id="1" name="Icon"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill>${blip}</pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  const json = readDocument(parseXml(`<w:document ${ns}><w:body>${body}</w:body></w:document>`), { resolveImage: (id) => `blob:${id}` });
+  assert.equal(json.content[0].content[0].attrs.src, 'blob:rIdSvg');
+});

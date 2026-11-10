@@ -68,6 +68,9 @@ function revAttrs(d) {
 
 const HEADING_TAGS = { h1: 'Heading1', h2: 'Heading2', h3: 'Heading3', h4: 'Heading4', h5: 'Heading5', h6: 'Heading6' };
 
+/** Pictures as drawn (their address -> their attrs), so a copy of one pasted back in is the same picture. */
+export const shownImages = new Map();
+
 export const schema = new Schema({
   nodes: {
     doc: { content: 'block+', attrs: { sectPr: { default: null } } },
@@ -150,8 +153,24 @@ export const schema = new Schema({
       atom: true,
       draggable: true,
       marks: 'link ins del sdt',
-      attrs: { xml: { default: '' }, src: { default: null }, width: { default: null }, height: { default: null }, alt: { default: '' }, place: { default: '' }, chart: { default: null } }, // chart: an edited chart's XML (charts.js), written into its part on save
-      toDOM: (n) => ['img', { src: n.attrs.src || '', alt: n.attrs.alt, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width}px;height:${n.attrs.height}px` : '', n.attrs.place].filter(Boolean).join(';') }],
+      attrs: { xml: { default: '' }, src: { default: null }, width: { default: null }, height: { default: null }, alt: { default: '' }, place: { default: '' }, chart: { default: null }, href: { default: null } }, // href: the picture's link (a:hlinkClick); chart: an edited chart's XML (charts.js), written into its part on save
+      toDOM: (n) => {
+        if (n.attrs.src && n.attrs.xml) shownImages.set(n.attrs.src, n.attrs);
+        const link = n.attrs.href && safeHref(n.attrs.href);
+        return ['img', { src: n.attrs.src || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width}px;height:${n.attrs.height}px` : '', n.attrs.place].filter(Boolean).join(';') }];
+      },
+      // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
+      // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).
+      parseDOM: [{
+        tag: 'img[src]',
+        getAttrs: (d) => {
+          const src = d.getAttribute('src') || '';
+          if (shownImages.has(src)) return { ...shownImages.get(src) };
+          if (!/^data:image\/(png|jpeg|gif|bmp|svg\+xml)[;,]/i.test(src)) return false;
+          const size = (k) => Number(d.getAttribute(k)) || parseFloat(d.style?.[k]) || null;
+          return { src, xml: '', width: size('width'), height: size('height'), alt: d.getAttribute('alt') || '' };
+        },
+      }],
     },
 
     opaque_inline: {

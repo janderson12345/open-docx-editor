@@ -664,8 +664,10 @@ function readDrawing(drawing, ctx, rPrXml) {
     src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height) : null;
     if (!src) return null;
   } else if (blip) {
+    // An SVG picture (Word 2016+): the SVG itself (asvg:svgBlip in the blip's extensions), the PNG beside it a fallback.
+    const svg = [...blip.getElementsByTagName('*')].find((e) => e.localName === 'svgBlip');
     const rId = blip.getAttributeNS(NS.r, 'embed');
-    src = rId ? ctx.resolveImage(rId, cropOf(blip)) : null;
+    src = (svg && ctx.resolveImage(svg.getAttributeNS(NS.r, 'embed'), cropOf(blip))) || (rId ? ctx.resolveImage(rId, cropOf(blip)) : null);
   } else {
     const chart = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'chart' && e.getAttributeNS(NS.r, 'id'));
     src = chart && ctx.resolveChart ? ctx.resolveChart(chart.getAttributeNS(NS.r, 'id'), width, height) : null;
@@ -680,6 +682,12 @@ function readDrawing(drawing, ctx, rPrXml) {
       height,
       place: anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect,
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
+      // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
+      ...(() => {
+        const h = docPr && elementKids(docPr).find((n) => n.localName === 'hlinkClick');
+        const href = h && ctx.resolveLink(h.getAttributeNS(NS.r, 'id'));
+        return href ? { href } : {};
+      })(),
     },
   };
 }
