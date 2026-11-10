@@ -12,7 +12,7 @@ import * as tb from './txbxedit.js';
 import { toggleMarks, marksOn } from './marks.js';
 import * as cm from './comments.js';
 import { undo, redo } from 'prosemirror-history';
-import { addRowAfter, addRowBefore, addColumnAfter, addColumnBefore, deleteRow, deleteColumn, mergeCells, splitCell, deleteTable, isInTable } from 'prosemirror-tables';
+import { addColumnAfter, addColumnBefore, deleteRow, deleteColumn, mergeCells, splitCell, deleteTable, isInTable } from 'prosemirror-tables';
 import { TextSelection, AllSelection } from 'prosemirror-state';
 import { schema } from './schema.js';
 import * as cmd from './commands.js';
@@ -281,7 +281,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   wcBtn = btn('¹²³', 'Word Count', wordCount(() => wcBtn), { label: 'Word Count', big: true });
 
   const tableTools = grp('Table',
-    col(line(btn('⤒', 'Insert row above', addRowBefore), btn('⤓', 'Insert row below', addRowAfter), btn('⇤', 'Insert column left', addColumnBefore), btn('⇥', 'Insert column right', addColumnAfter)),
+    col(line(btn('⤒', 'Insert row above', cmd.addRow(false)), btn('⤓', 'Insert row below', cmd.addRow(true)), btn('⇤', 'Insert column left', addColumnBefore), btn('⇥', 'Insert column right', addColumnAfter)),
       line(btn('−R', 'Delete row', deleteRow), btn('−C', 'Delete column', deleteColumn), btn('⊞', 'Merge cells', mergeCells), btn('⊟', 'Split cell', splitCell), btn('✕', 'Delete table', deleteTable))));
 
   const tabs = {
@@ -605,9 +605,21 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
 
 
 function insertTable(rows, cols) {
-  return (state, dispatch) => {
+  return (state, dispatch, view) => {
     const { table, table_row, table_cell, paragraph } = schema.nodes;
-    const w = Math.floor(624 / cols); // 6.5" text width at 96 dpi
+    // As wide as the text where it goes, as Word's Insert Table: the page's text width (or its column's, or its cell's)
+    // less nothing for the paragraph's indents; 6.5" (the Letter page's at 1" margins) when that can't be measured.
+    let text = 624;
+    try {
+      const at = view && view.domAtPos(state.selection.from).node;
+      const p = at && (at.nodeType === 1 ? at : at.parentElement)?.closest('p');
+      if (p) {
+        const cs = getComputedStyle(p);
+        const width = p.offsetWidth + (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0);
+        if (width > 48) text = width;
+      }
+    } catch { /* the default */ }
+    const w = Math.floor(text / cols);
     const cell = () => table_cell.create({ colwidth: [w] }, paragraph.create());
     const t = table.create(null, Array.from({ length: rows }, () => table_row.create(null, Array.from({ length: cols }, cell))));
     if (dispatch) {

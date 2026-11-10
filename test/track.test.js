@@ -266,3 +266,23 @@ test('accepting a cell selection resolves the changes of every selected cell', (
     assert.deepEqual(texts, want);
   }
 });
+
+test('a row inserted below takes the formatting of the row it is made from', async () => {
+  const { addRow } = await import('../src/editor/commands.js');
+  const tc = (t) => `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:b/></w:rPr></w:pPr><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const s = new DocxSession(docx(`<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="500"/></w:trPr>${tc('a')}${tc('b')}</w:tr></w:tbl><w:p/>`));
+  let at = null;
+  s.doc.descendants((n, pos) => { if (at == null && n.isText) at = pos; });
+  const st = EditorState.create({ doc: s.doc, selection: TextSelection.create(s.doc, at) });
+  let out = st;
+  assert.ok(addRow(true)(st, (tr) => { out = st.apply(tr); }));
+  const table = out.doc.firstChild;
+  assert.equal(table.childCount, 2);
+  const row = table.child(1);
+  assert.match(row.attrs.trPr || '', /trHeight w:val="500"/);
+  row.forEach((cell) => {
+    assert.ok(cell.attrs.tcPr.some(([n, x]) => n === 'shd' && /D9D9D9/.test(x)));
+    assert.equal(cell.firstChild.attrs.align, 'right');
+    assert.equal(cell.textContent, '');
+  });
+});

@@ -1,6 +1,7 @@
 // Word-like editing commands over the schema.
 import { toggleMark } from 'prosemirror-commands';
 import { TextSelection } from 'prosemirror-state';
+import { addRowAfter, addRowBefore, isInTable, selectedRect, TableMap } from 'prosemirror-tables';
 import { schema } from './schema.js';
 import { resolveStyle } from '../ooxml/styles.js';
 import { pPrXml } from '../ooxml/writer.js';
@@ -445,4 +446,41 @@ export const setPageBorders = (kind) => (state, dispatch) => {
   }
   dispatch(state.tr.setDocAttribute('sectPr', sect));
   return true;
+};
+
+/**
+ * Insert Rows Above / Below, as Word does it: the new row takes the formatting of the row it is made from (its height
+ * and other row properties, each cell's shading, borders and vertical alignment, and its first paragraph's style,
+ * alignment and paragraph-mark formatting), not a plain row.
+ */
+export const addRow = (below) => (state, dispatch) => {
+  if (!isInTable(state)) return false;
+  const rect = selectedRect(state);
+  const at = below ? rect.bottom : rect.top; // the new row's index
+  const run = below ? addRowAfter : addRowBefore;
+  return run(state, dispatch && ((tr) => {
+    const tStart = rect.tableStart;
+    const table = tr.doc.nodeAt(tStart - 1);
+    const map = TableMap.get(table);
+    const from = below ? at - 1 : at + 1; // the row it was made from, in the new table
+    if (from < 0 || from >= map.height) { dispatch(tr); return; }
+    const rowPos = (r) => { let p = 0; for (let i = 0; i < r; i++) p += table.child(i).nodeSize; return p; };
+    const src = table.child(from), made = table.child(at);
+    const noRev = (xml) => (xml ? xml.replace(/<w:(ins|del)\b[^>]*\/>/g, '').replace(/^<w:trPr\b[^>]*>\s*<\/w:trPr>$/, '') || null : xml);
+    if (src.attrs.trPr && !made.attrs.trPr) tr.setNodeMarkup(tStart + rowPos(at), null, { ...made.attrs, trPr: noRev(src.attrs.trPr) });
+    const DROP = ['cellIns', 'cellDel', 'cellMerge', 'tcPrChange'];
+    for (let c = 0; c < map.width; c++) {
+      const pos = map.map[at * map.width + c];
+      if (map.findCell(pos).top !== at || map.findCell(pos).left !== c) continue; // spans into the row from above
+      const cell = table.nodeAt(pos);
+      const like = table.nodeAt(map.map[from * map.width + c]);
+      if (!cell || !like) continue;
+      tr.setNodeMarkup(tStart + pos, null, { ...cell.attrs, tcPr: (like.attrs.tcPr || []).filter((t) => !DROP.includes(t[0])), colwidth: cell.attrs.colwidth || like.attrs.colwidth });
+      const p = like.firstChild;
+      if (p && p.type === schema.nodes.paragraph && cell.firstChild?.type === schema.nodes.paragraph) {
+        tr.setNodeMarkup(tStart + pos + 1, null, { ...p.attrs, pattrs: null, sdt: null, extra: (p.attrs.extra || []).filter((e) => e[0] !== 'sectPr' && e[0] !== 'pPrChange') });
+      }
+    }
+    dispatch(tr);
+  }));
 };
