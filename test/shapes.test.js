@@ -49,3 +49,17 @@ test('a move shifts the offsets and the VML margins; a box placed by alignment i
   const aligned = node.attrs.xml.replace(/<wp:posOffset>-?\d+<\/wp:posOffset>(<\/wp:positionH>)/, '<wp:align>center</wp:align>$1');
   assert.equal(s.moveShape(aligned, 10, 0), null);
 });
+
+test('a text box shows the paragraphs inside block content controls; one placed against the page is marked for its page', () => {
+  const files = unzipSync(bytes);
+  const xml = strFromU8(files['word/document.xml'])
+    .replace(/<w:txbxContent><w:p>([\s\S]*?)<\/w:p><\/w:txbxContent>/g, '<w:txbxContent><w:sdt><w:sdtPr><w:alias w:val="Title"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Held in a control</w:t></w:r></w:p></w:sdtContent></w:sdt></w:txbxContent>')
+    .replace(/<wp:positionV relativeFrom="\w+">[\s\S]*?<\/wp:positionV>/, '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="wp14"><wp:positionV relativeFrom="page"><wp14:pctPosVOffset xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing">15000</wp14:pctPosVOffset></wp:positionV></mc:Choice><mc:Fallback><wp:positionV relativeFrom="page"><wp:posOffset>1524000</wp:posOffset></wp:positionV></mc:Fallback></mc:AlternateContent>')
+    .replace(/<wp:wrap(Square|Tight|Through|TopAndBottom)\b[^>]*?(\/>|>[\s\S]*?<\/wp:wrap\1>)/, '<wp:wrapNone/>');
+  files['word/document.xml'] = strToU8(xml);
+  const s = new DocxSession(zipSync(files), { imageUrl: () => 'blob:x' });
+  let node = null;
+  s.doc.descendants((n) => { if (!node && n.type.name === 'image' && /<wp:anchor/.test(n.attrs.xml)) node = n; });
+  assert.match(decodeURIComponent(node.attrs.src), /Held/);
+  assert.match(node.attrs.place, /--odx-arel:page;--odx-ay:160px/);
+});

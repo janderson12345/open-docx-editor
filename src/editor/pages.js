@@ -817,6 +817,36 @@ export function createPages(view, session, { sheet, scope }) {
     return out;
   };
 
+  /**
+   * Drawings out of the flow placed against the page or its margins vertically (reader.js anchorCss: --odx-arel): Word
+   * draws them on the page their paragraph is on, at that height (a cover page's title box, a full-page picture behind
+   * the text), not at the paragraph. Given that top, from the layout before (one pass behind, as liftFloats).
+   */
+  const placeOnPage = (base) => {
+    const out = [];
+    view.state.doc.descendants((node, pos) => {
+      if (node.type !== schema.nodes.image || !/--odx-arel/.test(node.attrs.place || '')) return true;
+      const img = view.nodeDOM(pos);
+      const host = img && img.nodeType === 1 ? img.closest('.odx-content > *') : null;
+      const cb = img && img.offsetParent;
+      if (!host || host.parentElement !== view.dom || !cb) return false;
+      const pg = pageOf(host.getBoundingClientRect().top - base);
+      const place = node.attrs.place;
+      const rel = /--odx-arel:\s*(\w+)/.exec(place)[1];
+      const off = parseFloat((/--odx-ay:\s*(-?[\d.]+)px/.exec(place) || [])[1]) || 0;
+      const align = (/--odx-ayalign:\s*(\w+)/.exec(place) || [])[1];
+      const h = Number(node.attrs.height) || 0;
+      const m = marginsAt(pg);
+      const p0 = pageTop(pg), p1 = p0 + pageH(pg);
+      const [top0, bottom0] = rel === 'page' ? [p0, p1] : rel === 'topMargin' ? [p0, p0 + m.top] : rel === 'bottomMargin' ? [p1 - m.bottom, p1] : [p0 + m.top, p1 - m.bottom];
+      const y = align === 'top' ? top0 : align === 'bottom' ? bottom0 - h : align === 'center' ? (top0 + bottom0 - h) / 2 : top0 + off;
+      const top = Math.round((y - (cb.getBoundingClientRect().top - base)) * 10) / 10;
+      out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top}px;margin-top:0` }, { key: `onpage:${pos}:${top}` }));
+      return false;
+    });
+    return out;
+  };
+
   // The blocks where they are now, less the pushes the last pass applied: the natural (unpaginated) flow, without a
   // second layout. Tables with their rows, so a table can continue on the next page; not in columns (they move whole).
   function measureBlocks(dom, doc, base, inRegion) {
@@ -1142,6 +1172,7 @@ export function createPages(view, session, { sheet, scope }) {
     // Table-cell paragraphs' print-only baseline shifts ride along as node decorations.
     for (const c of cellShifts(view, sheet)) decos.push(Decoration.node(c.pos, c.pos + c.size, { style: `--odx-bl:${c.d}px` }, { key: `bl:${c.pos}:${c.d}` }));
     decos.push(...liftFloats(base));
+    decos.push(...placeOnPage(base));
     const pushSig = decos.map((d) => d.spec.key).join(',');
     if (pushSig !== lastPush) {
       lastPush = pushSig;
@@ -1552,7 +1583,7 @@ export function createPages(view, session, { sheet, scope }) {
       layout();
     }
     // Lifted floats read where pages are from the layout before (liftFloats): settle them on the gapless pages.
-    if (view.dom.querySelector('img[style*="--odx-lrel"]')) for (let k = 0; k < 2; k++) { if (frame) cancelAnimationFrame(frame); layout(); }
+    if (view.dom.querySelector('img[style*="--odx-lrel"], img[style*="--odx-arel"]')) for (let k = 0; k < 2; k++) { if (frame) cancelAnimationFrame(frame); layout(); }
     if (engineOn()) buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope);
     printBox?.remove();
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });

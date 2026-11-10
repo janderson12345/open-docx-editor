@@ -1,7 +1,7 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
-import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, childNamed } from './xml.js';
+import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, childNamed, elementKids } from './xml.js';
 import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
 
@@ -479,8 +479,18 @@ function anchorCss(drawing, page) {
   const anchor = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'anchor');
   if (!anchor) return '';
   const px = (v) => Math.round(emuToPx(v || 0));
-  const posH = childNamed(anchor, 'positionH');
-  const posV = childNamed(anchor, 'positionV');
+  // (A position given as a percentage (Word 2010's wp14:pctPos*) comes in an mc:AlternateContent whose fallback has it
+  // in EMUs for the page Word saved it on: that one.)
+  const alt = (k) => {
+    for (const ac of elementKids(anchor).filter((n) => n.localName === 'AlternateContent')) {
+      const fb = childNamed(ac, 'Fallback');
+      const el = fb && childNamed(fb, k);
+      if (el) return el;
+    }
+    return null;
+  };
+  const posH = childNamed(anchor, 'positionH') || alt('positionH');
+  const posV = childNamed(anchor, 'positionV') || alt('positionV');
   const hRel = posH ? posH.getAttribute('relativeFrom') : 'column';
   const hAlign = childNamed(posH, 'align')?.textContent;
   const x = px(childNamed(posH, 'posOffset')?.textContent);
@@ -515,9 +525,13 @@ function anchorCss(drawing, page) {
     const w = ext ? px(ext.getAttribute('cx')) : 0;
     const span = fromPage ? '100%' : 'calc(100% - var(--odx-page-left, 96px) - var(--odx-page-right, 96px))';
     const from = fromPage ? '0px' : 'var(--odx-page-left, 96px)';
-    const aligned = hAlign === 'center' ? `left:calc(${from} + (${span} - ${w}px) / 2);` : hAlign === 'right' ? `left:calc(${from} + ${span} - ${w}px);` : '';
+    const aligned = hAlign === 'center' ? `left:calc(${from} + (${span} - ${w}px) / 2);` : hAlign === 'right' ? `left:calc(${from} + ${span} - ${w}px);` : hAlign === 'left' && hRel === 'page' ? 'left:0px;' : '';
     const left = hAlign ? (['column', 'margin', 'page'].includes(hRel) ? aligned : '') : fromPage ? `left:${x}px;` : `left:calc(var(--odx-page-left, 96px) + ${x}px);`;
-    return `position:absolute;${left}margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1}`;
+    // Placed against the page or its margins vertically: pagination puts it at that height on its paragraph's page
+    // (pages.js placeOnPage).
+    const onPage = ['page', 'margin', 'topMargin', 'bottomMargin'].includes(vRel)
+      ? `;--odx-arel:${vRel};--odx-ay:${px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100}px;--odx-ayalign:${childNamed(posV, 'align')?.textContent || 'none'}` : '';
+    return `position:absolute;${left}margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1}${onPage}`;
   }
   const right = hAlign === 'right' || hAlign === 'outside';
   // Placed against the page or its margins (not its paragraph): pagination lifts it to that page's first paragraph, at
@@ -713,7 +727,12 @@ function readTable(tbl, ctx) {
     // The first row's, or (its cells merged across columns: a heading row over the columns) the first row with a cell
     // in each column (generators' placeholder grids, 100-twip columns under a merged title row, laid out by those).
     const trs0 = kids(tbl, 'tr');
-    const ws = widthsOf(trs0[0]) || (trs0.length > 1 && kids(trs0[0], 'tc').some((tc) => kid(kid(tc, 'tcPr'), 'gridSpan')) ? trs0.slice(1).map(widthsOf).find(Boolean) : null);
+    const next = () => {
+      const w = trs0.length > 1 && kids(trs0[0], 'tc').some((tc) => kid(kid(tc, 'tcPr'), 'gridSpan')) ? trs0.slice(1).map(widthsOf).find(Boolean) : null;
+      // (Only for a grid that is plainly a placeholder, under half what the cells give: a real grid is kept.)
+      return w && grid.reduce((a, b) => a + b, 0) * 2 < w.reduce((a, b) => a + b, 0) ? w : null;
+    };
+    const ws = widthsOf(trs0[0]) || next();
     if (ws && ws.some((w, i) => Math.abs(w - grid[i]) > 2) && !(() => { try { return picturesWiderThan(tbl, ws); } catch { return true; } })()) grid = ws;
   }
   const rows = [];

@@ -118,7 +118,9 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   const wrap = bodyPr?.getAttribute('wrap') !== 'none';
   const out = [];
   let y = t;
-  for (const p of els(desc(txbx, 'txbxContent')).filter((n) => n.localName === 'p')) {
+  // (Paragraphs in block content controls too: a cover page's title and author boxes hold theirs in w:sdt.)
+  const paras = (el) => els(el).flatMap((n) => (n.localName === 'p' ? [n] : n.localName === 'sdt' ? paras(child(n, 'sdtContent')) : []));
+  for (const p of paras(desc(txbx, 'txbxContent'))) {
     const pPr = child(p, 'pPr');
     // The paragraph's style (and the document defaults) under its own formatting.
     const st = ctx.para ? ctx.para(wa(child(pPr, 'pStyle'), 'val')) : { pPr: {}, rPr: {}, font: font0 };
