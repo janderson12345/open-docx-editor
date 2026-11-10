@@ -91,7 +91,9 @@ fs.writeFileSync('out.docx', s.save());
   table borders take their true width, and older documents keep Word's older table rules,
   so documents land on the same pages as in Word. Checked line by line against PDFs exported by Word itself: 151
   documents, every one on Word's page count, 99.0% of their lines within 1px of Word's (docs/LAYOUT.md). The same in
-  a standards-mode page (any page with a doctype) as in a quirks-mode one.
+  a standards-mode page (any page with a doctype) as in a quirks-mode one. Older documents' compatibility rules are
+  followed by name where Word's PDFs show they change the layout (a page break's paragraph mark, list labels' tab
+  stops, automatic paragraph spacing; see docs/LAYOUT.md).
 - **Right-to-left text** (Hebrew, Arabic): right-to-left paragraphs (w:bidi) start at the right margin, with their
   indents, first-line indents, alignment and tab stops mirrored as in Word, and numbers and English inside them in
   order; right-to-left tables (w:bidiVisual) put their first column at the right. Checked against Word's PDFs for a
@@ -160,7 +162,8 @@ fs.writeFileSync('out.docx', s.save());
   Access (Firefox, Safari), when the user declines it, and for fonts neither installed nor embedded in the document.
   Lines and pages are the layout's either way, but characters outside Windows-1252 (Hebrew, Arabic, Greek beyond
   the Symbol font's) come out as "?".
-- In newspaper columns: a table longer than a whole column.
+- In newspaper columns: a table longer than a whole column; line numbers sit left of the page's text, not each column.
+- Safari (WebKit) rounds each line to a whole pixel, so long documents can break a page a line earlier than Word.
 
 See the roadmap in docs/ARCHITECTURE.md.
 
