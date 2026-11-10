@@ -11,7 +11,8 @@ under its own license, all of them permissive. Their license texts are in each p
 | orderedmap, rope-sequence, w3c-keyname | MIT | (ProseMirror's own dependencies) |
 | fflate | MIT | reading and writing the .docx zip |
 | pdf-lib, @pdf-lib/fontkit, @pdf-lib/standard-fonts, @pdf-lib/upng | MIT | PDF export (`open-docx-editor/pdf`) |
-| pako | MIT AND Zlib | (pdf-lib's compression) |
+| utif | MIT | showing TIFF pictures |
+| pako | MIT AND Zlib | (pdf-lib's and utif's compression) |
 | tslib | 0BSD | (pdf-lib's helpers) |
 | yjs, y-prosemirror, lib0, isomorphic.js | MIT | co-editing (`open-docx-editor/collab`) |
 

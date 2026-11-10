@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **TIFF pictures** (scans and faxes: uncompressed, LZW, PackBits, Deflate, JPEG and CCITT fax compression) are shown, on
+  screen, in print and in PDF export; the document keeps the TIFF. Browsers can't show TIFF themselves.
+
 ## 0.6.0 (2026-11-10)
 
 - **Fonts for computers without Office's**: `open-docx-editor/fonts.css` bundles open-licensed fonts with the widths of

@@ -128,7 +128,8 @@ fs.writeFileSync('out.docx', s.save());
 - **Headers and footers**: double-click a page's top or bottom margin to edit its header or footer
   (or Insert > Header & Footer). The bar over it has Word's options: Different First Page (per section),
   Different Odd & Even Pages, and Link to Previous for later sections.
-- **Pictures**: Insert > Picture adds one from the device; select a picture and drag its handles to resize
+- **Pictures**: TIFF pictures (scans and faxes, which browsers can't show themselves) are shown too, decoded when the
+  document opens and kept in the file as they were. Insert > Picture adds one from the device; select a picture and drag its handles to resize
   it (corners keep its proportions). Saved at the new size in its own drawing XML.
 - **Text boxes**: Insert > Text Box adds one in line with the text; double-click one to edit its text; click away (or Escape) to put it back. Both the shape
   and the copy Word keeps for older versions are updated. In a group of shapes, the box you double-click opens.

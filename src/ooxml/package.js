@@ -120,7 +120,7 @@ export class DocxPackage {
     const bytes = this.files[rel.target];
     if (!bytes) return null;
     const ext = rel.target.split('.').pop().toLowerCase();
-    const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', svg: 'image/svg+xml', webp: 'image/webp' }[ext] || 'application/octet-stream';
+    const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', svg: 'image/svg+xml', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff' }[ext] || 'application/octet-stream';
     return { bytes, mime };
   }
 

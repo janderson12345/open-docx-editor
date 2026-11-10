@@ -66,6 +66,7 @@ reads saved files back as an independent check that their text survived.
 | `sectpr.js` | Page setup edits of a `w:sectPr` (margins, orientation, size, columns) as pure functions |
 | `units.js` | Unit conversions (EMU, twips, px) |
 | `strict.js` | Strict Open XML packages turned into the Transitional form as they open |
+| `tiff.js` | TIFF pictures decoded (utif) and shown as PNG; the package keeps the TIFF |
 
 **`src/editor/`: editing and layout.** ProseMirror plugins and the view.
 

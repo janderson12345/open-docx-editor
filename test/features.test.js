@@ -7,6 +7,7 @@ import { DocxSession } from '../src/ooxml/docx.js';
 import { listCounter } from '../src/ooxml/styles.js';
 import { isStrict, fromStrict } from '../src/ooxml/strict.js';
 import { lineNumbering } from '../src/editor/linenumbers.js';
+import { isTiff, tiffToPng } from '../src/ooxml/tiff.js';
 
 const load = (f) => new Uint8Array(fs.readFileSync(new URL(`./fixtures/${f}`, import.meta.url)));
 const text = (doc) => { let t = ''; doc.descendants((n) => { if (n.isText) t += n.text; }); return t; };
@@ -78,4 +79,21 @@ test('a picture bullet\'s picture is in the stylesheet once, by class', () => {
   const css = s.picBulletCss('.x');
   assert.equal((css.match(/--odx-picbullet:url\("data:image\/svg\+xml;base64,/g) || []).length, 1);
   assert.match(css, /^\.x p\.odx-pb-0\{/);
+});
+
+test('TIFF pictures (uncompressed, LZW, CCITT fax) are shown as PNGs; the document keeps the TIFFs', () => {
+  const files = unzipSync(load('tiff.docx'));
+  const tiffs = Object.keys(files).filter((k) => k.endsWith('.tif'));
+  assert.equal(tiffs.length, 3);
+  for (const k of tiffs) {
+    assert.ok(isTiff(files[k]), k);
+    const png = tiffToPng(files[k]);
+    assert.ok(png && png[0] === 0x89 && png[1] === 0x50, `${k} decoded`);
+  }
+  const urls = [];
+  const s = new DocxSession(load('tiff.docx'), { imageUrl: (bytes, mime) => { urls.push(mime); return 'blob:x'; } });
+  assert.deepEqual(urls, ['image/png', 'image/png', 'image/png']);
+  const out = unzipSync(s.save());
+  for (const k of tiffs) assert.deepEqual(out[k], files[k], `${k} kept as it was`);
+  assert.equal(tiffToPng(new Uint8Array([0x49, 0x49, 0x2a, 0, 8, 0, 0, 0, 0, 0])), null); // (a broken one: nothing, no throw)
 });

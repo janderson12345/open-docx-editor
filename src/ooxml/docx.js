@@ -14,6 +14,7 @@ import { shapesSvg } from './shapes.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
 import { isEmf, emfToSvg } from './emf.js';
+import { isTiff, tiffToPng } from './tiff.js';
 import { blankDocxBytes, bulletAbstract, decimalAbstract, abstractFor } from './template.js';
 import { schema } from '../editor/schema.js';
 import { TWIPS_PER_PX, emuToPx, pxToEmu, twipsToPx } from './units.js';
@@ -690,8 +691,15 @@ function withTrackRevisions(xml, on) {
   return at < 0 ? out : out.slice(0, at) + '<w:trackRevisions/>' + out.slice(at);
 }
 
-/** A picture's bytes and type as the browser can show them: an EMF drawn as SVG (the package keeps the EMF). */
+/**
+ * A picture's bytes and type as the browser can show them: an EMF drawn as SVG, a TIFF as PNG (the package keeps the
+ * original).
+ */
 function shown(bytes, mime) {
+  if (isTiff(bytes)) {
+    const png = tiffToPng(bytes);
+    return png ? [png, 'image/png'] : [bytes, 'image/tiff'];
+  }
   if (!isEmf(bytes)) return [bytes, mime];
   try {
     const svg = emfToSvg(bytes);
