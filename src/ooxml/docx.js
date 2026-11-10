@@ -52,9 +52,9 @@ export class DocxSession {
     this.pictureBullets = this.picBullets(); // (the session's, not numbering's: numbering is read again as lists are added)
     this.originalXml = this.pkg.text(this.pkg.mainPath);
     this._resolvers = {
-      resolveImage: (rId) => {
+      resolveImage: (rId, crop) => {
         const m = this.pkg.media(rId);
-        return m && opts.imageUrl ? opts.imageUrl(...shown(m.bytes, m.mime)) : null;
+        return m && opts.imageUrl ? (crop ? croppedUrl(...shown(m.bytes, m.mime), crop) : opts.imageUrl(...shown(m.bytes, m.mime))) : null;
       },
       resolveLink: (rId) => {
         const rel = this.pkg.relById(rId);
@@ -228,10 +228,11 @@ export class DocxSession {
       const rels = this.pkg.readRels(rel.target);
       const relOf = (id) => rels.find((r) => r.id === id);
       doc = Node.fromJSON(schema, readStory(xml, {
-        resolveImage: (id) => {
+        resolveImage: (id, crop) => {
           const r = relOf(id);
           const bytes = r && !r.external && this.pkg.files[r.target];
-          return bytes && this.opts.imageUrl ? this.opts.imageUrl(...shown(bytes, /\.jpe?g$/i.test(r.target) ? 'image/jpeg' : 'image/png')) : null;
+          const pic = bytes && shown(bytes, /\.jpe?g$/i.test(r.target) ? 'image/jpeg' : 'image/png');
+          return pic && this.opts.imageUrl ? (crop ? croppedUrl(...pic, crop) : this.opts.imageUrl(...pic)) : null;
         },
         resolveLink: (id) => relOf(id)?.rawTarget ?? null,
         resolveChart: (id, w, h) => this.chartUrl(relOf(id), w, h),
@@ -714,6 +715,18 @@ function shown(bytes, mime) {
     if (svg) return [new TextEncoder().encode(svg), 'image/svg+xml'];
   } catch { /* left as it was */ }
   return [bytes, mime];
+}
+
+/**
+ * A cropped picture (Word's Crop: a:srcRect, fractions from each edge) as an SVG that shows only that part of it,
+ * stretched to the picture's frame as Word does. (An SVG of its own, so the crop holds on screen, in print and in PDF
+ * export alike; the picture inside it is embedded, as an SVG shown as an image can load nothing else.)
+ */
+function croppedUrl(bytes, mime, { l, t, r, b }) {
+  const w = 1 - l - r, h = 1 - t - b;
+  const n = (v) => +v.toFixed(4);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" overflow="hidden"><image href="data:${mime};base64,${base64(bytes)}" x="${n(-l / w * 100)}" y="${n(-t / h * 100)}" width="${n(100 / w)}" height="${n(100 / h)}" preserveAspectRatio="none"/></svg>`;
+  return 'data:image/svg+xml;base64,' + base64(new TextEncoder().encode(svg));
 }
 
 function base64(bytes) {

@@ -97,3 +97,41 @@ test('TIFF pictures (uncompressed, LZW, CCITT fax) are shown as PNGs; the docume
   for (const k of tiffs) assert.deepEqual(out[k], files[k], `${k} kept as it was`);
   assert.equal(tiffToPng(new Uint8Array([0x49, 0x49, 0x2a, 0, 8, 0, 0, 0, 0, 0])), null); // (a broken one: nothing, no throw)
 });
+
+test('a cropped picture (a:srcRect) is shown cropped: only its part, stretched to the frame', async () => {
+  const { blankDocxBytes } = await import('../src/ooxml/template.js');
+  const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64'));
+  const s0 = new DocxSession(blankDocxBytes());
+  const { xml } = s0.addImage(png, 'image/png', 100, 50);
+  const cropped = xml.replace('<a:stretch>', '<a:srcRect l="25000" t="10000" r="25000" b="40000"/><a:stretch>');
+  const main = s0.pkg.mainPath;
+  s0.pkg.setText(main, s0.pkg.text(main).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body><w:p>${cropped}</w:p><w:p>${xml}</w:p>$1`));
+  const urls = [];
+  const s = new DocxSession(s0.pkg.toBytes(), { imageUrl: (b, mime) => { urls.push(mime); return 'blob:whole'; } });
+  const srcs = [];
+  s.doc.descendants((n) => { if (n.type.name === 'image') srcs.push(n.attrs.src); });
+  assert.equal(srcs[1], 'blob:whole');
+  assert.match(srcs[0], /^data:image\/svg\+xml;base64,/);
+  const svg = Buffer.from(srcs[0].split(',')[1], 'base64').toString();
+  // Half the width (a quarter off each side) and half the height (10% off the top, 40% off the bottom).
+  assert.match(svg, /<image href="data:image\/png;base64,[^"]+" x="-50" y="-20" width="200" height="200" preserveAspectRatio="none"\/>/);
+  // The document keeps the crop and the picture as they were.
+  assert.match(strFromU8(unzipSync(s.save())[main]), /<a:srcRect l="25000" t="10000" r="25000" b="40000"\/>/);
+});
+
+test('floating pictures in front of (or behind) the text are stacked by their drawing order, not their place in the text', async () => {
+  const { readDocument } = await import('../src/ooxml/reader.js');
+  const { parseXml } = await import('../src/ooxml/xml.js');
+  const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const pic = (rh, behind) => `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${rh}" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>`
+    + '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+    + '<wp:extent cx="952500" cy="952500"/><wp:wrapNone/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>';
+  const read = (body) => {
+    const json = readDocument(parseXml(`<w:document ${ns}><w:body>${body}</w:body></w:document>`), { resolveImage: () => 'blob:p' });
+    return json.content.flatMap((p) => p.content || []).filter((n) => n.type === 'image').map((n) => /z-index:(-?\d+)/.exec(n.attrs.place)[1]);
+  };
+  // In the text's order already: left as they are.
+  assert.deepEqual(read(`<w:p>${pic(100, 0)}${pic(200, 0)}</w:p>`), ['1', '1']);
+  // The first one drawn over the second: it goes on top.
+  assert.deepEqual(read(`<w:p>${pic(300, 0)}${pic(200, 0)}${pic(100, 1)}${pic(50, 1)}</w:p>`), ['2', '1', '-1', '-2']);
+});

@@ -29,7 +29,36 @@ export function readDocument(docXml, { resolveImage = () => null, resolveLink = 
   if (bodyKids.length && bodyKids[bodyKids.length - 1].localName === 'sectPr') sectPr = ctx.xml(bodyKids.pop());
   const content = readBlocks(bodyKids, ctx);
   if (!content.length) content.push({ type: 'paragraph' });
+  stackDrawings(content);
   return { type: 'doc', attrs: { sectPr }, content };
+}
+
+/**
+ * Floating drawings out of the flow (no wrapping) stacked as in Word: by their drawing order (wp:anchor relativeHeight,
+ * higher on top), in front of the text or behind it. The browser stacks ones of the same z-index in document order,
+ * which is Word's too when the drawing order follows the document; otherwise each gets a z-index by its rank, a picture
+ * then staying under a text box drawn over it later in the document's history but earlier in its text.
+ */
+function stackDrawings(content) {
+  const front = [], behind = [];
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      const z = n.type === 'image' && /z-index:(-?1)\b/.exec(n.attrs?.place || '');
+      const rh = z && /<wp:anchor\b[^>]*\brelativeHeight="(\d+)"/.exec(n.attrs.xml || '');
+      if (rh) (z[1] === '1' ? front : behind).push([Number(rh[1]), n]);
+      walk(n.content);
+    }
+  };
+  walk(content);
+  for (const [list, sign] of [[front, 1], [behind, -1]]) {
+    const sorted = [...list].sort((a, b) => a[0] - b[0]);
+    if (sorted.every((e, i) => e === list[i])) continue; // already in drawing order
+    // Front: 1 (lowest) upwards; behind: -1 (highest, nearest the text) downwards.
+    sorted.forEach(([, n], i) => {
+      const z = sign > 0 ? 1 + i : -(sorted.length - i);
+      n.attrs.place = n.attrs.place.replace(/z-index:-?1\b/, `z-index:${z}`);
+    });
+  }
 }
 
 /** A header or footer part (w:hdr / w:ftr) as a doc. */
@@ -40,6 +69,7 @@ export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () 
   // (A story read for the body (a shape moved or resized there): its drawings placed and sized on the body's page.)
   if (sectPrXml) { ctx.pages = [pageBox(parseXml(sectPrXml).documentElement)]; ctx.sect = 0; }
   const content = readBlocks(kids(root), ctx);
+  stackDrawings(content);
   return { type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] };
 }
 
@@ -582,6 +612,17 @@ function relativeSize(drawing, page) {
   if (ext) { ext.setAttribute('cx', String(cx)); ext.setAttribute('cy', String(cy)); }
 }
 
+/**
+ * A picture's cropping (a:srcRect beside its a:blip, in thousandths of a percent of the picture from each edge; negative
+ * adds a margin) as fractions { l, t, r, b }, or null when it is shown whole.
+ */
+function cropOf(blip) {
+  const rect = [...(blip.parentNode?.childNodes || [])].find((n) => n.localName === 'srcRect');
+  if (!rect) return null;
+  const c = Object.fromEntries(['l', 't', 'r', 'b'].map((k) => [k, (Number(rect.getAttribute(k)) || 0) / 100000]));
+  return (c.l || c.t || c.r || c.b) && c.l + c.r < 1 && c.t + c.b < 1 ? c : null;
+}
+
 function readDrawing(drawing, ctx, rPrXml) {
   const blip = drawing.getElementsByTagNameNS(NS.a, 'blip')[0];
   const extent = drawing.getElementsByTagNameNS(NS.wp, 'extent')[0];
@@ -610,7 +651,7 @@ function readDrawing(drawing, ctx, rPrXml) {
     if (!src) return null;
   } else if (blip) {
     const rId = blip.getAttributeNS(NS.r, 'embed');
-    src = rId ? ctx.resolveImage(rId) : null;
+    src = rId ? ctx.resolveImage(rId, cropOf(blip)) : null;
   } else {
     const chart = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'chart' && e.getAttributeNS(NS.r, 'id'));
     src = chart && ctx.resolveChart ? ctx.resolveChart(chart.getAttributeNS(NS.r, 'id'), width, height) : null;
