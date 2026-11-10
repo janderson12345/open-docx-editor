@@ -1,5 +1,6 @@
 // Find and Replace over the document text (matches can span runs with different formatting).
 import { TextSelection } from 'prosemirror-state';
+import { ZERO_WIDTH } from '../ooxml/reader.js';
 
 /** Text of each textblock with the document position of every character. */
 function blocks(doc) {
@@ -12,6 +13,9 @@ function blocks(doc) {
       const start = pos + 1 + off;
       if (child.isText) {
         for (let i = 0; i < child.text.length; i++) { text += child.text[i]; at.push(start + i); }
+      } else if (child.type.name === 'opaque_inline' && (ZERO_WIDTH.has(child.attrs.kind) || child.attrs.kind === 'commentReference')) {
+        // (Comment ranges and references, bookmarks, permission and move markers take no room in the text: a phrase runs
+        // across them.)
       } else { text += child.type.name === 'tab' ? '\t' : '￼'; at.push(start); }
     });
     at.push(pos + 1 + node.content.size);

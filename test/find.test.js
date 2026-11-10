@@ -38,3 +38,14 @@ test('a pattern\'s replacement fills in groups as String.replace does', () => {
 test('a broken pattern is a SyntaxError (the find bar says so)', () => {
   assert.throws(() => searchPattern('(unclosed', { regex: true }), SyntaxError);
 });
+
+test('a phrase is found across comment ranges, comment references and bookmarks', async () => {
+  const { findAll } = await import('../src/editor/find.js');
+  const { schema } = await import('../src/editor/schema.js');
+  const mark = (kind) => schema.nodes.opaque_inline.create({ kind, xml: `<w:${kind} w:id="1"/>` });
+  const p = schema.nodes.paragraph.create(null, [mark('commentRangeStart'), schema.text('An Income Strategy'), mark('commentRangeEnd'), mark('commentReference'), schema.text(' '), mark('bookmarkStart'), schema.text('Approach'), mark('bookmarkEnd')]);
+  const doc = schema.nodes.doc.create(null, [p]);
+  const m = findAll(doc, 'Strategy Approach');
+  assert.equal(m.length, 1);
+  assert.equal(doc.textBetween(m[0].from, m[0].to, '', ''), 'Strategy Approach');
+});
