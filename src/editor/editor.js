@@ -339,6 +339,8 @@ function paragraphPlugin(session) {
       appendTransaction(trs, _old, state) {
         if (!trs.some((t) => t.docChanged)) return null;
         const tr = sync(state.tr);
+        // (The formatting the caret carries (bold after Enter at the end of a bold item) stays: a step would drop it.)
+        if (tr.docChanged && state.storedMarks) tr.setStoredMarks(state.storedMarks);
         return tr.docChanged ? tr : null;
       },
     }),

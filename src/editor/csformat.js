@@ -47,7 +47,7 @@ export const csFormatPlugin = new Plugin({
     if (trs.some((tr) => tr.docChanged)) {
       const out = state.tr;
       markTypedRtl(trs, state, out);
-      if (out.docChanged) return out;
+      if (out.docChanged) { if (state.storedMarks) out.setStoredMarks(state.storedMarks); return out; }
     }
     const ranges = [];
     trs.forEach((tr, t) => tr.steps.forEach((s, i) => {
@@ -74,6 +74,7 @@ export const csFormatPlugin = new Plugin({
         out.removeMark(s, e, type).addMark(s, e, type.create({ items }));
       });
     }
+    if (out.docChanged && state.storedMarks) out.setStoredMarks(state.storedMarks);
     return out.docChanged ? out : null;
   },
 });

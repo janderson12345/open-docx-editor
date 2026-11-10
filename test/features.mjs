@@ -34,6 +34,17 @@ check(labels.slice(0, 4).join(' ') === 'I. 1.1. 1.1.1 I.1.a.1', `legal numbering
 const pic = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-picbullet'); return p && getComputedStyle(p, '::before').content; });
 check(/^url\("data:image\/svg\+xml/.test(pic || ''), 'a picture bullet shows its picture');
 
+// Bold typed at the end of a list item carries on into the next item made with Enter, as in Word.
+await page.click('.odx-content p.odx-li');
+await page.keyboard.press('End');
+await page.keyboard.press('Control+b');
+await page.keyboard.type(' more');
+await page.keyboard.press('Enter');
+await page.keyboard.type('carried');
+await page.waitForTimeout(300);
+const carried = await page.evaluate(() => { const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent === 'carried') return getComputedStyle(n.parentElement).fontWeight; return 'missing'; });
+check(carried === '700', `bold carries into the list item Enter makes (${carried})`);
+
 await open('line-numbers.docx');
 const nums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].map((s) => s.textContent));
 // (Word's PDF: 32 on the first page, 10 on the second, then every second line (12 to 22) and 5 to 10 from w:start.)
