@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { EditorState, TextSelection } from 'prosemirror-state';
+import { CellSelection } from 'prosemirror-tables';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { blankDocxBytes } from '../src/ooxml/template.js';
 import { trackTransaction, resolveChanges, findChange, resolveChange } from '../src/editor/track.js';
@@ -227,4 +228,41 @@ test('rejecting at the caret inside a deleted row (its text deleted too) puts ba
   assert.doesNotMatch(xmlOf(s, st.doc), /<w:del\b/, 'neither the text nor the row is still deleted');
   // So accepting everything afterwards keeps the row.
   assert.equal(text(resolveChanges(st.tr, 0, st.doc.content.size, true).doc), 'KeptGoneToo');
+});
+
+test('accepting the deletion of a whole paragraph leaves the next one with its own style, list and alignment', () => {
+  const s = new DocxSession(docx(`<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:rPr><w:del ${REV}/></w:rPr></w:pPr>`
+    + `<w:del ${REV}><w:r><w:delText>Gone</w:delText></w:r></w:del></w:p><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Stays</w:t></w:r></w:p>`));
+  const doc = resolveChanges(EditorState.create({ doc: s.doc }).tr, 0, s.doc.content.size, true).doc;
+  assert.equal(doc.childCount, 1);
+  assert.deepEqual([doc.firstChild.attrs.styleId, doc.firstChild.attrs.numId, doc.firstChild.attrs.align, doc.firstChild.textContent], [null, null, 'center', 'Stays']);
+});
+
+test('accepting or rejecting a paragraph moved whole leaves no empty paragraph behind', () => {
+  const mv = (kind, id, t) => `<w:p><w:pPr><w:rPr><w:${kind} w:id="${id}" w:author="Ann" w:date="2024-01-02T03:04:05Z"/></w:rPr></w:pPr><w:${kind} w:id="${id}" w:author="Ann" w:date="2024-01-02T03:04:05Z"><w:r><w:t>${t}</w:t></w:r></w:${kind}></w:p>`;
+  const s = new DocxSession(docx(`${mv('moveFrom', 1, 'Moved')}<w:p><w:r><w:t>Middle</w:t></w:r></w:p>${mv('moveTo', 2, 'Moved')}<w:p><w:r><w:t>End</w:t></w:r></w:p>`));
+  for (const [accept, want] of [[true, ['Middle', 'Moved', 'End']], [false, ['Moved', 'Middle', 'End']]]) {
+    const doc = resolveChanges(EditorState.create({ doc: s.doc }).tr, 0, s.doc.content.size, accept).doc;
+    const paras = [];
+    doc.forEach((p) => paras.push(p.textContent));
+    assert.deepEqual(paras, want);
+    assert.doesNotMatch(xmlOf(s, doc), /w:move(From|To)\b/);
+  }
+});
+
+test('accepting a cell selection resolves the changes of every selected cell', () => {
+  const tc = (inner) => `<w:tc><w:p>${inner}</w:p></w:tc>`;
+  const ch = (id, old, now) => `<w:del w:id="${id}" w:author="Ann" w:date="2024-01-02T03:04:05Z"><w:r><w:delText>${old}</w:delText></w:r></w:del><w:ins w:id="${id + 1}" w:author="Ann" w:date="2024-01-02T03:04:05Z"><w:r><w:t>${now}</w:t></w:r></w:ins>`;
+  const s = new DocxSession(docx(`<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>${tc(ch(1, '1,000', '900'))}${tc(ch(3, 'Net 30', 'Net 45'))}${tc('<w:r><w:t>plain</w:t></w:r>')}</w:tr></w:tbl><w:p/>`));
+  const cells = [];
+  s.doc.descendants((n, pos) => { if (n.type.name === 'table_cell') cells.push(pos); });
+  for (const [a, b, want] of [[0, 1, ['900', 'Net 45', 'plain']], [1, 2, ['1,000900', 'Net 45', 'plain']]]) {
+    const st0 = EditorState.create({ doc: s.doc });
+    const st = st0.apply(st0.tr.setSelection(CellSelection.create(s.doc, cells[a], cells[b])));
+    let out = st;
+    resolveChange(true)(st, (tr) => { out = st.apply(tr); });
+    const texts = [];
+    out.doc.descendants((n) => { if (n.type.name === 'table_cell') { texts.push(n.textContent); return false; } return true; });
+    assert.deepEqual(texts, want);
+  }
 });

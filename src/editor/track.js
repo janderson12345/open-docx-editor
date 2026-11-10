@@ -50,7 +50,8 @@ const extraItem = (attrs, name) => (attrs.extra || []).find((e) => e[0] === name
 export const paragraphMarkRev = (attrs) => markRev(attrs);
 function markRev(attrs) {
   const r = extraItem(attrs, 'rPr');
-  return r ? (/<w:ins\b/.test(r[1]) ? 'ins' : /<w:del\b/.test(r[1]) ? 'del' : null) : null;
+  // (A paragraph moved whole: its mark moved too, a deletion where it was and an insertion where it went.)
+  return r ? (/<w:(ins|moveTo)\b/.test(r[1]) ? 'ins' : /<w:(del|moveFrom)\b/.test(r[1]) ? 'del' : null) : null;
 }
 /** A table row's own revision ('ins' | 'del' | null), from its w:trPr. */
 export const rowRev = (row) => (row.attrs.trPr ? (/<w:ins\b/.test(row.attrs.trPr) ? 'ins' : /<w:del\b/.test(row.attrs.trPr) ? 'del' : null) : null);
@@ -126,7 +127,7 @@ function withMarkRev(attrs, rev) {
   const extra = attrs.extra.filter((e) => e[0] !== 'rPr');
   const old = extraItem(attrs, 'rPr');
   let inner = old ? old[1].replace(/^<w:rPr\b[^>]*>|<\/w:rPr>$|^<w:rPr\b[^>]*\/>$/g, '') : '';
-  inner = inner.replace(/<w:(ins|del)\b[^>]*\/>|<w:(ins|del)\b[^>]*>[\s\S]*?<\/w:\2>/g, '');
+  inner = inner.replace(/<w:(ins|del|moveFrom|moveTo)\b[^>]*\/>|<w:(ins|del|moveFrom|moveTo)\b[^>]*>[\s\S]*?<\/w:\2>/g, '');
   const xml = (rev || '') + inner;
   if (xml) extra.push(['rPr', `<w:rPr>${xml}</w:rPr>`]);
   return { ...attrs, extra };
@@ -486,13 +487,21 @@ export function resolveChanges(tr, from, to, accept) {
   }
   // Remove content last to first, then join paragraphs whose mark went away.
   const start = tr.steps.length;
-  const cuts = [...removes.map(([s, e]) => ({ at: s, s, e })), ...gone, ...joins.map((p) => ({ at: p, join: p }))].sort((x, y) => y.at - x.at);
+  // (Text first, so a paragraph that goes whole is empty by the time its mark goes.)
+  const desc = (x, y) => y.at - x.at;
+  const cuts = [...[...removes.map(([s, e]) => ({ at: s, s, e })), ...gone].sort(desc), ...joins.map((p) => ({ at: p, join: p })).sort(desc)];
   for (const c of cuts) {
     const map = (p, assoc) => since(tr, start).map(p, assoc);
     if (c.join != null) {
       const p = map(c.join);
       const $p = tr.doc.resolve(p);
-      if ($p.nodeBefore && $p.nodeAfter && $p.nodeBefore.type === schema.nodes.paragraph && $p.nodeAfter.type === schema.nodes.paragraph) tr.join(p);
+      if ($p.nodeBefore && $p.nodeAfter && $p.nodeBefore.type === schema.nodes.paragraph && $p.nodeAfter.type === schema.nodes.paragraph) {
+        // A paragraph that went whole (its text and its mark): the next one stays as it was, its own style, list and
+        // alignment kept (the join would give it the removed paragraph's).
+        const gone = !$p.nodeBefore.content.size && $p.nodeAfter;
+        tr.join(p);
+        if (gone) tr.setNodeMarkup(tr.doc.resolve(p - 1).before(), null, gone.attrs);
+      }
     } else tr.delete(map(c.s), map(c.e, -1));
   }
   // Cells that go, last first: the row's cells after each shift left, and the grid column it leaves is a w:gridAfter
@@ -527,10 +536,13 @@ export function resolveChanges(tr, from, to, accept) {
 
 /** Accept or reject the change at the caret, or every change in the selection; then select the next one. */
 export const resolveChange = (accept) => (state, dispatch) => {
-  const r = changeRange(state);
+  // Selected table cells: each cell's changes (the cells between them in the document aren't selected).
+  const cells = state.selection.ranges.length > 1 ? state.selection.ranges.map((g) => ({ from: g.$from.pos, to: g.$to.pos })) : null;
+  const r = cells ? { from: cells[0].from, to: cells[cells.length - 1].to } : changeRange(state);
   if (!r) return false;
   if (dispatch) {
-    const tr = resolveChanges(state.tr.setMeta('odx-untracked', true), r.from, r.to, accept);
+    let tr = state.tr.setMeta('odx-untracked', true);
+    for (const g of cells || [r]) tr = resolveChanges(tr, tr.mapping.map(g.from, 1), tr.mapping.map(g.to, -1), accept);
     const next = findChange(tr.doc, tr.mapping.map(r.to), 1);
     if (next) tr.setSelection(TextSelection.create(tr.doc, next.from, next.to));
     dispatch(tr.scrollIntoView());
