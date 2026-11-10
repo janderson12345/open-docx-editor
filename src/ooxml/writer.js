@@ -34,6 +34,7 @@ const onOff = (name, on) => (on ? `<w:${name}/>` : `<w:${name} w:val="0"/>`);
  * @param ctx { linkRel(href) -> rId } allocates relationships for new hyperlinks
  */
 export function writeDocument(doc, originalXml, ctx = {}) {
+  ctx.prefixes ||= rootPrefixes(originalXml);
   const parts = [writeBlocks(doc, ctx)];
   if (doc.lastChild && doc.lastChild.type.name === 'table') parts.push('<w:p/>');
   if (doc.attrs.sectPr) parts.push(doc.attrs.sectPr);
@@ -68,7 +69,32 @@ function writeBlock(node, ctx) {
 
 function writeParagraph(p, ctx) {
   const a = p.attrs;
-  return `<w:p>${pPrXml(a)}${writeInlines(p, ctx)}</w:p>`;
+  return `<w:p${pAttrsXml(a.pattrs, ctx)}>${pPrXml(a)}${writeInlines(p, ctx)}</w:p>`;
+}
+
+/** Prefixes declared on a part's root element (from its XML text), for `ctx.prefixes`. */
+export function rootPrefixes(xml) {
+  const open = /<(?!\?)[\w:]+\b[^>]*>/.exec(xml || '');
+  return new Set([...(open ? open[0] : '').matchAll(/\sxmlns:([\w.-]+)=/g)].map((m) => m[1]));
+}
+
+// A paragraph's own attributes as read. Only prefixes the part's root declares are written (a paragraph pasted into a
+// part without w14 loses its paraId), and a paraId already used in the part is left out: a paragraph split in two keeps
+// its id on the first half, as Word does, and the second half gets none rather than a duplicate.
+function pAttrsXml(list, ctx) {
+  if (!list) return '';
+  const ok = ctx.prefixes || new Set(['w']);
+  const seen = (ctx.paraIds ||= new Set());
+  const id = (list.find(([n]) => n.endsWith(':paraId')) || [])[1];
+  const dup = id != null && seen.has(id);
+  if (id != null) seen.add(id);
+  let out = '';
+  for (const [name, v] of list) {
+    const pre = name.includes(':') ? name.slice(0, name.indexOf(':')) : '';
+    if (!ok.has(pre) || (dup && /:(paraId|textId)$/.test(name))) continue;
+    out += ` ${name}="${esc(v)}"`;
+  }
+  return out;
 }
 
 /** A paragraph's w:pPr from its attrs ('' when empty). `skip` leaves out raw children by name. */
@@ -301,6 +327,7 @@ function writeCell(cell, vMerge, ctx) {
 
 /** A header or footer part (w:hdr / w:ftr) with its content replaced by `doc`'s; the root and namespaces are kept. */
 export function writeStory(doc, originalXml, ctx = {}) {
+  ctx.prefixes ||= rootPrefixes(originalXml);
   let body = writeBlocks(doc, ctx);
   if (doc.lastChild && doc.lastChild.type.name === 'table') body += '<w:p/>';
   const open = /<w:(hdr|ftr)\b[^>]*?(\/?)>/.exec(originalXml);

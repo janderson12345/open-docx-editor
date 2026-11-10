@@ -3,7 +3,7 @@
 import { Node } from 'prosemirror-model';
 import { NS } from './xml.js';
 import { readNotes } from './reader.js';
-import { writeBlocks } from './writer.js';
+import { writeBlocks, rootPrefixes } from './writer.js';
 import { schema } from '../editor/schema.js';
 
 export const NOTE_KINDS = {
@@ -47,9 +47,10 @@ export function saveNotes(pkg, notes, used) {
     }
     const open = new RegExp(`<w:${k.root}\\b[^>]*>`).exec(src);
     const keepSeps = [...src.matchAll(new RegExp(`<w:${tag}\\b[^>]*w:type="(?:separator|continuationSeparator|continuationNotice)"[\\s\\S]*?</w:${tag}>`, 'g'))].map((m) => m[0]).join('') || SEPARATORS(tag);
+    const wctx = { prefixes: rootPrefixes(src) };
     const body = [...map.values()].filter((n) => n.type === 'normal' && used[kind].has(n.id)).map((n) => {
       if (!n.dirty && n.xml) return n.xml;
-      return `<w:${tag} w:id="${n.id}">${writeBlocks(n.doc, {})}</w:${tag}>`;
+      return `<w:${tag} w:id="${n.id}">${writeBlocks(n.doc, wctx)}</w:${tag}>`;
     }).join('');
     pkg.setText(path, `${src.slice(0, open.index)}${open[0]}${keepSeps}${body}</w:${k.root}>`);
     for (const n of map.values()) n.dirty = false;

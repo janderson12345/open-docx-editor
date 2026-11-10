@@ -82,6 +82,7 @@ export const schema = new Schema({
         numId: { default: null },
         ilvl: { default: 0 },
         extra: { default: [] }, // unmodelled w:pPr children, raw
+        pattrs: { default: null }, // the w:p element's own attributes ([qname, value]: w14:paraId, w:rsidR...), raw
         view: { default: {} }, // spacing/indent read from extra, for display only
         deco: { default: null }, // computed by the editor (list label, contextual spacing); never saved
       },

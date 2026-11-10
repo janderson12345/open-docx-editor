@@ -218,3 +218,32 @@ test('a text box sized as a percentage of the text width (wp14:pctWidth) takes t
   // Saved unedited, the frame keeps that size, so the writer leaves it alone.
   assert.match(strFromU8(unzipSync(s.save())[main]), new RegExp(`<wp:extent cx="${Math.round(textWidth * 0.4 * 9525)}" cy="476250"`));
 });
+
+test('paragraph identities (w14:paraId, w14:textId, w:rsid*) are kept; a split paragraph does not repeat its paraId', () => {
+  const files = unzipSync(blankDocxBytes());
+  const main = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
+  const p = (id, t) => `<w:p w14:paraId="${id}" w14:textId="77777777" w:rsidR="00A1B2C3" w:rsidRDefault="00D4E5F6"><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  const xml = strFromU8(files[main])
+    .replace(/<w:document\b/, `<w:document xmlns:w14="${W14}"`)
+    .replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${p('1A2B3C4D', 'First paragraph')}${p('5E6F7081', 'Second')}$1`);
+  files[main] = strToU8(xml);
+  const s = new DocxSession(zipSync(files));
+  const out = strFromU8(unzipSync(s.save())[main]);
+  assert.match(out, /<w:p w14:paraId="1A2B3C4D" w14:textId="77777777" w:rsidR="00A1B2C3" w:rsidRDefault="00D4E5F6">/);
+  assert.match(out, /<w:p w14:paraId="5E6F7081"/);
+  // Enter in the middle of the first paragraph: both halves carry its attributes in the model; only one keeps the id.
+  const tr = new Transform(s.doc).split(6);
+  const split = strFromU8(unzipSync(s.save(tr.doc))[main]);
+  assert.equal((split.match(/w14:paraId="1A2B3C4D"/g) || []).length, 1);
+  assert.equal((split.match(/w:rsidR="00A1B2C3"/g) || []).length, 3);
+  parseXml(split);
+  // A part whose root does not declare w14 gets no w14 attributes (they would be unbound prefixes).
+  files[main] = strToU8(xml.replace(` xmlns:w14="${W14}"`, '').replace(/ w14:\w+="[^"]*"/g, ''));
+  const s2 = new DocxSession(zipSync(files));
+  const t2 = new Transform(s2.doc);
+  t2.setNodeMarkup(0, null, { ...s2.doc.firstChild.attrs, pattrs: [['w14:paraId', '1A2B3C4D'], ['w:rsidR', '00A1B2C3']] });
+  const out2 = strFromU8(unzipSync(s2.save(t2.doc))[main]);
+  assert.doesNotMatch(out2, /w14:/);
+  assert.match(out2, /<w:p w:rsidR="00A1B2C3">/);
+});

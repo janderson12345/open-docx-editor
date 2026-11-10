@@ -4,7 +4,7 @@ import { Node } from 'prosemirror-model';
 import { DocxPackage } from './package.js';
 import { REL_TYPES, NS, kids, parseXml, serializeXml } from './xml.js';
 import { readDocument, readStory } from './reader.js';
-import { writeDocument, writeStory, writeBlocks } from './writer.js';
+import { writeDocument, writeStory, writeBlocks, rootPrefixes } from './writer.js';
 import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle } from './styles.js';
 import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
@@ -540,7 +540,7 @@ export class DocxSession {
   setTextBox(runXml, doc, k = 0) {
     const box = this.textBoxes(runXml)?.[k];
     if (!box) throw new Error('no such text box');
-    let body = writeBlocks(doc, { linkRel: (href) => this._linkRel(href) });
+    let body = writeBlocks(doc, { linkRel: (href) => this._linkRel(href), prefixes: rootPrefixes(this.originalXml) });
     if (doc.lastChild && doc.lastChild.type.name === 'table') body += '<w:p/>';
     // The shape's copy is the one Word reads; the fallback copy gets the text without bookmarks, so ids stay unique.
     const plain = body.replace(/<w:bookmark(Start|End)\b[^>]*\/>/g, '');
