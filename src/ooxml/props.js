@@ -73,6 +73,16 @@ export function borderCss(b) {
 
 export function shdFill(shd) {
   const fill = hexColor(shd && attr(shd, 'fill'));
+  // A percentage pattern (pct10: a tenth of the pattern colour over the fill, both "auto" meaning black over white) or
+  // a solid one is drawn as the colour Word's dots blend to: pct10 of auto over auto is a light grey, not white.
+  const pat = shd && /^(?:pct(\d+)|(solid))$/.exec(attr(shd, 'val') || '');
+  if (pat) {
+    const share = pat[2] ? 1 : Number(pat[1]) / 100;
+    const color = hexColor(attr(shd, 'color')) || '000000';
+    const base = fill || 'FFFFFF';
+    const mix = [0, 2, 4].map((i) => Math.round(parseInt(base.slice(i, i + 2), 16) * (1 - share) + parseInt(color.slice(i, i + 2), 16) * share));
+    return '#' + mix.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
   return fill ? '#' + fill : null;
 }
 

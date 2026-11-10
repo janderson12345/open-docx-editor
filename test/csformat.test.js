@@ -53,3 +53,13 @@ test('a highlight in a colour Word has no name for is written as run shading', (
   assert.equal(rPr(t.marks), '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFEB3B"/></w:rPr>');
   assert.equal(rPr([schema.marks.highlight.create({ val: 'yellow' })]), '<w:rPr><w:highlight w:val="yellow"/></w:rPr>');
 });
+
+test('percentage and solid shading patterns are drawn as the colour they blend to', async () => {
+  const { shdFill } = await import('../src/ooxml/props.js');
+  const shd = (a) => parseXml(`<w:shd xmlns:w="${NS.w}" ${a}/>`).documentElement;
+  assert.equal(shdFill(shd('w:val="pct10" w:color="auto" w:fill="auto"')), '#E6E6E6');
+  assert.equal(shdFill(shd('w:val="solid" w:color="FF0000" w:fill="auto"')), '#FF0000');
+  assert.equal(shdFill(shd('w:val="pct50" w:color="000000" w:fill="FFFFFF"')), '#808080');
+  assert.equal(shdFill(shd('w:val="clear" w:color="auto" w:fill="D9D9D9"')), '#D9D9D9');
+  assert.equal(shdFill(shd('w:val="clear" w:color="auto" w:fill="auto"')), null);
+});
