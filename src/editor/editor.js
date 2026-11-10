@@ -197,12 +197,12 @@ function paragraphPlugin(session) {
           if (!c) return;
           const narrow = inner - c.width;
           const lo = n ? all[n - 1][0] + 1 : 0;
-          for (let i = lo; i <= hi; i++) sides.set(i, [0, narrow]);
+          for (let i = lo; i <= hi; i++) sides.set(i, [0, narrow, !!c.unequal]);
           // The empty paragraph carrying the break into the columns takes no room in Word (corpus 2: the columns start
           // right under the text above it).
           if (n && !doc.child(all[n - 1][0]).childCount) collapse.add(all[n - 1][0]);
         });
-      }
+      } else if (columnsIn(doc.attrs.sectPr, page)?.unequal) doc.forEach((_, __, i) => sides.set(i, [0, 0, true]));
     }
     const visit = (parent, offset) => {
       let prev = null;
@@ -296,7 +296,10 @@ function paragraphPlugin(session) {
           // (The section's sides are the page's left and right: a right-to-left paragraph's start is its right.)
           const rtl = (node.attrs.view.bidi ?? session.styleProp(node.attrs.styleId, 'bidi')) === true;
           const [ds, de] = rtl ? [sd[1], sd[0]] : sd;
-          style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px)`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px)`);
+          // (Columns of their own widths: laid out the widest wide, less --odx-coln on the right, which pages.js sets
+          // for the column each block lands in.)
+          const coln = sd[2] ? ' + var(--odx-coln, 0px)' : '';
+          style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px${rtl ? coln : ''})`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px${rtl ? '' : coln})`);
         }
         prev = { node, pos, attrs, style, cs, bdr };
         decos.push(prev);

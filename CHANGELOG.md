@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Columns of their own widths** (Layout > Columns > More Columns with "Equal column width" off): each column at its
+  width and place, the line between them midway in each gap; a paragraph going on in a column of another width is laid
+  out again at that width, as Word does.
 - **Find and Replace in every part of the document**: after the main text, Find goes on through the text boxes,
   headers, footers, footnotes and endnotes, as Word's does, opening each with the match selected; Replace All
   replaces in them all.

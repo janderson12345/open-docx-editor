@@ -276,6 +276,10 @@ export function createPages(view, session, { sheet, scope }) {
   const balanced = new Map(); // section's lo -> { sheet (of its own, from 0), h }: the column height its last sheet is cut to
   let balancedDoc = null;
   let balancePasses = 0;
+  let narrowed = new Map(); // block index -> px its column (of their own widths) is narrower than the widest, as laid out
+  let colsAgain = false;
+  let colsPasses = 0;
+  let colsRepass = false; // the coming pass is one of those
   // Splitting paragraphs line by line needs each page-crossing paragraph laid
   // out; in very long documents (content-visibility skips off-screen blocks)
   // that costs too much, so there paragraphs move to the next page whole.
@@ -293,7 +297,7 @@ export function createPages(view, session, { sheet, scope }) {
   // Repeated table header rows are drawn here, behind the text, in the gap the split leaves.
   const repeats = document.createElement('div');
   repeats.className = 'odx-repeats';
-  layer.after(repeats);
+  view.dom.after(repeats); // (after the document: its copies of lines come after the paragraphs they copy, as in a search)
   // The gaps between sheets, drawn over the text layer, so paragraph or cell shading
   // that runs across a page break doesn't paint the gap.
   const gaps = document.createElement('div');
@@ -609,6 +613,104 @@ export function createPages(view, session, { sheet, scope }) {
     return { cut, height: b.bottom - b.top, delta: contentTop(p + 1) - (lines[at].top + shift) };
   }
 
+  // Columns of their own widths: a paragraph going on in a column of another width is laid out again at that width, as
+  // Word does, so its lines there aren't the first column's. The text from its cut is copied out (`cs.rewrap`: the copy,
+  // its width and height), and what follows moves by how much taller or shorter that makes it.
+  const colWidthAt = (g, v) => g.widths[(((v - (g.P ?? 0)) % g.num) + g.num) % g.num];
+  function rewrapCarry(b, cs, g, p) {
+    const grow = colWidthAt(g, p + 1) - colWidthAt(g, p);
+    if (Math.abs(grow) < 0.5) return;
+    // The first character at or below the cut, in the paragraph's own layout (as paragraphLines measures it).
+    const base = view.dom.getBoundingClientRect().top + b.undo;
+    const pushes = [...b.el.querySelectorAll('.odx-push')].map((e) => e.getBoundingClientRect());
+    const natural = (y) => y - base - pushes.reduce((sum, r) => sum + (r.top + r.height / 2 <= y ? r.height : 0), 0);
+    const y = b.top + cs.cut - 1;
+    const range = document.createRange();
+    const box = (t, i) => { range.setStart(t, i); range.setEnd(t, i + 1); return [...range.getClientRects()].find((r) => r.height > 0); };
+    let at = null;
+    const walker = document.createTreeWalker(b.el, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t && !at; t = walker.nextNode()) {
+      if (!t.length || t.parentElement.closest('.odx-push')) continue;
+      const last = box(t, t.length - 1);
+      if (last && natural(last.top) < y) continue; // (all of it above the cut)
+      for (let i = 0; i < t.length; i++) { const r = box(t, i); if (r && natural(r.top) >= y) { at = [t, i]; break; } }
+    }
+    if (!at) return;
+    const path = [];
+    for (let n = at[0]; n !== b.el; n = n.parentNode) path.unshift([...n.parentNode.childNodes].indexOf(n));
+    const copy = b.el.cloneNode(true);
+    let end = copy;
+    for (const i of path) end = end.childNodes[i];
+    range.setStart(copy, 0);
+    range.setEnd(end, at[1]);
+    range.deleteContents();
+    copy.removeAttribute('contenteditable');
+    copy.style.removeProperty('margin-top');
+    copy.style.margin = '0';
+    copy.style.textIndent = '0';
+    copy.classList.add('odx-contlines'); // (no list number or bullet: editor.css)
+    copy.querySelectorAll('.ProseMirror-trailingBreak, .odx-push').forEach((e) => e.remove());
+    const width = widthIn(b, g, p + 1);
+    const h = heightAt(copy, width);
+    cs.rewrap = { el: copy, width, h };
+    cs.delta += h - (cs.height - cs.cut);
+  }
+  /** A block's width in flow page v's column: as laid out, less the narrowing it has now, plus that column's. */
+  function widthIn(b, g, v) {
+    const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-coln')) || 0;
+    return b.el.getBoundingClientRect().width + now - (g.width - colWidthAt(g, v));
+  }
+  /** The height of `el` (a paragraph's copy, its margins 0) laid out `width` wide; with `lines`, its lines' bottoms too. */
+  function heightAt(el, width, lines = null) {
+    const outer = document.createElement('div'); // (not the sheet's own child .odx-content: the layout's rules are for that)
+    outer.style.cssText = `position:absolute;visibility:hidden;left:0;top:0;width:${width}px`;
+    const host = document.createElement('div');
+    host.className = 'odx-content';
+    host.append(el);
+    outer.append(host);
+    sheet.append(outer);
+    const box = el.getBoundingClientRect();
+    if (lines) {
+      const range = document.createRange();
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        range.selectNodeContents(t);
+        for (const r of range.getClientRects()) {
+          if (!r.height) continue;
+          const l = lines.find((x) => Math.abs(x.top - (r.top - box.top)) < 2);
+          if (l) l.bottom = Math.max(l.bottom, r.bottom - box.top); else lines.push({ top: r.top - box.top, bottom: r.bottom - box.top });
+        }
+      }
+      lines.sort((x, y) => x.top - y.top);
+    }
+    outer.remove();
+    el.remove();
+    return box.height;
+  }
+  /**
+   * A paragraph laid out at another column's width (the one it had last time), at flow page p's column: null when its
+   * width there is the one it has, else where it would end there (`bottom`) and whether it could be split at that
+   * column's foot (`splits`, the test colSplit makes; it is then split there on the next pass, at that width).
+   */
+  function atColumnWidth(b, g, p, shift, firstOnPage) {
+    if (!g?.unequal || b.node.type !== schema.nodes.paragraph) return null;
+    const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-coln')) || 0;
+    if (Math.abs(now - (g.width - colWidthAt(g, p))) < 0.5) return null;
+    const copy = b.el.cloneNode(true);
+    copy.removeAttribute('contenteditable');
+    copy.style.removeProperty('margin-top');
+    copy.style.margin = '0';
+    const lines = [];
+    const bottom = b.top + heightAt(copy, widthIn(b, g, p), lines);
+    let at = lines.findIndex((l) => b.top + l.bottom + shift > contentBottom(p) + lineSlack(b.el) - 1);
+    if (lines.length < 2 || keepLines(b.node)) at = -1;
+    if (at > 0 && widowControl(b.node)) {
+      if (lines.length - at < 2 && at - 1 > 0) at = lines.length - 2;
+      if (at < 2 && !firstOnPage) at = -1;
+    }
+    return { bottom, splits: at > 0 };
+  }
+
   // A table in columns goes on in the next column row by row: cut above the first row that doesn't fit, its rows from
   // there drawn again at the next column's top (as a paragraph's lines are, colSplit), under its header rows repeated.
   function colSplitTable(b, shift, p) {
@@ -701,13 +803,26 @@ export function createPages(view, session, { sheet, scope }) {
   let idSeq = 0;
   function drawHeads(list) {
     // (Unchanged repeats are left as they are: redrawing a long document's every pass took a third of its layout time.)
-    const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.end ?? ''}`; }).join(',');
+    const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.end ?? ''}:${h.rewrap ? `${h.rewrap.width.toFixed(1)}/${h.rewrap.h.toFixed(1)}` : ''}`; }).join(',');
     if (!list.length && !headKey) return;
     if (key === headKey && repeats.childElementCount) return;
     headKey = key;
     const origin = layer.getBoundingClientRect();
     const frag = document.createDocumentFragment();
-    for (const { b, top, rule, cont, cut, end, dx, dy } of list) {
+    for (const { b, top, rule, cont, cut, end, dx, dy, rewrap } of list) {
+      if (rewrap) {
+        // Its lines laid out again at the next column's width (rewrapCarry): from the top of that copy.
+        const r = b.el.getBoundingClientRect();
+        const wrap = document.createElement('div');
+        wrap.className = 'odx-repeat';
+        wrap.style.cssText = `top:${(r.top - origin.top + dy + cut).toFixed(2)}px;left:${(r.left - origin.left + dx).toFixed(2)}px;width:${rewrap.width}px`;
+        const host = document.createElement('div');
+        host.className = 'odx-content';
+        host.append(rewrap.el.cloneNode(true));
+        wrap.append(host);
+        frag.append(wrap);
+        continue;
+      }
       if (cont) {
         // A paragraph's lines past its column's bottom, again at the next column's top (columns: drawn, not editable there).
         const r = b.el.getBoundingClientRect();
@@ -1042,24 +1157,29 @@ export function createPages(view, session, { sheet, scope }) {
     if (cols || live.length) {
       // Each block's column: its page in the flow. Move it up beside the column before it. A columns section's columns
       // count from the page it starts on; what follows it moves up by the flow pages its columns took beyond their sheets.
-      const geo = (k) => (cols ? { P: 0, S0: 0, off0: 0, num: cols.num, width: cols.width, space: cols.space, rtl: cols.rtl } : live.find((r) => k >= r.k0 && k < r.k1));
+      const geo = (k) => (cols ? { P: 0, S0: 0, off0: 0, ...cols } : live.find((r) => k >= r.k0 && k < r.k1));
       const offAt = (k) => { let o = 0; for (const r of live) if (k >= r.k1 && r.offAfter != null) o = r.offAfter; return o; };
+      const inner = page.width - page.left - page.right;
       const place = (k, v) => {
         const g = geo(k);
         if (!g) return { s: v - offAt(k), c: 0, w: 0, x: 0 };
-        if (v < g.P) return { s: v - g.off0, c: 0, w: 0, x: 0 };
+        // (narrow: how much narrower than the widest its column is, columns of their own widths.)
+        if (v < g.P) return { s: v - g.off0, c: 0, w: 0, x: 0, narrow: g.unequal ? g.width - g.widths[0] : 0 };
         // (A right-to-left section (w:bidi) fills its columns from the right, as in Word.)
         const c = (v - g.P) % g.num;
-        return { s: g.S0 + Math.floor((v - g.P) / g.num), c, w: g.width + g.space, x: (g.rtl ? g.num - 1 - c : c) * (g.width + g.space) };
+        return { s: g.S0 + Math.floor((v - g.P) / g.num), c, w: g.width + g.space, x: g.rtl ? inner - g.xs[c] - g.widths[c] : g.xs[c], narrow: g.unequal ? g.width - g.widths[c] : 0 };
       };
+      const narrowNow = new Map();
       let sh = 0;
       let lastS = blocks.length ? place(blocks.length - 1, pages - 1).s : 0;
       for (let k = 0; k < blocks.length; k++) {
         const b = blocks[k];
         sh += starts.get(b.i) || 0;
         const v = pageOf(b.top + sh);
-        const { s, x } = place(k, v);
+        const { s, x, narrow } = place(k, v);
         const up = v - s; // pages of flow above this column's sheet
+        // Its column's width (measured with it too, so a block that lands in another column is measured again there).
+        if (narrow) { narrowNow.set(b.i, narrow); colCss.push(`.${scope} > .odx-content > :nth-child(${b.i + 1}){--odx-coln:${narrow.toFixed(2)}px}`); }
         if (up || x) colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){transform:translate(${x.toFixed(1)}px,${-(up * pitch)}px)}`);
         const cs = colSplits.get(b.i);
         if (cs) {
@@ -1067,7 +1187,7 @@ export function createPages(view, session, { sheet, scope }) {
           const v2 = v + 1, q = place(k, v2), up2 = v2 - q.s;
           lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
           const head = cs.head || 0;
-          contHeads.push({ b, cont: true, cut: cs.cut, dx: q.x - x, dy: (contentTop(v2) + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
+          contHeads.push({ b, cont: true, cut: cs.cut, rewrap: cs.rewrap, dx: q.x - x, dy: (contentTop(v2) + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
           if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) - up2 * pitch) - (b.top + sh - up * pitch) });
         }
         if (!cols) sh += (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0); // (what a block split over pages pushes below it)
@@ -1088,6 +1208,10 @@ export function createPages(view, session, { sheet, scope }) {
         margins = bySheet;
       }
       colCss.push(`.${scope} > .odx-content{height:${pageTop(pages) - gap}px;overflow:visible}`);
+      // Blocks that changed column width: lay out again at the new widths.
+      const moved = narrowNow.size !== narrowed.size || [...narrowNow].some(([i, n]) => Math.abs((narrowed.get(i) ?? 0) - n) > 0.01);
+      narrowed = narrowNow;
+      if (moved) colsAgain = true;
     }
     return { colCss, contHeads };
   }
@@ -1224,6 +1348,8 @@ export function createPages(view, session, { sheet, scope }) {
   function layout() {
     frame = 0;
     passed = false;
+    if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
+    colsRepass = false;
     const t0 = performance.now();
     layoutTabs(view, session);
     if (fitAutofitColumns(view)) return schedule(); // column widths changed: measure again once they're drawn
@@ -1336,6 +1462,9 @@ export function createPages(view, session, { sheet, scope }) {
       // An empty paragraph that only carries a section break may hang into the bottom margin: Word doesn't start a page for it.
       // Nor after a manual page break: the page break and the section break then make one new page, not two.
       if (!firstOnPage && !b.node.childCount && sectEnds.get(b.i) && top < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
+      // (In columns of their own widths, a paragraph's bottom at the width of the column it's in: atColumnWidth.)
+      const wide = inCols ? atColumnWidth(b, cols || inReg, p, shift, top <= contentTop(p) + 1) : null;
+      const bottom = wide ? wide.bottom : b.bottom;
       let target = null;
       let overflow = false;
       let forced = false;
@@ -1352,14 +1481,17 @@ export function createPages(view, session, { sheet, scope }) {
         forced = true;
       }
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
-      else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && b.bottom + shift > contentBottom(p) + lineSlack(b.el) - 1) {
+      else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift > contentBottom(p) + lineSlack(b.el) - 1) {
         // In columns a paragraph goes on in the next column line by line, as in Word: it stays put, cut at the column's
         // bottom, and its lines from there are drawn again at the next column's top (drawHeads); what follows it moves
         // down below them.
-        const cs = colSplit(b, shift, firstOnPage, p);
+        // (Laid out at another column's width: split on the next pass, at this one's, when it can be; else it moves on.)
+        if (wide?.splits) continue;
+        const cs = wide ? null : colSplit(b, shift, firstOnPage, p);
         if (cs) {
+          if ((cols || inReg).unequal) rewrapCarry(b, cs, cols || inReg, p);
           colSplits.set(b.i, cs);
-          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0) });
+          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut) + (cs.head || 0) });
           const nb = blocks[k + 1];
           if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
           continue;
@@ -1401,7 +1533,7 @@ export function createPages(view, session, { sheet, scope }) {
           target = p + 1;
           overflow = true;
         }
-      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && b.bottom + shift > contentBottom(p) + 1) {
+      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && bottom + shift > contentBottom(p) + 1) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
@@ -1483,6 +1615,9 @@ export function createPages(view, session, { sheet, scope }) {
     passes++;
     // A balanced columns section's cut changed: lay out again with it (a few times at most, should it not settle).
     if (balanceAgain && balancePasses < 4) { balancePasses++; schedule(); }
+    // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
+    else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
+    colsAgain = false;
   }
 
   let drawn = '';
@@ -1536,7 +1671,9 @@ export function createPages(view, session, { sheet, scope }) {
         for (let k = 1; k < cols.num; k++) {
           const line = document.createElement('div');
           line.className = 'odx-colsep';
-          line.style.cssText = `position:absolute;left:${(page.left + k * (cols.width + cols.space) - cols.space / 2).toFixed(1)}px;top:${m.top}px;height:${pageH(p) - m.top - m.bottom}px;border-left:0.75pt solid #000`;
+          const mid = cols.xs[k] - cols.spaces[k - 1] / 2; // (midway in the gap before column k, from the text's left)
+          const x = cols.rtl ? page.width - page.left - page.right - mid : mid;
+          line.style.cssText = `position:absolute;left:${(page.left + x).toFixed(1)}px;top:${m.top}px;height:${pageH(p) - m.top - m.bottom}px;border-left:0.75pt solid #000`;
           s.append(line);
         }
       }

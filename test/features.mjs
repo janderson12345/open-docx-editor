@@ -236,6 +236,22 @@ check(replaced === '7 results' && parts.every((f) => !partText(f).includes('appl
   `Replace All in every part, saved (${replaced}; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy)`);
 await page.keyboard.press('Escape');
 
+// Columns of their own widths (mkcolumns.mjs: 1.5in, 3in and 1.25in), laid out as Word's PDF of the file has them: each
+// column at its place and width, a paragraph going on in a wider column laid out again at that width (P9's last
+// lines: two at 3in), P24 starting the third column and P30 ending the first page.
+await open('columns-unequal.docx');
+const ucols = await page.evaluate(() => {
+  const sheet = document.querySelector('.odx-sheet').getBoundingClientRect();
+  const at = (n) => { const p = [...document.querySelectorAll('.odx-content > p')].find((x) => x.textContent.startsWith(`P${n} `)); const r = p.getBoundingClientRect(); return { x: Math.round(r.left - sheet.left), w: Math.round(r.width), top: Math.round(r.top - sheet.top) }; };
+  const cont = document.querySelector('.odx-repeat .odx-contlines');
+  const lh = cont && parseFloat(getComputedStyle(cont).lineHeight);
+  return { p1: at(1), p10: at(10), p24: at(24), p30: at(30), p31: at(31), cont: cont && { w: Math.round(cont.getBoundingClientRect().width), lines: Math.round(cont.getBoundingClientRect().height / 19.33), text: cont.textContent.slice(0, 15) }, pages: window.odx.view.odx.pages.count };
+});
+check(ucols.p1.x === 96 && ucols.p1.w === 144 && ucols.p10.x === 264 && ucols.p10.w === 288 && ucols.p24.x === 600 && ucols.p24.w === 120,
+  `columns of their own widths: each at its place and width (${JSON.stringify([ucols.p1, ucols.p10, ucols.p24])})`);
+check(ucols.cont?.w === 288 && ucols.cont.lines === 2 && ucols.cont.text.startsWith('procedures'), `a paragraph going on in a wider column is laid out again at its width (${JSON.stringify(ucols.cont)})`);
+check(ucols.pages === 3 && ucols.p30.top < 1056 && ucols.p31.top > 1056, `columns of their own widths: P30 ends the first page, as in Word (${ucols.pages} pages)`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

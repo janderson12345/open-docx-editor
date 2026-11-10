@@ -16,15 +16,32 @@ export const marginsIn = (xml, page, gutter) => {
     left: hasLeft ? num('left', 0) + gutter(xml).left : page.left, right: num('right', page.right) };
 };
 
-/** A section's newspaper columns (w:cols) on `page`: { num, space, width } in px, or null for a single column. */
+/**
+ * A section's newspaper columns (w:cols) on `page`, in px, or null for a single column: { num, space, width, rtl, sep,
+ * widths, xs }. Columns of their own widths (w:equalWidth="0", each w:col its width and the gap after it) give each
+ * one's width and its left edge from the text's (`xs`); `width` is then the widest, and `unequal` is set.
+ */
 export const columnsIn = (xml, page) => {
   const m = /<w:cols\b[^>]*>/.exec(xml || '');
+  const rtl = /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(xml || '');
+  const sep = m ? /\sw:sep="(?:1|true|on)"/.test(m[0]) : false; // a line between the columns
+  if (m && /\sw:equalWidth="(?:0|false|off)"/.test(m[0])) {
+    const own = [...(/<w:cols\b[^>]*>([\s\S]*?)<\/w:cols>/.exec(xml)?.[1] || '').matchAll(/<w:col\b[^>]*>/g)]
+      .map((c) => ({ w: Number(/w:w="(\d+)"/.exec(c[0])?.[1] || 0) / TWIPS_PER_PX, s: Number(/w:space="(\d+)"/.exec(c[0])?.[1] || 0) / TWIPS_PER_PX }));
+    if (own.length >= 2 && own.every((c) => c.w > 0)) {
+      const xs = [];
+      let x = 0;
+      for (const c of own) { xs.push(x); x += c.w + c.s; }
+      const widths = own.map((c) => c.w);
+      return { num: own.length, space: own[0].s, width: Math.max(...widths), rtl, sep, widths, xs, spaces: own.map((c) => c.s), unequal: true };
+    }
+  }
   const num = m ? Number((/w:num="(\d+)"/.exec(m[0]) || [])[1] || 1) : 1;
   if (num < 2) return null;
   const space = Number((/w:space="(\d+)"/.exec(m[0]) || [])[1] ?? 720) / TWIPS_PER_PX;
-  const rtl = /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(xml || '');
-  const sep = /\sw:sep="(?:1|true|on)"/.test(m[0]); // a line between the columns
-  return { num, space, width: (page.width - page.left - page.right - space * (num - 1)) / num, rtl, sep };
+  const width = (page.width - page.left - page.right - space * (num - 1)) / num;
+  const widths = Array(num).fill(width);
+  return { num, space, width, rtl, sep, widths, xs: widths.map((_, c) => c * (width + space)), spaces: widths.map(() => space) };
 };
 
 /**
