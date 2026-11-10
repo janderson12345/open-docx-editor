@@ -135,3 +135,15 @@ test('floating pictures in front of (or behind) the text are stacked by their dr
   // The first one drawn over the second: it goes on top.
   assert.deepEqual(read(`<w:p>${pic(300, 0)}${pic(200, 0)}${pic(100, 1)}${pic(50, 1)}</w:p>`), ['2', '1', '-1', '-2']);
 });
+
+test('an autofit table with a placeholder grid and a merged first row takes its columns from the cells of the next row', async () => {
+  const { readDocument } = await import('../src/ooxml/reader.js');
+  const { parseXml } = await import('../src/ooxml/xml.js');
+  const tc = (w, t, span) => `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${w}"/>${span ? `<w:gridSpan w:val="${span}"/>` : ''}</w:tcPr><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const tbl = '<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="100"/></w:tblPr><w:tblGrid><w:gridCol w:w="100"/><w:gridCol w:w="100"/><w:gridCol w:w="100"/></w:tblGrid>'
+    + `<w:tr>${tc(4500, 'Title', 3)}</w:tr><w:tr>${tc(1500, 'a')}${tc(1500, 'b')}${tc(1500, 'c')}</w:tr></w:tbl><w:p/>`;
+  const json = readDocument(parseXml(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${tbl}</w:body></w:document>`));
+  const cells = json.content[0].content[1].content;
+  assert.deepEqual(cells.map((c) => c.attrs.colwidth[0]), [100, 100, 100]);
+  assert.deepEqual(json.content[0].content[0].content[0].attrs.colwidth, [100, 100, 100]);
+});

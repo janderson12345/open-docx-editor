@@ -701,14 +701,20 @@ function readTable(tbl, ctx) {
   // table with a 4788-twip cell over a 3488-twip column.)
   const share = attr(tblW, 'type') === 'pct' && Number(attr(tblW, 'w') || 0) > 0;
   if (attr(kid(tblPr, 'tblLayout'), 'type') !== 'fixed' && !widthIsGrid && !share) {
-    const first = kid(tbl, 'tr');
-    const tcs = first ? kids(first, 'tc') : [];
-    const ws = tcs.map((tc) => {
-      const pr = kid(tc, 'tcPr');
-      const w = kid(pr, 'tcW');
-      return !kid(pr, 'gridSpan') && w && attr(w, 'type') === 'dxa' ? px(attr(w, 'w')) : null;
-    });
-    if (tcs.length === grid.length && !kid(kid(first, 'trPr'), 'gridBefore') && ws.every((w) => w > 0) && ws.some((w, i) => Math.abs(w - grid[i]) > 2) && !(() => { try { return picturesWiderThan(tbl, ws); } catch { return true; } })()) grid = ws;
+    const widthsOf = (tr) => {
+      const tcs = tr ? kids(tr, 'tc') : [];
+      const ws = tcs.map((tc) => {
+        const pr = kid(tc, 'tcPr');
+        const w = kid(pr, 'tcW');
+        return !kid(pr, 'gridSpan') && w && attr(w, 'type') === 'dxa' ? px(attr(w, 'w')) : null;
+      });
+      return tcs.length === grid.length && !kid(kid(tr, 'trPr'), 'gridBefore') && ws.every((w) => w > 0) ? ws : null;
+    };
+    // The first row's, or (its cells merged across columns: a heading row over the columns) the first row with a cell
+    // in each column (generators' placeholder grids, 100-twip columns under a merged title row, laid out by those).
+    const trs0 = kids(tbl, 'tr');
+    const ws = widthsOf(trs0[0]) || (trs0.length > 1 && kids(trs0[0], 'tc').some((tc) => kid(kid(tc, 'tcPr'), 'gridSpan')) ? trs0.slice(1).map(widthsOf).find(Boolean) : null);
+    if (ws && ws.some((w, i) => Math.abs(w - grid[i]) > 2) && !(() => { try { return picturesWiderThan(tbl, ws); } catch { return true; } })()) grid = ws;
   }
   const rows = [];
   // vertical-merge bookkeeping: grid column -> the cell that started the merge
