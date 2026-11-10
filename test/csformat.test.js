@@ -105,3 +105,23 @@ test('a pasted paragraph keeps its spacing, line spacing and indents; a pasted c
   const cellAttrs = schema.nodes.table_cell.spec.parseDOM[0].getAttrs(td);
   assert.deepEqual(cellAttrs.tcPr.map((t) => t[1]), ['<w:shd w:val="clear" w:color="auto" w:fill="D9EAD3"/>', '<w:vAlign w:val="center"/>']);
 });
+
+test('an inserted footnote reference takes the formatting around it, and text typed after it goes on in that formatting', async () => {
+  const { insertNote } = await import('../src/editor/notes.js');
+  const font = schema.marks.font.create({ val: 'Garamond' }), size = schema.marks.size.create({ val: 28 });
+  const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [schema.text('Body text', [font, size])])]);
+  const view = {
+    state: EditorState.create({ doc, selection: TextSelection.create(doc, 10) }),
+    dispatch(tr) { this.state = this.state.apply(tr); },
+    odx: { session: { notes: { footnote: new Map() }, styles: { styles: new Map() } }, pages: { restory() {} } },
+    dom: { parentElement: { querySelector: () => null } },
+  };
+  insertNote(view, 'footnote');
+  let ref = null;
+  view.state.doc.descendants((n) => { if (n.attrs?.kind === 'footnoteReference') ref = n; });
+  assert.match(ref.attrs.xml, /<w:rPr><w:rStyle w:val="FootnoteReference"\/><w:rFonts w:ascii="Garamond" w:hAnsi="Garamond" w:cs="Garamond"\/><w:sz w:val="28"\/><w:vertAlign w:val="superscript"\/><\/w:rPr><w:footnoteReference w:id="1"\/>/);
+  view.dispatch(view.state.tr.insertText('more'));
+  let typed = null;
+  view.state.doc.descendants((n) => { if (n.isText && n.text === 'more') typed = n.marks.map((m) => m.type.name); });
+  assert.deepEqual(typed, ['font', 'size']);
+});

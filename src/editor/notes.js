@@ -10,6 +10,7 @@ import { keymap } from 'prosemirror-keymap';
 import { baseKeymap } from 'prosemirror-commands';
 import { schema } from './schema.js';
 import { NOTE_KINDS } from '../ooxml/notes.js';
+import { rPr } from '../ooxml/writer.js';
 import * as cmd from './commands.js';
 import { xmlId } from './util.js';
 import { csFormatPlugin } from './csformat.js';
@@ -35,9 +36,11 @@ export const noteLabel = (kind, n) => {
   return s;
 };
 
-const refRun = (kind, id) => schema.nodes.opaque_inline.create({
+// (`around`: the formatting of the text it goes into (its font, size, colour...), which Word gives the reference too,
+// under the reference style.)
+const refRun = (kind, id, around = []) => schema.nodes.opaque_inline.create({
   kind: `${kind}Reference`,
-  xml: `<w:r><w:rPr><w:rStyle w:val="${NOTE_KINDS[kind].refStyle}"/><w:vertAlign w:val="superscript"/></w:rPr><w:${kind}Reference w:id="${id}"/></w:r>`,
+  xml: `<w:r>${rPr([schema.marks.cstyle.create({ val: NOTE_KINDS[kind].refStyle }), ...around.filter((m) => !['cstyle', 'vertAlign', 'link', 'ins', 'del', 'sdt'].includes(m.type.name)), schema.marks.vertAlign.create({ val: 'superscript' })])}<w:${kind}Reference w:id="${id}"/></w:r>`,
 });
 const markRun = (kind) => schema.nodes.opaque_inline.create({
   kind: `${kind}Ref`,
@@ -57,7 +60,10 @@ export function insertNote(view, kind) {
   const para = schema.nodes.paragraph.create({ styleId: session.styles.styles.has(style) ? style : null }, [markRun(kind), schema.text(' ')]);
   map.set(id, { id, type: 'normal', xml: null, doc: schema.nodes.doc.create(null, para), dirty: true });
   view.odx.stories?.note(kind, id, map.get(id).doc); // (shared: src/collab.js)
-  const tr = view.state.tr.replaceSelectionWith(refRun(kind, id), false).setMeta('odx-untracked', true);
+  // (Text typed after the reference goes on in the formatting it had: the body's font, not the reference's.)
+  const around = view.state.storedMarks || view.state.selection.$from.marks();
+  const tr = view.state.tr.replaceSelectionWith(refRun(kind, id, around), false).setMeta('odx-untracked', true);
+  tr.setStoredMarks(around);
   view.dispatch(tr.scrollIntoView());
   view.odx.pages.restory();
   // Open it once the layout has drawn it.
