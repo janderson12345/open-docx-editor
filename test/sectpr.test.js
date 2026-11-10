@@ -42,3 +42,11 @@ test('a missing page size reads as Letter', () => {
   assert.deepEqual(sp.pageSize('<w:sectPr/>'), { w: 12240, h: 15840 });
   assert.equal(sp.columnCount(null), 1);
 });
+
+test('a right-to-left section (w:bidi) has its columns marked to fill from the right', async () => {
+  const { columnsIn } = await import('../src/editor/sections.js');
+  const page = { width: 816, left: 96, right: 96 };
+  assert.equal(columnsIn('<w:sectPr><w:cols w:num="2" w:space="708"/><w:bidi/></w:sectPr>', page).rtl, true);
+  assert.equal(columnsIn('<w:sectPr><w:cols w:num="2" w:space="708"/></w:sectPr>', page).rtl, false);
+  assert.equal(columnsIn('<w:sectPr><w:cols w:num="2"/><w:bidi w:val="0"/></w:sectPr>', page).rtl, false);
+});

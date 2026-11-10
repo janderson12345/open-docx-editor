@@ -1005,13 +1005,15 @@ export function createPages(view, session, { sheet, scope }) {
     if (cols || live.length) {
       // Each block's column: its page in the flow. Move it up beside the column before it. A columns section's columns
       // count from the page it starts on; what follows it moves up by the flow pages its columns took beyond their sheets.
-      const geo = (k) => (cols ? { P: 0, S0: 0, off0: 0, num: cols.num, width: cols.width, space: cols.space } : live.find((r) => k >= r.k0 && k < r.k1));
+      const geo = (k) => (cols ? { P: 0, S0: 0, off0: 0, num: cols.num, width: cols.width, space: cols.space, rtl: cols.rtl } : live.find((r) => k >= r.k0 && k < r.k1));
       const offAt = (k) => { let o = 0; for (const r of live) if (k >= r.k1 && r.offAfter != null) o = r.offAfter; return o; };
       const place = (k, v) => {
         const g = geo(k);
-        if (!g) return { s: v - offAt(k), c: 0, w: 0 };
-        if (v < g.P) return { s: v - g.off0, c: 0, w: 0 };
-        return { s: g.S0 + Math.floor((v - g.P) / g.num), c: (v - g.P) % g.num, w: g.width + g.space };
+        if (!g) return { s: v - offAt(k), c: 0, w: 0, x: 0 };
+        if (v < g.P) return { s: v - g.off0, c: 0, w: 0, x: 0 };
+        // (A right-to-left section (w:bidi) fills its columns from the right, as in Word.)
+        const c = (v - g.P) % g.num;
+        return { s: g.S0 + Math.floor((v - g.P) / g.num), c, w: g.width + g.space, x: (g.rtl ? g.num - 1 - c : c) * (g.width + g.space) };
       };
       let sh = 0;
       let lastS = blocks.length ? place(blocks.length - 1, pages - 1).s : 0;
@@ -1019,17 +1021,17 @@ export function createPages(view, session, { sheet, scope }) {
         const b = blocks[k];
         sh += starts.get(b.i) || 0;
         const v = pageOf(b.top + sh);
-        const { s, c, w } = place(k, v);
+        const { s, x } = place(k, v);
         const up = v - s; // pages of flow above this column's sheet
-        if (up || c) colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){transform:translate(${(c * w).toFixed(1)}px,${-(up * pitch)}px)}`);
+        if (up || x) colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){transform:translate(${x.toFixed(1)}px,${-(up * pitch)}px)}`);
         const cs = colSplits.get(b.i);
         if (cs) {
           colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){clip-path:inset(-20px -200px ${(cs.height - cs.cut).toFixed(2)}px -200px)}`);
           const v2 = v + 1, q = place(k, v2), up2 = v2 - q.s;
           lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
           const head = cs.head || 0;
-          contHeads.push({ b, cont: true, cut: cs.cut, dx: (q.c - c) * w, dy: (contentTop(v2) + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
-          if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: (q.c - c) * w, dy: (contentTop(v2) - up2 * pitch) - (b.top + sh - up * pitch) });
+          contHeads.push({ b, cont: true, cut: cs.cut, dx: q.x - x, dy: (contentTop(v2) + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
+          if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) - up2 * pitch) - (b.top + sh - up * pitch) });
         }
         if (!cols) sh += (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0); // (what a block split over pages pushes below it)
       }
