@@ -334,7 +334,8 @@ export function outlineLevel(session, node) {
   if (lvl != null) return lvl > 8 ? null : lvl;
   for (let id = node.attrs.styleId, n = 0; id && n < 10; n++) {
     const st = session.styles.styles.get(id);
-    const m = st && /^heading\s*(\d)$/i.exec(st.name || '');
+    // (A built-in heading used without being defined is one too: Heading1 to Heading9.)
+    const m = st ? /^heading\s*(\d)$/i.exec(st.name || '') : /^heading([1-9])$/i.exec(id);
     if (m) return Number(m[1]) - 1;
     id = st && st.basedOn;
   }

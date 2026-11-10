@@ -175,7 +175,9 @@ export class DocxSession {
   }
 
   styleMenu() {
-    return styleMenu(this.styles);
+    const used = new Set();
+    this.doc.descendants((n) => { if (n.type.name === 'paragraph' && n.attrs.styleId) used.add(n.attrs.styleId); return n.type.name !== 'paragraph'; });
+    return styleMenu(this.styles, used);
   }
 
   /** Page geometry in px (96 dpi) from the final section. */

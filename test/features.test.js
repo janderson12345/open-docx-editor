@@ -208,3 +208,18 @@ test('an SVG picture is shown from its SVG, not its PNG fallback', async () => {
   const json = readDocument(parseXml(`<w:document ${ns}><w:body>${body}</w:body></w:document>`), { resolveImage: (id) => `blob:${id}` });
   assert.equal(json.content[0].content[0].attrs.src, 'blob:rIdSvg');
 });
+
+test('built-in headings used but not defined look like Word\'s and count as headings; a style hidden until used joins the gallery once used', async () => {
+  const { stylesToCss, styleMenu } = await import('../src/ooxml/styles.js');
+  const { outlineLevel } = await import('../src/editor/commands.js');
+  const { schema } = await import('../src/editor/schema.js');
+  const info = { styles: new Map(), defaults: { rPr: {}, pPr: {} }, defaultParagraph: null };
+  const css = stylesToCss('.d', info, { minor: 'Calibri', major: 'Calibri Light' });
+  assert.match(css, /\.d p\[data-style="Heading1"\]\{font-family:var\(--odx-font-major\)[^}]*font-size:16pt;color:#2F5496/);
+  const session = { styles: info, styleProp: () => null };
+  assert.equal(outlineLevel(session, schema.nodes.paragraph.create({ styleId: 'Heading2' })), 1);
+  const st = (id, name, extra = {}) => [id, { id, name, type: 'paragraph', uiPriority: 9, hidden: true, unhide: true, qFormat: true, ...extra }];
+  const gallery = { styles: new Map([st('Heading1', 'heading 1', { hidden: false, unhide: false }), st('Heading2', 'heading 2'), st('Heading3', 'heading 3')]) };
+  assert.deepEqual(styleMenu(gallery, new Set()).map((s) => s.id), ['Heading1']);
+  assert.deepEqual(styleMenu(gallery, new Set(['Heading1'])).map((s) => s.id), ['Heading1', 'Heading2']);
+});

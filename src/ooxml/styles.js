@@ -49,6 +49,7 @@ export function readStyles(pkg) {
       next: attr(kid(s, 'next'), 'val'),
       isDefault: attr(s, 'default') === '1' || attr(s, 'default') === 'true',
       hidden: !!kid(s, 'semiHidden') || !!kid(s, 'hidden'),
+      unhide: !!kid(s, 'unhideWhenUsed'), // hidden until used (Heading 2 to 9 in Word's template)
       uiPriority: Number(attr(kid(s, 'uiPriority'), 'val') ?? 99),
       qFormat: !!kid(s, 'qFormat'),
       rPr: readRPr(kid(s, 'rPr')),
@@ -96,15 +97,33 @@ export function stylesToCss(scope, info, theme) {
     const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(r.rPr, theme)].filter(Boolean).join(';');
     if (css) rules.push(`${sel}{${css}}`);
   }
+  // Built-in headings a document uses without defining them (python-docx's add_heading in a bare template): drawn as
+  // Word's own Heading 1 to 9 and Title, which Word applies to them.
+  const major = `font-family:var(--odx-font-major);--odx-lh:var(--odx-lh-major)`;
+  const BUILT_IN = {
+    Heading1: 'font-size:16pt;color:#2F5496;margin-top:12pt', Heading2: 'font-size:13pt;color:#2F5496;margin-top:2pt',
+    Heading3: 'font-size:12pt;color:#1F3763;margin-top:2pt', Heading4: 'font-style:italic;color:#2F5496;margin-top:2pt',
+    Heading5: 'color:#2F5496;margin-top:2pt', Heading6: 'color:#1F3763;margin-top:2pt', Heading7: 'font-style:italic;color:#1F3763;margin-top:2pt',
+    Heading8: 'font-size:10.5pt;color:#272727;margin-top:2pt', Heading9: 'font-size:10.5pt;font-style:italic;color:#272727;margin-top:2pt',
+    Title: 'font-size:28pt;letter-spacing:-0.5pt;margin-bottom:0',
+  };
+  for (const [id, css] of Object.entries(BUILT_IN)) {
+    if (!styles.has(id)) rules.push(`${scope} p[data-style="${id}"]{${major};${css};${id === 'Title' ? '' : 'margin-bottom:0'}}`);
+  }
   return rules.join('\n');
 }
 
 const cssEsc = (s) => String(s).replace(/["\\]/g, '\\$&');
 
 /** Paragraph styles worth offering in a style picker, Word-gallery order. */
-export function styleMenu(info) {
+export function styleMenu(info, used = null) {
+  // A style hidden until used (w:semiHidden with w:unhideWhenUsed) shows once the document uses it, as in Word's
+  // gallery, and a heading level once the level above it is used (Heading 2 after Heading 1).
+  const level = (s) => Number((/^heading (\d)$/i.exec(s.name) || [])[1]) || 0;
+  const usedLevels = new Set([...info.styles.values()].filter((s) => used?.has(s.id)).map(level));
+  const inUse = (s) => !used || used.has(s.id) || (level(s) > 1 && usedLevels.has(level(s) - 1));
   return [...info.styles.values()]
-    .filter((s) => s.type === 'paragraph' && (!s.hidden || s.qFormat))
+    .filter((s) => s.type === 'paragraph' && (!s.hidden || s.qFormat) && !(s.hidden && s.unhide && !inUse(s)))
     .sort((a, b) => a.uiPriority - b.uiPriority || a.name.localeCompare(b.name))
     .map((s) => ({ id: s.id, name: s.name.replace(/^heading (\d)$/, 'Heading $1').replace(/^title$/, 'Title') }));
 }
