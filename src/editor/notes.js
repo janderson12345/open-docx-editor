@@ -76,6 +76,8 @@ export function insertNote(view, kind) {
 
 let open = null;
 
+export const editingNote = () => open;
+
 /** The open note editor's text put into its note, the editor left open (for a save meanwhile). */
 export function flushNote() {
   if (!open) return;
@@ -121,7 +123,7 @@ export function editNote(main, kind, id, el) {
       main.odx.notify?.(nv);
     },
   });
-  nv.odx = { ...main.odx, isStory: true };
+  nv.odx = { ...main.odx, isStory: true, main };
   main.odx.hfView = nv;
   // The number of the note, as on the page.
   const ref = noteRefs(main.state.doc).find((r) => r.kind === kind && r.id === id);
@@ -129,6 +131,7 @@ export function editNote(main, kind, id, el) {
   open = { main, nv, wrap, note, kind };
   nv.focus();
   nv.dispatch(nv.state.tr.setSelection(TextSelection.atEnd(nv.state.doc)));
+  return nv;
 }
 
 /** Clicking a drawn note edits it; clicking the body text closes the note being edited. */

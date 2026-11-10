@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Find and Replace in every part of the document**: after the main text, Find goes on through the text boxes,
+  headers, footers, footnotes and endnotes, as Word's does, opening each with the match selected; Replace All
+  replaces in them all.
 - **Restricted editing**, as Word enforces it: documents protected read-only, for comments or for tracked changes,
   with their editable parts for everyone or for named users (`editors`) highlighted and open; forms with unprotected
   sections; formatting limited to the unlocked styles; Mark as Final, Always open read-only and a password to modify

@@ -196,7 +196,7 @@ export function editStory(main, kind, p = null) {
       main.odx.notify?.(hv);
     },
   });
-  hv.odx = { ...main.odx, isStory: true };
+  hv.odx = { ...main.odx, isStory: true, main };
   main.odx.hfView = hv;
   main.dom.classList.add('odx-dim');
   open = { main, hv, el, rId, kind };

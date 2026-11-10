@@ -33,10 +33,10 @@ export function closeTextBox() {
 }
 
 /**
- * Open a text box of the drawing at `pos`: the one under the point (x, y) in client px when given (a group
- * can hold several), else the first. Returns its view, or null.
+ * Open a text box of the drawing at `pos`: box `k` when given, else the one under the point (x, y) in client px when
+ * given (a group can hold several), else the first. Returns its view, or null.
  */
-export function editTextBox(main, pos, x = null, y = null) {
+export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   closeTextBox();
   const node = main.state.doc.nodeAt(pos);
   const img = main.nodeDOM(pos);
@@ -49,7 +49,7 @@ export function editTextBox(main, pos, x = null, y = null) {
   // The smallest box under the point, so a box inside another one wins.
   const under = x == null ? [] : boxes.map((b, k) => ({ b, k })).filter(({ b }) => inside(b)).sort((p, q) => p.b.rect[2] * p.b.rect[3] - q.b.rect[2] * q.b.rect[3]);
   if (x != null && !under.length && boxes.length > 1) return null;
-  const { b: box, k } = under[0] || { b: boxes[0], k: 0 };
+  const { b: box, k } = k0 != null && boxes[k0] ? { b: boxes[k0], k: k0 } : under[0] || { b: boxes[0], k: 0 };
   const doc0 = main.odx.session.textBox(node.attrs.xml, k);
   if (!doc0) return null;
   const host = main.dom.parentElement;
@@ -85,7 +85,7 @@ export function editTextBox(main, pos, x = null, y = null) {
       main.odx.notify?.(tv);
     },
   });
-  tv.odx = { ...main.odx, isStory: true };
+  tv.odx = { ...main.odx, isStory: true, main };
   main.odx.hfView = tv;
   // A click anywhere else (but the toolbar, which formats the box's text) closes it, as in Word.
   const outside = (e) => {

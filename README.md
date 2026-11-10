@@ -117,7 +117,9 @@ fs.writeFileSync('out.docx', s.save());
   sentence's first word and a lone "i" capitalised, and common misspellings. Ctrl+Z after a correction gives back what
   was typed. Off with `features: { autocorrect: false }`.
 - **Find and Replace** (Ctrl+F, Ctrl+H): match case, whole words, and patterns (regular expressions: `\d{4}`,
-  `colou?r`), with what a pattern's parentheses caught reused in the replacement as `$1`, `$2`.
+  `colou?r`), with what a pattern's parentheses caught reused in the replacement as `$1`, `$2`. As in Word, it goes
+  through the text boxes, headers, footers, footnotes and endnotes after the main text, opening each with the match
+  selected, and Replace All changes them all.
 - **Fields worked out as Word works them out**: in headers and footers, a running head (STYLEREF "Heading 1"), page
   references (PAGEREF) and cross-references (REF) on every page, with PAGE and NUMPAGES. In the body, fields keep their
   saved results, as in Word, until updated: F9, References > Update Fields or `api.updateFields()` gives every page

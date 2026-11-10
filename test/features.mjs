@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { unzipSync, strFromU8 } from 'fflate';
 
 const root = path.resolve('demo');
 const server = http.createServer((req, res) => {
@@ -199,6 +200,41 @@ const toc = await page.evaluate(() => [...document.querySelectorAll('.odx-conten
 }));
 check(toc.length === 30 && toc.every((x) => x.sameLine && x.atRight), `TOC: each page number right-aligned on its tab's line (${toc.filter((x) => x.sameLine && x.atRight).length}/30)`);
 check(toc.some((x) => x.startsLine), 'TOC: a title with no room left takes its tab and number to the next line');
+
+// Find goes through every part of the document as Word's does (mkfindall.mjs): the main text, a text box, the header
+// and footer, a footnote and an endnote, opening each part with its match selected; Replace All changes them all.
+await open('find-all.docx');
+await page.click('.odx-content p');
+await page.keyboard.press('Control+Home');
+await page.keyboard.press('Control+f');
+await page.fill('.odx-findbar input[aria-label="Find"]', 'apple');
+const visits = [];
+for (let i = 0; i < 8; i++) {
+  await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
+  await page.waitForTimeout(250);
+  visits.push(await page.evaluate(() => {
+    const v = window.odx.view.odx.hfView || window.odx.view;
+    const { from, to } = v.state.selection;
+    const part = v.dom.closest('.odx-txbxedit') ? 'box' : v.dom.closest('.odx-hfedit-header') ? 'header' : v.dom.closest('.odx-hfedit-footer') ? 'footer'
+      : v.dom.closest('.odx-noteedit') ? (v.state.doc.textContent.includes('endnote') ? 'endnote' : 'footnote') : 'body';
+    return `${part}:${v.state.doc.textBetween(from, to)}`;
+  }));
+}
+const info = await page.textContent('.odx-findinfo');
+check(visits.join(' ') === 'body:apple body:apple box:apple header:apple footer:apple footnote:apple endnote:apple body:apple' && info === '7 results',
+  `Find goes through the body, text box, header, footer and notes (${visits.join(' ')}; ${info})`);
+await page.keyboard.press('Control+h');
+await page.fill('.odx-findbar input[aria-label="Replace with"]', 'pear');
+await page.click('.odx-findbar button:has-text("Replace all")');
+await page.waitForTimeout(500);
+const replaced = await page.textContent('.odx-findinfo');
+const saved = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
+const partText = (f) => strFromU8(saved[f]).replace(/<w:t\b[^>]*>([^<]*)<\/w:t>|<[^>]+>/g, '$1');
+const parts = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+const pears = parts.map((f) => (partText(f).match(/pear/g) || []).length);
+check(replaced === '7 results' && parts.every((f) => !partText(f).includes('apple')) && pears.join() === '4,1,1,1,1',
+  `Replace All in every part, saved (${replaced}; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy)`);
+await page.keyboard.press('Escape');
 
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);

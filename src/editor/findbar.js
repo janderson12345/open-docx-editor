@@ -1,6 +1,7 @@
-// Find and Replace: the bar under the ribbon (Ctrl+F, Ctrl+H).
+// Find and Replace: the bar under the ribbon (Ctrl+F, Ctrl+H), through the main text, text boxes, headers, footers
+// and notes (findstories.js).
 import { el } from './ribbonkit.js';
-import { findNext, replaceOne, replaceAll } from './find.js';
+import { findNextAll, replaceOneAll, replaceAllStories } from './findstories.js';
 
 /** The bar (hidden until opened) and `openFind(replace)`, a command that opens it with or without the replace row. */
 export function createFindBar(getView, withView) {
@@ -25,17 +26,17 @@ export function createFindBar(getView, withView) {
     findInfo.textContent = n == null ? '' : n ? `${n} result${n === 1 ? '' : 's'}` : 'No results';
   };
   const replRow = el('span', { class: 'odx-replrow' }, replBox,
-    el('button', { type: 'button', onmousedown: fdo((v) => replaceOne(v, findBox.value, replBox.value, fOpts())) }, 'Replace'),
-    el('button', { type: 'button', onmousedown: fdo((v) => { const n = replaceAll(v, findBox.value, replBox.value, fOpts()); findInfo.textContent = ''; return n; }) }, 'Replace all'));
+    el('button', { type: 'button', onmousedown: fdo((v) => replaceOneAll(v, findBox.value, replBox.value, fOpts())) }, 'Replace'),
+    el('button', { type: 'button', onmousedown: fdo((v) => { const n = replaceAllStories(v, findBox.value, replBox.value, fOpts()); findInfo.textContent = ''; return n; }) }, 'Replace all'));
   const findBar = el('div', { class: 'odx-findbar', hidden: true },
     findBox,
-    el('button', { type: 'button', title: 'Previous result', onmousedown: fdo((v) => findNext(v, findBox.value, fOpts(), -1)) }, '↑'),
-    el('button', { type: 'button', title: 'Next result', onmousedown: fdo((v) => findNext(v, findBox.value, fOpts(), 1)) }, '↓'),
+    el('button', { type: 'button', title: 'Previous result', onmousedown: fdo((v) => findNextAll(v, findBox.value, fOpts(), -1)) }, '↑'),
+    el('button', { type: 'button', title: 'Next result', onmousedown: fdo((v) => findNextAll(v, findBox.value, fOpts(), 1)) }, '↓'),
     el('label', {}, matchCase, 'Match case'), el('label', {}, wholeWord, 'Whole words'), el('label', {}, regex, 'Patterns'),
     replRow, findInfo,
     el('button', { type: 'button', title: 'Close', class: 'odx-close', onmousedown: (e) => { e.preventDefault(); findBar.hidden = true; getView()?.focus(); } }, '✕'));
   findBox.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') fdo((v) => findNext(v, findBox.value, fOpts(), e.shiftKey ? -1 : 1))(e);
+    if (e.key === 'Enter') fdo((v) => findNextAll(v, findBox.value, fOpts(), e.shiftKey ? -1 : 1))(e);
     if (e.key === 'Escape') { findBar.hidden = true; getView()?.focus(); }
   });
   const openFind = (replace) => withView((v) => {
