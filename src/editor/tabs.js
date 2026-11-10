@@ -28,7 +28,8 @@ function runWidth(p, tab, decimal) {
       if (i >= 0) { r.setEnd(n, i); break; }
     }
   }
-  const rects = [...r.getClientRects()];
+  // (Empty boxes left out: a field's hidden code can sit at the end of a line the text after it wrapped from.)
+  const rects = [...r.getClientRects()].filter((x) => x.width > 0);
   if (!rects.length) return 0;
   const top = rects[0].top;
   const line = rects.filter((x) => Math.abs(x.top - top) < 2);
@@ -84,7 +85,12 @@ export function layoutTabsIn(root, session, nodeOf) {
       else if (stop.val === 'right' || stop.val === 'end' || stop.val === 'decimal' || stop.val === 'center') {
         const rw = runWidth(p, s, stop.val === 'decimal');
         const end = Math.min(stop.x, right);
-        w = end - x - (stop.val === 'center' ? rw / 2 : rw) - 0.5; // sub-pixel slack, or a stop at the margin wraps
+        const used = stop.val === 'center' ? rw / 2 : rw;
+        w = end - x - used - 0.5; // sub-pixel slack, or a stop at the margin wraps
+        // Text that no longer fits before the stop takes its tab to the next line, as Word lays out a long TOC entry:
+        // the line's text stays, and the tab starts the next line at the paragraph's indent with its leader up to
+        // the right-aligned text (a tab wider than what is left of the line wraps before it).
+        if (w < 0 && x + rw > right + 0.5) w = end - startMargin - used - 0.5;
       } else w = stop.x - x;
       // Dot, middle-dot and hyphen leaders are characters, as Word draws them (editor.css); rules stay lines.
       const chars = stop?.leader && ['dot', 'middleDot', 'hyphen'].includes(stop.leader);

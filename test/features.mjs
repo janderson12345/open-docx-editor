@@ -188,6 +188,17 @@ await page.click('.odx-protectnote button');
 await typeAt('marked as final', 'GG');
 check(/marked this document as final/.test(finalNote) && !(await bodyText()).includes('FF') && (await bodyText()).includes('GG'), 'Mark as Final: read-only, then Edit Anyway');
 
+// Table of contents lines (mktoc.mjs): the page number sits right-aligned at the margin on its tab's line, also when
+// the title leaves no room for it, where the tab starts the next line at the indent, as in Word's PDF of the file.
+await open('toc-wrap.docx');
+const toc = await page.evaluate(() => [...document.querySelectorAll('.odx-content p')].filter((p) => p.querySelectorAll('.odx-tab').length === 2).map((p) => {
+  const tab = p.querySelectorAll('.odx-tab')[1].getBoundingClientRect(), pr = p.getBoundingClientRect();
+  const num = [...p.querySelectorAll('.odx-t')].pop().getBoundingClientRect();
+  return { sameLine: num.bottom > tab.top && num.top < tab.bottom, atRight: Math.abs(num.right - pr.right) < 2, startsLine: Math.abs(tab.left - pr.left) < 1 };
+}));
+check(toc.length === 30 && toc.every((x) => x.sameLine && x.atRight), `TOC: each page number right-aligned on its tab's line (${toc.filter((x) => x.sameLine && x.atRight).length}/30)`);
+check(toc.some((x) => x.startsLine), 'TOC: a title with no room left takes its tab and number to the next line');
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
