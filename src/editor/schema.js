@@ -20,6 +20,15 @@ const tables = tableNodes({
   cellAttributes: {
     tcPr: { // [[localName, xml], ...] minus gridSpan/vMerge; a tracked cell insertion or deletion is shown (editor.css)
       default: [],
+      // A pasted cell (a table from another program or a web page): its background and vertical alignment, as cell properties.
+      getFromDOM(dom) {
+        const out = [];
+        const fill = cssHex(dom.style?.backgroundColor);
+        if (fill) out.push(['shd', `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`]);
+        const va = { middle: 'center', bottom: 'bottom', top: 'top' }[dom.style?.verticalAlign];
+        if (va) out.push(['vAlign', `<w:vAlign w:val="${va}"/>`]);
+        return out;
+      },
       setDOMAttr(value, attrs) {
         const rev = (value || []).some((t) => t[0] === 'cellIns') ? 'ins' : (value || []).some((t) => t[0] === 'cellDel') ? 'del' : null;
         if (rev) attrs['data-odx-cell'] = rev;
@@ -69,6 +78,37 @@ function revAttrs(d) {
 
 const HEADING_TAGS = { h1: 'Heading1', h2: 'Heading2', h3: 'Heading3', h4: 'Heading4', h5: 'Heading5', h6: 'Heading6' };
 
+/** A CSS colour (rgb(), #rrggbb) as Word's RRGGBB, or null (none, transparent, white). */
+function cssHex(v) {
+  const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?/.exec(v || '');
+  const hex = m ? (m[4] != null && Number(m[4]) === 0 ? null : [m[1], m[2], m[3]].map((x) => Number(x).toString(16).padStart(2, '0')).join('')) : (/^#([0-9a-f]{6})$/i.exec(v || '') || [])[1];
+  return hex && hex.toUpperCase() !== 'FFFFFF' ? hex.toUpperCase() : null;
+}
+
+/** A pasted paragraph's spacing and indents (CSS margins, text-indent, line-height) as w:spacing and w:ind. */
+function pastedSpacing(d) {
+  const tw = (v) => {
+    const m = /^(-?[\d.]+)(pt|px)$/.exec(v || '');
+    return m ? Math.round(Number(m[1]) * (m[2] === 'pt' ? 20 : 15)) : null;
+  };
+  const extra = [], view = {};
+  const before = tw(d.style.marginTop), after = tw(d.style.marginBottom);
+  const lh = /^[\d.]+$/.test(d.style.lineHeight || '') ? Math.round(Number(d.style.lineHeight) * 240) : null;
+  if (before != null || after != null || lh) {
+    extra.push(['spacing', `<w:spacing${before != null ? ` w:before="${before}"` : ''}${after != null ? ` w:after="${after}"` : ''}${lh ? ` w:line="${lh}" w:lineRule="auto"` : ''}/>`]);
+    if (before != null) view.before = before;
+    if (after != null) view.after = after;
+    if (lh) Object.assign(view, { line: lh, lineRule: 'auto' });
+  }
+  const left = tw(d.style.marginLeft), first = tw(d.style.textIndent);
+  if (left || first) {
+    extra.push(['ind', `<w:ind${left ? ` w:left="${left}"` : ''}${first ? (first > 0 ? ` w:firstLine="${first}"` : ` w:hanging="${-first}"`) : ''}/>`]);
+    if (left) view.indLeft = left;
+    if (first) view.indFirst = first;
+  }
+  return extra.length ? { extra, view } : {};
+}
+
 /** Pictures as drawn (their address -> their attrs), so a copy of one pasted back in is the same picture. */
 export const shownImages = new Map();
 
@@ -91,7 +131,7 @@ export const schema = new Schema({
         deco: { default: null }, // computed by the editor (list label, contextual spacing); never saved
       },
       parseDOM: [
-        { tag: 'p', getAttrs: (d) => ({ styleId: d.getAttribute('data-style') || null, align: alignFromCss(d.style.textAlign) }) },
+        { tag: 'p', getAttrs: (d) => ({ styleId: d.getAttribute('data-style') || null, align: alignFromCss(d.style.textAlign), ...pastedSpacing(d) }) },
         ...Object.entries(HEADING_TAGS).map(([tag, styleId]) => ({ tag, attrs: { styleId } })),
         { tag: 'li', getAttrs: () => ({}) },
       ],

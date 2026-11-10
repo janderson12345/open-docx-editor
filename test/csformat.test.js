@@ -93,3 +93,15 @@ test('Right-to-Left Text Direction sets the paragraph\'s w:bidi, and Left-to-Rig
   setDirection(false)(s, (tr) => { s = s.apply(tr); });
   assert.equal(pPrXml(s.doc.firstChild.attrs), '<w:pPr><w:jc w:val="left"/></w:pPr>');
 });
+
+test('a pasted paragraph keeps its spacing, line spacing and indents; a pasted cell its shading and vertical alignment', async () => {
+  const { pPrXml } = await import('../src/ooxml/writer.js');
+  const el = (style, attrs = {}) => ({ style, getAttribute: (k) => attrs[k] ?? null, hasAttribute: (k) => k in attrs });
+  const p = el({ marginTop: '12pt', marginBottom: '6pt', lineHeight: '1.38', marginLeft: '36pt', textIndent: '-18pt', textAlign: 'center' });
+  const attrs = schema.nodes.paragraph.spec.parseDOM[0].getAttrs(p);
+  const node = schema.nodes.paragraph.create(attrs);
+  assert.equal(pPrXml(node.attrs), '<w:pPr><w:spacing w:before="240" w:after="120" w:line="331" w:lineRule="auto"/><w:ind w:left="720" w:hanging="360"/><w:jc w:val="center"/></w:pPr>');
+  const td = el({ backgroundColor: 'rgb(217, 234, 211)', verticalAlign: 'middle' });
+  const cellAttrs = schema.nodes.table_cell.spec.parseDOM[0].getAttrs(td);
+  assert.deepEqual(cellAttrs.tcPr.map((t) => t[1]), ['<w:shd w:val="clear" w:color="auto" w:fill="D9EAD3"/>', '<w:vAlign w:val="center"/>']);
+});
