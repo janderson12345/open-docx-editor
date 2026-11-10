@@ -65,6 +65,19 @@ const notes = await page.evaluate(() => [...document.querySelectorAll('.odx-shee
 }));
 check(notes.length >= 5 && notes.every((t) => t != null && t >= 96 + 20), `long footnotes continue over ${notes.length} pages, below each page's text (${notes.map((t) => Math.round(t)).join(',')})`);
 
+// An input method (Chinese pinyin) composing with Track Changes on: the composed text is one tracked insertion, and
+// nothing of the letters typed while composing is left behind.
+await page.evaluate(() => { const s = document.querySelector('.odx-tracksel'); s.value = 'on'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.click('.odx-content > p');
+await page.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('.odx-content > p')); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); });
+const cdp = await page.context().newCDPSession(page);
+for (const s of ['z', 'zh', 'zhong']) { await cdp.send('Input.imeSetComposition', { text: s, selectionStart: s.length, selectionEnd: s.length }); await page.waitForTimeout(60); }
+await cdp.send('Input.insertText', { text: '中文' });
+await page.waitForTimeout(400);
+const ime = await page.evaluate(() => ({ text: document.querySelector('.odx-content > p').textContent, ins: [...document.querySelectorAll('.odx-content ins.odx-ins')].map((e) => e.textContent).join('|') }));
+check(ime.text.endsWith('中文') && !/z/.test(ime.text.slice(-8)) && ime.ins === '中文', `IME input with Track Changes on is one tracked insertion (${JSON.stringify(ime)})`);
+await page.evaluate(() => { const s = document.querySelector('.odx-tracksel'); s.value = 'off'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+
 await open('rtl-hebrew.docx');
 const rtl = await page.evaluate(() => {
   const p = document.querySelectorAll('.odx-content > p')[1];

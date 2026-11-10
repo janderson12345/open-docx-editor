@@ -417,6 +417,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   mount.replaceChildren(sheet);
 
   let pages = null;
+  let ime = null; // the text an input method is composing with Track Changes on, { from, to }
   const view = new EditorView(sheet, {
     state,
     attributes: { spellcheck: 'true', class: 'odx-content', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Document', lang: session.lang || 'en-US' },
@@ -428,7 +429,17 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
       // With Track Changes on, edits are recorded as revisions (undo/redo replay them as they were).
       const track = tracking(v.state);
       // (Not others' edits arriving in a shared document: they were tracked, if at all, where they were made.)
-      if (track.on && tr.docChanged && !tr.getMeta('odx-untracked') && !tr.getMeta('history$') && !(collab && (collab.remote(tr) || tr.getMeta('odx-remote')))) tr = trackTransaction(v.state, tr, track.author);
+      const tracked = track.on && tr.docChanged && !tr.getMeta('odx-untracked') && !tr.getMeta('history$') && !(collab && (collab.remote(tr) || tr.getMeta('odx-remote')));
+      // (While an input method composes (Chinese, Japanese...), its text is left as typed: marking it then redraws the
+      // text under the composition, which leaves its first letter behind. It is marked inserted when the composition ends.)
+      if (ime) ime = { from: tr.mapping.map(ime.from, -1), to: tr.mapping.map(ime.to, 1) };
+      if (tracked && (v.composing || ime)) {
+        tr.mapping.maps.forEach((m, i) => m.forEach((_a, _b, s, e) => {
+          const rest = tr.mapping.slice(i + 1);
+          const a = rest.map(s, -1), z = rest.map(e, 1);
+          ime = ime ? { from: Math.min(ime.from, a), to: Math.max(ime.to, z) } : { from: a, to: z };
+        }));
+      } else if (tracked) tr = trackTransaction(v.state, tr, track.author);
       const sectPr = v.state.doc.attrs.sectPr;
       v.updateState(v.state.apply(tr));
       // (A shared document's own attributes, its last section's page setup and header references, go to the room.)
@@ -438,6 +449,18 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
       onChange && v.odx && onChange(v, tr);
     },
   });
+  // The composed text, once the input method is done: taken out untracked and typed again, so it is a tracked insertion.
+  const imeDone = () => {
+    if (!ime || view.isDestroyed) return;
+    if (view.composing) { setTimeout(imeDone, 80); return; }
+    const { from, to } = ime;
+    ime = null;
+    const text = view.state.doc.textBetween(Math.max(0, from), Math.min(view.state.doc.content.size, to), '');
+    if (!text || !tracking(view.state).on) return;
+    view.dispatch(view.state.tr.delete(from, to).setMeta('odx-untracked', true).setMeta('addToHistory', false));
+    view.dispatch(view.state.tr.insertText(text, from));
+  };
+  view.dom.addEventListener('compositionend', () => setTimeout(imeDone, 80));
   pages = createPages(view, session, { sheet, scope });
   view.odx = {
     session,
