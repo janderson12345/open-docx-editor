@@ -33,3 +33,13 @@ test('a picture that is a link (a:hlinkClick) keeps its address, shown on the pi
   const bad = schema.node('image', { ...img.attrs, href: 'javascript:alert(1)' });
   assert.equal(schema.nodes.image.spec.toDOM(bad)[1]['data-href'], null);
 });
+
+test('removing a link takes its Hyperlink character style too', async () => {
+  const { setLink } = await import('../src/editor/commands.js');
+  const { EditorState, TextSelection } = await import('prosemirror-state');
+  const t = schema.text('site', [schema.marks.cstyle.create({ val: 'Hyperlink' }), schema.marks.link.create({ href: 'https://example.com/' })]);
+  const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [t])]);
+  let s = EditorState.create({ doc, selection: TextSelection.create(doc, 1, 5) });
+  setLink(null)(s, (tr) => { s = s.apply(tr); });
+  assert.deepEqual(s.doc.firstChild.firstChild.marks.map((m) => m.type.name), []);
+});

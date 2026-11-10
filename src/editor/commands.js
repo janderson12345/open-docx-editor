@@ -170,6 +170,11 @@ export function setLink(href) {
     } else {
       tr.removeMark(from, to, type);
       if (href) tr.addMark(from, to, type.create({ href }));
+      // Remove Hyperlink takes the link's look with it (its Hyperlink character style: blue, underlined), as in Word.
+      else tr.doc.nodesBetween(from, to, (n, pos) => {
+        const cs = n.isText && n.marks.find((m) => m.type.name === 'cstyle' && /^(Hyperlink|FollowedHyperlink)$/.test(m.attrs.val));
+        if (cs) tr.removeMark(Math.max(pos, from), Math.min(pos + n.nodeSize, to), cs);
+      });
     }
     dispatch(tr.scrollIntoView());
     return true;
