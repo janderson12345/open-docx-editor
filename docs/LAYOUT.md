@@ -93,6 +93,16 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 - Each font has a fixed print baseline offset (a pixel amount, not a share of the em), fitted on Word's PDFs.
 - Sections with different page sizes print each page as its own named @page.
 
+**Fields** (Word's PDFs of `test/fixtures/fields.docx`, as saved and with its fields updated)
+- A running head (STYLEREF) is the first paragraph in its style on the page; on a page with none, the last before it;
+  before the first, the first after it. With \l, the last on the page.
+- PAGEREF with \p is "above" or "below" on the same page, else "on page N"; a page's number is in its section's
+  numbering and format.
+- Word updates the body's fields as it prints or exports a PDF (an unused style's STYLEREF becomes "Error! No text
+  of specified style in document.", a missing style's "Error! Use the Home tab..."); on screen it keeps their saved
+  results until F9. A STYLEREF naming a character style finds text in that style (sample S106's footer). (Sample
+  S106's stored Word PDF is older and shows a body STYLEREF's saved text; Word's export today updates it.)
+
 **Compatibility rules** (settings.xml w:compat, which older documents carry; each checked with Word's PDFs of a test
 document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcompat.mjs`)
 - `splitPgBreakAndParaMark`: the paragraph mark after a page break goes to the next page, an empty line at its top.

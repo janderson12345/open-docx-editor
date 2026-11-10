@@ -63,6 +63,17 @@ for (const scheme of ['light', 'dark']) {
   await page.waitForSelector('.odx-findbar:not([hidden])');
   await check('Find and Replace');
   await page.keyboard.press('Escape');
+  // Review > Restrict Editing open; then a document marked final, with its notice and Edit Anyway.
+  await page.click('[role=tab]:text-is("Review")');
+  await page.click('[aria-label="Restrict editing"]');
+  await page.waitForSelector('.odx-pop .odx-protect');
+  await check('Restrict Editing');
+  await page.focus('.odx-pop select');
+  await page.keyboard.press('Escape');
+  await page.setInputFiles('input[type=file]', 'test/fixtures/protect-final.docx');
+  await page.waitForSelector('.odx-protectnote', { timeout: 8000 }).catch(() => fail(`${scheme}: the marked-as-final notice didn't appear`));
+  await check('marked-as-final notice');
+  await page.click('.odx-protectnote button');
   // The notice offering a draft of unsaved changes back (the demo keeps drafts): edit, leave, open the file again.
   await page.setInputFiles('input[type=file]', 'test/fixtures/rich.docx');
   await page.waitForFunction(() => window.odx?.fileName === 'rich.docx');

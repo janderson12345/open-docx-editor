@@ -111,7 +111,10 @@ export function ribbonKit(container, getView) {
     popOwner = owner;
     owner.setAttribute('aria-expanded', 'true');
     pop.setAttribute('aria-label', owner.getAttribute('aria-label') || owner.textContent);
-    pop.querySelectorAll('button').forEach((b) => { if (!b.getAttribute('role')) b.setAttribute('role', 'menuitem'); if (!b.getAttribute('aria-label') && b.title && !b.textContent.trim()) b.setAttribute('aria-label', b.title); });
+    // (One with fields to fill in, as Restrict Editing's, is a dialog rather than a menu.)
+    const form = !!pop.querySelector('input, select, textarea');
+    pop.setAttribute('role', form ? 'dialog' : 'menu');
+    pop.querySelectorAll('button').forEach((b) => { if (!form && !b.getAttribute('role')) b.setAttribute('role', 'menuitem'); if (!b.getAttribute('aria-label') && b.title && !b.textContent.trim()) b.setAttribute('aria-label', b.title); });
     if (owner.contains(document.activeElement) || owner === document.activeElement) setTimeout(() => pop.querySelector('button:not([disabled]), input, select')?.focus(), 300); // after the reader has said "expanded"
     const r = owner.getBoundingClientRect();
     const host = container.getBoundingClientRect();

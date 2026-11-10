@@ -8,6 +8,7 @@ import { schema } from './schema.js';
 import { fieldInfo } from '../ooxml/reader.js';
 import { legacyInfo } from '../ooxml/ffdata.js';
 import { unescapeXml } from '../ooxml/xml.js';
+import { openSectionAt } from './protect.js';
 
 
 /** Every field in document order: [{ key, tag, alias, kind, from, to, block, value, checked?, items? }] */
@@ -227,13 +228,15 @@ export function formsPlugin() {
       apply: (tr, on) => { const m = tr.getMeta(formsKey); return m && 'on' in m ? m.on : on; },
     },
     filterTransaction(tr, state) {
-      if (!formsKey.getState(state) || !tr.docChanged || tr.getMeta(formsKey)?.allow || tr.getMeta('history$')) return true;
+      if (!formsKey.getState(state) || !tr.docChanged || tr.getMeta(formsKey)?.allow || tr.getMeta('history$') || tr.getMeta('odx-fields')) return true;
       for (let i = 0; i < tr.steps.length; i++) {
         const step = tr.steps[i];
         const doc = tr.docs[i];
         const fields = listFields(doc);
         const from = step.from ?? step.pos;
         const to = step.to ?? step.pos;
+        // (A section the form leaves unprotected is edited freely.)
+        if (from != null && openSectionAt(doc, from) && openSectionAt(doc, to)) continue;
         if (from == null || !inField(fields, from, to)) return false;
         // Typing must not swallow the whole control: keep at least the field itself.
         const f = fields.find((x) => from >= x.from && to <= x.to);
@@ -250,7 +253,7 @@ export function formsPlugin() {
       if (trs.some((t) => t.selectionSet) && !trs.some((t) => t.docChanged)) {
         const fields = listFields(state.doc);
         const { from, to } = state.selection;
-        if (fields.length && !fields.some((x) => from >= x.from && to <= x.to)) {
+        if (fields.length && !fields.some((x) => from >= x.from && to <= x.to) && !openSectionAt(state.doc, from)) {
           const to = fields.find((x) => x.from >= from) || fields[0];
           say(describeField(to)); // (as Tab does: NVDA heard only the placeholder after Ctrl+Home)
           return state.tr.setSelection(fieldSelection(state.doc, to));
@@ -353,6 +356,7 @@ export function formsPlugin() {
         if (!formsKey.getState(view.state)) return false;
         const fields = listFields(view.state.doc);
         const f = fields.find((x) => pos >= x.from && pos <= x.to);
+        if (!f && openSectionAt(view.state.doc, pos)) return false;
         if (!f) {
           // A click on the form's own text: the caret goes to the field after it (see appendTransaction), here once the
           // click is over, so the browser's caret moves there too and typing isn't lost.

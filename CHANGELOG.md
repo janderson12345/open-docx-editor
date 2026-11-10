@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Restricted editing**, as Word enforces it: documents protected read-only, for comments or for tracked changes,
+  with their editable parts for everyone or for named users (`editors`) highlighted and open; forms with unprotected
+  sections; formatting limited to the unlocked styles; Mark as Final, Always open read-only and a password to modify
+  (read-only until Edit Anyway). Review > Restrict Editing starts and stops protection with an optional password,
+  hashed as Word hashes it (`api.protection`, `protect()`, `unprotect()`, `editAnyway()`).
+- **AI agents**: `open-docx-editor/agent` (`openDocument`, and `api.agent()` in the editor) reads a document as
+  paragraphs with stable ids, an outline or Markdown, and edits it in plain terms (replace, rewrite, insert, delete,
+  comment, reply, fill fields), each edit a tracked change under the agent's name. `open-docx-editor-mcp`, an MCP
+  server, gives AI assistants those tools on the .docx files in one folder. Word reads their tracked changes and
+  comments as its own.
+- `@xmldom/xmldom` is now a dependency (the MCP server reads XML in Node with it).
+- **Reference fields**: STYLEREF running heads, PAGEREF and REF in headers and footers worked out for each page, as
+  Word does; Update Fields (F9, References > Update Fields, `api.updateFields()`) for the body's page numbers,
+  cross-references and table of contents; printing and PDF export update them first, as Word does. A running head
+  that names a character style finds text in it. Checked against
+  Word's PDF of a test document. A table of contents' page numbers follow a section's own numbering (roman
+  numerals, restarting) when it's updated.
 - **TIFF pictures** (scans and faxes: uncompressed, LZW, PackBits, Deflate, JPEG and CCITT fax compression) are shown, on
   screen, in print and in PDF export; the document keeps the TIFF. Browsers can't show TIFF themselves.
 

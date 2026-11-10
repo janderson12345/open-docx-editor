@@ -7,6 +7,7 @@ import * as bm from './bookmarks.js';
 import { LIST_LIBRARY } from '../ooxml/template.js';
 import * as notes from './notes.js';
 import * as toc from './toc.js';
+import { updateFieldsCommand } from './refs.js';
 import * as hf from './hfedit.js';
 import * as tb from './txbxedit.js';
 import { toggleMarks, marksOn } from './marks.js';
@@ -18,6 +19,8 @@ import { schema } from './schema.js';
 import * as cmd from './commands.js';
 import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './track.js';
 import { createFindBar } from './findbar.js';
+import { protectionOf } from './protect.js';
+import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
 import { el, iconize, slug, ribbonKit } from './ribbonkit.js';
 import * as sp from '../ooxml/sectpr.js';
@@ -36,10 +39,11 @@ const MARGINS = [['Normal', 1440, 1440, 1440, 1440], ['Narrow', 720, 720, 720, 7
 /**
  * @param container element the ribbon is drawn into
  * @param getView () => the current EditorView
- * @param opts { onOpen(file), onNew(), onSave(), onReopen(bytes) } — onReopen reloads the
- *   document after a page setup change (size, margins, orientation)
+ * @param opts { onOpen(file), onNew(), onSave(), onReopen(bytes), protection } — onReopen reloads the
+ *   document after a page setup change (size, margins, orientation); protection: { get(), protect(opts),
+ *   unprotect(password) } for Review > Restrict Editing (the editor API's)
  */
-export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf } = {}) {
+export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, protection = null } = {}) {
   const kit = ribbonKit(container, getView);
   const { run, withView, btn, grp, col, line, pop, openMenu, closeMenu, item, menu, pick } = kit;
   const ruler = createRuler(() => { const v = getView(); return v; });
@@ -51,6 +55,50 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     main.dispatch(main.state.tr.setDocAttribute('sectPr', main.state.doc.attrs.sectPr)); // marks the document changed
     return true;
   };
+  // Review > Restrict Editing, as Word's pane: what may be changed and a password; or, once enforced, Stop Protection.
+  const EDITS = [['readOnly', 'No changes (read only)'], ['comments', 'Comments'], ['trackedChanges', 'Tracked changes'], ['forms', 'Filling in forms']];
+  const typed = (attrs) => {
+    const i = el('input', attrs);
+    i.addEventListener('keydown', (e) => { if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation(); });
+    return i;
+  };
+  function restrictPanel() {
+    const p = protection.get();
+    if (!p) return [];
+    const msg = el('div', { class: 'odx-cap', role: 'status' });
+    const box = (...kids) => [el('div', { class: 'odx-protect' }, ...kids, msg)];
+    if (p.enforced && (p.edit || p.formatting)) {
+      const what = [p.edit && `Editing: ${EDITS.find((x) => x[0] === p.edit)[1].toLowerCase()}`, p.formatting && 'Formatting: only the allowed styles'].filter(Boolean).join('. ');
+      const pw = p.password ? typed({ type: 'password', class: 'odx-num', 'aria-label': 'Password', placeholder: 'Password', autocomplete: 'off' }) : null;
+      const stop = async (e) => {
+        e.preventDefault();
+        if (await protection.unprotect(pw ? pw.value : '')) { closeMenu(); announce('Protection stopped'); getView()?.focus(); } else { msg.textContent = 'The password is incorrect.'; pw?.focus(); }
+      };
+      pw?.addEventListener('keydown', (e) => { if (e.key === 'Enter') stop(e); });
+      setTimeout(() => pw?.focus(), 0);
+      return box(el('b', {}, 'This document is protected.'), el('div', {}, `${what}.`), pw, el('button', { type: 'button', class: 'odx-item', onmousedown: stop }, 'Stop Protection'));
+    }
+    const edit = el('select', { 'aria-label': 'Editing restrictions: allow only this type of editing' }, el('option', { value: '' }, 'No editing restrictions'), ...EDITS.map(([v, t]) => el('option', { value: v }, t)));
+    edit.value = p.edit || '';
+    const fmt = typed({ type: 'checkbox' });
+    fmt.checked = !!p.formatting;
+    const pw1 = typed({ type: 'password', class: 'odx-num', 'aria-label': 'New password (optional)', placeholder: 'New password (optional)', autocomplete: 'new-password' });
+    const pw2 = typed({ type: 'password', class: 'odx-num', 'aria-label': 'Reenter password to confirm', placeholder: 'Reenter password to confirm', autocomplete: 'new-password' });
+    const start = async (e) => {
+      e.preventDefault();
+      if (!edit.value && !fmt.checked) { msg.textContent = 'Choose a restriction first.'; return edit.focus(); }
+      if (pw1.value !== pw2.value) { msg.textContent = 'The passwords don’t match.'; return pw2.focus(); }
+      msg.textContent = 'Protecting…';
+      await protection.protect({ edit: edit.value || null, formatting: fmt.checked, password: pw1.value });
+      closeMenu();
+      announce('Protection started');
+      getView()?.focus();
+    };
+    return box(el('b', {}, 'Restrict editing'), el('label', { class: 'odx-cap' }, 'Allow only this type of editing:'), edit,
+      el('label', { class: 'odx-check' }, fmt, ' Limit formatting to the allowed styles'),
+      el('div', { class: 'odx-cap' }, 'A password (optional) is needed to stop the protection:'), pw1, pw2,
+      el('button', { type: 'button', class: 'odx-item', onmousedown: start }, 'Yes, Start Enforcing Protection'));
+  }
   // Styles gallery: tiles drawn in each style's own look (the document's style CSS applies inside).
   const styleTiles = el('div', { class: 'odx-stiles' });
   let styleList = [];
@@ -366,7 +414,8 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       grp('Table of Contents', menu('☰', 'Table of contents', () => [
         item('Automatic table', withView(toc.insertToc), { hint: 'Headings 1-3, with page numbers' }),
         item('Update table', withView(toc.updateToc)),
-      ], { label: 'Table of Contents', big: true })),
+      ], { label: 'Table of Contents', big: true }),
+      btn('↻', 'Update fields: page numbers, cross-references and the table of contents, from the pages as they are now (F9)', withView((v) => updateFieldsCommand(v, { all: true })), { label: 'Update Fields', big: true })),
       grp('Footnotes', btn('ᵃᵇ¹', 'Insert footnote (Ctrl+Alt+F)', withView((v) => notes.insertNote(v.odx.main || v, 'footnote')), { label: 'Insert Footnote', big: true }),
         btn('ⁱ', 'Insert endnote (Ctrl+Alt+D)', withView((v) => notes.insertNote(v.odx.main || v, 'endnote')), { label: 'Insert Endnote', big: true }),
         menu('↧', 'Next footnote', () => [item('Next footnote', withView((v) => notes.nextNote(v.odx.main || v, 'footnote'))), item('Next endnote', withView((v) => notes.nextNote(v.odx.main || v, 'endnote')))], { label: 'Next Footnote', big: true })),
@@ -388,6 +437,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
         btn('⇠', 'Previous comment', withView((v) => cm.gotoComment(v, -1)), { label: 'Previous', big: true }),
         btn('⇢', 'Next comment', withView((v) => cm.gotoComment(v, 1)), { label: 'Next', big: true })),
       grp('Markup', col(el('span', { class: 'odx-cap' }, 'Markup view:'), markupSel)),
+      ...(protection ? [grp('Protect', menu('🔒', 'Restrict editing', restrictPanel, { label: 'Restrict Editing', big: true }))] : []),
       grp('Tracking', col(el('span', { class: 'odx-cap' }, 'Track Changes:'), trackSel),
         menu('✓', 'Accept', () => [item('Accept this change', resolveChange(true)), item('Accept all changes', resolveAll(true))], { label: 'Accept', big: true }),
         menu('✗', 'Reject', () => [item('Reject this change', resolveChange(false)), item('Reject all changes', resolveAll(false))], { label: 'Reject', big: true }),
@@ -553,14 +603,16 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     setDocument(session) {
       if (ruler.shown) { ruler.toggle(getView()); ruler.toggle(getView()); }
       const def = session.styles.defaultParagraph;
-      styleList = [{ id: null, name: 'Normal' }, ...session.styleMenu().filter((x) => x.id !== def)];
+      const cfg = getView() && protectionOf(getView().state);
+      const allowed = (s) => !(cfg?.formatting && (cfg.locked.has(s.id) || cfg.locked.has(String(s.name).toLowerCase())));
+      styleList = [{ id: null, name: 'Normal' }, ...session.styleMenu().filter((x) => x.id !== def && allowed(x))];
       const quick = ['Normal', 'No Spacing', 'Heading 1', 'Heading 2', 'Heading 3', 'Title', 'Subtitle'];
       styleTiles.replaceChildren(...quick.map((n) => styleList.find((x) => x.name.toLowerCase() === n.toLowerCase())).filter(Boolean).slice(0, 4).map(tile));
       const scope = [...(getView()?.dom.parentElement.classList || [])].find((c) => c.startsWith('odx-doc-'));
       for (const c of [...styleGal.classList]) if (c.startsWith('odx-doc-')) styleGal.classList.remove(c);
       if (scope) styleGal.classList.add(scope);
       docScope = scope || '';
-      styleSel.replaceChildren(el('option', { value: '' }, 'Normal'), ...session.styleMenu().filter((s) => s.id !== session.styles.defaultParagraph).map((s) => el('option', { value: s.id }, s.name)));
+      styleSel.replaceChildren(el('option', { value: '' }, 'Normal'), ...session.styleMenu().filter((s) => s.id !== session.styles.defaultParagraph && allowed(s)).map((s) => el('option', { value: s.id }, s.name)));
       placeNav();
       fillNav();
     },

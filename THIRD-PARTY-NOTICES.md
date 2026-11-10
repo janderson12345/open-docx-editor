@@ -12,6 +12,7 @@ under its own license, all of them permissive. Their license texts are in each p
 | fflate | MIT | reading and writing the .docx zip |
 | pdf-lib, @pdf-lib/fontkit, @pdf-lib/standard-fonts, @pdf-lib/upng | MIT | PDF export (`open-docx-editor/pdf`) |
 | utif | MIT | showing TIFF pictures |
+| @xmldom/xmldom | MIT | reading XML in Node (the MCP server, `open-docx-editor/agent` outside a browser) |
 | pako | MIT AND Zlib | (pdf-lib's and utif's compression) |
 | tslib | 0BSD | (pdf-lib's helpers) |
 | yjs, y-prosemirror, lib0, isomorphic.js | MIT | co-editing (`open-docx-editor/collab`) |

@@ -98,9 +98,95 @@ const rtl = await page.evaluate(() => {
 });
 check(rtl[0] === 'rtl' && rtl[1] < 2, `a right-to-left paragraph starts at the right margin (${rtl[1].toFixed(1)}px)`);
 
+await open('fields.docx');
+// A running head (STYLEREF) worked out for each page, as Word does; the body's fields keep their saved results until
+// they're updated (F9), then match Word's (its PDF of the document with its fields updated).
+const heads = await page.evaluate(() => [...document.querySelectorAll('.odx-sheet .odx-header')].map((h) => h.textContent.replace(/\s+/g, ' ').trim()));
+check(heads.join(' | ') === 'Report — Introduction — page i | Report — Introduction — page 1 | Report — Results — page 2 | Report — Results — page 3', `running heads per page: ${heads.join(' | ')}`);
+const bodyText = () => page.evaluate(() => window.odx.view.state.doc.textContent);
+check((await bodyText()).includes('chapter 9, "Old title", on page 99'), 'the body keeps its saved field results until they are updated');
+const updated = await page.evaluate(() => window.odx.updateFields());
+const after = await bodyText();
+check(updated >= 5 && after.includes('chapter 2, "Methods of measurement", on page 1') && after.includes('results are on page 2, on page 2, and the introduction on page 1') && after.includes('Error! Reference source not found.'), `Update Fields gives Word's values (${updated} updated)`);
+await page.click('.odx-content p >> nth=1');
+await page.keyboard.press('Control+z');
+check((await bodyText()).includes('on page 99'), 'one Ctrl+Z puts the saved results back');
+
+// An agent working in the editor: its edit appears as a tracked change under its name; the person accepts it.
+const agentRun = await page.evaluate(() => {
+  const a = window.odx.agent({ author: 'Assistant' });
+  const head = a.outline()[2];
+  const n = a.replace('Results', 'Findings', { id: head.id });
+  const del = document.querySelector('.odx-content del.odx-del[data-author="Assistant"]')?.textContent;
+  const ins = document.querySelector('.odx-content ins.odx-ins[data-author="Assistant"]')?.textContent;
+  a.resolveChanges({ accept: true });
+  return { n, del, ins, after: a.outline()[2].text, left: a.changes().length };
+});
+check(agentRun.n === 1 && agentRun.del === 'Results' && agentRun.ins === 'Findings' && agentRun.after === 'Findings' && agentRun.left === 0, `an agent's edit shows as a tracked change under its name, then accepted (${JSON.stringify(agentRun)})`);
+
 await open('tiff.docx');
 const tiffs = await page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => i.complete && i.naturalWidth > 0));
 check(tiffs.length === 3 && tiffs.every(Boolean), `TIFF pictures (uncompressed, LZW, fax) are shown (${tiffs.length})`);
+
+// Restrict Editing, as Word enforces it.
+const typeAt = async (text, keys) => { await page.click(`.odx-content p:has-text("${text}")`); await page.keyboard.press('End'); await page.keyboard.type(keys); await page.waitForTimeout(150); };
+const note = () => page.evaluate(() => document.querySelector('.odx-protectnote span')?.textContent || '');
+await open('protect-readonly.docx');
+check(/can only be read/.test(await note()), 'a document protected read-only says so above the ribbon');
+await typeAt('This paragraph is locked.', 'XX');
+check(!(await bodyText()).includes('XX'), 'read-only: typing in a locked paragraph does nothing');
+const perms = await page.evaluate(() => [...document.querySelectorAll('.odx-content .odx-perm')].map((e) => e.textContent).join('|'));
+check(perms === 'Everyone may edit this.', `the part everyone may edit is highlighted, not the tester's (${perms})`);
+await page.click('.odx-content .odx-perm');
+await page.keyboard.type('YY');
+await page.waitForTimeout(150);
+check((await bodyText()).includes('YY'), 'read-only: the part everyone may edit can be typed in');
+check(await page.evaluate(() => window.odx.view.odx.session.comments.length === 0 && (document.querySelector('.odx-content p').click(), true)), 'no comments yet');
+await page.keyboard.press('Control+Alt+m');
+check(await page.evaluate(() => window.odx.view.odx.session.comments.length === 0), 'read-only: no comment can be added');
+// Comments only, with a password; then stopped with it.
+check(await page.evaluate(async () => { await window.odx.unprotect(); await window.odx.protect({ edit: 'comments', password: 'pw' }); return window.odx.protection.edit === 'comments' && window.odx.protection.password; }), 'Restrict Editing: protected for comments with a password');
+await typeAt('This paragraph is locked too.', 'ZZ');
+await page.keyboard.press('Control+Alt+m');
+await page.waitForTimeout(200);
+check(!(await bodyText()).includes('ZZ') && (await page.evaluate(() => window.odx.view.odx.session.comments.length)) === 1, 'comments only: no typing, but a comment is added');
+check(await page.evaluate(async () => !(await window.odx.unprotect('wrong')) && window.odx.protection.enforced && (await window.odx.unprotect('pw')) && !window.odx.protection.enforced), 'Stop Protection needs the password');
+// Tracked changes only: every edit tracked, Track Changes can't be turned off, nothing accepted.
+await page.evaluate(() => window.odx.protect({ edit: 'trackedChanges' }));
+await typeAt('This paragraph is locked.', 'TT');
+const tracked = await page.evaluate(() => [...document.querySelectorAll('.odx-content ins.odx-ins')].map((e) => e.textContent).join(''));
+await page.evaluate(() => { const t = document.querySelector('.odx-tracksel'); t.value = 'off'; t.dispatchEvent(new Event('change')); });
+await page.waitForTimeout(150);
+const stillOn = await page.evaluate(() => document.querySelector('.odx-tracksel').value);
+await page.evaluate(() => window.odx.view.focus());
+check(tracked.includes('TT') && stillOn === 'on', `tracked changes only: typing is tracked and Track Changes stays on (${tracked}, ${stillOn})`);
+await page.evaluate(() => window.odx.unprotect());
+// A protected form with an unprotected section.
+await open('protect-sections.docx');
+await typeAt('can be edited freely.', ' Yes.');
+await typeAt('This text of the form is locked.', 'QQ');
+// (A click on the form's own text puts the caret in its next field, as in Word: the typing goes there.)
+const formText = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => p.textContent));
+check(formText[0].endsWith('freely. Yes.') && formText[3] === 'This text of the form is locked.', `a protected form: its unprotected section is edited, the form's own text is not (${formText.join(' / ')})`);
+// Formatting limited to the allowed styles.
+await open('protect-format.docx');
+const styleNames = await page.evaluate(() => [...document.querySelectorAll('.odx-stile')].map((t) => t.title));
+check(styleNames.includes('Heading 1') && !styleNames.includes('Heading 2'), 'limited formatting: a locked style is not offered');
+await page.click('.odx-content p:has-text("Some text")');
+await page.keyboard.press('Control+a');
+await page.keyboard.press('Control+b');
+await page.waitForTimeout(150);
+await page.keyboard.press('Control+Home');
+check(await page.evaluate(() => !document.querySelector('.odx-content strong, .odx-content b')), 'limited formatting: no direct formatting (Ctrl+B does nothing)');
+await typeAt('Some text', ' More.');
+check((await bodyText()).includes('formatting. More.'), 'limited formatting: the text can still be edited');
+// Mark as Final: read-only until Edit Anyway, which takes the mark away.
+await open('protect-final.docx');
+await typeAt('marked as final', 'FF');
+const finalNote = await note();
+await page.click('.odx-protectnote button');
+await typeAt('marked as final', 'GG');
+check(/marked this document as final/.test(finalNote) && !(await bodyText()).includes('FF') && (await bodyText()).includes('GG'), 'Mark as Final: read-only, then Edit Anyway');
 
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);

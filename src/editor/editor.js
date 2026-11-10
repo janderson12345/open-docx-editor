@@ -11,6 +11,7 @@ import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands } from 'prosemirror-commands';
 import { history, undo, redo } from 'prosemirror-history';
 import { autocorrectPlugin } from './autocorrect.js';
+import { updateFieldsCommand } from './refs.js';
 import { tableEditing, columnResizing, goToNextCell, TableMap, TableView } from 'prosemirror-tables';
 import { listCounter, resolveStyle, tableCellCss, tableStylesCss, tablePlacementCss } from '../ooxml/styles.js';
 import { parseXml } from '../ooxml/xml.js';
@@ -43,6 +44,7 @@ import { csFormatPlugin } from './csformat.js';
 import { pastePictures, pictureLinks } from './pastepics.js';
 import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.js';
 import { twipsToPx } from '../ooxml/units.js';
+import { protectPlugin } from './protect.js';
 
 let scopeSeq = 0;
 
@@ -389,6 +391,8 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Mod-Alt-d': (s, d, v) => (v ? insertNote(v, 'endnote') : true),
     'Mod-Alt-m': (s, d, v) => { if (v) addComment(v); return true; },
     'Mod-Shift-8': (s, d, v) => (v ? toggleMarks(v) : true), // Show/Hide ¶, as in Word
+    // Update Fields, as in Word: those in the selection, or all of them with nothing selected.
+    F9: (s, d, v) => (v ? updateFieldsCommand(v) : true),
     Enter: cmd.splitParagraph(session),
     Backspace: chainCommands(trackedDelete(-1), cmd.outdentOrUnlist(session)),
     Delete: trackedDelete(1),
@@ -400,7 +404,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session)],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin()],
   });
 
   mount.classList.add('odx-canvas');

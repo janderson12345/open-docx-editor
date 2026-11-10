@@ -461,6 +461,8 @@ td[data-odx-phantom] { box-shadow: none !important; background: none !important;
 td[data-odx-phantom] > * { display: none; }
 /* Legacy form fields: Word's grey field shading on screen; in forms mode they look like the other fields. */
 @media screen { :not(.odx-no-ffshade) .odx-ff { background: #d9d9d9; } }
+/* Restrict Editing: the parts this user may still edit, highlighted as Word highlights them (on screen only). */
+@media screen { .odx-perm { background: rgba(255, 230, 80, .38); box-shadow: 0 0 0 1px rgba(200, 160, 0, .45); } }
 .odx-forms .odx-ff { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: pointer; }
 .odx-content table.odx-autofit { table-layout: auto; }
 /* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
@@ -587,10 +589,10 @@ td[data-odx-phantom] > * { display: none; }
 .odx-findbar label { display: inline-flex; align-items: center; gap: 4px; }
 .odx-findbar input[type=checkbox] { width: 24px; height: 24px; margin: 0; accent-color: var(--odx-accent); } /* (24px targets, WCAG 2.5.8) */
 /* Unsaved changes kept in the browser, offered back on opening (index.js drafts). */
-.odx-draftnote { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; font: 13px system-ui, sans-serif; color: var(--odx-bar-fg); background: var(--odx-on); border-bottom: 1px solid var(--odx-on-line); }
-.odx-draftnote > span { flex: 1 1 20em; }
-.odx-draftnote > button { font: inherit; min-height: 28px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 3px 12px; cursor: pointer; } /* (at least 24px in any font, WCAG 2.5.8) */
-.odx-draftnote > button:focus-visible { outline: 2px solid var(--odx-accent); outline-offset: 1px; }
+.odx-draftnote, .odx-protectnote { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; font: 13px system-ui, sans-serif; color: var(--odx-bar-fg); background: var(--odx-on); border-bottom: 1px solid var(--odx-on-line); }
+.odx-draftnote > span, .odx-protectnote > span { flex: 1 1 20em; }
+.odx-draftnote > button, .odx-protectnote > button, .odx-protectnote > input { font: inherit; min-height: 28px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 3px 12px; cursor: pointer; } /* (at least 24px in any font, WCAG 2.5.8) */
+.odx-draftnote > button:focus-visible, .odx-protectnote > button:focus-visible, .odx-protectnote > input:focus-visible { outline: 2px solid var(--odx-accent); outline-offset: 1px; }
 .odx-findbar input[type=text], .odx-findbar input[type=search], .odx-num { height: 26px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; }
 .odx-cap { font-size: 12px; }
 .odx-quick { display: flex; gap: 2px; }
@@ -741,7 +743,7 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-pl-hide { visibility: hidden !important; }
 /* Printing (and Save as PDF): only the pages, one sheet per printed page. */
 @media print {
-  .odx-toolbar { display: none !important; }
+  .odx-toolbar, .odx-protectnote, .odx-draftnote { display: none !important; }
   .odx-canvas { padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; }
   /* One unbreakable (inline-block) box, sliced at each page edge: the layout already put content where each
      page starts (block margins at a page break would otherwise be dropped by the browser). */
@@ -760,3 +762,8 @@ body.odx-painting .odx-content { cursor: copy; }
 @media print { .odx-content, .odx-content * { caret-color: transparent !important; } }
 @media print { .odx-imgsize { display: none; } }
 @media print { .odx-fm-layer, .odx-show-marks p.odx-fm-empty::before, .odx-show-marks .odx-tab::before, .odx-show-marks .odx-page-break::after { display: none !important; } }
+.odx-protect { padding: 6px; min-width: 260px; display: flex; flex-direction: column; gap: 6px; }
+.odx-protect .odx-num { width: auto; }
+.odx-protect .odx-item { width: auto; }
+.odx-protect .odx-check { display: flex; gap: 6px; align-items: center; }
+.odx-protect .odx-check input { width: 24px; height: 24px; margin: 0; } /* (WCAG 2.5.8: at least 24px) */

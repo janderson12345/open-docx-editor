@@ -85,15 +85,19 @@ reads saved files back as an independent check that their text survived.
 | `baseline.js` | Print baseline shift per font |
 | `textspans.js` | Each text node in a span of its own, so a line is as tall as its text in any document mode (Word's rule; see docs/LAYOUT.md) |
 | `track.js`, `comments.js`, `balloons.js` | Tracked changes, comments and the markup column |
+| `protect.js` | Restrict Editing enforced: read-only, comments or tracked changes only, editable ranges, locked styles |
 | `fields.js` | Content controls and forms mode |
 | `hfedit.js`, `notes.js`, `txbxedit.js` | Editing headers and footers, notes and text-box text in their own small editors |
 | `imgresize.js`, `charts.js` | Resizing and moving pictures and shapes; the chart dialog |
 | `find.js`, `bookmarks.js`, `toc.js`, `marks.js`, `ruler.js`, `a11y.js`, `live.js` | Find and replace, bookmarks, table of contents, Show/Hide, ruler, accessibility checker, screen-reader announcements |
+| `refs.js` | Reference fields (PAGEREF, REF, STYLEREF) from the laid-out pages; Update Fields (F9) |
 | `autocorrect.js`, `drafts.js`, `fontcheck.js` | AutoCorrect as you type; unsaved changes kept in the browser (IndexedDB); the fonts a document asks for that the computer lacks |
 
 **Elsewhere:** `src/engine/printlines.js` (the print layer), `src/engine/metrics.json` (font metrics),
-`src/index.js` (the public API, `mountDocxEditor`), `src/collab.js` (co-editing over Yjs), `src/wopi.js` (files a
-WOPI host serves), `src/pdf.js` (PDF export), `src/fieldsNode.js` (form fields without an editor), `src/wrappers/` (React, Vue, Angular).
+`src/index.js` (the public API, `mountDocxEditor`), `src/agent.js` (documents for AI agents and programs: read, edit
+as tracked changes), `src/editor/protect.js` and `src/ooxml/protect.js` (Restrict Editing: enforced in the editor; read,
+written and its password checked in the file), `bin/odx-mcp.mjs` (the MCP server on top of it), `src/collab.js` (co-editing over Yjs),
+`src/wopi.js` (files a WOPI host serves), `src/pdf.js` (PDF export), `src/fieldsNode.js` (form fields without an editor), `src/wrappers/` (React, Vue, Angular).
 
 ### From a keystroke to pages
 
