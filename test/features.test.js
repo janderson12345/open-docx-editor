@@ -161,3 +161,19 @@ test('Chinese and Hebrew list numbers, and leading zeros kept under legal number
   next(id, 0);
   assert.equal(next(id, 1), '01.01');
 });
+
+test('a list number formatted as hidden text is not shown, nor the room after it', async () => {
+  const { listLabel } = await import('../src/editor/pararules.js');
+  const { schema } = await import('../src/editor/schema.js');
+  const session = { numbering: { nums: new Map([['1', { abstractId: 'a', overrides: {} }]]), abstract: new Map([['a', [{ start: 1, fmt: 'decimal', text: '%1.', pPr: { indLeft: 720, indFirst: -360 }, jc: 'left', suff: 'tab', hidden: true }]]]) }, styleProp: () => null, defaultTabStop: 720 };
+  const run = (extra) => {
+    const node = schema.nodes.paragraph.create({ numId: '1', ilvl: 0, extra });
+    const attrs = {}, style = [];
+    listLabel(node, session, { numId: '1', ilvl: 0 }, '1.', attrs, style);
+    return [attrs['data-label'], style.find((s) => s.startsWith('--odx-hang'))];
+  };
+  assert.deepEqual(run([]), ['', '--odx-hang:0pt']);
+  session.numbering.abstract.get('a')[0].hidden = false;
+  assert.deepEqual(run([]), ['1.', '--odx-hang:18pt']);
+  assert.deepEqual(run([['rPr', '<w:rPr><w:vanish/></w:rPr>']]), ['', '--odx-hang:0pt']);
+});

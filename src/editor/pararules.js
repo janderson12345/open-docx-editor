@@ -20,7 +20,11 @@ export function listLabel(node, session, l, label, attrs, style) {
     const left = node.attrs.view.indLeft ?? ind.indLeft ?? 720;
     const hang = -(node.attrs.view.indFirst ?? ind.indFirst ?? -360);
     attrs.class = lvl && lvl.fmt === 'bullet' ? 'odx-li odx-bullet' : 'odx-li';
-    attrs['data-label'] = label;
+    // A number formatted as hidden text (w:vanish on its level, or on the paragraph mark it takes its look from) isn't
+    // shown, nor the room after it, as in Word.
+    const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr');
+    const hidden = !!lvl?.hidden || (!!mark && /<w:vanish(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(mark[1]));
+    attrs['data-label'] = hidden ? '' : label;
     // A picture bullet (w:lvlPicBulletId): the picture in the label's place (editor.css odx-picbullet).
     // (Its picture is in the document's stylesheet once, docx.js picBulletCss, not in every item's style.)
     if (lvl && lvl.picBullet != null && session.pictureBullets?.has(lvl.picBullet)) attrs.class += ` odx-picbullet odx-pb-${lvl.picBullet}`;
@@ -37,7 +41,7 @@ export function listLabel(node, session, l, label, attrs, style) {
     // (Word 2003's rule, w:doNotUseIndentAsNumberingTabStop: the hanging indent is the label's stop only when it comes
     // before the next tab stop; past it, the text after the label goes to that stop.)
     const viaIndent = hang > 0 ? (session.compat?.has('doNotUseIndentAsNumberingTabStop') ? Math.min(hang, next) : hang) : next;
-    const gap = lvl && lvl.suff === 'nothing' ? 0 : viaIndent;
+    const gap = hidden || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
     style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
     // A right-aligned number ends at its position, not starts there (roman "i." / "ii." levels): drawn in its box
     // that much to the left, the text still at the indent.

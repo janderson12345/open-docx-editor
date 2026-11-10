@@ -130,6 +130,8 @@ export function readNumbering(pkg) {
     suff: attr(kid(l, 'suff'), 'val') || 'tab', // what follows the label: a tab, a space or nothing
     legal: onOff(kid(l, 'isLgl')) || false, // legal numbering: every level's number in Arabic numerals ("1.1.1", not "I.1.a")
     picBullet: attr(kid(l, 'lvlPicBulletId'), 'val') ?? null, // a picture bullet (w:numPicBullet)
+    hidden: onOff(kid(kid(l, 'rPr'), 'vanish')) || false, // the number is hidden text: not shown
+
   });
   for (const an of kids(doc.documentElement, 'abstractNum')) {
     const levels = [];
