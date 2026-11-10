@@ -268,14 +268,17 @@ function writeTable(table, ctx) {
     grid = `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   }
   let rows = '';
-  let openSdt = null; // row-level content control being written
+  const openSdts = []; // row-level content controls being written, outermost first (a repeating section, its item)
   for (let r = 0; r < map.height; r++) {
     const row = table.child(r);
-    const sdt = row.attrs.sdt || null;
-    if (openSdt && (!sdt || sdt.g !== openSdt.g)) { rows += openSdt.close; openSdt = null; }
-    if (sdt && !openSdt) { rows += sdt.open; openSdt = sdt; }
+    const chain = [];
+    for (let s = row.attrs.sdt; s; s = s.parent) chain.unshift(s);
+    let k = 0;
+    while (k < openSdts.length && k < chain.length && openSdts[k].g === chain[k].g) k++;
+    while (openSdts.length > k) rows += openSdts.pop().close;
+    for (const s of chain.slice(k)) { rows += s.open; openSdts.push(s); }
     let cells = '';
-    let openCellSdt = null; // cell-level content control being written
+    const openCellSdts = []; // cell-level content controls being written, outermost first
     for (let c = 0; c < map.width; c++) {
       const pos = map.map[r * map.width + c];
       const cell = table.nodeAt(pos);
@@ -285,15 +288,18 @@ function writeTable(table, ctx) {
       if (cell.attrs.phantom) continue; // gridBefore/gridAfter, kept in trPr
       // (A merged cell's control around the row it starts in only: its continuing rows are the same node, and the
       // control written around each of them would repeat one w:id.)
-      const cs = rect.top === r ? cell.attrs.sdt || null : null;
-      if (openCellSdt && (!cs || cs.g !== openCellSdt.g)) { cells += openCellSdt.close; openCellSdt = null; }
-      if (cs && !openCellSdt) { cells += cs.open; openCellSdt = cs; }
+      const cchain = [];
+      for (let s = rect.top === r ? cell.attrs.sdt : null; s; s = s.parent) cchain.unshift(s);
+      let ck = 0;
+      while (ck < openCellSdts.length && ck < cchain.length && openCellSdts[ck].g === cchain[ck].g) ck++;
+      while (openCellSdts.length > ck) cells += openCellSdts.pop().close;
+      for (const s of cchain.slice(ck)) { cells += s.open; openCellSdts.push(s); }
       cells += writeCell(cell, rect.top === r ? (cell.attrs.rowspan > 1 ? 'restart' : null) : 'continue', ctx);
     }
-    if (openCellSdt) cells += openCellSdt.close;
+    while (openCellSdts.length) cells += openCellSdts.pop().close;
     rows += `<w:tr>${row.attrs.tblPrEx || ''}${row.attrs.trPr || ''}${cells}</w:tr>`;
   }
-  if (openSdt) rows += openSdt.close;
+  while (openSdts.length) rows += openSdts.pop().close;
   return `<w:tbl>${table.attrs.tblPr || DEFAULT_TBLPR}${grid}${rows}</w:tbl>`;
 }
 

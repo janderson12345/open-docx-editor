@@ -747,17 +747,22 @@ function readTable(tbl, ctx) {
   // vertical-merge bookkeeping: grid column -> the cell that started the merge
   const open = new Map();
   // Rows, including rows inside row-level content controls (w:sdt), which keep their wrapper in `sdt`.
+  // (Controls inside controls too, a repeating section's items in the section: each row's wrapper knows the one around
+  // it, `parent`, and the writer opens and closes them as a stack.)
   const trs = [];
-  for (const c of kids(tbl)) {
-    if (c.namespaceURI !== NS.w) continue;
-    if (c.localName === 'tr') trs.push([c, null]);
-    else if (c.localName === 'sdt') {
-      const content = kid(c, 'sdtContent');
-      const head = kids(c).filter((x) => x !== content).map((x) => ctx.xml(x)).join('');
-      const sdt = { open: `<w:sdt>${head}<w:sdtContent>`, close: '</w:sdtContent></w:sdt>', g: ++sdtGroup };
-      for (const tr of content ? kids(content, 'tr') : []) trs.push([tr, sdt]);
+  const collect = (el, parent) => {
+    for (const c of kids(el)) {
+      if (c.namespaceURI !== NS.w) continue;
+      if (c.localName === 'tr') trs.push([c, parent]);
+      else if (c.localName === 'sdt') {
+        const content = kid(c, 'sdtContent');
+        const head = kids(c).filter((x) => x !== content).map((x) => ctx.xml(x)).join('');
+        const sdt = { open: `<w:sdt>${head}<w:sdtContent>`, close: '</w:sdtContent></w:sdt>', g: ++sdtGroup, ...(parent ? { parent } : {}) };
+        if (content) collect(content, sdt);
+      }
     }
-  }
+  };
+  collect(tbl, null);
   for (const [tr, rowSdt] of trs) {
     const trPr = kid(tr, 'trPr');
     const tblPrEx = kid(tr, 'tblPrEx');
@@ -772,17 +777,21 @@ function readTable(tbl, ctx) {
     if (gridBefore) row.content.push(phantom(0, gridBefore));
     col += gridBefore;
     // Cells, including cells inside cell-level content controls (w:sdt), which keep their wrapper in `sdt`.
+    // (Nested ones too, as for rows.)
     const tcs = [];
-    for (const c of kids(tr)) {
-      if (c.namespaceURI !== NS.w) continue;
-      if (c.localName === 'tc') tcs.push([c, null]);
-      else if (c.localName === 'sdt') {
-        const content = kid(c, 'sdtContent');
-        const head = kids(c).filter((x) => x !== content).map((x) => ctx.xml(x)).join('');
-        const sdt = { open: `<w:sdt>${head}<w:sdtContent>`, close: '</w:sdtContent></w:sdt>', g: ++sdtGroup };
-        for (const tc of content ? kids(content, 'tc') : []) tcs.push([tc, sdt]);
+    const collectCells = (el, parent) => {
+      for (const c of kids(el)) {
+        if (c.namespaceURI !== NS.w) continue;
+        if (c.localName === 'tc') tcs.push([c, parent]);
+        else if (c.localName === 'sdt') {
+          const content = kid(c, 'sdtContent');
+          const head = kids(c).filter((x) => x !== content).map((x) => ctx.xml(x)).join('');
+          const sdt = { open: `<w:sdt>${head}<w:sdtContent>`, close: '</w:sdtContent></w:sdt>', g: ++sdtGroup, ...(parent ? { parent } : {}) };
+          if (content) collectCells(content, sdt);
+        }
       }
-    }
+    };
+    collectCells(tr, null);
     for (const [tc, cellSdt] of tcs) {
       const tcPr = kid(tc, 'tcPr');
       const span = Number(attr(kid(tcPr, 'gridSpan'), 'val') || 1);
