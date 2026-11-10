@@ -585,7 +585,7 @@ td[data-odx-phantom] > * { display: none; }
 /* Unsaved changes kept in the browser, offered back on opening (index.js drafts). */
 .odx-draftnote { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; font: 13px system-ui, sans-serif; color: var(--odx-bar-fg); background: var(--odx-on); border-bottom: 1px solid var(--odx-on-line); }
 .odx-draftnote > span { flex: 1 1 20em; }
-.odx-draftnote > button { font: inherit; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 3px 12px; cursor: pointer; }
+.odx-draftnote > button { font: inherit; min-height: 28px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 3px 12px; cursor: pointer; } /* (at least 24px in any font, WCAG 2.5.8) */
 .odx-draftnote > button:focus-visible { outline: 2px solid var(--odx-accent); outline-offset: 1px; }
 .odx-findbar input[type=text], .odx-findbar input[type=search], .odx-num { height: 26px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; padding: 0 6px; }
 .odx-cap { font-size: 12px; }
