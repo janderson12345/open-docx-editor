@@ -6,6 +6,7 @@ import { schema } from './schema.js';
 import { resolveStyle } from '../ooxml/styles.js';
 import { pPrXml } from '../ooxml/writer.js';
 import { paragraphAttrsFromPPr } from '../ooxml/reader.js';
+import { unescapeXml } from '../ooxml/xml.js';
 
 const { paragraph } = schema.nodes;
 
@@ -313,6 +314,14 @@ export function wordCount(doc) {
       text += '\n';
     }
     if (n.isText && !n.marks.some((m) => m.type.name === 'del')) text += n.text;
+    // Text boxes' text too, as Word counts it: the shape's copy only (its VML fallback holds the same text again).
+    if (n.type.name === 'image' && /<w:txbxContent\b/.test(n.attrs.xml || '')) {
+      const box = /<w:txbxContent\b[^>]*>([\s\S]*?)<\/w:txbxContent>/.exec(n.attrs.xml)[1];
+      for (const p of box.split(/<\/w:p>/)) {
+        const t = [...p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+        if (t.trim()) { paragraphs++; text += '\n' + unescapeXml(t) + '\n'; }
+      }
+    }
     return true;
   });
   const words = (text.match(/\S+/g) || []).length;

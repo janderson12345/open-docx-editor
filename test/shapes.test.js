@@ -63,3 +63,17 @@ test('a text box shows the paragraphs inside block content controls; one placed 
   assert.match(decodeURIComponent(node.attrs.src), /Held/);
   assert.match(node.attrs.place, /--odx-arel:page;--odx-ay:160px/);
 });
+
+test('the word count takes in text boxes once (not their fallback copy)', async () => {
+  const { wordCount } = await import('../src/editor/commands.js');
+  const s = new DocxSession(bytes);
+  const withBoxes = wordCount(s.doc).words;
+  const { Transform } = await import('prosemirror-transform');
+  const tr = new Transform(s.doc);
+  const at = [];
+  s.doc.descendants((n, pos) => { if (n.type.name === 'image') at.push(pos); });
+  for (const pos of at.reverse()) tr.delete(pos, pos + 1);
+  const body = wordCount(tr.doc).words;
+  // The fixture's boxes: "An inline text box whose text wraps when it is resized." (11) and "A floating text box, placed by offsets." (7)
+  assert.equal(withBoxes - body, 18);
+});
