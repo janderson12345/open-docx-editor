@@ -5,6 +5,7 @@
 // text's width at 100px, scaled, against its width at its size, shared out per character.
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { fitOf } from './fittext.js';
 
 const key = new PluginKey('odx-widths');
 export const widthsPlugin = new Plugin({
@@ -60,6 +61,7 @@ export function applyWidths(view) {
   if (memoEpoch !== fontEpoch()) { memo = new WeakMap(); memoEpoch = fontEpoch(); }
   view.state.doc.descendants((node, pos, parent) => {
     if (!node.isText || node.text.length < 2) return !node.isText;
+    if (fitOf(node)) return false; // (fitted text has its own width: fittext.js)
     // An unchanged run in an unchanged paragraph keeps its correction (ProseMirror keeps both nodes): no style lookups.
     const known = memo.get(parent)?.get(node);
     if (known !== undefined) {

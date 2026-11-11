@@ -28,6 +28,7 @@ import { noteRefs, noteLabel } from './notes.js';
 import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
+import { applyFitText } from './fittext.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
@@ -1378,6 +1379,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (quiet(() => fitAutofitColumns(view))) return schedule(); // column widths changed: measure again once they're drawn
     if (applyLineFix(view)) return schedule(); // line heights changed: measure again once they're drawn
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
+    if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     if (applySqueeze(view, session)) return; // lines changed: measure again once they're drawn
     if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;

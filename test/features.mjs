@@ -388,6 +388,21 @@ const pasted = await page.evaluate(() => {
 });
 check(pasted[0] === 'color=C00000 font=Georgia size=32' && pasted[1] === '', `pasted colour, size and font kept (${pasted.join(' | ')})`);
 
+// Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
+// Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
+await open('fittext.docx');
+const fits = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 5).map((p) => {
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  for (let t = w.nextNode(); t; t = w.nextNode()) {
+    const i = t.data.indexOf('|');
+    if (i < 0) continue;
+    const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1);
+    return Math.round(r.getBoundingClientRect().left - p.getBoundingClientRect().left);
+  }
+  return null;
+}));
+check(fits.join() === '96,192,96,72,144', `fitted text as wide as it says, as in Word (${fits.join()})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
