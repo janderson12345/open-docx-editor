@@ -594,6 +594,23 @@ await page.keyboard.press('Escape');
 check(await page.evaluate(() => !!document.activeElement?.closest('.odx-content') && document.querySelector('.odx-cmdlist').hidden), 'Esc in the command search goes back to the document');
 await page.click('[role=tab]:text-is("Home")');
 
+// Insert > Table of Contents in a document without Word's TOC styles: they're added (TOC Heading, TOC 1-3, as Word's
+// own), its lines in them, and saved with the document.
+await open('fields.docx');
+await page.click('.odx-content p');
+await page.keyboard.press('Control+Home');
+await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /Insert table of contents/.test(x.title || '')); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+await page.waitForTimeout(1500);
+const tocStyles = await page.evaluate(async () => {
+  const styles = [...new Set([...document.querySelectorAll('.odx-content > p[data-style^="TOC"]')].map((p) => p.dataset.style))];
+  const indent = getComputedStyle(document.querySelector('.odx-content > p[data-style="TOC2"]') || document.body).marginLeft;
+  return { styles: styles.sort().join(','), indent };
+});
+const tocSaved = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
+const stylesXml = strFromU8(tocSaved['word/styles.xml']);
+check(tocStyles.styles === 'TOC1,TOCHeading' && /<w:style [^>]*w:styleId="TOC2"[\s\S]*?<w:ind w:left="220"\/>/.test(stylesXml) && /w:styleId="TOC1"/.test(stylesXml) && /w:styleId="TOCHeading"/.test(stylesXml),
+  `a table of contents gets Word's TOC styles when the document lacks them (${JSON.stringify(tocStyles)})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

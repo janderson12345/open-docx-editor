@@ -492,6 +492,8 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     flushStories() { flushStory(); flushNote(); },
     closeStories() { closeStory(); closeNote(); closeTextBox(); },
     pages,
+    /** Styles added to the document since it opened (session.addBuiltInStyles): their CSS too. */
+    restyle() { styleEl.textContent += `\n${session.css(`.${scope}`)}`; },
     // The pages' zoom (zoom.js); onZoom, set by the host, hears each change.
     zoom: createZoom(mount, sheet, page, (z) => view.odx?.onZoom?.(z)),
     collab,

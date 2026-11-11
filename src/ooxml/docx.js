@@ -187,6 +187,21 @@ export class DocxSession {
     return new DocxSession(blankDocxBytes(), opts);
   }
 
+  /**
+   * Word's own definitions of built-in styles `ids` (TOCHeading, TOC1-TOC9) added to styles.xml where the document lacks
+   * them, as Word adds them when it first uses them. True when any was added (the styles are read again).
+   */
+  addBuiltInStyles(ids) {
+    const path = this.pkg.partByType(REL_TYPES.styles);
+    const xml = path && this.pkg.text(path);
+    if (!xml) return false;
+    const add = ids.filter((id) => BUILT_IN[id] && !this.styles.styles.has(id)).map((id) => BUILT_IN[id]);
+    if (!add.length) return false;
+    this.pkg.setText(path, xml.replace(/<\/w:styles>\s*$/, `${add.join('')}</w:styles>`));
+    this.styles = readStyles(this.pkg);
+    return true;
+  }
+
   /** CSS rules for the document's styles, scoped under `scope`. */
   css(scope) {
     return stylesToCss(scope, this.styles, this.theme);
@@ -791,6 +806,12 @@ function noteRefs(doc) {
   });
   return used;
 }
+
+// Built-in styles as Word's own template defines them (Word adds them to a document as it first uses them).
+const BUILT_IN = {
+  TOCHeading: '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`TOC${i + 1}`, `<w:style w:type="paragraph" w:styleId="TOC${i + 1}"><w:name w:val="toc ${i + 1}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/>${i ? `<w:ind w:left="${i * 220}"/>` : ''}</w:pPr></w:style>`])),
+};
 
 // w:settings children that come after w:trackRevisions (ECMA-376 Part 1, §17.15.1.78).
 const AFTER_TRACK = ['doNotTrackMoves', 'doNotTrackFormatting', 'documentProtection', 'autoFormatOverride', 'styleLockTheme', 'styleLockQFSet', 'defaultTabStop', 'autoHyphenation', 'consecutiveHyphenLimit', 'hyphenationZone', 'doNotHyphenateCaps', 'showEnvelope', 'summaryLength', 'clickAndTypeStyle', 'defaultTableStyle', 'evenAndOddHeaders', 'bookFoldRevPrinting', 'bookFoldPrinting', 'bookFoldPrintingSheets', 'drawingGridHorizontalSpacing', 'drawingGridVerticalSpacing', 'displayHorizontalDrawingGridEvery', 'displayVerticalDrawingGridEvery', 'doNotUseMarginsForDrawingGridOrigin', 'drawingGridHorizontalOrigin', 'drawingGridVerticalOrigin', 'doNotShadeFormData', 'noPunctuationKerning', 'characterSpacingControl', 'printTwoOnOne', 'strictFirstAndLastChars', 'noLineBreaksAfter', 'noLineBreaksBefore', 'savePreviewPicture', 'doNotValidateAgainstSchema', 'saveInvalidXml', 'ignoreMixedContent', 'alwaysShowPlaceholderText', 'doNotDemarcateInvalidXml', 'saveXmlDataOnly', 'useXSLTWhenSaving', 'saveThroughXslt', 'showXMLTags', 'alwaysMergeEmptyNamespace', 'updateFields', 'hdrShapeDefaults', 'footnotePr', 'endnotePr', 'compat', 'docVars', 'rsids', 'mathPr', 'attachedSchema', 'themeFontLang', 'clrSchemeMapping', 'doNotIncludeSubdocsInStats', 'doNotAutoCompressPictures', 'forceUpgrade', 'captions', 'readModeInkLockDown', 'smartTagType', 'schemaLibrary', 'shapeDefaults', 'doNotEmbedSmartTags', 'decimalSymbol', 'listSeparator'];

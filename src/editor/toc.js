@@ -79,6 +79,8 @@ const nodes = (xml) => blocksFromXml(xml).map((j) => Node.fromJSON(schema, j));
 
 /** Insert a table of contents at the cursor (as its own blocks). */
 export function insertToc(view) {
+  // Word's TOC Heading and TOC 1-3 styles, added to the document if it lacks them (their CSS with them).
+  if (view.odx.session.addBuiltInStyles(['TOCHeading', 'TOC1', 'TOC2', 'TOC3'])) view.odx.restyle?.();
   const { state } = view;
   const $from = state.selection.$from;
   const at = $from.depth ? $from.before(1) : 0;
