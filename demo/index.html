@@ -13,6 +13,7 @@
   .drop { outline: 3px dashed #2b6cdf; outline-offset: -8px; }
   #fonts-note { font: 13px system-ui, sans-serif; padding: 6px 12px; background: #fff7e0; color: #4a3b00; border-bottom: 1px solid #e8d9a8; }
   #fonts-note[hidden] { display: none; }
+  @media print { #fonts-note { display: none; } } /* (the document's pages only: the line above them would push the first to a page of its own) */
 </style>
 </head>
 <body>
