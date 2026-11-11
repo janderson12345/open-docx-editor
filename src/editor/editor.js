@@ -21,7 +21,7 @@ import { schema } from './schema.js';
 import { uniformRun } from './runs.js';
 import { columnsIn } from './sections.js';
 import { frameOf, frameStyle } from './frames.js';
-import { listLabel, lineSize, pictureLine, labelLine, changeClasses, headingRole } from './pararules.js';
+import { listLabel, lineSize, pictureLine, labelLine, labelFormat, changeClasses, headingRole } from './pararules.js';
 import * as cmd from './commands.js';
 import { announce } from './live.js';
 
@@ -237,6 +237,7 @@ function paragraphPlugin(session) {
         lineSize(node, session, run, label, attrs, style);
         pictureLine(node, page, attrs);
         labelLine(node, session, l, label, run, style);
+        labelFormat(node, session, l, label, style);
         // Long documents skip drawing off-screen paragraphs; a size guess from the
         // text length (and pictures) keeps the page count close until they're drawn.
         if (parent === doc && doc.childCount > 1500) {

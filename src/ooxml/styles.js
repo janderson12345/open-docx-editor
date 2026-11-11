@@ -145,6 +145,11 @@ export function readNumbering(pkg) {
     pPr: readPPr(kid(l, 'pPr')),
     font: attr(kid(kid(l, 'rPr'), 'rFonts'), 'ascii') || null,
     size: Number(attr(kid(kid(l, 'rPr'), 'sz'), 'val')) || null, // half-points
+    // The label's own bold, italic, colour and underline (null where the level doesn't set them).
+    bold: onOff(kid(kid(l, 'rPr'), 'b')),
+    italic: onOff(kid(kid(l, 'rPr'), 'i')),
+    color: attr(kid(kid(l, 'rPr'), 'color'), 'val') || null,
+    underline: attr(kid(kid(l, 'rPr'), 'u'), 'val') || null,
     jc: attr(kid(l, 'lvlJc'), 'val') || 'left', // the label's alignment at its position
     suff: attr(kid(l, 'suff'), 'val') || 'tab', // what follows the label: a tab, a space or nothing
     legal: onOff(kid(l, 'isLgl')) || false, // legal numbering: every level's number in Arabic numerals ("1.1.1", not "I.1.a")
@@ -192,9 +197,45 @@ export function formatNumber(n, fmt) {
     case 'chineseCounting': case 'chineseCountingThousand': case 'ideographDigital': return chinese(n, fmt === 'ideographDigital');
     case 'hebrew1': return hebrewNumber(n);
     case 'hebrew2': return n > 0 ? HEBREW[(n - 1) % 22].repeat(Math.floor((n - 1) / 22) + 1) : '';
+    case 'ordinal': return ordinal(n);
+    case 'cardinalText': return capital(words(n));
+    case 'ordinalText': return capital(ordinalWords(n));
+    case 'decimalEnclosedCircle': case 'decimalEnclosedCircleChinese': return n >= 1 && n <= 20 ? String.fromCharCode(0x2460 + n - 1) : String(n);
+    case 'decimalEnclosedParen': return n >= 1 && n <= 20 ? String.fromCharCode(0x2474 + n - 1) : String(n);
+    case 'decimalEnclosedFullstop': return n >= 1 && n <= 20 ? String.fromCharCode(0x2488 + n - 1) : String(n);
+    case 'decimalFullWidth': case 'decimalFullWidth2': return String(n).replace(/\d/g, (d) => String.fromCharCode(0xFF10 + Number(d)));
+    case 'arabicAlpha': return cycle(n, ARABIC_ALPHA);
+    case 'arabicAbjad': return cycle(n, ARABIC_ABJAD);
+    case 'russianLower': return cycle(n, RUSSIAN);
+    case 'russianUpper': return cycle(n, RUSSIAN).toUpperCase();
+    // (Ten stems and twelve branches, then digits, as Word numbers past them.)
+    case 'ideographTraditional': return n >= 1 && n <= 10 ? '甲乙丙丁戊己庚辛壬癸'[n - 1] : String(n);
+    case 'ideographZodiac': return n >= 1 && n <= 12 ? '子丑寅卯辰巳午未申酉戍亥'[n - 1] : String(n);
     case 'none': return '';
     default: return String(n);
   }
+}
+// An alphabet's letters in turn, then each doubled, tripled... as Word's lettered lists go on.
+const cycle = (n, abc) => (n > 0 ? abc[(n - 1) % abc.length].repeat(Math.floor((n - 1) / abc.length) + 1) : String(n));
+const ARABIC_ALPHA = [...'أبتثجحخدذرزسشصضطظعغفقكلمنهوي'];
+const ARABIC_ABJAD = [...'أبجدهوزحطيكلمنسعفصقرشتثخذضظغ'];
+const RUSSIAN = [...'абвгдежзиклмнопрстуфхцчшщыэюя'];
+// English ordinals and numbers in words (Word's ordinal, cardinalText and ordinalText).
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+function words(n) {
+  if (n < 0 || n > 999999) return String(n);
+  if (n < 20) return ONES[n];
+  if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? `-${ONES[n % 10]}` : '');
+  if (n < 1000) return `${ONES[Math.floor(n / 100)]} hundred${n % 100 ? ` ${words(n % 100)}` : ''}`;
+  return `${words(Math.floor(n / 1000))} thousand${n % 1000 ? ` ${words(n % 1000)}` : ''}`;
+}
+const ORD = { one: 'first', two: 'second', three: 'third', five: 'fifth', eight: 'eighth', nine: 'ninth', twelve: 'twelfth' };
+function ordinalWords(n) {
+  const w = words(n);
+  return w.replace(/(\w+)$/, (last) => ORD[last] || (last.endsWith('y') ? `${last.slice(0, -1)}ieth` : `${last}th`));
 }
 // Chinese numerals (一、二、三... 十, 十一, 二十, 一百零一), Word's chineseCounting and chineseCountingThousand; digit by
 // digit (一〇一) for ideographDigital.

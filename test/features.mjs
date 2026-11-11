@@ -369,6 +369,11 @@ await page.waitForTimeout(300);
 check((await page.textContent('.odx-findinfo')) === '1 result', 'Find finds imported text');
 await page.keyboard.press('Escape');
 
+// List numbers in their level's bold, italic and colour, else the paragraph mark's (mklists2.mjs; as in Word's PDF).
+await open('lists-more.docx');
+const lbls = await page.evaluate(() => [...document.querySelectorAll('.odx-content p.odx-li')].slice(0, 6).map((p) => { const b = getComputedStyle(p, '::before'); return `${b.fontWeight >= 700 ? 'b' : ''}${b.fontStyle === 'italic' ? 'i' : ''}${b.color === 'rgb(192, 0, 0)' ? 'red' : ''}`; }));
+check(lbls.join(',') === 'bred,bred,i,i,b,', `list numbers take their level's (or the paragraph mark's) bold, italic and colour (${lbls.join(',')})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

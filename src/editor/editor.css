@@ -21,6 +21,7 @@
      --odx-mark          the paragraph mark's size, for an empty last line
      --odx-hang, --odx-lsize, --odx-lfont, --odx-lbl-up, --odx-lbl-down   a list label: its indent, size, font, and
                          the room a larger bullet adds above or below its line
+     --odx-lweight, --odx-lstyle, --odx-lcolor, --odx-ldeco   its bold, italic, colour and underline (labelFormat)
      --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr   a picture's effect extent (room for a shadow or glow) per side
      --odx-band          a picture that takes a band of its own (text above and below)
      --odx-lrel, --odx-ly, --odx-lyalign        a floating picture lifted out of the flow: what it's placed against
@@ -186,7 +187,7 @@
 .odx-content .odx-opaque[data-kind="bookmarkStart"], .odx-content .odx-opaque[data-kind="bookmarkEnd"], .odx-content .odx-opaque[data-kind="proofErr"], .odx-content .odx-opaque[data-kind="permStart"], .odx-content .odx-opaque[data-kind="permEnd"], .odx-content .odx-opaque[data-kind="commentRangeStart"], .odx-content .odx-opaque[data-kind="commentRangeEnd"], .odx-content .odx-opaque[data-kind="moveFromRangeStart"], .odx-content .odx-opaque[data-kind="moveFromRangeEnd"], .odx-content .odx-opaque[data-kind="moveToRangeStart"], .odx-content .odx-opaque[data-kind="moveToRangeEnd"] { display: none; } /* not even an empty box: one would stop the paragraph spacing around it from collapsing */
 .odx-content li, .odx-content p.odx-li { list-style: none; }
 .odx-content p.odx-bullet::before { font-family: Arial, 'Liberation Sans', sans-serif; }
-.odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); }
+.odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); font-weight: var(--odx-lweight, inherit); font-style: var(--odx-lstyle, inherit); color: var(--odx-lcolor, inherit); text-decoration: var(--odx-ldeco, none); }
 /* Emphasis marks and run borders make their line taller in Word (schema.js rextraCss): a zero-width box of the line's
    own height at the run's start, padded above or below by that much. */
 /* A complex-script run (w:rtl / w:cs: Hebrew, Arabic...) takes the complex-script members of its formatting, as in Word:

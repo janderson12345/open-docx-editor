@@ -2,7 +2,7 @@
 // the session and what the pass worked out before it. `attrs` is the paragraph's decoration (class, data-label, role),
 // `style` its list of CSS declarations; both are added to in the pass's order.
 import { listLevel, resolveStyle } from '../ooxml/styles.js';
-import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss } from '../ooxml/props.js';
+import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 
 // The paragraph mark's own font size (half-points), if it sets one.
@@ -118,6 +118,25 @@ export function pictureLine(node, page, attrs) {
     if (img && text) both = true;
   });
   if (both) attrs.class = [attrs.class, 'odx-pictext'].filter(Boolean).join(' ');
+}
+
+/**
+ * A list label's bold, italic, colour and underline, as Word draws its number: the level's own (w:lvl/w:rPr), else
+ * the paragraph mark's.
+ */
+export function labelFormat(node, session, l, label, style) {
+  if (label == null) return;
+  const lvl = listLevel(session.numbering, l.numId, l.ilvl) || {};
+  const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
+  const markOn = (tag) => { const m = new RegExp(`<w:${tag}(?=[\\s/>])([^>]*)>`).exec(mark); return m ? !/w:val="(?:0|false|off)"/.test(m[1]) : null; };
+  const bold = lvl.bold ?? markOn('b');
+  const italic = lvl.italic ?? markOn('i');
+  const color = lvl.color ?? /<w:color\b[^>]*w:val="([^"]*)"/.exec(mark)?.[1] ?? null;
+  const underline = lvl.underline ?? /<w:u\b[^>]*w:val="([^"]*)"/.exec(mark)?.[1] ?? null;
+  if (bold != null) style.push(`--odx-lweight:${bold ? 'bold' : 'normal'}`);
+  if (italic != null) style.push(`--odx-lstyle:${italic ? 'italic' : 'normal'}`);
+  if (hexColor(color)) style.push(`--odx-lcolor:#${color}`);
+  if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
 }
 
 /** A list label's own size and font, and the room a taller Symbol bullet adds to its line. */
