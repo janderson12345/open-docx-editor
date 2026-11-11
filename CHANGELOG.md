@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Aptos drawn evenly**: on computers without Aptos (Word's default font), its stand-in drew Arial at a different size
+  for each letter to reach Aptos's widths, so a capital T or J came out small and a t or an l tall. The stand-in is now
+  a set of small fonts built from Arimo (Arial's design), each letter narrowed or widened sideways only, all at one
+  height. Letter widths are unchanged; in the comparison with Word, 4 of 35,101 lines break one word differently.
+
 - **Imported content (w:altChunk)**: the HTML or plain text a document carries for Word to convert when it opens it
   (as mail-merge systems write rich-text fields, often in table cells) is shown as the paragraphs Word makes of it, in
   place of a placeholder: HTML paragraphs in Times New Roman 12pt with automatic spacing, text outside them in the
