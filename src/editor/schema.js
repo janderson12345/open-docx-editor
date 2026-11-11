@@ -410,7 +410,7 @@ export function revXmlAttrs(xml) {
   return { id: a('id'), author: a('author'), date: a('date') };
 }
 // Pasted text's colour, size and font (from a web page, another editor, or this one): as marks, where they're definite.
-// Black is no colour (Google Docs sets it on every run); a size in pt or px only; a font by its first family name,
+// Black is no colour (some editors set it on every run); a size in pt or px only; a font by its first family name,
 // not a generic one.
 function pastedColor(v) {
   const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(v || '');

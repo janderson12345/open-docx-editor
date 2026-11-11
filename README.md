@@ -113,6 +113,9 @@ fs.writeFileSync('out.docx', s.save());
   shadow, emboss, imprint), emphasis marks, borders round runs of text, a section's vertical alignment (centred,
   bottom, spread over the page), and line numbers (every line or every nth, restarting each page or section or going
   on, at the distance the section sets). They print and go into PDF export too.
+- **Fit text** (text spread or squeezed to a width, Word's Asian Layout > Fit Text), **numbering** in every common
+  format (letters, Roman, ordinals, words, circled and full-width numbers, Arabic, Hebrew, Russian and Chinese), and
+  list numbers in their own bold, italic and colour, each checked against Word's PDF of a test document.
 - **Strict Open XML** documents (Word's "Strict Open XML Document") open like any other; they are saved in the
   ordinary (Transitional) form, which every version of Word opens.
 - **Fast on long documents**: a 300-page file opens in about a second in Chromium; off-screen

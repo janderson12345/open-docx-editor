@@ -103,6 +103,17 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   results until F9. A STYLEREF naming a character style finds text in that style (sample S106's footer). (Sample
   S106's stored Word PDF is older and shows a body STYLEREF's saved text; Word's export today updates it.)
 
+**Lists, fit text and defaults** (Word's PDFs of `test/fixtures/lists-more.docx`, `fittext.docx`, and a file with no
+styles part)
+- A list number takes the bold, italic, colour and underline of its level's w:rPr, else of the paragraph mark.
+- Number formats Word knows by name (ordinal, cardinalText, circled numbers, Arabic and Russian letters...) give the
+  labels in `test/fixtures/lists-more.word-labels.json`; the Chinese stems and branches go on as digits past 10 and 12.
+- Fit text: the text spans exactly its w:val, the difference shared out after each character but the last; runs with
+  the same w:id are one group.
+- A paragraph bar border (w:pBdr/w:bar) isn't drawn by Word: not by us either.
+- With no styles part, Word's text is Aptos 12pt, 8pt after, 1.15 lines.
+- A field's result inside another field's code (a nested PAGE in an IF) isn't shown.
+
 **Compatibility rules** (settings.xml w:compat, which older documents carry; each checked with Word's PDFs of a test
 document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcompat.mjs`)
 - `splitPgBreakAndParaMark`: the paragraph mark after a page break goes to the next page, an empty line at its top.

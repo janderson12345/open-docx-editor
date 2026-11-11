@@ -79,7 +79,7 @@ await page.click('.odx-rtab:text-is("Insert")');
 await page.click('button[title="Insert table"]');
 await page.click('.odx-pop .odx-item >> nth=2');
 await page.keyboard.type('cell');
-await page.screenshot({ path: `${outDir}/new-document.png` });
+if (process.env.BROWSER !== 'webkit') await page.screenshot({ path: `${outDir}/new-document.png` }); // (as above: WebKit can leave fonts loading)
 const bytes = await page.evaluate(() => Array.from(window.odx.save()));
 fs.writeFileSync(`${outDir}/new-document.docx`, Buffer.from(bytes));
 const { value: html } = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) });

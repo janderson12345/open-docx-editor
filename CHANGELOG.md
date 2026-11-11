@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## 0.7.5 (2026-11-11)
+
+Since 0.7.0: fit text, more numbering formats, list numbers in their own formatting, Find in comments, pasted
+formatting kept, and fixes for comments with tables or pictures and for nested fields. Each change that shows on the
+page was checked against Word's own PDF of a test document.
+
+- **Fit text** (`w:fitText`, Word's Asian Layout > Fit Text): a run, or the runs sharing its id, spread or squeezed to
+  its width, the difference after each character but the last. On screen and in PDF export, the text after it starts
+  where Word starts it, to the pixel.
+- **Numbering formats**: ordinal ("1st"), cardinalText ("One"), ordinalText ("First"), numbers in circles, in
+  brackets and with full stops, full-width digits, Arabic letters (alphabetic and abjad), Russian letters, and the
+  Chinese stems and branches (digits past them, as Word does). Every label of a test document's 13 lists matches
+  Word's.
+- **List numbers in their own formatting**: the bold, italic, colour and underline their list level sets, else the
+  paragraph mark's, as Word draws them.
+- **Find and Replace in comments** too, the comment opening in the margin with the match selected.
+- **Paste** keeps the text's colour, size and font (black, which some editors set on every run, and generic families
+  are left out).
+- **A document with no styles part** takes Word's own defaults: Aptos 12pt, 8pt after, 1.15 lines.
+- **Tracked changes made here carry their UTC time** (`w16du:dateUtc`, beside `w:date`, which is on the author's clock),
+  with the namespace declared and ignorable as Word declares it.
+- **Comments with a table or a picture**: their table's text is shown, and they're kept as they are (Edit is offered
+  only for text comments: editing here would lose the rest). A save no longer writes again, from its text, a comment
+  that had no thread id, which lost such content.
+- **Nested fields**: the result of a field inside another's code (an IF around a PAGE) is part of the code, not shown,
+  as in Word.
+- **No keyboard trap**: where a protected document can only be read, Tab goes on to the next control unless the caret
+  is in a part this user may edit.
+- The agent interface's text leaves out hidden text and shows symbols and note references (`[^1]`).
+- The save check (`tools/check-ooxml.mjs`) also finds a prefix that `mc:Ignorable` names but nothing declares.
+- pdf.js, used only by the layout measuring tool, updated past its security advisory (`npm audit`: none).
+- New tests: input-method typing in the body, text boxes, headers, footers and notes; Track Changes edge cases; keys
+  inside a protected document's editable parts; five save cycles giving the same file; a field written in one run;
+  pictures sharing one id, as templating tools write them; unusual content controls.
+
 ## 0.7.0 (2026-11-11)
 
 Since 0.6.0: frames, columns of their own widths, Page Setup, Wrap Text, the Original markup view, imported content
