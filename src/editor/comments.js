@@ -162,7 +162,7 @@ const thread = (session, id) => [id, ...session.comments.filter((c) => c.parentI
 export function setText(view, id, text) {
   if (!commentsAllowed(view.state)) return;
   const c = view.odx.session.comments.find((x) => x.id === id);
-  if (!c) return;
+  if (!c || c.rich) return; // (one with a picture or table stays as it is)
   c.text = text;
   c.xml = null;
   view.odx.session.commentsDirty = true;

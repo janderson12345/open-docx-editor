@@ -51,7 +51,7 @@ export function stories(main) {
   }
   // The comments (and replies), each as text: a paragraph a line.
   if (main.odx.features?.comments !== false) {
-    for (const c of session.comments || []) if (c.text) out.push({ key: `cmt:${c.id}`, kind: 'comment', id: c.id, doc: commentDoc(c.text) });
+    for (const c of session.comments || []) if (c.text && !c.rich) out.push({ key: `cmt:${c.id}`, kind: 'comment', id: c.id, doc: commentDoc(c.text) });
   }
   return out;
 }

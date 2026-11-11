@@ -204,6 +204,7 @@ function commentBalloon(view, c) {
       e.append(composer('e' + x.id, 'Add a comment', x.text, (t) => { session.editingComment = null; setText(view, x.id, t); announce('Comment posted'); back(view); },
         () => { session.editingComment = null; if (!x.text) deleteComment(view, x.id); else setActive(view, x.id); back(view); }, takeSelect));
     } else e.append(h('div', 'odx-cmt-text', x.text));
+    if (x.rich) e.append(h('div', 'odx-cmt-note', 'Has a picture or table: edit it in Word'));
     return e;
   };
   b.append(entry(c));
@@ -221,7 +222,7 @@ function commentBalloon(view, c) {
       const btn = (label, fn) => { const x = h('button', '', label); x.type = 'button'; x.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); fn(); }; x.onclick = (e) => { if (e.detail === 0) fn(); /* Enter or Space */ }; row.append(x); };
       if (!c.done) btn('Reply', () => { session.replying = c.id; setActive(view, c.id); });
       btn(c.done ? 'Reopen' : 'Resolve', () => setResolved(view, c.id, !c.done));
-      btn('Edit', () => { session.editingComment = c.id; setActive(view, c.id); });
+      if (!c.rich) btn('Edit', () => { session.editingComment = c.id; setActive(view, c.id); });
       btn('Delete', () => deleteComment(view, c.id));
       b.append(row);
     }

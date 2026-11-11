@@ -1,6 +1,7 @@
 // Structural check of saved .docx files, the things that make Word call a file corrupt: every XML part well-formed,
 // every part with a content type, every internal relationship's target present, every r:id the main document uses
-// defined in its relationships. (Not a full XSD validation: that needs the ECMA-376 schemas.)
+// defined in its relationships, every namespace prefix declared. (Not a full XSD validation: that needs the ECMA-376
+// schemas.)
 // usage: node tools/check-ooxml.mjs <file.docx | dir>...
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,6 +70,24 @@ for (const file of files) {
         if (a.namespaceURI === R && !ids.has(a.value)) problems.push(`${n}: ${all[i].tagName} uses ${a.name}="${a.value}", not in its relationships`);
       }
     }
+  }
+  // Namespaces: every prefixed element and attribute has its prefix declared (Word refuses a part that uses one it
+  // can't resolve), and every prefix mc:Ignorable names is declared too.
+  const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+  for (const [n, d] of xml) {
+    const all = d.getElementsByTagName('*');
+    const undeclared = new Set();
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      if (el.prefix && !el.namespaceURI) undeclared.add(el.prefix);
+      for (let j = 0; j < el.attributes.length; j++) {
+        const a = el.attributes[j];
+        if (a.prefix && a.prefix !== 'xmlns' && a.prefix !== 'xml' && !a.namespaceURI) undeclared.add(a.prefix);
+      }
+      const ign = el.getAttributeNS(MC, 'Ignorable');
+      for (const p of (ign || '').split(/\s+/).filter(Boolean)) if (!el.lookupNamespaceURI(p)) undeclared.add(`${p} (mc:Ignorable)`);
+    }
+    for (const p of undeclared) problems.push(`${n}: prefix ${p} used but not declared`);
   }
   if (!names.includes('word/document.xml')) problems.push('word/document.xml missing');
   if (problems.length) { bad++; console.log(`FAIL ${file}`); for (const p of problems.slice(0, 20)) console.log(`  ${p}`); }

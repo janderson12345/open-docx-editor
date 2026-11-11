@@ -22,6 +22,12 @@ const CT = {
  * [{ id, author, initials, date, text, paraId, parentId, done, xml }]
  * (`xml` is the original w:comment element; null once edited).
  */
+/** True when `n` is inside an element (below `top`) whose name matches `re`. */
+function inside(n, top, re) {
+  for (let e = n.parentNode; e && e !== top; e = e.parentNode) if (re.test(e.localName)) return true;
+  return false;
+}
+
 export function readComments(pkg) {
   const path = pkg.partByType(COMMENT_RELS.comments);
   const src = path && pkg.text(path);
@@ -31,12 +37,19 @@ export function readComments(pkg) {
   const list = raw.map((xml) => {
     const el = kids(parseXml(`${rootTag}${xml}</w:comments>`).documentElement, 'comment')[0];
     const ps = kids(el, 'p');
-    const text = ps.map((p) => [...p.getElementsByTagNameNS(NS.w, '*')]
-      .map((n) => (n.localName === 't' ? n.textContent : n.localName === 'tab' ? '\t' : n.localName === 'br' ? '\n' : '')).join('')).join('\n');
+    // A paragraph's text (not a picture's text box, nor the fallback copy of it); a table's as its rows, cells apart
+    // by a tab.
+    const paraText = (p) => [...p.getElementsByTagNameNS(NS.w, '*')]
+      .filter((n) => !inside(n, p, /^(drawing|pict|object|AlternateContent)$/))
+      .map((n) => (n.localName === 't' ? n.textContent : n.localName === 'tab' ? '\t' : n.localName === 'br' ? '\n' : '')).join('');
+    const tableText = (t) => kids(t, 'tr').map((tr) => kids(tr, 'tc').map((tc) => kids(tc, 'p').map(paraText).join(' ')).join('\t')).join('\n');
+    const text = kids(el).map((b) => (b.localName === 'p' ? paraText(b) : b.localName === 'tbl' ? tableText(b) : null)).filter((t) => t != null).join('\n');
     const last = ps[ps.length - 1];
     return {
       id: attr(el, 'id'), author: attr(el, 'author') || '', initials: attr(el, 'initials') || '', date: attr(el, 'date') || '',
       text, paraId: last ? last.getAttributeNS(W14, 'paraId') || null : null, parentId: null, done: false, xml,
+      // A picture, table or object in it: shown as its text, and kept as it is (not edited here, which would lose them).
+      rich: /<w:(drawing|pict|object|tbl)\b/.test(xml),
     };
   });
   const ext = pkg.partByType(COMMENT_RELS.extended);
@@ -81,7 +94,16 @@ export function writeComments(pkg, list) {
     pkg.addOverride(path, CT.comments);
     src = `${decl}<w:comments xmlns:w="${NS.w}" xmlns:w14="${W14}" xmlns:mc="${MC}" mc:Ignorable="w14"></w:comments>`;
   }
-  for (const c of list) if (!c.paraId) c.xml = null; // needs a paraId to carry thread/resolved state
+  // Each comment needs a paraId (on its last paragraph) to carry its thread and resolved state: one without gets one,
+  // kept as it was otherwise (written again from its text, a picture or table in it would be lost).
+  for (const c of list) {
+    if (c.paraId) continue;
+    c.paraId = newParaId();
+    if (!c.xml) continue;
+    const at = c.xml.lastIndexOf('<w:p>') > c.xml.lastIndexOf('<w:p ') ? c.xml.lastIndexOf('<w:p>') : c.xml.lastIndexOf('<w:p ');
+    if (at < 0) c.xml = null;
+    else c.xml = `${c.xml.slice(0, at)}<w:p w14:paraId="${c.paraId}" w14:textId="77777777"${c.xml.slice(at + 4)}`;
+  }
   // (An empty part may close its root at once, <w:comments .../>: open it, as the comments go inside.)
   let rootTag = (/<w:comments\b[^>]*>/.exec(src) || [''])[0].replace(/\s*\/>$/, '>');
   if (!/xmlns:w14=/.test(rootTag)) rootTag = rootTag.replace(/>$/, ` xmlns:w14="${W14}">`);
