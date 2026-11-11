@@ -19,6 +19,9 @@ Zoom, and what a screen reader (NVDA) pass over the newer pieces turned up.
   opening the browser's history.
 - The notices above the ribbon (marked as final, open read-only, restricted editing, a kept draft) are read out when
   they appear, with where their buttons are.
+- A comment box being edited took the keys back whenever the comments column was drawn again (an edit, an undo
+  elsewhere in the document); it takes them once, as it opens. A comment Find opened closes with the find bar, and Esc
+  in "Replace with" closes the find bar too.
 
 ## 0.7.5 (2026-11-11)
 

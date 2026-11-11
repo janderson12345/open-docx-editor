@@ -143,6 +143,8 @@ const when = (iso, utc) => {
 /** A text box with Post / Cancel. */
 // Unposted text survives the column being redrawn.
 const drafts = new Map();
+// Boxes that have had the focus once: drawn again (the column redrawn on an edit elsewhere), they don't take it back.
+const focused = new Set();
 // After a comment or reply is posted or cancelled, the keyboard goes back to the document (the box it was typed in is
 // redrawn away: focus fell to the page, NVDA saying only "document").
 const back = (view) => setTimeout(() => { if (!view.isDestroyed && !view.dom.contains(document.activeElement)) view.focus(); }, 0);
@@ -155,10 +157,10 @@ function composer(key, placeholder, initial, onPost, onCancel, findSel = null) {
   ta.value = drafts.has(key) ? drafts.get(key) : initial || '';
   ta.oninput = () => { drafts.set(key, ta.value); findSel?.clear(); };
   ta.addEventListener('mousedown', () => findSel?.clear());
-  const done = (fn) => () => { drafts.delete(key); fn(); };
+  const done = (fn) => () => { drafts.delete(key); focused.delete(key); fn(); };
   onCancel = done(onCancel);
   const post0 = onPost;
-  onPost = (t) => { drafts.delete(key); post0(t); };
+  onPost = (t) => { drafts.delete(key); focused.delete(key); post0(t); };
   ta.rows = 2;
   const post = h('button', 'odx-cmt-post', 'Post');
   const cancel = h('button', '', 'Cancel');
@@ -178,11 +180,16 @@ function composer(key, placeholder, initial, onPost, onCancel, findSel = null) {
     if (!ta.isConnected) return;
     // Find's match stays selected (through redraws of the column) until the comment is typed in or clicked, and the
     // keys stay in the find bar while it has them.
-    const select = findSel?.get();
+    let select = findSel?.get();
     if (!select && document.activeElement === ta) return; // (focused, with its selection, by a redraw of the column)
-    const finding = !!document.activeElement?.closest?.('.odx-findbar');
-    if (!finding) ta.focus();
-    if (select) { ta.setSelectionRange(select.from, select.to); ta.scrollIntoView({ block: 'center' }); } else if (!finding) ta.selectionStart = ta.selectionEnd = ta.value.length;
+    // (Not while someone is in the document: Find's match there is over, and the comment mustn't take the keys.)
+    if (select && document.activeElement?.closest?.('.odx-content, .odx-hfedit')) { findSel.clear(); return; }
+    // (A match Find opened here is selected, the keys left where they are: in the find bar. A click edits it.)
+    if (select) { focused.add(key); ta.setSelectionRange(select.from, select.to); ta.scrollIntoView({ block: 'center' }); return; }
+    if (document.activeElement?.closest?.('.odx-findbar') || focused.has(key)) return;
+    focused.add(key);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
   }, 0);
   return wrap;
 }

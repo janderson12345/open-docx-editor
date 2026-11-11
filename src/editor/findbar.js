@@ -2,6 +2,7 @@
 // and notes (findstories.js).
 import { el } from './ribbonkit.js';
 import { findNextAll, replaceOneAll, replaceAllStories, findPosition } from './findstories.js';
+import { refresh as refreshComments } from './comments.js';
 
 /** The bar (hidden until opened) and `openFind(replace)`, a command that opens it with or without the replace row. */
 export function createFindBar(getView, withView) {
@@ -13,6 +14,20 @@ export function createFindBar(getView, withView) {
   // parentheses caught ($1, $2).
   const regex = el('input', { type: 'checkbox', title: 'Use patterns (regular expressions): \\d for a digit, . for any character, (…) to reuse as $1 in the replacement' });
   const findInfo = el('span', { class: 'odx-findinfo', role: 'status' }); // read out by screen readers (4.1.3)
+  // Closed: back to the document, and a comment Find had opened in the margin closed too (its match is over).
+  const closeFind = () => {
+    findBar.hidden = true;
+    const v = getView();
+    const main = v?.odx?.main || v;
+    const session = main?.odx?.session;
+    if (session && session.findComment != null) {
+      if (session.editingComment === session.findComment) session.editingComment = null;
+      session.findComment = null;
+      session.commentSelect = null;
+      refreshComments(main);
+    }
+    v?.focus();
+  };
   const fOpts = () => ({ matchCase: matchCase.checked, wholeWord: wholeWord.checked, regex: regex.checked });
   const fdo = (fn) => (e) => {
     e.preventDefault();
@@ -40,11 +55,12 @@ export function createFindBar(getView, withView) {
     el('button', { type: 'button', title: 'Next result', onmousedown: fdo((v) => findNextAll(v, findBox.value, fOpts(), 1)) }, '↓'),
     el('label', {}, matchCase, 'Match case'), el('label', {}, wholeWord, 'Whole words'), el('label', {}, regex, 'Patterns'),
     replRow, findInfo,
-    el('button', { type: 'button', title: 'Close', class: 'odx-close', onmousedown: (e) => { e.preventDefault(); findBar.hidden = true; getView()?.focus(); } }, '✕'));
+    el('button', { type: 'button', title: 'Close', class: 'odx-close', onmousedown: (e) => { e.preventDefault(); closeFind(); } }, '✕'));
   findBox.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') fdo((v) => findNextAll(v, findBox.value, fOpts(), e.shiftKey ? -1 : 1))(e);
-    if (e.key === 'Escape') { findBar.hidden = true; getView()?.focus(); }
+    if (e.key === 'Escape') closeFind();
   });
+  replBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFind(); });
   const openFind = (replace) => withView((v) => {
     findBar.hidden = false;
     replRow.hidden = !replace;

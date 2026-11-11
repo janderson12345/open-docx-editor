@@ -74,6 +74,7 @@ function selectInComment(main, id, doc, m) {
   const { session } = main.odx;
   session.activeComment = id;
   session.editingComment = id;
+  session.findComment = id; // (closed with the find bar: findbar.js)
   // (The box selects it as it opens: balloons.js.)
   session.commentSelect = { id: String(id), from: offset(doc, m.from), to: offset(doc, m.to) };
   refresh(main);

@@ -528,6 +528,22 @@ check(Math.abs(fit) <= 1, `Page Width fits the page to the window (${fit}px left
 await page.evaluate(() => window.odx.setZoom(1));
 await page.click('[role=tab]:text-is("Home")');
 
+// Find into a comment, then the find bar closed: the comment closes too, and typing goes on in the document (the
+// comment's box had taken the keys back at the next redraw).
+await open('find-all.docx');
+await page.click('.odx-content p');
+await page.keyboard.press('Control+f');
+await page.fill('.odx-findbar input[aria-label="Find"]', 'comment about');
+await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
+await page.waitForTimeout(300);
+await page.press('.odx-findbar input[aria-label="Find"]', 'Escape');
+await page.click('.odx-content p >> nth=1');
+await page.keyboard.press('End');
+await page.keyboard.type('QQ');
+await page.waitForTimeout(600);
+const afterFind = await page.evaluate(() => ({ inDoc: !!document.activeElement?.closest('.odx-content'), box: !!document.querySelector('.odx-markup textarea'), typed: window.odx.view.state.doc.textContent.includes('QQ') }));
+check(afterFind.inDoc && !afterFind.box && afterFind.typed, `Find into a comment, closed: the comment closes and typing stays in the document (${JSON.stringify(afterFind)})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
