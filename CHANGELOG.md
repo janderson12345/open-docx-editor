@@ -27,6 +27,9 @@ documents, and many smaller matches to Word in reading, drawing, editing and sav
   merged rows and print baseline shifts are measured again only where something changed; tracked
   changes' balloons are drawn in one pass. A keystroke in a 20MB document of tables: about 0.9s, was about 3s; in an
   800-row table with 7,200 tracked changes: about 0.1s, was about 3s; in a 750-page report: about 0.3s, was 0.5s.
+- Right-aligned tab stops (a table of contents' page numbers) reach the margin where Calibri isn't installed and its
+  stand-in is drawn: tabs are sized again when the text in their line moves or a web font arrives, and a title that
+  overruns the stop by a fraction of a pixel takes its number to the next line, as in Word.
 - **Page Setup** (Layout > Page Setup): margins, gutter, header and footer distances, orientation and paper size (a
   custom one too), applied to the section the cursor is in or to the whole document. Layout's Margins, Orientation,
   Size and Columns menus change the section the cursor is in (they had changed the last section only).
