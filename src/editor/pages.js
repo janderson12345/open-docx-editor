@@ -1808,6 +1808,10 @@ export function createPages(view, session, { sheet, scope }) {
   view.dom.addEventListener('contentvisibilityautostatechange', onShown, true);
   window.addEventListener('resize', scheduleIdle);
   if (document.fonts) fontsSettled().then(() => !destroyed && schedule());
+  // A web font that arrives later (a stand-in such as Carlito, requested only when the text using it is drawn) changes
+  // what was measured in the fallback font: tabs, widths and pages are worked out again.
+  const onFonts = () => { if (!destroyed) scheduleIdle(); };
+  document.fonts?.addEventListener('loadingdone', onFonts);
   let destroyed = false;
   schedule();
 
@@ -1886,6 +1890,7 @@ export function createPages(view, session, { sheet, scope }) {
       view.dom.removeEventListener('load', onLoad, true);
       view.dom.removeEventListener('contentvisibilityautostatechange', onShown, true);
       window.removeEventListener('resize', scheduleIdle);
+      document.fonts?.removeEventListener('loadingdone', onFonts);
       window.removeEventListener('beforeprint', beforePrint);
       window.removeEventListener('afterprint', afterPrint);
       clearTimeout(timer);
