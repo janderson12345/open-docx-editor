@@ -286,6 +286,19 @@ function readRun(r, outer, ctx, out) {
   for (const c of kids(r)) {
     if (c === rPr) continue;
     const name = c.namespaceURI === NS.w || c.localName === 'AlternateContent' ? c.localName : null;
+    // Fields as they open, divide and close (w:fldChar): text inside a field's code, the result of a field nested in it
+    // (an IF around a PAGE), is part of the code, not shown (kept as it was).
+    if (name === 'fldChar') {
+      const t = attr(c, 'fldCharType');
+      ctx.fields ||= [];
+      if (t === 'begin') ctx.fields.push('code');
+      else if (t === 'separate' && ctx.fields.length) ctx.fields[ctx.fields.length - 1] = 'result';
+      else if (t === 'end') ctx.fields.pop();
+    }
+    if ((name === 't' || name === 'tab') && ctx.fields?.includes('code')) {
+      out.push(opaque(`<w:r>${rPrXml}${ctx.xml(c)}</w:r>`, '', name, outer));
+      continue;
+    }
     switch (name) {
       case 't':
       case 'delText': {

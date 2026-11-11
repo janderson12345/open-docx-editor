@@ -49,3 +49,24 @@ test('a repeating section in table rows (controls inside a control) keeps its ro
   assert.match(out, /<w15:repeatingSection\/><\/w:sdtPr><w:sdtContent><w:sdt><w:sdtPr><w:id w:val="5"\/><w15:repeatingSectionItem\/><\/w:sdtPr><w:sdtContent><w:tr>[\s\S]*?Hosting fee[\s\S]*?<\/w:tr><\/w:sdtContent><\/w:sdt><w:sdt><w:sdtPr><w:id w:val="6"\/>[\s\S]*?Support fee[\s\S]*?<\/w:tr><\/w:sdtContent><\/w:sdt><\/w:sdtContent><\/w:sdt><\/w:tbl>/);
   assert.match(out, /<w:id w:val="8"\/><\/w:sdtPr><w:sdtContent><w:sdt><w:sdtPr><w:id w:val="9"\/><\/w:sdtPr><w:sdtContent><w:tc>[\s\S]*?Inner cell[\s\S]*?<\/w:tc><\/w:sdtContent><\/w:sdt><\/w:sdtContent><\/w:sdt><\/w:tr>/);
 });
+
+// Shapes some templates have: a block control holding paragraphs with an inline control inside one, a locked inline
+// control, and bookmarks starting inside a control and ending after it. Shown, saved, and read back the same.
+test('a block control with a control inside, a locked control, and bookmarks across a control: read, saved, read back', () => {
+  const R = (t) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const inline = (tag, t, lock = '') => `<w:sdt><w:sdtPr>${lock}<w:tag w:val="${tag}"/><w:text/></w:sdtPr><w:sdtContent>${R(t)}</w:sdtContent></w:sdt>`;
+  const body = `<w:sdt><w:sdtPr><w:tag w:val="block"/></w:sdtPr><w:sdtContent><w:p>${R('First: ')}${inline('inner', 'nested value')}</w:p><w:p>${R('Second paragraph')}</w:p></w:sdtContent></w:sdt>`
+    + `<w:p>${R('Locked: ')}${inline('locked', 'fixed text', '<w:lock w:val="sdtContentLocked"/>')}</w:p>`
+    + `<w:p><w:bookmarkStart w:id="5" w:name="span"/>${inline('marked', 'in a control')}${R(' and after')}<w:bookmarkEnd w:id="5"/></w:p>`;
+  const files = unzipSync(blankDocxBytes());
+  const main = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  files[main] = strToU8(strFromU8(files[main]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`));
+  const s = new DocxSession(zipSync(files));
+  assert.equal(s.doc.textContent, 'First: nested valueSecond paragraphLocked: fixed textin a control and after');
+  const out = s.save(s.doc);
+  const xml = strFromU8(unzipSync(out)[s.pkg.mainPath]);
+  for (const tag of ['block', 'inner', 'locked', 'marked']) assert.match(xml, new RegExp(`<w:tag w:val="${tag}"/>`));
+  assert.match(xml, /<w:lock w:val="sdtContentLocked"\/>/);
+  assert.match(xml, /<w:bookmarkStart w:id="5" w:name="span"\/>[\s\S]*in a control[\s\S]*and after[\s\S]*<w:bookmarkEnd w:id="5"\/>/);
+  assert.deepEqual(new DocxSession(out).doc.toJSON(), s.doc.toJSON());
+});

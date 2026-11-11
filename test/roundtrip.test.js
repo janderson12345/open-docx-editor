@@ -268,3 +268,23 @@ test('a footnote nothing refers to is kept by a save; one whose reference is del
   assert.match(out, /Never referenced/);
   assert.doesNotMatch(out, />Referenced</);
 });
+
+// Saved again and again with no edits, a file settles at once: the second save writes what the first did, so nothing
+// creeps in (or drops out) a little more each time a document goes through the editor.
+test('five save cycles: every fixture saves the same from the first save on', () => {
+  for (const f of fixtures) {
+    let bytes = load(f);
+    let prev = null;
+    let doc = null;
+    for (let i = 0; i < 5; i++) {
+      const s = new DocxSession(bytes);
+      if (doc) assert.deepEqual(s.doc.toJSON(), doc, `${f}: the document read back differs on cycle ${i + 1}`);
+      doc = s.doc.toJSON();
+      bytes = s.save();
+      const parts = unzipSync(bytes);
+      const now = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, strFromU8(v)]));
+      if (prev) for (const k of new Set([...Object.keys(now), ...Object.keys(prev)])) assert.equal(now[k], prev[k], `${f}: ${k} changed on save ${i + 1}`);
+      prev = now;
+    }
+  }
+});

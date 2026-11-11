@@ -403,6 +403,89 @@ const fits = await page.evaluate(() => [...document.querySelectorAll('.odx-conte
 }));
 check(fits.join() === '96,192,96,72,144', `fitted text as wide as it says, as in Word (${fits.join()})`);
 
+// Typing through an input method (Chinese, Japanese, Korean: composed, then committed) in each part of a document: the
+// body, a text box, the header, the footer, a footnote and an endnote (find-all.docx, each reached with Find).
+const typeIme = async (text) => {
+  await cdp.send('Input.imeSetComposition', { text: text.slice(0, 1), selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
+  await cdp.send('Input.insertText', { text });
+  await page.waitForTimeout(150);
+};
+await open('find-all.docx');
+await page.click('.odx-content p');
+await page.keyboard.press('Control+Home');
+await page.keyboard.press('Control+f');
+await page.fill('.odx-findbar input[aria-label="Find"]', 'apple');
+const imeParts = [];
+for (let i = 0; i < 7; i++) {
+  await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
+  await page.waitForTimeout(250);
+  if (i === 1) continue; // (the body's second apple)
+  const v = await page.evaluate(() => { const v = window.odx.view.odx.hfView || window.odx.view; v.focus(); const { to } = v.state.selection; v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(to)))); return true; });
+  void v;
+  await typeIme(`漢字${i}`);
+  imeParts.push(await page.evaluate((i) => { const v = window.odx.view.odx.hfView || window.odx.view; return v.state.doc.textContent.includes(`漢字${i}`); }, i));
+}
+await page.keyboard.press('Escape');
+const imeSaved = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
+const imeIn = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml', 'word/endnotes.xml'].map((f) => (strFromU8(imeSaved[f]).match(/漢字\d/g) || []).length);
+check(imeParts.every(Boolean) && imeIn.join() === '3,1,1,1,1', `input-method typing in the body, a text box, the header, the footer and notes, saved (${imeParts.join()}; ${imeIn.join()}: the text box's twice, its shape and fallback copy)`);
+
+// Track Changes edge cases: a word deleted letter by letter, then typed over, reads in order (the new text before the
+// deleted, where Word's caret is once it has gone back over it); undoing tracked typing
+// takes its change away; Reject All in a table cell leaves no insertion behind.
+await open('rich.docx');
+await page.evaluate(() => window.odx.view.focus());
+await page.click('.odx-content p >> nth=0');
+await page.keyboard.press('End');
+await page.keyboard.type(' alpha');
+await page.evaluate(() => { const t = document.querySelector('.odx-tracksel'); t.value = 'on'; t.dispatchEvent(new Event('change')); });
+await page.evaluate(() => window.odx.view.focus());
+for (let i = 0; i < 5; i++) await page.keyboard.press('Backspace');
+await page.keyboard.type('beta');
+await page.waitForTimeout(150);
+const order = await page.evaluate(() => { const p = window.odx.view.state.doc.firstChild; let out = ''; p.forEach((n) => { if (n.isText) out += n.marks.some((m) => m.type.name === 'del') ? `[-${n.text}]` : n.marks.some((m) => m.type.name === 'ins') ? `[+${n.text}]` : ''; }); return out; });
+check(/\[\+beta\]\[-alpha\]$/.test(order), `a word deleted letter by letter and typed over reads in order (${order})`);
+const insBefore = await page.evaluate(() => document.querySelectorAll('.odx-content ins.odx-ins').length);
+await page.waitForTimeout(700); // (a new undo step, not the typing before)
+await page.keyboard.type('X');
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(150);
+check(await page.evaluate((n) => document.querySelectorAll('.odx-content ins.odx-ins').length === n && !window.odx.view.state.doc.textContent.includes('betaX'), insBefore), 'undoing tracked typing takes its insertion away');
+const cellOk = await page.evaluate(async () => {
+  const v = window.odx.view;
+  let at = null;
+  v.state.doc.descendants((n, pos) => { if (at == null && n.type.name === 'table_cell') at = pos + 2; return at == null; });
+  if (at == null) return 'no table';
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(at))));
+  v.focus();
+  return 'ok';
+});
+await page.keyboard.type('cell text');
+await page.evaluate(() => { const b = [...document.querySelectorAll('.odx-tracksel')][0]; void b; });
+await page.evaluate(() => window.odx.agent().resolveChanges({ accept: false }));
+const strayIns = /<w:ins\b/.test(strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']));
+check(cellOk === 'ok' && !strayIns && !(await bodyText()).includes('cell text'), `Reject All with a change in a table cell leaves no insertion behind (${cellOk}, ${strayIns})`);
+
+// Inside a protected document's editable part: Enter, Tab and paste all work there.
+await open('protect-readonly.docx');
+// (The caret after "Everyone may edit", inside the part.)
+await page.evaluate(() => {
+  const v = window.odx.view;
+  let at = null;
+  v.state.doc.descendants((n, pos) => { if (at == null && n.isText && n.text.includes('may edit')) at = pos + n.text.indexOf('may edit') + 8; return at == null; });
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(at))));
+  v.focus();
+});
+await page.keyboard.press('Tab');
+await page.keyboard.type('T');
+await page.keyboard.press('Enter');
+await page.keyboard.type('N');
+await page.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', 'P'); window.odx.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+await page.waitForTimeout(150);
+const permText = await page.evaluate(() => { const d = window.odx.view.state.doc; return d.textBetween(0, d.content.size, '\n', (n) => (n.type.name === 'tab' ? '\t' : '')); });
+check(/edit\tT\nNP this/.test(permText), `Tab, Enter and paste inside an editable part of a protected document (${JSON.stringify(permText.slice(0, 80))})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
