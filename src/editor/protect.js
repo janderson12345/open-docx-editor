@@ -19,6 +19,17 @@ export const protectionOf = (state) => protectKey.getState(state)?.cfg || null;
 /** Comments can be added (not in a read-only document). */
 export const commentsAllowed = (state) => protectionOf(state)?.edit !== 'readOnly';
 
+/**
+ * Tab and Shift+Tab move the focus on, as a browser's do, rather than typing, where the document can only be read
+ * (or commented) and the caret isn't in a part this user may edit: no keyboard trap (WCAG 2.1.2).
+ */
+export function tabLeaves(state) {
+  const cfg = protectionOf(state);
+  if (!cfg || (cfg.edit !== 'readOnly' && cfg.edit !== 'comments')) return false;
+  const { from, to } = state.selection;
+  return !protectKey.getState(state).ranges.some((r) => from >= r.from && to <= r.to);
+}
+
 /** Tracked changes can be accepted or rejected (not when the document is protected for tracked changes). */
 export const resolvingAllowed = (state) => protectionOf(state)?.edit !== 'trackedChanges';
 

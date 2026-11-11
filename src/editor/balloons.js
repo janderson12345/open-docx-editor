@@ -147,7 +147,7 @@ const drafts = new Map();
 // redrawn away: focus fell to the page, NVDA saying only "document").
 const back = (view) => setTimeout(() => { if (!view.isDestroyed && !view.dom.contains(document.activeElement)) view.focus(); }, 0);
 
-function composer(key, placeholder, initial, onPost, onCancel) {
+function composer(key, placeholder, initial, onPost, onCancel, takeSelect = null) {
   const wrap = h('div', 'odx-cmt-compose');
   const ta = h('textarea');
   ta.dataset.odxBox = key;
@@ -172,7 +172,14 @@ function composer(key, placeholder, initial, onPost, onCancel) {
   const row = h('div', 'odx-cmt-actions');
   row.append(post, cancel);
   wrap.append(ta, row);
-  setTimeout(() => { if (ta.isConnected) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }, 0);
+  // (The caret at the end, or the text Find chose selected.)
+  setTimeout(() => {
+    if (!ta.isConnected) return;
+    const select = takeSelect?.();
+    if (!select && document.activeElement === ta) return; // (focused, with its selection, by a redraw of the column)
+    ta.focus();
+    if (select) { ta.setSelectionRange(select.from, select.to); ta.scrollIntoView({ block: 'center' }); } else ta.selectionStart = ta.selectionEnd = ta.value.length;
+  }, 0);
   return wrap;
 }
 
@@ -192,8 +199,10 @@ function commentBalloon(view, c) {
     head.append(h('span', 'odx-cmt-avatar', x.initials || (x.author || '?')[0]), h('b', '', x.author || 'Unknown'), h('small', '', when(x.date, x.dateUtc)));
     e.append(head);
     if (session.editingComment === x.id) {
+      // (Taken by the box that's still there once drawn: the column can be drawn again in the meantime.)
+      const takeSelect = () => { const s = session.commentSelect?.id === String(x.id) ? session.commentSelect : null; if (s) session.commentSelect = null; return s; };
       e.append(composer('e' + x.id, 'Add a comment', x.text, (t) => { session.editingComment = null; setText(view, x.id, t); announce('Comment posted'); back(view); },
-        () => { session.editingComment = null; if (!x.text) deleteComment(view, x.id); else setActive(view, x.id); back(view); }));
+        () => { session.editingComment = null; if (!x.text) deleteComment(view, x.id); else setActive(view, x.id); back(view); }, takeSelect));
     } else e.append(h('div', 'odx-cmt-text', x.text));
     return e;
   };

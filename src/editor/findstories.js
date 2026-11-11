@@ -1,11 +1,15 @@
 // Find and Replace through every part of the document, as Word searches it: the main text, then the text boxes, the
-// headers and footers, the footnotes and the endnotes. Moving to a match in another part opens that part's editor
-// (hfedit.js, notes.js, txbxedit.js) with the match selected; Replace All changes them all.
+// headers and footers, the footnotes and the endnotes, then the comments. Moving to a match in another part opens that
+// part's editor (hfedit.js, notes.js, txbxedit.js, or the comment's box in the margin) with the match selected;
+// Replace All changes them all.
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { findAll, replacementFor } from './find.js';
 import { editingStory, closeStory, editStory } from './hfedit.js';
 import { noteRefs, editingNote, closeNote, editNote } from './notes.js';
 import { editingTextBox, closeTextBox, editTextBox } from './txbxedit.js';
+import { schema } from './schema.js';
+import { refresh, setText } from './comments.js';
+import { commentsAllowed } from './protect.js';
 
 /** The document's view for a view that may be a header, note or text box editor over it. */
 export const mainOf = (view) => view?.odx?.main || view;
@@ -45,11 +49,39 @@ export function stories(main) {
       if (note) out.push({ key: `note:${kind}:${r.id}`, kind: 'note', noteKind: kind, id: r.id, note, doc: note.doc });
     }
   }
+  // The comments (and replies), each as text: a paragraph a line.
+  if (main.odx.features?.comments !== false) {
+    for (const c of session.comments || []) if (c.text) out.push({ key: `cmt:${c.id}`, kind: 'comment', id: c.id, doc: commentDoc(c.text) });
+  }
   return out;
+}
+
+const commentDoc = (text) => schema.nodes.doc.create(null, text.split('\n').map((l) => schema.nodes.paragraph.create(null, l ? schema.text(l) : null)));
+/** A position in a comment's doc as an offset in its text. */
+const offset = (doc, pos) => doc.textBetween(0, pos, '\n').length;
+/** The comment open for editing in the margin, if any: its box and the comment's id. (Its selection stays while the
+ * find bar has the focus.) */
+function commentBox(main) {
+  const id = main.odx.session?.editingComment;
+  if (id == null) return null;
+  const ta = main.dom.parentElement?.querySelector(`textarea[data-odx-box="e${CSS.escape(String(id))}"]`);
+  return ta ? { ta, id: String(id) } : null;
+}
+
+/** Open comment `id` for editing in the margin and select [from, to] of its doc there. */
+function selectInComment(main, id, doc, m) {
+  closeAll();
+  const { session } = main.odx;
+  session.activeComment = id;
+  session.editingComment = id;
+  // (The box selects it as it opens: balloons.js.)
+  session.commentSelect = { id: String(id), from: offset(doc, m.from), to: offset(doc, m.to) };
+  refresh(main);
 }
 
 /** The key of the part being edited (see stories()). */
 function currentKey(main) {
+  const c = commentBox(main); if (c) return `cmt:${c.id}`;
   const s = editingStory(); if (s?.main === main) return `hf:${s.rId}`;
   const t = editingTextBox(); if (t?.main === main) return `txbx:${t.pos}:${t.k}`;
   const n = editingNote(); if (n?.main === main) return `note:${n.kind}:${n.note.id}`;
@@ -61,7 +93,10 @@ function closeAll() { closeStory(); closeNote(); closeTextBox(); }
 /** Open part `s` for editing; returns its view, or null when it can't be shown. */
 function openPart(main, s) {
   closeAll();
+  // (Out of a comment's box, as the search moves on.)
+  if (main.odx.session?.editingComment != null) { main.odx.session.editingComment = null; refresh(main); }
   if (s.kind === 'main') { main.focus(); return main; }
+  if (s.kind === 'comment') return null; // (opened by selectInComment)
   if (s.kind === 'textbox') return editTextBox(main, s.pos, null, null, s.k);
   if (s.kind === 'note') {
     const el = main.dom.parentElement.querySelector(`.odx-note[data-kind="${s.noteKind}"][data-id="${CSS.escape(s.id)}"]`);
@@ -87,21 +122,34 @@ const select = (v, m) => v.dispatch(v.state.tr.setSelection(TextSelection.create
 export function findNextAll(view, query, opts, dir = 1) {
   const main = mainOf(view);
   const here = currentKey(main);
-  const cur = here === 'main' ? main : main.odx.hfView || main;
+  const box = here.startsWith('cmt:') ? commentBox(main) : null;
+  const cur = here === 'main' || box ? main : main.odx.hfView || main;
   const list = stories(main);
   let i = list.findIndex((s) => s.key === here);
   if (i < 0) i = 0;
-  list[i] = { ...list[i], doc: cur.state.doc };
+  if (box) list[i] = { ...list[i], doc: commentDoc(box.ta.value) };
+  else list[i] = { ...list[i], doc: cur.state.doc };
   const found = list.map((s) => findAll(s.doc, query, opts));
   const total = found.reduce((n, f) => n + f.length, 0);
   if (!total) return 0;
-  const { from, to } = cur.state.selection;
   const mine = found[i];
-  const m = dir > 0 ? mine.find((x) => x.from >= to) : [...mine].reverse().find((x) => x.to <= from);
-  if (m) { select(cur, m); return total; }
+  if (box) {
+    const d = list[i].doc;
+    const m = dir > 0 ? mine.find((x) => offset(d, x.from) >= box.ta.selectionEnd) : [...mine].reverse().find((x) => offset(d, x.to) <= box.ta.selectionStart);
+    if (m) { box.ta.setSelectionRange(offset(d, m.from), offset(d, m.to)); return total; }
+  } else {
+    const { from, to } = cur.state.selection;
+    const m = dir > 0 ? mine.find((x) => x.from >= to) : [...mine].reverse().find((x) => x.to <= from);
+    if (m) { select(cur, m); return total; }
+  }
   for (let step = 1; step <= list.length; step++) {
     const j = (i + dir * step + list.length * step) % list.length;
     if (!found[j].length) continue;
+    if (list[j].kind === 'comment') {
+      const ms = found[j];
+      selectInComment(main, list[j].id, list[j].doc, dir > 0 ? ms[0] : ms[ms.length - 1]);
+      return total;
+    }
     const v = openPart(main, list[j]);
     if (!v) continue;
     const ms = findAll(v.state.doc, query, opts);
@@ -114,6 +162,15 @@ export function findNextAll(view, query, opts, dir = 1) {
 
 /** Replace the selected match (if it is one) where it is, and move to the next. */
 export function replaceOneAll(view, query, replacement, opts) {
+  // In a comment's box: the selected match replaced in its text, then on to the next.
+  const box = commentBox(mainOf(view));
+  if (box) {
+    const { ta } = box;
+    const d = commentDoc(ta.value);
+    const hit = findAll(d, query, opts).find((x) => offset(d, x.from) === ta.selectionStart && offset(d, x.to) === ta.selectionEnd);
+    if (hit) { const at = ta.selectionStart; ta.setRangeText(replacementFor(hit, replacement), at, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); }
+    return findNextAll(view, query, opts, 1);
+  }
   const { from, to } = view.state.selection;
   const hit = findAll(view.state.doc, query, opts).find((x) => x.from === from && x.to === to);
   if (hit) view.dispatch(view.state.tr.insertText(replacementFor(hit, replacement), from, to));
@@ -172,5 +229,15 @@ export function replaceAllStories(view, query, replacement, opts) {
   }
   if (tr.docChanged) main.dispatch(tr);
   if (parts) { main.odx.pages.restory(); main.odx.notify?.(main); }
+  // Comments: each one's text with its matches replaced (not where the document can only be read).
+  if (commentsAllowed(main.state)) {
+    for (const s of list) {
+      if (s.kind !== 'comment') continue;
+      const r = replacedIn(s.doc, query, replacement, opts);
+      if (!r) continue;
+      total += r.n;
+      setText(main, s.id, r.doc.textBetween(0, r.doc.content.size, '\n'));
+    }
+  }
   return total;
 }

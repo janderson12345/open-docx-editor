@@ -5,7 +5,7 @@ lines of the two PDFs are matched in order, and a line counts when it's on the s
 1px of Word's. See `docs/LAYOUT.md` for what the numbers mean and where they stand.
 
 Windows, with Word and Microsoft Edge installed (the published numbers are Edge's: its fonts and font rendering are
-part of what's measured). Node 20 for the repository's Playwright, Python 3, PowerShell 7.
+part of what's measured). Node 22.13 or later (the repository's Playwright and pdf.js), Python 3, PowerShell 7.
 
 ## Once: Word's PDFs
 

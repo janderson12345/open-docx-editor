@@ -14,7 +14,7 @@ npm run test:e2e    # Chromium: open, edit and save each fixture; accessibility,
 node tools/check-ooxml.mjs test/out   # structural check of the files test:e2e saved
 ```
 
-The browser tests need Node 22 or later (Playwright; the Angular wrapper's test uses Angular 22) and a Chromium: `npx playwright install chromium`.
+The browser tests need Node 22.13 or later (Playwright and pdf.js; the Angular wrapper's test uses Angular 22) and a Chromium: `npx playwright install chromium`.
 CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull request.
 
 ## Where things are

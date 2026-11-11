@@ -34,6 +34,7 @@ const onOff = (name, on) => (on ? `<w:${name}/>` : `<w:${name} w:val="0"/>`);
  * @param ctx { linkRel(href) -> rId } allocates relationships for new hyperlinks
  */
 export function writeDocument(doc, originalXml, ctx = {}) {
+  originalXml = withUtcPrefix(originalXml, doc);
   ctx.prefixes ||= rootPrefixes(originalXml);
   const parts = [writeBlocks(doc, ctx)];
   if (doc.lastChild && doc.lastChild.type.name === 'table') parts.push('<w:p/>');
@@ -96,6 +97,26 @@ function writeBlock(node, ctx) {
 function writeParagraph(p, ctx) {
   const a = p.attrs;
   return `<w:p${pAttrsXml(a.pattrs, ctx)}>${pPrXml(a)}${writeInlines(p, ctx)}</w:p>`;
+}
+
+const W16DU = 'http://schemas.microsoft.com/office/word/2023/wordml/word16du';
+const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+
+/**
+ * A part's XML with w16du declared on its root (and ignorable, as Word declares it, so older Word versions open the
+ * file) when `doc` has tracked changes with a UTC time (w16du:dateUtc) and the root doesn't declare it yet.
+ */
+export function withUtcPrefix(xml, doc) {
+  if (!xml || rootPrefixes(xml).has('w16du')) return xml;
+  let utc = false;
+  doc.descendants((n) => { if (!utc && n.marks.some((m) => m.attrs.dateUtc)) utc = true; return !utc; });
+  if (!utc) return xml;
+  return xml.replace(/<(?!\?)([\w:]+)\b([^>]*?)(\/?)>/, (m, name, attrs, close) => {
+    let a = `${attrs} xmlns:w16du="${W16DU}"`;
+    if (!/\sxmlns:mc=/.test(a)) a += ` xmlns:mc="${MC}"`;
+    a = /\smc:Ignorable="/.test(a) ? a.replace(/(\smc:Ignorable=")([^"]*)"/, (x, p, v) => `${p}${v ? `${v} ` : ''}w16du"`) : `${a} mc:Ignorable="w16du"`;
+    return `<${name}${a}${close}>`;
+  });
 }
 
 /** Prefixes declared on a part's root element (from its XML text), for `ctx.prefixes`. */
@@ -366,6 +387,7 @@ function writeCell(cell, vMerge, ctx) {
 
 /** A header or footer part (w:hdr / w:ftr) with its content replaced by `doc`'s; the root and namespaces are kept. */
 export function writeStory(doc, originalXml, ctx = {}) {
+  originalXml = withUtcPrefix(originalXml, doc);
   ctx.prefixes ||= rootPrefixes(originalXml);
   let body = writeBlocks(doc, ctx);
   if (doc.lastChild && doc.lastChild.type.name === 'table') body += '<w:p/>';

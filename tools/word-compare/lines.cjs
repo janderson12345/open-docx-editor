@@ -3,15 +3,15 @@
 // usage: node tools/word-compare/lines.cjs <pdfDir> <outDir>
 const fs = require('fs');
 const path = require('path');
-const pdfjs = require('pdfjs-dist/legacy/build/pdf.js');
 
 const [dir, outDir] = process.argv.slice(2);
 if (!outDir) { console.log('usage: node lines.cjs <pdfDir> <outDir>'); process.exit(1); }
 fs.mkdirSync(outDir, { recursive: true });
 (async () => {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   for (const f of fs.readdirSync(dir).filter((x) => /\.pdf$/i.test(x))) {
     try {
-      const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(path.join(dir, f))), disableFontFace: true, verbosity: 0 }).promise;
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(path.join(dir, f))), disableFontFace: true, isEvalSupported: false, verbosity: 0 }).promise;
       const out = [];
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);

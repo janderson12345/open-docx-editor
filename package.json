@@ -117,7 +117,7 @@
     "eslint": "9.39.1",
     "globals": "15.15.0",
     "mammoth": "^1.13.0",
-    "pdfjs-dist": "2.16.105",
+    "pdfjs-dist": "6.5.438",
     "playwright": "^1.64.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

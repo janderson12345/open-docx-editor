@@ -45,7 +45,7 @@ import { csFormatPlugin } from './csformat.js';
 import { pastePictures, pictureLinks } from './pastepics.js';
 import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.js';
 import { twipsToPx } from '../ooxml/units.js';
-import { protectPlugin } from './protect.js';
+import { protectPlugin, tabLeaves } from './protect.js';
 
 let scopeSeq = 0;
 
@@ -407,8 +407,9 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     Enter: cmd.splitParagraph(session),
     Backspace: chainCommands(trackedDelete(-1), cmd.outdentOrUnlist(session)),
     Delete: trackedDelete(1),
-    Tab: chainCommands(goToNextCell(1), cmd.changeListLevel(session, 1), cmd.insertTab),
-    'Shift-Tab': chainCommands(goToNextCell(-1), cmd.changeListLevel(session, -1)),
+    // (Not where the document can only be read: Tab goes on to the next control, protect.js.)
+    Tab: (s, d, v) => !tabLeaves(s) && chainCommands(goToNextCell(1), cmd.changeListLevel(session, 1), cmd.insertTab)(s, d, v),
+    'Shift-Tab': (s, d, v) => !tabLeaves(s) && chainCommands(goToNextCell(-1), cmd.changeListLevel(session, -1))(s, d, v),
   });
 
   const doc = paras.initial(session.doc);

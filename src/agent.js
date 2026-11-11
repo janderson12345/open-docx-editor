@@ -370,8 +370,16 @@ export class AgentDocument {
 /** A paragraph's text as it reads with its tracked changes accepted (deleted text left out). */
 function finalText(node) {
   let t = '';
+  // (Hidden text, w:vanish, isn't read: it isn't on the page. A symbol reads as its character, a note reference as
+  // [^N], Markdown's footnote mark.)
+  const hidden = (n) => n.marks.some((m) => m.type === schema.marks.rextra && m.attrs.items.some(([k, x]) => k === 'vanish' && !/w:val="(?:0|false|off)"/.test(x)));
   node.descendants((n) => {
-    if (n.isText) { if (!n.marks.some((m) => m.type === schema.marks.del)) t += n.text; }
+    if (n.isText) { if (!n.marks.some((m) => m.type === schema.marks.del) && !hidden(n)) t += n.text; }
+    else if (n.type === schema.nodes.opaque_inline && !hidden(n)) {
+      const note = /^(foot|end)noteReference$/.test(n.attrs.kind) && /w:id="([^"]*)"/.exec(n.attrs.xml || '');
+      if (note) t += `[^${n.attrs.kind[0] === 'e' ? 'e' : ''}${note[1]}]`;
+      else if (n.attrs.kind === 'sym') t += n.attrs.text || '';
+    }
     else if (n.type.name === 'tab') t += '\t';
     else if (n.type.name === 'hard_break') t += '\n';
     return true;

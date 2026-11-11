@@ -98,3 +98,24 @@ test('paragraph ids stay with their paragraphs through edits; new paragraphs get
   assert.equal(d.paragraphs().find((p) => p.id === before[1].id).text, 'Methods');
   assert.throws(() => d.range('p99999'), /No paragraph/);
 });
+
+test('the text an agent reads leaves out hidden text and shows symbols and note references', async () => {
+  const { blankDocxBytes } = await import('../src/index.js');
+  const { zipSync, unzipSync, strToU8 } = await import('fflate');
+  const files = unzipSync(blankDocxBytes());
+  files['word/document.xml'] = strToU8('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="preserve">Seen </w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:t>hidden</w:t></w:r><w:r><w:sym w:font="Wingdings" w:char="F0E0"/></w:r></w:p><w:sectPr/></w:body></w:document>');
+  const d = openDocument(zipSync(files));
+  const text = d.paragraphs()[0].text;
+  assert.ok(text.startsWith('Seen ') && !text.includes('hidden') && text.length === 6, text); // (the symbol as its character)
+  const notes = openDocument(load('notes-long.docx'));
+  assert.match(notes.paragraphs().map((p) => p.text).join('\n'), /\[\^\d+\]/);
+});
+
+test('a tracked change made here carries its UTC time (w16du:dateUtc), with the namespace declared and ignorable', () => {
+  const d = openDocument(load('fields.docx'), { author: 'A' });
+  d.replace('Results', 'Findings', { id: d.outline()[2].id });
+  const xml = docXml(d.save());
+  assert.match(xml, /<w:ins [^>]*w16du:dateUtc="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"/);
+  assert.match(xml, /xmlns:w16du="http:\/\/schemas.microsoft.com\/office\/word\/2023\/wordml\/word16du"/);
+  assert.match(xml, /mc:Ignorable="[^"]*\bw16du\b/);
+});

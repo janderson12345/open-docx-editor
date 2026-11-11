@@ -145,11 +145,13 @@ function withMarkRev(attrs, rev) {
 export function trackTransaction(state, tr, author) {
   const out = state.tr;
   const date = now();
+  // (And the true UTC time, as Word 2023 and later write it beside w:date, which is on the author's clock.)
+  const dateUtc = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   const own = (m) => m && m.attrs.author === author;
   let cursor = null;
   // One id per transaction and kind, reused when continuing the author's own adjacent change.
   const revAttrs = {};
-  const attrsFor = (kind) => (revAttrs[kind] ||= { id: nextId(state.doc), author, date });
+  const attrsFor = (kind) => (revAttrs[kind] ||= { id: nextId(state.doc), author, date, dateUtc });
 
   // Maps positions in the document before original step i onto `out`.
   const mapFor = (i) => {
