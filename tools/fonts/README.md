@@ -15,3 +15,14 @@ node tools/fonts/build-fonts.mjs <folder with the unpacked @fontsource packages>
 
 Each face is checked against the installed Microsoft font (widths of each letter, ascent, descent) before the files
 are replaced.
+
+## The Aptos stand-ins
+
+`src/editor/editor.css` embeds eight small fonts for Aptos and Aptos Display (regular, bold, italic, bold italic):
+Arimo's Latin letters, each narrowed or widened sideways to the width the editor gives Aptos's letter (fitted to Word's
+PDFs), all at one height. `build-aptos.mjs` measures those widths as editor.css draws them (in Microsoft Edge), builds
+the fonts with `aptos_standin.py` (Python with fontTools and brotli) and writes them into editor.css between its markers:
+
+```sh
+node tools/fonts/build-aptos.mjs
+```
