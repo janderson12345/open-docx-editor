@@ -73,6 +73,10 @@ export interface DocxEditorApi {
   readonly protection: Protection | null;
   /** Start enforcing protection (saved with the document; Word enforces it too). */
   protect(options: { edit?: Protection['edit']; formatting?: boolean; password?: string }): Promise<void>;
+  /** The zoom the pages are shown at (1 is 100%). The layout, printing and PDF export are always at 100%. */
+  readonly zoom: number;
+  /** Show the pages at a zoom (0.1 to 5), or fitted to the window ('pageWidth', 'onePage') as it resizes. */
+  setZoom(zoom: number | 'pageWidth' | 'onePage'): void;
   /** Stop protection: false when `password` isn't the document's. */
   unprotect(password?: string): Promise<boolean>;
   /** Edit Anyway (a document marked final or to open read-only; with a password to modify, it): whether it can be edited now. */

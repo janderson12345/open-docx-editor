@@ -486,6 +486,43 @@ await page.waitForTimeout(150);
 const permText = await page.evaluate(() => { const d = window.odx.view.state.doc; return d.textBetween(0, d.content.size, '\n', (n) => (n.type.name === 'tab' ? '\t' : '')); });
 check(/edit\tT\nNP this/.test(permText), `Tab, Enter and paste inside an editable part of a protected document (${JSON.stringify(permText.slice(0, 80))})`);
 
+// Zoom (View > Zoom, zoom.js): only what's shown changes. The pages break the same at 150%, a click puts the caret where
+// it lands, a double-click on the header edits it there, Ctrl+wheel zooms, and a PDF export is the same as at 100%.
+await open('fields.docx');
+const zoomSnap = () => page.evaluate(() => { const v = window.odx.view; const sh = v.dom.parentElement; const z = parseFloat(sh.style.zoom) || 1; const top = sh.getBoundingClientRect().top; return { pages: v.odx.pages.count, tops: [...v.dom.querySelectorAll(':scope > p')].filter((_, i) => i % 8 === 0).map((p) => Math.round((p.getBoundingClientRect().top - top) / z)) }; });
+const z100 = await zoomSnap();
+const pdf100 = await page.evaluate(async () => (await window.odx.exportPdf()).length);
+await page.evaluate(() => window.odx.setZoom(1.5));
+await page.waitForTimeout(1500);
+const z150 = await zoomSnap();
+check(z150.pages === z100.pages && z150.tops.every((t, i) => Math.abs(t - z100.tops[i]) <= 1), `at 150% the pages break as at 100% (${z100.pages} pages; ${z150.tops.join(',')})`);
+await page.click('[role=tab]:text-is("View")');
+check(await page.evaluate(() => document.querySelector('.odx-zoomsel').value === '1.5'), 'View > Zoom shows 150%');
+await page.click('.odx-content p:has-text("Front matter paragraph 2.")', { position: { x: 30, y: 8 } });
+await page.keyboard.type('@@');
+check(await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].find((p) => p.textContent.includes('@@'))?.textContent.replace('@@', '').startsWith('Front matter paragraph 2.')), 'at 150% a click puts the caret where it lands');
+await page.keyboard.press('Control+z');
+const hdr = await page.evaluate(() => { const r = document.querySelector('.odx-sheet .odx-hf')?.getBoundingClientRect(); return r && { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+await page.mouse.dblclick(hdr.x, hdr.y);
+await page.waitForTimeout(400);
+const hfAt = await page.evaluate(() => { const e = document.querySelector('.odx-hfedit-header'); const h = document.querySelector('.odx-sheet .odx-hf'); return e && h ? Math.round(Math.abs(e.getBoundingClientRect().top - h.getBoundingClientRect().top)) : null; });
+check(hfAt != null && hfAt < 30, `at 150% a double-click on the header edits it in place (${hfAt}px off)`);
+await page.keyboard.press('Escape');
+await page.mouse.move(640, 600);
+await page.keyboard.down('Control');
+await page.mouse.wheel(0, -100);
+await page.keyboard.up('Control');
+await page.waitForTimeout(300);
+check(await page.evaluate(() => Math.abs(window.odx.zoom - 1.6) < 1e-6), `Ctrl+wheel zooms in 10% (${await page.evaluate(() => window.odx.zoom)})`);
+const pdf160 = await page.evaluate(async () => (await window.odx.exportPdf()).length);
+check(Math.abs(pdf160 - pdf100) < pdf100 * 0.01 && await page.evaluate(() => window.odx.view.dom.parentElement.style.zoom === '1.6'), `a PDF export at 160% is the 100% one (${pdf100} and ${pdf160} bytes), the zoom kept on screen`);
+await page.evaluate(() => window.odx.setZoom('pageWidth'));
+await page.waitForTimeout(300);
+const fit = await page.evaluate(() => { const sh = window.odx.view.dom.parentElement; const c = sh.parentElement; const cs = getComputedStyle(c); return Math.round(c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - sh.getBoundingClientRect().width); });
+check(Math.abs(fit) <= 1, `Page Width fits the page to the window (${fit}px left over)`);
+await page.evaluate(() => window.odx.setZoom(1));
+await page.click('[role=tab]:text-is("Home")');
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

@@ -9,6 +9,7 @@ import { keymap } from 'prosemirror-keymap';
 import { baseKeymap } from 'prosemirror-commands';
 import * as cmd from './commands.js';
 import { csFormatPlugin } from './csformat.js';
+import { zoomOf } from './zoom.js';
 
 let open = null; // { main, tv, el, pos, node, k, doc0, outside }
 
@@ -58,7 +59,8 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   const [t, rr, b, l] = box.ins;
   const el = document.createElement('div');
   el.className = 'odx-hfedit odx-txbxedit';
-  el.style.cssText = `left:${a.left - o.left}px;top:${a.top - o.top}px;width:${a.width}px;min-height:${a.height}px;padding:${t}px ${rr}px ${b}px ${l}px;box-sizing:border-box`;
+  const z = zoomOf(main); // (in the page's own px, whatever the zoom)
+  el.style.cssText = `left:${(a.left - o.left) / z}px;top:${(a.top - o.top) / z}px;width:${a.width / z}px;min-height:${a.height / z}px;padding:${t}px ${rr}px ${b}px ${l}px;box-sizing:border-box`;
   const tag = document.createElement('div');
   tag.className = 'odx-hfedit-tag';
   const done = document.createElement('button');

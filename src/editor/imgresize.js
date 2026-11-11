@@ -4,6 +4,7 @@
 import { Plugin, NodeSelection, TextSelection } from 'prosemirror-state';
 import { editTextBox } from './txbxedit.js';
 import { editChart, chartXmlAt } from './charts.js';
+import { zoomOf } from './zoom.js';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN = 8; // px
@@ -26,7 +27,8 @@ export function imageResizePlugin() {
         const host = view.dom.parentElement;
         const r = target.img.getBoundingClientRect();
         const o = host.getBoundingClientRect();
-        box.style.cssText = `left:${r.left - o.left}px;top:${r.top - o.top}px;width:${r.width}px;height:${r.height}px`;
+        const z = zoomOf(view); // (in the page's own px, whatever the zoom)
+        box.style.cssText = `left:${(r.left - o.left) / z}px;top:${(r.top - o.top) / z}px;width:${r.width / z}px;height:${r.height / z}px`;
         if (box.parentElement !== host) host.append(box);
       };
       const select = () => {
@@ -44,15 +46,17 @@ export function imageResizePlugin() {
         e.preventDefault();
         e.stopPropagation();
         const { img, pos, node } = target;
-        const w0 = img.getBoundingClientRect().width;
-        const h0 = img.getBoundingClientRect().height;
+        // (In the page's own px: the screen's divided by the zoom.)
+        const z = zoomOf(view);
+        const w0 = img.getBoundingClientRect().width / z;
+        const h0 = img.getBoundingClientRect().height / z;
         const x0 = e.clientX;
         const y0 = e.clientY;
         let w = w0;
         let hh = h0;
         const move = (ev) => {
-          const dx = (ev.clientX - x0) * (h.includes('w') ? -1 : h.includes('e') ? 1 : 0);
-          const dy = (ev.clientY - y0) * (h.includes('n') ? -1 : h.includes('s') ? 1 : 0);
+          const dx = ((ev.clientX - x0) / z) * (h.includes('w') ? -1 : h.includes('e') ? 1 : 0);
+          const dy = ((ev.clientY - y0) / z) * (h.includes('n') ? -1 : h.includes('s') ? 1 : 0);
           if (h.length === 2) {
             // Corners keep the proportions: follow whichever way moved further.
             const k = Math.max((w0 + dx) / w0, (h0 + dy) / h0);
@@ -88,8 +92,9 @@ export function imageResizePlugin() {
         e.stopPropagation();
         const { img, pos, node } = target;
         const x0 = e.clientX, y0 = e.clientY;
+        const z = zoomOf(view);
         let dx = 0, dy = 0;
-        const move = (ev) => { dx = ev.clientX - x0; dy = ev.clientY - y0; img.style.translate = `${dx}px ${dy}px`; place(); };
+        const move = (ev) => { dx = (ev.clientX - x0) / z; dy = (ev.clientY - y0) / z; img.style.translate = `${dx}px ${dy}px`; place(); };
         const up = () => {
           box.removeEventListener('pointermove', move);
           box.removeEventListener('pointerup', up);

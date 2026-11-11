@@ -1369,7 +1369,15 @@ export function createPages(view, session, { sheet, scope }) {
     try { return fn(); } finally { o.start(); }
   };
   let passed = false; // the last layout() got past its early returns
-  function layout() {
+  // The layout measures the pages at 100% whatever the zoom (zoom.js): every length it reads and sets is the page's own.
+  const unzoomed = (fn) => {
+    const z = sheet.style.zoom;
+    if (!z) return fn();
+    sheet.style.zoom = '';
+    try { return fn(); } finally { sheet.style.zoom = z; }
+  };
+  function layout() { return unzoomed(layoutPass); }
+  function layoutPass() {
     frame = 0;
     passed = false;
     if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
@@ -1827,7 +1835,11 @@ export function createPages(view, session, { sheet, scope }) {
   };
   // Sections with different page sizes are printed from copies of the sheet, one per page (printcopies.js).
   let printBox = null;
+  let printZoom = '';
   const beforePrint = () => {
+    // (Printed at full size, whatever the zoom on screen.)
+    printZoom = sheet.style.zoom;
+    sheet.style.zoom = '';
     // Word updates the body's fields as it prints (page references, cross-references): so do we, from the pages.
     updateFields(view, { all: true });
     setGap(0);
@@ -1844,13 +1856,13 @@ export function createPages(view, session, { sheet, scope }) {
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); };
+  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 
   return {
     update: scheduleIdle,
-    balloons: () => drawBalloons(view, session, sheet, pageTop(pages) - gap),
+    balloons: () => unzoomed(() => drawBalloons(view, session, sheet, pageTop(pages) - gap)),
     /** Headers or footers changed: measure and draw them again. */
     restory() {
       sectCache = { doc: null, ends: new Map(), first: page };

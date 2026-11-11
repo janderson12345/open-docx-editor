@@ -40,6 +40,7 @@ import { lineFixPlugin } from './lhfix.js';
 import { textSpansPlugin } from './textspans.js';
 import { widthsPlugin } from './widths.js';
 import { fitTextPlugin } from './fittext.js';
+import { createZoom } from './zoom.js';
 import { joinsPlugin } from './joins.js';
 import { marksPlugin, toggleMarks } from './marks.js';
 import { csFormatPlugin } from './csformat.js';
@@ -491,10 +492,13 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     flushStories() { flushStory(); flushNote(); },
     closeStories() { closeStory(); closeNote(); closeTextBox(); },
     pages,
+    // The pages' zoom (zoom.js); onZoom, set by the host, hears each change.
+    zoom: createZoom(mount, sheet, page, (z) => view.odx?.onZoom?.(z)),
     collab,
     undo: doUndo,
     redo: doRedo,
     destroy: () => {
+      view.odx.zoom.destroy();
       view.odx.comments?.stop();
       view.odx.stories?.stop();
       view.odx.docAttrs?.stop();

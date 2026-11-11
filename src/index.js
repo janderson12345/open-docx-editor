@@ -96,6 +96,9 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       if (locked !== autoForms) { forms = locked; autoForms = locked; } // back to normal editing after the protected form
       softLock = softLockOf(session);
       applyMode();
+      // The zoom carries over from the document before (a percentage, or Page Width / One Page kept fitting).
+      view.odx.onZoom = (z) => { zoomWas = z.mode || z.value; toolbar.update(view); };
+      if (zoomWas !== 1) view.odx.zoom.set(zoomWas, true);
       // (Edits in a header, footer, note or text box being edited count as changes too.)
       view.odx.notify = (v) => { toolbar.update(v); if (v !== view) { api.dirty = true; keepDraft(); onChange && onChange(v); } };
       api.dirty = false;
@@ -240,10 +243,17 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       view.odx.flushStories?.(); // (with the text of a header, footer or note still being edited)
       return view.odx.session.save(view.state.doc);
     },
+    /** The zoom the pages are shown at (1 is 100%); the layout, printing and PDF export are always at 100%. */
+    get zoom() { return view?.odx.zoom.value ?? zoomWas; },
+    /** Show the pages at `zoom` (0.1 to 5), or 'pageWidth' / 'onePage' to fit the window as it resizes. */
+    setZoom(zoom) { if (view) view.odx.zoom.set(zoom); else zoomWas = zoom; },
     /** The pages as a PDF (with the `pdf` option): Promise of its bytes. */
-    exportPdf() {
-      if (!pdf) return Promise.reject(new Error('PDF export needs the pdf option: mountDocxEditor(el, { pdf: exportPdf }), exportPdf from open-docx-editor/pdf.'));
-      return pdf(api, { title: name.replace(/\.docx$/i, ''), author });
+    async exportPdf() {
+      if (!pdf) throw new Error('PDF export needs the pdf option: mountDocxEditor(el, { pdf: exportPdf }), exportPdf from open-docx-editor/pdf.');
+      // (Measured at 100%, whatever the zoom on screen.)
+      const z = view?.odx.zoom;
+      z?.suspend();
+      try { return await pdf(api, { title: name.replace(/\.docx$/i, ''), author }); } finally { z?.resume(); }
     },
     async downloadPdf(fname = name.replace(/\.docx$/i, '') + '.pdf') {
       const bytes = await api.exportPdf();
@@ -312,6 +322,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     container.prepend(draftNote);
   }
   let autoForms = false;
+  let zoomWas = 1;
   // Mark as Final, Always open read-only, a password to modify: the document stays read-only until Edit Anyway.
   let softLock = null;
   const softLockOf = (session) => {

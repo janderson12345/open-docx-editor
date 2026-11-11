@@ -14,6 +14,7 @@ import { rPr } from '../ooxml/writer.js';
 import * as cmd from './commands.js';
 import { xmlId } from './util.js';
 import { csFormatPlugin } from './csformat.js';
+import { zoomOf } from './zoom.js';
 
 const REF = /^(footnote|endnote)Reference$/;
 
@@ -109,7 +110,8 @@ export function editNote(main, kind, id, el) {
   const origin = sheet.getBoundingClientRect();
   const wrap = document.createElement('div');
   wrap.className = 'odx-noteedit';
-  wrap.style.cssText = `top:${box.top - origin.top}px;left:${box.left - origin.left}px;width:${box.width}px`;
+  const z = zoomOf(main); // (in the page's own px, whatever the zoom)
+  wrap.style.cssText = `top:${(box.top - origin.top) / z}px;left:${(box.left - origin.left) / z}px;width:${box.width / z}px`;
   sheet.append(wrap);
   const keys = keymap({
     'Mod-z': undo, 'Mod-y': redo, 'Mod-b': cmd.toggle('bold'), 'Mod-i': cmd.toggle('italic'), 'Mod-u': cmd.toggle('underline'),

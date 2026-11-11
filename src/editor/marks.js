@@ -6,6 +6,7 @@
 // the marks never print.
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { zoomOf } from './zoom.js';
 
 const key = new PluginKey('odx-marks');
 
@@ -29,10 +30,12 @@ function draw(view, layer) {
   const top = -200;
   const bottom = window.innerHeight + 200;
   const frag = document.createDocumentFragment();
+  const z = zoomOf(view); // (marks in the page's own px, whatever the zoom)
   const add = (cls, x, y, h) => {
     const m = document.createElement('span');
     m.className = `odx-fm ${cls}`;
-    m.style.cssText = `left:${x - origin.left}px;top:${y - origin.top}px;height:${h}px;line-height:${h}px;font-size:${Math.round(h * 0.7)}px`;
+    x = (x - origin.left) / z; y = (y - origin.top) / z; h /= z;
+    m.style.cssText = `left:${x}px;top:${y}px;height:${h}px;line-height:${h}px;font-size:${Math.round(h * 0.7)}px`;
     frag.append(m);
   };
   const range = document.createRange();

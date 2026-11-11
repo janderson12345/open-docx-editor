@@ -20,6 +20,7 @@ import * as cmd from './commands.js';
 import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './track.js';
 import { createFindBar } from './findbar.js';
 import { protectionOf } from './protect.js';
+import { ZOOM_STEPS } from './zoom.js';
 import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
 import { el, iconize, slug, ribbonKit } from './ribbonkit.js';
@@ -58,6 +59,10 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     main.dispatch(main.state.tr.setDocAttribute('sectPr', main.state.doc.attrs.sectPr)); // marks the document changed
     return true;
   };
+  // View > Zoom: the pages drawn larger or smaller (zoom.js), the percentage in a list as Word's zoom box.
+  const zoomOfView = (v) => (v.odx.main || v).odx.zoom;
+  const zoomSel = pick('Zoom', 'odx-zoomsel', ZOOM_STEPS.map((z) => el('option', { value: String(z) }, `${Math.round(z * 100)}%`)), (value, v) => zoomOfView(v).set(Number(value)));
+
   // Review > Restrict Editing, as Word's pane: what may be changed and a password; or, once enforced, Stop Protection.
   const EDITS = [['readOnly', 'No changes (read only)'], ['comments', 'Comments'], ['trackedChanges', 'Tracked changes'], ['forms', 'Filling in forms']];
   const typed = (attrs) => {
@@ -454,6 +459,11 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     ],
     View: [
       grp('Views', b.reading, b.darkPage),
+      grp('Zoom', btn('−', 'Zoom out', withView((v) => zoomOfView(v).step(-1)), { label: 'Zoom Out', big: true }), col(el('span', { class: 'odx-cap' }, 'Zoom:'), zoomSel),
+        btn('+', 'Zoom in', withView((v) => zoomOfView(v).step(1)), { label: 'Zoom In', big: true }),
+        btn('1:1', 'Zoom to 100%', withView((v) => zoomOfView(v).set(1)), { label: '100%', big: true }),
+        btn('▯', 'One page: fit a whole page in the window', withView((v) => zoomOfView(v).set('onePage')), { label: 'One Page', big: true }),
+        btn('↔', 'Page width: fit the page to the window\'s width', withView((v) => zoomOfView(v).set('pageWidth')), { label: 'Page Width', big: true })),
       grp('Show', b.ruler, b.nav),
       grp('Print', btn('🖶', 'Print, or Save as PDF from the print dialog', () => window.print(), { label: 'Print', big: true })),
       grp('Header & Footer', btn('▭', 'Edit header and footer', withView((v) => hf.editStory(v.odx.main || v, 'header')), { label: 'Header & Footer', big: true })),
@@ -658,6 +668,11 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       if (document.activeElement !== spAfter) spAfter.value = (pv.after || 0) / 20;
       tableTools.hidden = !isInTable(s);
       trackSel.value = tracking(s).on ? 'on' : 'off';
+      // The zoom now, as a percentage (one that isn't a step, such as Page Width's, added to the list).
+      const z = (view.odx?.main || view).odx?.zoom?.value ?? 1;
+      if (![...zoomSel.options].some((o) => Number(o.value) === z)) zoomSel.append(el('option', { value: String(z), 'data-fit': '1' }, `${Math.round(z * 100)}%`));
+      zoomSel.querySelectorAll('[data-fit]').forEach((o) => { if (Number(o.value) !== z) o.remove(); });
+      zoomSel.value = String(z);
       placeNav();
       clearTimeout(navTimer);
       navTimer = setTimeout(fillNav, 400);

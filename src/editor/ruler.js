@@ -2,6 +2,7 @@
 // the current paragraph's indents as markers you can drag, as in Word.
 import * as cmd from './commands.js';
 import { TWIPS_PER_PX } from '../ooxml/units.js';
+import { zoomOf } from './zoom.js';
 
 const TW = 1 / TWIPS_PER_PX; // px per twip (96 dpi)
 
@@ -61,6 +62,9 @@ export function createRuler(getMain) {
     drawScale(page);
     // Line up with the page (which may be shifted for the markup column).
     const cr = canvas.getBoundingClientRect();
+    // (Its scale at the page's zoom too: the ruler's marks are in the page's px.)
+    const z = zoomOf(main);
+    scale.style.zoom = z === 1 ? '' : String(z);
     bar.style.paddingLeft = `${sheet.getBoundingClientRect().left - cr.left + canvas.scrollLeft}px`;
     const p = cmd.selectedParagraphs(view.state)[0]?.node.attrs;
     if (p) {
@@ -84,7 +88,7 @@ export function createRuler(getMain) {
   const snap = (tw) => Math.round(tw / 90) * 90; // 1/16"
   document.addEventListener('mousemove', (e) => {
     if (!drag) return;
-    const d = snap((e.clientX - drag.x0) / TW);
+    const d = snap((e.clientX - drag.x0) / zoomOf(getMain()) / TW); // (screen px back to the page's, whatever the zoom)
     const o = drag.ind0;
     if (drag.which === 'first') ind = { ...o, first: o.first + d };
     else if (drag.which === 'hang') ind = { ...o, left: o.left + d, first: o.first - d }; // first line stays put

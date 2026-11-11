@@ -315,7 +315,7 @@ td[data-odx-phantom] > * { display: none; }
 
 /* ==== Comments and changes: the markup column and its balloons ==== */
 /* Markup area: deletions and formatting changes in balloons beside the page, as in Word. */
-.odx-page.odx-has-markup { left: -140px; }
+.odx-page.odx-has-markup { left: var(--odx-markup-left, -140px); } /* (room for the markup column: zoom.js works it out) */
 .odx-markup { position: absolute; top: 0; left: 100%; width: 280px; background: var(--odx-markup); border-left: 1px solid #b8b8b8; box-shadow: 0 1px 3px rgba(0,0,0,.2); font: 11px/1.35 system-ui, sans-serif; color: #222; }
 .odx-balloon { position: absolute; left: 10px; right: 10px; padding: 3px 6px; border-left: 3px solid #b5179e; background: var(--odx-sheet); }
 .odx-balloon-del { border-left-color: #c00; }
@@ -566,6 +566,7 @@ body.odx-painting .odx-content { cursor: copy; }
 /* Printing (and Save as PDF): only the pages, one sheet per printed page. */
 @media print {
   .odx-toolbar, .odx-protectnote, .odx-draftnote { display: none !important; }
+  .odx-page { zoom: 1 !important; } /* (printed at full size, whatever the zoom on screen: zoom.js) */
   .odx-canvas { padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; }
   /* One unbreakable (inline-block) box, sliced at each page edge: the layout already put content where each
      page starts (block margins at a page break would otherwise be dropped by the browser). */

@@ -10,6 +10,7 @@ import { baseKeymap } from 'prosemirror-commands';
 import { schema } from './schema.js';
 import * as cmd from './commands.js';
 import { csFormatPlugin } from './csformat.js';
+import { zoomOf } from './zoom.js';
 
 const FIELD = (instr, shown) => schema.nodes.opaque_inline.create({
   kind: 'fldSimple',
@@ -131,7 +132,7 @@ export function editStory(main, kind, p = null) {
   const { session, pages } = main.odx;
   if (p == null) {
     const c = main.coordsAtPos(main.state.selection.from);
-    p = pages.pageAt(c.top - main.dom.parentElement.getBoundingClientRect().top).p;
+    p = pages.pageAt((c.top - main.dom.parentElement.getBoundingClientRect().top) / zoomOf(main)).p;
   }
   const at = pages.pageAt(pages.pageTop(p) + 1);
   const linked = linkedToPrevious(main, kind, at.type, at.sect);
@@ -211,7 +212,7 @@ export function hfDoubleClick(main) {
     if (main.odx.readOnly) return;
     if (open && open.el.contains(e.target)) return;
     if (e.target.closest?.('.odx-txbxedit') || /txbxContent/.test(main.state.selection.node?.attrs.xml || '')) return; // a text box (see txbxedit.js)
-    const y = e.clientY - sheet.getBoundingClientRect().top;
+    const y = (e.clientY - sheet.getBoundingClientRect().top) / zoomOf(main); // (the page's own px, whatever the zoom)
     const at = main.odx.pages.pageAt(y);
     const inBody = at.y > at.m.top && at.y < at.page.height - at.m.bottom;
     if (inBody) { if (open) closeStory(); return; }
