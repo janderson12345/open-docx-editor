@@ -257,7 +257,7 @@ export const schema = new Schema({
   marks: {
     // Order here is the w:rPr child order used when writing.
     cstyle: { attrs: { val: {} }, toDOM: (m) => ['span', { 'data-cstyle': m.attrs.val }, 0] },
-    font: { attrs: { val: {}, xml: { default: null } }, toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${/w:cs="([^"]+)"/.test(m.attrs.xml || '') ? `;--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(m.attrs.xml)[1])}` : ''}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
+    font: { attrs: { val: {}, xml: { default: null } }, parseDOM: [{ style: 'font-family', getAttrs: pastedFont }], toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${/w:cs="([^"]+)"/.test(m.attrs.xml || '') ? `;--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(m.attrs.xml)[1])}` : ''}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
     bold: {
       attrs: { on: { default: true } },
       parseDOM: [{ tag: 'strong' }, { tag: 'b' }, { style: 'font-weight', getAttrs: (v) => (/^(bold|[6-9]\d\d)$/.test(v) ? {} : false) }],
@@ -273,8 +273,8 @@ export const schema = new Schema({
       parseDOM: [{ tag: 's' }, { tag: 'del', priority: 40 }, { style: 'text-decoration=line-through' }],
       toDOM: (m) => (m.attrs.on ? ['s', 0] : ['span', { style: 'text-decoration:none' }, 0]),
     },
-    color: { attrs: { val: {} }, toDOM: (m) => ['span', { style: `color:#${hexColor(m.attrs.val) || '000000'}` }, 0] },
-    size: { attrs: { val: {} }, toDOM: (m) => ['span', { style: sizeCss(m.attrs.val / 2) }, 0] },
+    color: { attrs: { val: {} }, parseDOM: [{ style: 'color', getAttrs: pastedColor }], toDOM: (m) => ['span', { style: `color:#${hexColor(m.attrs.val) || '000000'}` }, 0] },
+    size: { attrs: { val: {} }, parseDOM: [{ style: 'font-size', getAttrs: pastedSize }], toDOM: (m) => ['span', { style: sizeCss(m.attrs.val / 2) }, 0] },
     highlight: { attrs: { val: {} }, toDOM: (m) => ['span', { style: `background-color:${highlightColor(m.attrs.val)}` }, 0] },
     underline: {
       attrs: { val: { default: 'single' } },
@@ -409,6 +409,24 @@ export function revXmlAttrs(xml) {
   const a = (n) => (new RegExp(`^<[^>]*\\sw:${n}="([^"]*)"`).exec(xml) || [])[1] || null;
   return { id: a('id'), author: a('author'), date: a('date') };
 }
+// Pasted text's colour, size and font (from a web page, another editor, or this one): as marks, where they're definite.
+// Black is no colour (Google Docs sets it on every run); a size in pt or px only; a font by its first family name,
+// not a generic one.
+function pastedColor(v) {
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(v || '');
+  const hex = rgb ? (rgb[4] != null && Number(rgb[4]) === 0 ? null : rgb.slice(1, 4).map((x) => Math.min(255, Number(x)).toString(16).padStart(2, '0')).join('')) : /^#([0-9a-f]{6})$/i.exec(v || '')?.[1] || (/^#([0-9a-f]{3})$/i.exec(v || '')?.[1]?.replace(/./g, '$&$&'));
+  return hex && !/^0{6}$/.test(hex) ? { val: hex.toUpperCase() } : false;
+}
+function pastedSize(v) {
+  const m = /^([\d.]+)(pt|px)$/.exec(v || '');
+  const pt = m && (m[2] === 'pt' ? Number(m[1]) : Number(m[1]) * 0.75);
+  return pt >= 1 && pt <= 400 ? { val: Math.round(pt * 2) } : false;
+}
+function pastedFont(v) {
+  const first = (v || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+  return first && !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit|initial|unset|-apple-system|blinkmacsystemfont|var\()/i.test(first) ? { val: first } : false;
+}
+
 function revTitle(what, { author, date, dateUtc }) {
   const d = wordDate(date, dateUtc);
   const when = d ? ' on ' + d.toLocaleString() : '';

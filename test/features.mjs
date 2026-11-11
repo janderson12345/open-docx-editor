@@ -374,6 +374,20 @@ await open('lists-more.docx');
 const lbls = await page.evaluate(() => [...document.querySelectorAll('.odx-content p.odx-li')].slice(0, 6).map((p) => { const b = getComputedStyle(p, '::before'); return `${b.fontWeight >= 700 ? 'b' : ''}${b.fontStyle === 'italic' ? 'i' : ''}${b.color === 'rgb(192, 0, 0)' ? 'red' : ''}`; }));
 check(lbls.join(',') === 'bred,bred,i,i,b,', `list numbers take their level's (or the paragraph mark's) bold, italic and colour (${lbls.join(',')})`);
 
+// Pasted from a web page or another editor: colour, size and font kept as marks; black (set on every run by some
+// editors) and generic families left out.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+const pasted = await page.evaluate(() => {
+  const dt = new DataTransfer();
+  dt.setData('text/html', '<p><span style="color:rgb(192, 0, 0); font-size:16pt; font-family:Georgia, serif">Red big Georgia</span> <span style="color:#000000; font-family:sans-serif; font-size:1.2em">plain</span></p>');
+  dt.setData('text/plain', 'Red big Georgia plain');
+  window.odx.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  const marks = (word) => { let out = ''; window.odx.view.state.doc.descendants((n) => { if (n.isText && n.text.includes(word)) out = n.marks.map((m) => `${m.type.name}=${m.attrs.val}`).sort().join(' '); }); return out; };
+  return [marks('Red'), marks('plain')];
+});
+check(pasted[0] === 'color=C00000 font=Georgia size=32' && pasted[1] === '', `pasted colour, size and font kept (${pasted.join(' | ')})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

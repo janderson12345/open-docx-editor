@@ -31,7 +31,8 @@ export function readStyles(pkg) {
   const doc = path && pkg.xml(path);
   const styles = new Map();
   const defaults = { rPr: {}, pPr: {} };
-  if (!doc) return { styles, defaults, defaultParagraph: null, defaultTable: null };
+  // With no styles part at all, Word's own defaults: Aptos 12pt, 8pt after, 1.15 lines (Word's PDF of such a file).
+  if (!doc) return { styles, defaults: { rPr: { font: 'Aptos', size: 24 }, pPr: { after: 160, line: 276, lineRule: 'auto' } }, defaultParagraph: null, defaultTable: null };
   const dd = kid(doc.documentElement, 'docDefaults');
   if (dd) {
     defaults.rPr = readRPr(kid(kid(dd, 'rPrDefault'), 'rPr'));
