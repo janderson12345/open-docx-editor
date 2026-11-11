@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.7.0 (2026-11-11)
+
+Since 0.6.0: frames, columns of their own widths, Page Setup, Wrap Text, the Original markup view, imported content
+(altChunk), Find and Replace through every part of the document, reference fields and Update Fields, restricted
+editing, an interface and MCP server for AI agents, TIFF pictures, Aptos drawn evenly, faster typing in long
+documents, and many smaller matches to Word in reading, drawing, editing and saving.
+
 - **Aptos drawn evenly**: on computers without Aptos (Word's default font), its stand-in drew Arial at a different size
   for each letter to reach Aptos's widths, so a capital T or J came out small and a t or an l tall. The stand-in is now
   a set of small fonts built from Arimo (Arial's design), each letter narrowed or widened sideways only, all at one
@@ -56,6 +63,28 @@
   numerals, restarting) when it's updated.
 - **TIFF pictures** (scans and faxes: uncompressed, LZW, PackBits, Deflate, JPEG and CCITT fax compression) are shown, on
   screen, in print and in PDF export; the document keeps the TIFF. Browsers can't show TIFF themselves.
+- **Saving keeps more as Word wrote it**: paragraph identities (`w14:paraId`, `w14:textId`, `w:rsid*`); footnotes and
+  endnotes nothing refers to; revision and comment times as Word keeps them (wall-clock `w:date`, `w16du:dateUtc`);
+  table rows inside nested content controls (a repeating section and its items), which had been dropped; a highlight
+  colour Word has no name for is written as run shading, not an invalid `w:highlight`.
+- **Drawn as Word draws it**: cropped pictures; floating drawings stacked in Word's drawing order; drawings placed
+  against the page or margins vertically at that height on their page; footnotes longer than a page continue on the
+  following pages; percentage and solid shading patterns; complex-script formatting (`w:bCs`, `w:iCs`, `w:szCs`) for
+  right-to-left runs; Chinese counting and Hebrew list and page numbers; hidden list numbers left out; built-in
+  Heading 1 to 9 and Title used without being defined; newspaper columns filling from the right in right-to-left
+  sections, with the line between midway in each gap; autofit tables whose first row is merged across the columns; a
+  table of contents entry whose number doesn't fit moved to the next line with its leader.
+- **Editing as in Word**: Hebrew or Arabic typed or pasted becomes right-to-left text, with Right-to-Left and
+  Left-to-Right buttons and Distributed alignment; Insert Table as wide as the text where it goes, and new rows take the
+  formatting of the row they're made from; pasted pictures stored in the document, linked pictures followed on
+  Ctrl+click, SVG pictures shown from their SVG; pasted content keeps its spacing, indents and cell shading; an inserted
+  note reference takes the formatting around it; Remove Hyperlink removes the Hyperlink style too; the caret's
+  formatting survives list upkeep after Enter; word count includes text boxes; Find matches across comment ranges and
+  bookmarks.
+- **Tracked changes**: a column inserted while tracking is recorded as cell insertions (`w:cellIns`) and rejecting takes
+  it away; text from input methods (Chinese, Japanese...) is one tracked insertion; accepting a deleted paragraph leaves
+  the next its own properties; a paragraph moved whole leaves no empty paragraph; Accept and Reject resolve every
+  selected table cell.
 
 ## 0.6.0 (2026-11-10)
 

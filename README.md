@@ -3,9 +3,13 @@
 Open, edit and save Word documents (`.docx`) in the browser. 100% JavaScript, no server, no
 Microsoft Office or SharePoint, MIT licensed.
 
-Version 0.5: it opens and saves real documents without losing what it doesn't understand, and lays them out on
-pages as Word does: measured against Word's own PDFs of 151 documents, 99.0% of lines land within 1px of Word's, on
-the same pages. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
+[![Latest release](https://img.shields.io/github/v/release/janderson12345/open-docx-editor)](https://github.com/janderson12345/open-docx-editor/releases)
+
+It opens and saves real documents without losing what it doesn't understand, and lays them out on pages as Word
+does: measured against Word's own PDFs of 151 documents, every one on Word's page count and 99.0% of lines within 1px
+of Word's. Text, tables, lists, pictures and shapes (with their text wrapping), text boxes, frames, columns, headers
+and footers, footnotes, fields, equations and charts; tracked changes and comments; page setup, Find and Replace
+through every part of the document, printing and PDF export. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
 
 **Try it:** [live demo](https://janderson12345.github.io/open-docx-editor/), the editor with a sample document; open your own
 with File > Open or by dragging a .docx onto the page. (It runs entirely in your browser: nothing is uploaded.)
@@ -77,9 +81,14 @@ fs.writeFileSync('out.docx', s.save());
   hyperlinks, inline images, tabs, line and page breaks, tracked changes (shown, recorded with Track on, accepted
   or rejected one at a time or all at once), footnotes and endnotes, paragraph borders and shading, table styles (borders, shading,
   header row and banding from `tblLook`), cell borders, shading and vertical alignment, table
-  indents, centred and floating tables (text wraps beside them), and charts (column, bar, line,
+  indents, centred and floating tables (text wraps beside them), frames (paragraphs with `w:framePr`, placed and
+  wrapped as Word places them), imported content (`w:altChunk` HTML or text, shown as the paragraphs Word makes of
+  it, and saved back as it was until edited), and charts (column, bar, line,
   area, scatter, pie and doughnut, drawn from the values cached in the file). Pictures and
   shapes it can't draw yet keep their size, so the text around them sits where Word puts it.
+- **Tracked changes and markup**: Review > Markup view shows All Markup, Simple Markup, No Markup or Original (the
+  document as it was before its changes, as Word shows it). Columns inserted in a table while tracking are recorded as
+  cell insertions; revision times are kept as Word writes them.
 - **Pages** like Word's print layout: page size and margins from the document, page breaks,
   keep-with-next headings, and the default header and footer on every page with live
   `PAGE` / `NUMPAGES` fields. Section breaks start new pages. Tables continue on the next page
@@ -129,16 +138,19 @@ fs.writeFileSync('out.docx', s.save());
 - **Drafts** (opt in with `drafts: true`): unsaved changes are kept in the browser a moment after each edit and offered
   back, Restore or Discard, when the same file is opened again after a closed tab or a crash; cleared once saved. They
   stay on that computer, in the site's own browser storage.
-- **Save** back to `.docx`. Only `word/document.xml` is rewritten (plus relationships or
-  numbering when you add a link or a list); every other part of the package is kept byte for
-  byte. Content the editor doesn't model (or models only in part: fields, shapes, equations' own XML...) is
+- **Save** back to `.docx`. Only the parts an edit touches are rewritten (`word/document.xml`, and the headers,
+  footers, notes, comments, relationships or numbering it changed); every other part of the package is kept byte for
+  byte, and paragraphs keep the identities Word gave them (`w14:paraId`, `w:rsid*`). Content the editor doesn't model (or models only in part: fields, shapes, equations' own XML...) is
   carried through as raw XML.
 - **Headers and footers**: double-click a page's top or bottom margin to edit its header or footer
   (or Insert > Header & Footer). The bar over it has Word's options: Different First Page (per section),
   Different Odd & Even Pages, and Link to Previous for later sections.
 - **Pictures**: TIFF pictures (scans and faxes, which browsers can't show themselves) are shown too, decoded when the
-  document opens and kept in the file as they were. Insert > Picture adds one from the device; select a picture and drag its handles to resize
-  it (corners keep its proportions). Saved at the new size in its own drawing XML.
+  document opens and kept in the file as they were. Insert > Picture adds one from the device, and pasted pictures are
+  stored in the document; select a picture and drag its handles to resize
+  it (corners keep its proportions). Saved at the new size in its own drawing XML. Cropped pictures are shown cropped.
+- **Wrap Text** (Layout > Wrap Text, or a picture's context menu): In Line with Text, Square, Tight, Through, Top and
+  Bottom, Behind Text and In Front of Text, for a picture or shape, saved as Word writes it.
 - **Text boxes**: Insert > Text Box adds one in line with the text; double-click one to edit its text; click away (or Escape) to put it back. Both the shape
   and the copy Word keeps for older versions are updated. In a group of shapes, the box you double-click opens.
   Select one and drag a handle to resize it (its text wraps again), or drag a floating one to move it; from the
@@ -155,7 +167,11 @@ fs.writeFileSync('out.docx', s.save());
   resized), so Word shows the new chart and its Edit Data opens the same numbers. One undoable step.
 - **Show/Hide ¶** (Home > Paragraph, Ctrl+Shift+8): spaces, paragraph marks, tabs, line and page breaks, drawn over
   the page without moving any text, and never printed.
-- **Columns**: Layout > Columns sets one, two or three equal columns for the section.
+- **Page Setup** (Layout > Page Setup): margins, gutter, header and footer distances, orientation and paper size (a
+  custom one too), for the section the cursor is in or the whole document; Layout's Margins, Orientation and Size
+  menus change the cursor's section, as Word's do.
+- **Columns**: Layout > Columns sets one, two or three equal columns for the cursor's section, or columns of their
+  own widths and gaps (More Columns), with or without a line between; right-to-left sections fill from the right.
 - **Comments**: add (Ctrl+Alt+M), reply, edit, resolve and delete, in the margin as in Word; replies and
   resolved state are written to Word 2013+'s commentsExtended part so Word shows the threads.
 - **Restricted editing** (Word's Restrict Editing, Mark as Final, Always open read-only) enforced as in Word; see
@@ -164,8 +180,8 @@ fs.writeFileSync('out.docx', s.save());
 
 ## Not yet
 
-- Tracked cell insertions and deletions (w:cellIns / w:cellDel) are shown, accepted and rejected, but not recorded
-  while tracking (the editor has no "insert cells, shift right" of its own).
+- Tracked cell deletions (w:cellDel) are shown, accepted and rejected, but not recorded while tracking (the editor
+  has no "delete cells, shift left" of its own).
 - Co-editing shares the body, comments, pictures, page setup, headers, footers and notes (each as it's closed after
   editing), but not styles or numbering definitions added after opening: the others get those when the document is
   saved and reopened.
@@ -219,6 +235,8 @@ in different places. Two things help:
 
   Without a bundler, link the package's `src/fonts/fonts.css` (or `dist/fonts/fonts.css` from a build), keeping its
   `files/` folder beside it.
+- **Aptos** (Word's newer default font, which browsers rarely have) is drawn by stand-in fonts built into the editor's
+  stylesheet, each letter at Aptos's width, so lines break where Word breaks them.
 - **Knowing when a font is missing**: `onMissingFonts` reports the fonts a document asks for that the computer lacks,
   and what it shows instead, so you can tell the user.
 
