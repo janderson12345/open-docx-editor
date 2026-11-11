@@ -75,16 +75,18 @@ export function layoutTabsIn(root, session, nodeOf) {
         .filter((t) => t.val !== 'bar').map((t) => ({ ...t, x: t.pos * PX }));
     } catch { /* not a document paragraph */ }
     const cs = getComputedStyle(p);
-    const pr = p.getBoundingClientRect();
     // Stops are measured from the column's start edge: the paragraph box less its start indent. In a right-to-left
     // paragraph that is the right edge, and positions run leftwards.
     const rtl = cs.direction === 'rtl';
     const startMargin = parseFloat(rtl ? cs.marginRight : cs.marginLeft) || 0;
-    const edge = rtl ? pr.right + startMargin : pr.left - startMargin;
-    const from = (r) => (rtl ? edge - r.right : r.left - edge); // a box's start, from the edge
     // A hanging indent is a stop too: a tab on the first line, before the indent, goes to it first.
     const indent = (parseFloat(cs.textIndent) || 0) < 0 ? startMargin : null;
     for (const s of tabs) {
+      // (The paragraph's box read again for each tab: sizing the one before can move the page, as a scrollbar
+      // appearing does, and a stop measured from where the paragraph was would land short.)
+      const pr = p.getBoundingClientRect();
+      const edge = rtl ? pr.right + startMargin : pr.left - startMargin;
+      const from = (r) => (rtl ? edge - r.right : r.left - edge); // a box's start, from the edge
       const x = from(s.getBoundingClientRect());
       let stop = stops.find((t) => t.x > x + 0.5);
       if (indent != null && indent > x + 0.5 && (!stop || stop.x > indent)) stop = { val: 'left', x: indent };
