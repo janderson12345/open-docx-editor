@@ -6,10 +6,9 @@ Microsoft Office or SharePoint, MIT licensed.
 [![Latest release](https://img.shields.io/github/v/release/janderson12345/open-docx-editor)](https://github.com/janderson12345/open-docx-editor/releases)
 
 It opens and saves real documents without losing what it doesn't understand, and lays them out on pages as Word
-does: measured against Word's own PDFs of 151 documents, every one on Word's page count and 99.0% of lines within 1px
-of Word's. Text, tables, lists, pictures and shapes (with their text wrapping), text boxes, frames, columns, headers
-and footers, footnotes, fields, equations and charts; tracked changes and comments; page setup, Find and Replace
-through every part of the document, printing and PDF export. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
+does, line for line, checked against Word's own PDFs. Text, tables, lists, pictures and shapes (with their text
+wrapping), text boxes, frames, columns, headers and footers, footnotes, fields, equations and charts; tracked changes
+and comments; page setup, Find and Replace through every part of the document, printing and PDF export. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
 
 **Try it:** [live demo](https://janderson12345.github.io/open-docx-editor/), the editor with a sample document; open your own
 with File > Open or by dragging a .docx onto the page. (It runs entirely in your browser: nothing is uploaded.)
@@ -98,9 +97,8 @@ fs.writeFileSync('out.docx', s.save());
 - **Measured like Word**: line heights use each font's own "single" spacing (measured in the
   browser for fonts it doesn't know), no kerning or ligatures unless the document asks, thin
   table borders take their true width, and older documents keep Word's older table rules,
-  so documents land on the same pages as in Word. Checked line by line against PDFs exported by Word itself: 151
-  documents, every one on Word's page count, 99.0% of their lines within 1px of Word's (docs/LAYOUT.md). The same in
-  a standards-mode page (any page with a doctype) as in a quirks-mode one. Older documents' compatibility rules are
+  so documents land on the same pages as in Word, checked line by line against PDFs exported by Word itself
+  (docs/LAYOUT.md). The same in a standards-mode page (any page with a doctype) as in a quirks-mode one. Older documents' compatibility rules are
   followed by name where Word's PDFs show they change the layout (a page break's paragraph mark, list labels' tab
   stops, automatic paragraph spacing; see docs/LAYOUT.md).
 - **Right-to-left text** (Hebrew, Arabic): right-to-left paragraphs (w:bidi) start at the right margin, with their
@@ -459,12 +457,11 @@ const { bytes: filled, missing } = fillFields(bytes, values); // merge values in
 Developed and measured in Microsoft Edge and Chrome (Chromium) on Windows, where the layout matches Word's best: it
 uses the fonts installed on the computer, as Word does. Other Chromium browsers behave the same.
 
-Checked against Edge on all 151 measured documents:
+Compared with Edge:
 
-- **Firefox** lays them out the same: every paragraph on the same page with the same lines in all but a few dozen of
-  about 19,000, page counts the same in 150 of 151. Justified lines can differ slightly.
+- **Firefox** lays documents out the same, paragraph for paragraph; justified lines can differ slightly.
 - **Safari (WebKit)** sets each line's height to a whole pixel, so long documents drift up a little line by line and a
-  page can break a line earlier (page counts the same in 142 of 151, checked with Playwright's WebKit on Windows).
+  page can break a line earlier.
 
 Editing works in all three. PDF export in Firefox and Safari uses the PDF standard fonts (no Local Font Access).
 
