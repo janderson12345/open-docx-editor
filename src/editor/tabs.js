@@ -37,6 +37,10 @@ function runWidth(p, tab, decimal) {
 }
 
 const sized = new WeakMap(); // paragraph element -> what its tabs were sized for
+// (Sized again once a font loads: a web font arriving after the first layout, as Carlito does where Calibri isn't
+// installed, changes every width measured in its stand-in.)
+let fontLoads = 0;
+if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { fontLoads++; });
 
 export function layoutTabs(view, session) {
   layoutTabsIn(view.dom, session, (p) => view.state.doc.resolve(view.posAtDOM(p, 0)).parent);
@@ -56,7 +60,7 @@ export function layoutTabsIn(root, session, nodeOf) {
   // A paragraph whose text, formatting and place are as when its tabs were sized keeps them (sizing every tab again
   // each pass restyled them all: a keystroke in a long document laid out each of its tabbed lines again).
   const todo = [...byPara].filter(([p]) => {
-    const sig = `${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}`;
+    const sig = `${fontLoads}|${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}`;
     if (sized.get(p) === sig) return false;
     sized.set(p, sig);
     return true;
