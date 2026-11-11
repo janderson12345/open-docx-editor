@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.7.6 (2026-11-11)
+
+Zoom, and what a screen reader (NVDA) pass over the newer pieces turned up.
+
 - **Zoom and fit-to-width**: View > Zoom (zoom out and in, a percentage, 100%, One Page, and Page Width, which keeps
   fitting as the window resizes), Ctrl+wheel, `api.zoom` and `api.setZoom()`. Only the view changes: the layout is
   measured at 100%, so the pages break the same, and printing and PDF export are at full size. The ruler, comments,
@@ -9,6 +13,12 @@
   document opened.
 - With the comments column showing, the page moves aside for it only as far as the window has room, so a page wider
   than the window is never cut off at the left.
+- **Find, with a screen reader**: the find bar says which match it went to and where ("4 of 8, in the header"), and
+  the keys stay in it when a match is in a header, footer, note, text box or comment (their editors had taken the
+  focus, so the next Enter typed into them). Ctrl+H in the find bar turns it into Replace, as in Word, rather than
+  opening the browser's history.
+- The notices above the ribbon (marked as final, open read-only, restricted editing, a kept draft) are read out when
+  they appear, with where their buttons are.
 
 ## 0.7.5 (2026-11-11)
 

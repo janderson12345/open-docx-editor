@@ -115,6 +115,13 @@ function openPart(main, s) {
 
 const select = (v, m) => v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, m.from, m.to)).scrollIntoView());
 
+// Where the last Find went: { index (from 1), total, part } (for the find bar to say, as screen readers need to hear it).
+let lastHit = null;
+export const findPosition = () => lastHit;
+const PART = { main: '', textbox: 'in a text box', header: 'in the header', footer: 'in the footer', comment: 'in a comment' };
+const partName = (s) => (s.kind === 'note' ? `in ${s.noteKind === 'endnote' ? 'an endnote' : 'a footnote'}` : PART[s.kind] ?? '');
+const hit = (found, list, j, k, total) => { lastHit = { index: found.slice(0, j).reduce((n, f) => n + f.length, 0) + k + 1, total, part: partName(list[j]) }; };
+
 /**
  * Select the next (dir 1) or previous (dir -1) match from the selection of `view` (the document or a part's editor),
  * going on into the following parts. Returns the count of matches in all parts.
@@ -131,16 +138,17 @@ export function findNextAll(view, query, opts, dir = 1) {
   else list[i] = { ...list[i], doc: cur.state.doc };
   const found = list.map((s) => findAll(s.doc, query, opts));
   const total = found.reduce((n, f) => n + f.length, 0);
+  lastHit = null;
   if (!total) return 0;
   const mine = found[i];
   if (box) {
     const d = list[i].doc;
     const m = dir > 0 ? mine.find((x) => offset(d, x.from) >= box.ta.selectionEnd) : [...mine].reverse().find((x) => offset(d, x.to) <= box.ta.selectionStart);
-    if (m) { box.ta.setSelectionRange(offset(d, m.from), offset(d, m.to)); return total; }
+    if (m) { box.ta.setSelectionRange(offset(d, m.from), offset(d, m.to)); hit(found, list, i, mine.indexOf(m), total); return total; }
   } else {
     const { from, to } = cur.state.selection;
     const m = dir > 0 ? mine.find((x) => x.from >= to) : [...mine].reverse().find((x) => x.to <= from);
-    if (m) { select(cur, m); return total; }
+    if (m) { select(cur, m); hit(found, list, i, mine.indexOf(m), total); return total; }
   }
   for (let step = 1; step <= list.length; step++) {
     const j = (i + dir * step + list.length * step) % list.length;
@@ -148,6 +156,7 @@ export function findNextAll(view, query, opts, dir = 1) {
     if (list[j].kind === 'comment') {
       const ms = found[j];
       selectInComment(main, list[j].id, list[j].doc, dir > 0 ? ms[0] : ms[ms.length - 1]);
+      hit(found, list, j, dir > 0 ? 0 : ms.length - 1, total);
       return total;
     }
     const v = openPart(main, list[j]);
@@ -155,6 +164,7 @@ export function findNextAll(view, query, opts, dir = 1) {
     const ms = findAll(v.state.doc, query, opts);
     if (!ms.length) continue;
     select(v, dir > 0 ? ms[0] : ms[ms.length - 1]);
+    hit(found, list, j, dir > 0 ? 0 : ms.length - 1, total);
     return total;
   }
   return total;
@@ -188,6 +198,7 @@ function replacedIn(doc, query, replacement, opts) {
 
 /** Replace every match in every part; returns how many were replaced. */
 export function replaceAllStories(view, query, replacement, opts) {
+  lastHit = null; // (a count, not a place)
   const main = mainOf(view);
   closeAll();
   const { session } = main.odx;

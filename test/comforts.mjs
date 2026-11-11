@@ -58,7 +58,7 @@ await page.keyboard.press('Control+h');
 await page.click('.odx-findbar label:has-text("Patterns") input');
 await page.fill('.odx-findbar input[aria-label="Find"]', '(\\d{4})-(\\d{2})');
 await page.keyboard.press('Enter');
-check(await page.textContent('.odx-findinfo') === '2 results', `a pattern finds its matches (${await page.textContent('.odx-findinfo')})`);
+check(await page.textContent('.odx-findinfo') === '1 of 2', `a pattern finds its matches (${await page.textContent('.odx-findinfo')})`);
 await page.fill('.odx-findbar input[aria-label="Replace with"]', '$2/$1');
 await page.click('.odx-findbar button:has-text("Replace all")');
 check((await firstPara()).startsWith('Invoice 03/2024 and 11/2025'), `Replace all fills in $1 and $2: ${(await firstPara()).slice(0, 30)}`);

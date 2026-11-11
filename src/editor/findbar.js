@@ -1,7 +1,7 @@
 // Find and Replace: the bar under the ribbon (Ctrl+F, Ctrl+H), through the main text, text boxes, headers, footers
 // and notes (findstories.js).
 import { el } from './ribbonkit.js';
-import { findNextAll, replaceOneAll, replaceAllStories } from './findstories.js';
+import { findNextAll, replaceOneAll, replaceAllStories, findPosition } from './findstories.js';
 
 /** The bar (hidden until opened) and `openFind(replace)`, a command that opens it with or without the replace row. */
 export function createFindBar(getView, withView) {
@@ -17,13 +17,19 @@ export function createFindBar(getView, withView) {
   const fdo = (fn) => (e) => {
     e.preventDefault();
     const v = getView();
+    // (The keys stay in the find bar, as in Word's find pane, when a match takes the search into a header, note, text box
+    // or comment: their editors take the focus as they open, and the next Enter would have typed into them.)
+    const from = findBar.contains(document.activeElement) ? document.activeElement : null;
+    if (from) setTimeout(() => setTimeout(() => { if (!findBar.hidden && from.isConnected) from.focus(); }, 0), 0);
     let n;
     try { n = fn(v); } catch (err) {
       if (!(err instanceof SyntaxError)) throw err;
       findInfo.textContent = `Not a valid pattern: ${err.message.replace(/^Invalid regular expression: /, '')}`;
       return;
     }
-    findInfo.textContent = n == null ? '' : n ? `${n} result${n === 1 ? '' : 's'}` : 'No results';
+    // Which match it went to, and where (said by screen readers each time: the status's text changes).
+    const at = n ? findPosition() : null;
+    findInfo.textContent = n == null ? '' : at ? `${at.index} of ${n}${at.part ? `, ${at.part}` : ''}` : n ? `${n} result${n === 1 ? '' : 's'}` : 'No results';
   };
   const replRow = el('span', { class: 'odx-replrow' }, replBox,
     el('button', { type: 'button', onmousedown: fdo((v) => replaceOneAll(v, findBox.value, replBox.value, fOpts())) }, 'Replace'),
@@ -49,7 +55,8 @@ export function createFindBar(getView, withView) {
   });
   document.addEventListener('keydown', (e) => {
     const v = getView();
-    if (!v || !(e.ctrlKey || e.metaKey) || !v.hasFocus()) return;
+    // (In the document, or in the find bar itself: Ctrl+H there turns Find into Replace, as in Word, not the browser's history.)
+    if (!v || !(e.ctrlKey || e.metaKey) || !(v.hasFocus() || findBar.contains(document.activeElement))) return;
     if (e.key === 'f' || e.key === 'h') { e.preventDefault(); openFind(e.key === 'h')(v.state, v.dispatch, v); }
   });
   return { findBar, openFind };

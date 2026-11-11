@@ -216,9 +216,12 @@ await page.keyboard.press('Control+Home');
 await page.keyboard.press('Control+f');
 await page.fill('.odx-findbar input[aria-label="Find"]', 'apple');
 const visits = [];
+const findSaid = []; // (what the find bar says at each, for screen readers: which match, and where)
 for (let i = 0; i < 9; i++) {
   await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
   await page.waitForTimeout(250);
+  findSaid.push(await page.textContent('.odx-findinfo'));
+  findSaid[findSaid.length - 1] += await page.evaluate(() => (document.activeElement?.getAttribute('aria-label') === 'Find' ? '' : ' (focus left the find box)'));
   visits.push(await page.evaluate(() => {
     const ta = document.querySelector('.odx-markup textarea[data-odx-box^="e"]');
     if (ta) return `comment:${ta.value.slice(ta.selectionStart, ta.selectionEnd)}`;
@@ -229,8 +232,10 @@ for (let i = 0; i < 9; i++) {
     return `${part}:${v.state.doc.textBetween(from, to)}`;
   }));
 }
+
 const info = await page.textContent('.odx-findinfo');
-check(visits.join(' ') === 'body:apple body:apple box:apple header:apple footer:apple footnote:apple endnote:apple comment:apple body:apple' && info === '8 results',
+check(findSaid[3] === '4 of 8, in the header' && findSaid[5] === '6 of 8, in a footnote' && findSaid[7] === '8 of 8, in a comment', `the find bar says which match and where (${findSaid.join(' | ')})`);
+check(visits.join(' ') === 'body:apple body:apple box:apple header:apple footer:apple footnote:apple endnote:apple comment:apple body:apple' && info === '1 of 8',
   `Find goes through the body, text box, header, footer, notes and comments (${visits.join(' ')}; ${info})`);
 await page.keyboard.press('Control+h');
 await page.fill('.odx-findbar input[aria-label="Replace with"]', 'pear');
@@ -366,7 +371,7 @@ await page.keyboard.press('Control+f');
 await page.fill('.odx-findbar input[aria-label="Find"]', 'task orders');
 await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
 await page.waitForTimeout(300);
-check((await page.textContent('.odx-findinfo')) === '1 result', 'Find finds imported text');
+check((await page.textContent('.odx-findinfo')) === '1 of 1', 'Find finds imported text');
 await page.keyboard.press('Escape');
 
 // List numbers in their level's bold, italic and colour, else the paragraph mark's (mklists2.mjs; as in Word's PDF).

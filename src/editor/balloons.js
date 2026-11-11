@@ -147,13 +147,14 @@ const drafts = new Map();
 // redrawn away: focus fell to the page, NVDA saying only "document").
 const back = (view) => setTimeout(() => { if (!view.isDestroyed && !view.dom.contains(document.activeElement)) view.focus(); }, 0);
 
-function composer(key, placeholder, initial, onPost, onCancel, takeSelect = null) {
+function composer(key, placeholder, initial, onPost, onCancel, findSel = null) {
   const wrap = h('div', 'odx-cmt-compose');
   const ta = h('textarea');
   ta.dataset.odxBox = key;
   ta.placeholder = placeholder;
   ta.value = drafts.has(key) ? drafts.get(key) : initial || '';
-  ta.oninput = () => drafts.set(key, ta.value);
+  ta.oninput = () => { drafts.set(key, ta.value); findSel?.clear(); };
+  ta.addEventListener('mousedown', () => findSel?.clear());
   const done = (fn) => () => { drafts.delete(key); fn(); };
   onCancel = done(onCancel);
   const post0 = onPost;
@@ -175,10 +176,13 @@ function composer(key, placeholder, initial, onPost, onCancel, takeSelect = null
   // (The caret at the end, or the text Find chose selected.)
   setTimeout(() => {
     if (!ta.isConnected) return;
-    const select = takeSelect?.();
+    // Find's match stays selected (through redraws of the column) until the comment is typed in or clicked, and the
+    // keys stay in the find bar while it has them.
+    const select = findSel?.get();
     if (!select && document.activeElement === ta) return; // (focused, with its selection, by a redraw of the column)
-    ta.focus();
-    if (select) { ta.setSelectionRange(select.from, select.to); ta.scrollIntoView({ block: 'center' }); } else ta.selectionStart = ta.selectionEnd = ta.value.length;
+    const finding = !!document.activeElement?.closest?.('.odx-findbar');
+    if (!finding) ta.focus();
+    if (select) { ta.setSelectionRange(select.from, select.to); ta.scrollIntoView({ block: 'center' }); } else if (!finding) ta.selectionStart = ta.selectionEnd = ta.value.length;
   }, 0);
   return wrap;
 }
@@ -199,10 +203,10 @@ function commentBalloon(view, c) {
     head.append(h('span', 'odx-cmt-avatar', x.initials || (x.author || '?')[0]), h('b', '', x.author || 'Unknown'), h('small', '', when(x.date, x.dateUtc)));
     e.append(head);
     if (session.editingComment === x.id) {
-      // (Taken by the box that's still there once drawn: the column can be drawn again in the meantime.)
-      const takeSelect = () => { const s = session.commentSelect?.id === String(x.id) ? session.commentSelect : null; if (s) session.commentSelect = null; return s; };
+      // (Kept on the session: the column can be drawn again, a new box in this one's place.)
+      const findSel = { get: () => (session.commentSelect?.id === String(x.id) ? session.commentSelect : null), clear: () => { session.commentSelect = null; } };
       e.append(composer('e' + x.id, 'Add a comment', x.text, (t) => { session.editingComment = null; setText(view, x.id, t); announce('Comment posted'); back(view); },
-        () => { session.editingComment = null; if (!x.text) deleteComment(view, x.id); else setActive(view, x.id); back(view); }, takeSelect));
+        () => { session.editingComment = null; if (!x.text) deleteComment(view, x.id); else setActive(view, x.id); back(view); }, findSel));
     } else e.append(h('div', 'odx-cmt-text', x.text));
     if (x.rich) e.append(h('div', 'odx-cmt-note', 'Has a picture or table: edit it in Word'));
     return e;

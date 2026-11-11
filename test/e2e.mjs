@@ -110,7 +110,7 @@ await page.keyboard.press('Control+f');
 await page.fill('.odx-findbox[type=search]', 'cell');
 await page.press('.odx-findbox[type=search]', 'Enter');
 const found = await page.textContent('.odx-findinfo');
-const findOk = found === '1 result' && await page.isVisible('.odx-findbar');
+const findOk = found === '1 of 1' && await page.isVisible('.odx-findbar');
 console.log(`${findOk ? 'ok  ' : 'FAIL'} find: ${found}`);
 if (!findOk) failed++;
 await page.press('.odx-findbox[type=search]', 'Escape');

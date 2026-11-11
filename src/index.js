@@ -25,6 +25,7 @@ import { saveDraft, loadDraft, clearDraft, pruneDrafts } from './editor/drafts.j
 import { updateFields } from './editor/refs.js';
 import { editorAgent } from './agent.js';
 import { setProtection } from './editor/protect.js';
+import { announce } from './editor/live.js';
 
 const DRAFT_DAYS = 14;
 /** A fingerprint of a file's bytes (FNV-1a and the length): which file a draft was made from. */
@@ -315,6 +316,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     draftNote = document.createElement('div');
     draftNote.className = 'odx-draftnote';
     draftNote.setAttribute('role', 'status');
+    setTimeout(() => announce(`${text.textContent} Restore or Discard are above the ribbon.`), 600);
     const text = document.createElement('span');
     text.textContent = `Unsaved changes to ${draft.name || name} from ${new Date(draft.savedAt).toLocaleString()} were kept in this browser.`;
     const button = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', () => fn().catch(fail)); return b; };
@@ -331,6 +333,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     return p.final ? 'final' : p.writeProtection?.password ? 'password' : p.writeProtection?.recommended ? 'recommended' : null;
   };
   let protectNote = null;
+  let saidNote = '';
   /** The editor enforces the document's protection as it is now; a notice above the ribbon says what it allows. */
   function applyProtection() {
     if (!view) return;
@@ -347,7 +350,9 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
           : softLock === 'password' ? `${name} is reserved: enter the password to modify it, or read it as it is.`
             : !on ? null
               : NOTE[p.edit] || (formatting ? 'Restricted editing: only some styles can be used.' : null);
-    if (!say) return;
+    if (!say) { saidNote = ''; return; }
+    // (Said once as it appears: a status region added with its text isn't read by screen readers on its own.)
+    if (say !== saidNote) { saidNote = say; setTimeout(() => announce(softLock === 'password' ? `${say} The password box is above the ribbon.` : softLock ? `${say} Edit Anyway is above the ribbon.` : say), 600); }
     protectNote = document.createElement('div');
     protectNote.className = 'odx-protectnote';
     protectNote.setAttribute('role', 'status');
