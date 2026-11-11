@@ -458,7 +458,6 @@ export function createPages(view, session, { sheet, scope }) {
     return { pushes, crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
   }
 
-  let lastPush = '';
   const widowControl = (node) => node.attrs.view.widowControl ?? session.styleProp(node.attrs.styleId, 'widowControl') ?? session.styles.defaults.pPr.widowControl ?? true; // on when nothing says (Word's own default, though the OOXML spec says off)
   const keepLines = (node) => node.attrs.view.keepLines ?? session.styleProp(node.attrs.styleId, 'keepLines');
 
@@ -799,7 +798,6 @@ export function createPages(view, session, { sheet, scope }) {
   }
 
   let headKey = '';
-  let headEls = new Map(); // a drawn entry's key -> its element
   const nodeIds = new WeakMap(); // block node -> a number (a block whose content changed is a new node)
   let idSeq = 0;
   function drawHeads(list) {
@@ -1355,7 +1353,6 @@ export function createPages(view, session, { sheet, scope }) {
     // most keystrokes, and then it isn't set again: building it afresh took 70ms a keystroke in a 750-page document.)
     const now = pushKey.getState(view.state)?.find().map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
     if (pushSig !== now) {
-      lastPush = pushSig;
       view.dispatch(view.state.tr.setMeta(pushKey, decos).setMeta('addToHistory', false));
     }
     return { css, heads };

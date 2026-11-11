@@ -58,7 +58,7 @@ export function chunkToWml(source, kind, env) {
 }
 
 function textBlocks(source) {
-  const lines = String(source).replace(/^﻿/, '').split(/\r\n|\r|\n/);
+  const lines = String(source).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   const rPr = '<w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr>';
   return lines.map((l) => `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>${rPr}</w:pPr>${l ? `<w:r>${rPr}<w:t xml:space="preserve">${esc(l)}</w:t></w:r>` : ''}</w:p>`).join('');
