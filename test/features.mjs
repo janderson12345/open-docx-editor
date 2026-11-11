@@ -196,7 +196,7 @@ await open('toc-wrap.docx');
 const toc = await page.evaluate(() => [...document.querySelectorAll('.odx-content p')].filter((p) => p.querySelectorAll('.odx-tab').length === 2).map((p) => {
   const tab = p.querySelectorAll('.odx-tab')[1].getBoundingClientRect(), pr = p.getBoundingClientRect();
   const num = [...p.querySelectorAll('.odx-t')].pop().getBoundingClientRect();
-  return { sameLine: num.bottom > tab.top && num.top < tab.bottom, atRight: Math.abs(num.right - pr.right) < 2, startsLine: Math.abs(tab.left - pr.left) < 1, at: [p.textContent.slice(0, 24), Math.round(num.top), Math.round(tab.top), Math.round(num.right), Math.round(pr.right), getComputedStyle(p).fontFamily.slice(0, 30)] };
+  return { sameLine: num.bottom > tab.top && num.top < tab.bottom, atRight: Math.abs(num.right - pr.right) < 2, startsLine: Math.abs(tab.left - pr.left) < 1, at: [p.textContent.slice(0, 24), Math.round(num.top), Math.round(tab.top), Math.round(num.right), Math.round(pr.right), getComputedStyle(p).fontFamily.slice(0, 30), p.querySelectorAll('.odx-tab')[1].style.cssText, [...p.querySelectorAll('.odx-t')].map((t) => `${t.textContent.slice(0, 12)}@${Math.round(t.getBoundingClientRect().left)}-${Math.round(t.getBoundingClientRect().right)}`).join(' '), document.fonts.status, [...document.fonts].filter((f) => /carlito|calibri/i.test(f.family)).map((f) => `${f.family}:${f.weight}:${f.status}`).join(',')] };
 }));
 const tocBad = toc.find((x) => !(x.sameLine && x.atRight));
 check(toc.length === 30 && !tocBad, `TOC: each page number right-aligned on its tab's line (${toc.filter((x) => x.sameLine && x.atRight).length}/${toc.length}${tocBad ? `; first not: ${JSON.stringify(tocBad)}` : ''})`);
