@@ -16,3 +16,14 @@ test('a document with no styles part takes Word\'s own defaults', () => {
   const { defaults } = new DocxSession(bytes).styles;
   assert.deepEqual(defaults, { rPr: { font: 'Aptos', size: 24 }, pPr: { after: 160, line: 276, lineRule: 'auto' } });
 });
+
+test('built-in styles by a localised document\'s own ids (Spanish Word\'s "Ttulo1" is Heading 1)', async () => {
+  const fs = await import('node:fs');
+  const s = new DocxSession(new Uint8Array(fs.readFileSync(new URL('./fixtures/localised-styles.docx', import.meta.url))));
+  assert.equal(s.builtInId('Heading1'), 'Ttulo1');
+  assert.equal(s.builtInId('TOC1'), 'TDC1');
+  assert.equal(s.builtInId('TOCHeading'), 'TtuloTDC');
+  assert.equal(s.builtInId('Title'), 'Title');
+  // Not added again under the English ids.
+  assert.equal(s.addBuiltInStyles(['TOCHeading', 'TOC1', 'TOC2']), false);
+});

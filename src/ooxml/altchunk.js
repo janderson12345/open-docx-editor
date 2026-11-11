@@ -259,7 +259,8 @@ class Writer {
       return;
     }
     let para;
-    if (/^h[1-6]$/.test(tag)) para = { pPr: `<w:pStyle w:val="Heading${tag[1]}"/>${jc}`, mark: {} };
+    // (A heading in the document's own Heading style: "Ttulo1" in a document from Spanish Word.)
+    if (/^h[1-6]$/.test(tag)) para = { pPr: `<w:pStyle w:val="${esc(this.env.style?.(`Heading${tag[1]}`) ?? `Heading${tag[1]}`)}"/>${jc}`, mark: {} };
     else if (tag === 'p' || tag === 'pre' || tag === 'blockquote' || tag === 'address') {
       const ind = tag === 'blockquote' ? '<w:ind w:left="720" w:right="720"/>' : '';
       Object.assign(run, { font: run.font || WEB_P.font, sz: run.sz || WEB_P.sz });

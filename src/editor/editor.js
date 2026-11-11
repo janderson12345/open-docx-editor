@@ -6,7 +6,7 @@ import { formsPlugin } from './fields.js';
 import { noteClicks, closeNote, flushNote, insertNote } from './notes.js';
 import { EditorState, Plugin } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
-import { Fragment } from 'prosemirror-model';
+import { Fragment, Slice } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands } from 'prosemirror-commands';
 import { history, undo, redo } from 'prosemirror-history';
@@ -375,6 +375,20 @@ const activeBlock = new Plugin({
   },
 });
 
+/**
+ * Pasted paragraphs' built-in styles by the document's own ids (Word's English ids, as a pasted <h1> gets, are another
+ * language's in a document from a localised Word: Heading1 is "Ttulo1" from Spanish Word).
+ */
+function localStylesPlugin(session) {
+  const map = (frag) => Fragment.fromArray(frag.content.map((n) => {
+    if (n.isLeaf) return n;
+    const id = n.type === schema.nodes.paragraph && n.attrs.styleId;
+    const local = id && session.builtInId(id);
+    return n.type.create(local && local !== id ? { ...n.attrs, styleId: local } : n.attrs, map(n.content), n.marks);
+  }));
+  return new Plugin({ props: { transformPasted: (slice) => new Slice(map(slice.content), slice.openStart, slice.openEnd) } });
+}
+
 export function createEditor(mount, session, { onChange, author = 'Author', collab = null } = {}) {
   const scope = `odx-doc-${++scopeSeq}`;
   const styleEl = document.createElement('style');
@@ -419,7 +433,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin()],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session)],
   });
 
   mount.classList.add('odx-canvas');

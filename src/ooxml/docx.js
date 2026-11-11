@@ -66,6 +66,7 @@ export class DocxSession {
       resolveShape: (el, w, h) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h),
       resolveChunk: (rId) => this.chunkPart(rId),
       chunkList: (kind) => this.chunkList(kind),
+      styleId: (id) => this.builtInId(id),
     };
     // (Lists imported content needs are added to numbering.xml as it's read; the part as it was is put back after, the
     // lists kept for showing them, and written into it only by a save that writes them: save().)
@@ -195,11 +196,25 @@ export class DocxSession {
     const path = this.pkg.partByType(REL_TYPES.styles);
     const xml = path && this.pkg.text(path);
     if (!xml) return false;
-    const add = ids.filter((id) => BUILT_IN[id] && !this.styles.styles.has(id)).map((id) => BUILT_IN[id]);
+    // (Not one the document has under its own id: Spanish Word's "TtuloTDC" is its TOC Heading.)
+    const add = ids.filter((id) => BUILT_IN[id] && !this.styles.styles.has(this.builtInId(id))).map((id) => BUILT_IN[id]);
     if (!add.length) return false;
     this.pkg.setText(path, xml.replace(/<\/w:styles>\s*$/, `${add.join('')}</w:styles>`));
     this.styles = readStyles(this.pkg);
     return true;
+  }
+
+  /**
+   * The document's own id for one of Word's built-in styles, by its English id (Heading1, Title, TOC1, TOCHeading):
+   * Word keeps a built-in style's English name (w:name "heading 1") whatever the language, but its id is the local one
+   * ("Ttulo1" in Spanish Word, "Kop1" in Dutch). The id itself when the document has it, or has no such style.
+   */
+  builtInId(id) {
+    if (!id || this.styles.styles.has(id)) return id;
+    const name = builtInName(id);
+    if (!name) return id;
+    for (const [sid, st] of this.styles.styles) if ((st.name || '').toLowerCase() === name) return sid;
+    return id;
   }
 
   /** CSS rules for the document's styles, scoped under `scope`. */
@@ -805,6 +820,13 @@ function noteRefs(doc) {
     for (const m of (n.attrs.xml || '').matchAll(/<w:(footnote|endnote)Reference\b[^>]*w:id="([^"]*)"/g)) used[m[1]].add(m[2]);
   });
   return used;
+}
+
+/** A built-in style's English name, as w:name has it, from its English id: Heading1 -> "heading 1". */
+function builtInName(id) {
+  const m = /^(Heading|TOC)([1-9])$/.exec(id);
+  if (m) return `${m[1].toLowerCase()} ${m[2]}`;
+  return { Title: 'title', Subtitle: 'subtitle', TOCHeading: 'toc heading', Quote: 'quote', IntenseQuote: 'intense quote', ListParagraph: 'list paragraph', NoSpacing: 'no spacing', Caption: 'caption' }[id] || null;
 }
 
 // Built-in styles as Word's own template defines them (Word adds them to a document as it first uses them).

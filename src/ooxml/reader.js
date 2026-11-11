@@ -156,6 +156,7 @@ function chunkBlocks(el, ctx, out) {
   const wml = chunkToWml(part.text, part.kind, {
     parseHtml,
     list: (kind) => ctx.chunkList?.(kind) ?? null,
+    style: (id) => ctx.styleId?.(id) ?? id,
     link: (href) => { const id = `odxChunkLink${links.size + 1}`; links.set(id, href); return id; },
   });
   if (wml == null) return false;

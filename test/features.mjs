@@ -611,6 +611,31 @@ const stylesXml = strFromU8(tocSaved['word/styles.xml']);
 check(tocStyles.styles === 'TOC1,TOCHeading' && /<w:style [^>]*w:styleId="TOC2"[\s\S]*?<w:ind w:left="220"\/>/.test(stylesXml) && /w:styleId="TOC1"/.test(stylesXml) && /w:styleId="TOCHeading"/.test(stylesXml),
   `a table of contents gets Word's TOC styles when the document lacks them (${JSON.stringify(tocStyles)})`);
 
+// A document from a localised Word (Spanish ids: "Ttulo1" is Heading 1, "TDC1" TOC 1): its table of contents in its own
+// TOC styles, none added under the English ids, and a pasted <h1> in its own Heading 1.
+await open('localised-styles.docx');
+await page.click('.odx-content p');
+await page.keyboard.press('Control+Home');
+await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /Insert table of contents/.test(x.title || '')); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+await page.waitForTimeout(1500);
+await page.evaluate(() => {
+  // (Into a new, empty paragraph at the end.)
+  const v = window.odx.view;
+  const end = v.state.doc.content.size;
+  const tr = v.state.tr.insert(end, v.state.schema.nodes.paragraph.create());
+  v.dispatch(tr.setSelection(v.state.selection.constructor.create(tr.doc, end + 1)));
+  const dt = new DataTransfer(); dt.setData('text/html', '<p>Antes</p><h1>Pegado</h1><p>Mas</p>'); dt.setData('text/plain', 'Antes Pegado Mas');
+  window.odx.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+});
+await page.waitForTimeout(300);
+const loc = await page.evaluate(() => ({
+  toc: [...new Set([...document.querySelectorAll('.odx-content > p[data-style^="T"]')].map((p) => p.dataset.style))].sort().join(','),
+  pasted: [...document.querySelectorAll('.odx-content > p')].find((p) => p.textContent === 'Pegado')?.dataset.style,
+}));
+const locXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/styles.xml']);
+check(loc.toc === 'TDC1,TDC2,Ttulo1,Ttulo2,TtuloTDC' && loc.pasted === 'Ttulo1' && !/w:styleId="(TOC1|TOCHeading|Heading1)"/.test(locXml),
+  `a localised document's TOC and pasted heading use its own style ids (${JSON.stringify(loc)})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

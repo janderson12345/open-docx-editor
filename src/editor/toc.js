@@ -42,14 +42,16 @@ function tocXml(view, skip, title = false) {
   const { session } = view.odx;
   const page = session.page();
   const width = Math.round((page.width - page.left - page.right) * 15);
-  const has = (id) => session.styles.styles.has(id);
+  // (Built-in styles by the document's own ids: a localised Word's TOC 1 is "TDC1" in Spanish.)
+  const id = (x) => session.builtInId(x);
+  const has = (x) => session.styles.styles.has(id(x));
   const list = headings(view, skip);
-  const heading = has('TOCHeading') ? '<w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr>' : '<w:pPr><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:r>';
+  const heading = has('TOCHeading') ? `<w:pPr><w:pStyle w:val="${id('TOCHeading')}"/></w:pPr>` : '<w:pPr><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:r>';
   const paras = !title ? [] : [`<w:p>${heading}<w:r>${has('TOCHeading') ? '' : '<w:rPr><w:b/><w:sz w:val="28"/></w:rPr>'}<w:t>Contents</w:t></w:r></w:p>`];
   const begin = `${fld('begin')}<w:r><w:instrText xml:space="preserve">${esc(INSTR)}</w:instrText></w:r>${fld('separate')}`;
   if (!list.length) list.push({ level: 0, text: 'No table of contents entries found.', none: true });
   list.forEach((h, i) => {
-    const style = `TOC${h.level + 1}`;
+    const style = id(`TOC${h.level + 1}`);
     const ppr = `<w:pPr>${has(style) ? `<w:pStyle w:val="${style}"/>` : ''}<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${width}"/></w:tabs>${has(style) ? '' : `<w:spacing w:after="60"/><w:ind w:left="${h.level * 220}"/>`}</w:pPr>`;
     const num = h.none ? '' : `<w:r><w:tab/></w:r><w:r><w:t>${pageOf(view, h.pos)}</w:t></w:r>`;
     paras.push(`<w:p>${ppr}${i === 0 ? begin : ''}<w:r><w:t xml:space="preserve">${esc(h.text)}</w:t></w:r>${num}${i === list.length - 1 ? fld('end') : ''}</w:p>`);

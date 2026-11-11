@@ -6,6 +6,12 @@
   name and pick it from the list of every ribbon command, each with its tab and keyboard shortcut. Up/Down and Enter
   run it (a menu opens, a list takes the focus, anything else is done and the keys go back to the document); Esc goes
   back to the document. A combo box with its list for screen readers, the number of matches said as you type.
+- **Table of contents styles.** Inserting a table of contents into a document without Word's TOC styles adds them
+  (TOC Heading, TOC 1–3, as Word's own template defines them), so its lines are indented by level and Word shows them
+  under their usual names.
+- **Documents from Word in other languages.** Word keeps a built-in style's English name but gives it the language's own
+  id ("Ttulo1" for Heading 1 in Spanish). A table of contents, a pasted heading and HTML imported into the document
+  now use the document's own Heading and TOC styles instead of adding English copies alongside them.
 
 ## 0.7.6 (2026-11-11)
 
