@@ -459,11 +459,11 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     ],
     View: [
       grp('Views', b.reading, b.darkPage),
-      grp('Zoom', btn('−', 'Zoom out', withView((v) => zoomOfView(v).step(-1)), { label: 'Zoom Out', big: true }), col(el('span', { class: 'odx-cap' }, 'Zoom:'), zoomSel),
-        btn('+', 'Zoom in', withView((v) => zoomOfView(v).step(1)), { label: 'Zoom In', big: true }),
-        btn('1:1', 'Zoom to 100%', withView((v) => zoomOfView(v).set(1)), { label: '100%', big: true }),
-        btn('▯', 'One page: fit a whole page in the window', withView((v) => zoomOfView(v).set('onePage')), { label: 'One Page', big: true }),
-        btn('↔', 'Page width: fit the page to the window\'s width', withView((v) => zoomOfView(v).set('pageWidth')), { label: 'Page Width', big: true })),
+      // (Compact, to fit a narrow window's ribbon: out, the percentage and in on one line; the fits beside them.)
+      grp('Zoom', col(el('span', { class: 'odx-cap' }, 'Zoom:'), line(btn('−', 'Zoom out', withView((v) => zoomOfView(v).step(-1))), zoomSel, btn('+', 'Zoom in', withView((v) => zoomOfView(v).step(1))))),
+        col(btn('▣', 'Zoom to 100%', withView((v) => zoomOfView(v).set(1)), { label: '100%' }),
+          btn('▯', 'One page: fit a whole page in the window', withView((v) => zoomOfView(v).set('onePage')), { label: 'One Page' }),
+          btn('↔', 'Page width: fit the page to the window\'s width', withView((v) => zoomOfView(v).set('pageWidth')), { label: 'Page Width' }))),
       grp('Show', b.ruler, b.nav),
       grp('Print', btn('🖶', 'Print, or Save as PDF from the print dialog', () => window.print(), { label: 'Print', big: true })),
       grp('Header & Footer', btn('▭', 'Edit header and footer', withView((v) => hf.editStory(v.odx.main || v, 'header')), { label: 'Header & Footer', big: true })),

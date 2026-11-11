@@ -86,6 +86,7 @@ reads saved files back as an independent check that their text survived.
 | `textspans.js` | Each text node in a span of its own, so a line is as tall as its text in any document mode (Word's rule; see docs/LAYOUT.md) |
 | `track.js`, `comments.js`, `balloons.js` | Tracked changes, comments and the markup column |
 | `protect.js` | Restrict Editing enforced: read-only, comments or tracked changes only, editable ranges, locked styles |
+| `zoom.js` | View > Zoom: CSS zoom on the page, the layout measured at 100% (pages.js `unzoomed`) |
 | `fields.js` | Content controls and forms mode |
 | `hfedit.js`, `notes.js`, `txbxedit.js` | Editing headers and footers, notes and text-box text in their own small editors |
 | `imgresize.js`, `charts.js` | Resizing and moving pictures and shapes; the chart dialog |

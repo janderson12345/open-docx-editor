@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Zoom and fit-to-width**: View > Zoom (zoom out and in, a percentage, 100%, One Page, and Page Width, which keeps
+  fitting as the window resizes), Ctrl+wheel, `api.zoom` and `api.setZoom()`. Only the view changes: the layout is
+  measured at 100%, so the pages break the same, and printing and PDF export are at full size. The ruler, comments,
+  picture handles and the header, footer, note and text box editors follow the zoom; the zoom carries over to the next
+  document opened.
+- With the comments column showing, the page moves aside for it only as far as the window has room, so a page wider
+  than the window is never cut off at the left.
+
 ## 0.7.5 (2026-11-11)
 
 Since 0.7.0: fit text, more numbering formats, list numbers in their own formatting, Find in comments, pasted
