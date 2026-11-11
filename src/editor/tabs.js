@@ -87,6 +87,10 @@ export function layoutTabsIn(root, session, nodeOf) {
       const from = (r) => (rtl ? edge - r.right : r.left - edge); // a box's start, from the edge
       const x = from(s.getBoundingClientRect());
       let stop = stops.find((t) => t.x > x + 0.5);
+      // (Text ending a fraction of a pixel past the last stop, a right one, is still before it in Word's units: a long
+      // table of contents title that fills its line, in a font drawn a shade wider than Word's.)
+      const last = stops[stops.length - 1];
+      if (!stop && last && (last.val === 'right' || last.val === 'end') && x - last.x < 1) stop = last;
       if (indent != null && indent > x + 0.5 && (!stop || stop.x > indent)) stop = { val: 'left', x: indent };
       let w;
       // (The line's end, from the edge: "right" in a left-to-right paragraph.)
