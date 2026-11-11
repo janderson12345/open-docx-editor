@@ -59,12 +59,10 @@ export function layoutTabsIn(root, session, nodeOf) {
   }
   // A paragraph whose text, formatting and place are as when its tabs were sized keeps them (sizing every tab again
   // each pass restyled them all: a keystroke in a long document laid out each of its tabbed lines again).
-  const todo = [...byPara].filter(([p]) => {
-    const sig = `${fontLoads}|${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}`;
-    if (sized.get(p) === sig) return false;
-    sized.set(p, sig);
-    return true;
-  });
+  // (Where its tabs and its text's pieces sit is part of it, as they were once sized: the layout corrects a hinted
+  // font's widths after the tabs, in the text's own spans, and a stop measured before that lands short.)
+  const sigOf = (p, tabs) => `${fontLoads}|${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}|${tabs.map((t) => t.offsetLeft).join(',')}|${[...p.querySelectorAll('.odx-t')].map((t) => t.offsetWidth).join(',')}`;
+  const todo = [...byPara].filter(([p, tabs]) => sized.get(p) !== sigOf(p, tabs));
   for (const [, tabs] of todo) for (const s of tabs) s.style.cssText = 'display:inline-block;tab-size:0;width:0';
   const grid = (session.defaultTabStop || 720) * PX;
   for (const [p, tabs] of todo) {
@@ -115,4 +113,5 @@ export function layoutTabsIn(root, session, nodeOf) {
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
     }
   }
+  for (const [p, tabs] of todo) sized.set(p, sigOf(p, tabs));
 }
