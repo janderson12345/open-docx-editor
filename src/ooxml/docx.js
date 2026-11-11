@@ -4,7 +4,8 @@ import { Node } from 'prosemirror-model';
 import { DocxPackage } from './package.js';
 import { REL_TYPES, NS, kids, parseXml, serializeXml } from './xml.js';
 import { readDocument, readStory } from './reader.js';
-import { writeDocument, writeStory, writeBlocks, rootPrefixes } from './writer.js';
+import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
+import { chunkKind } from './altchunk.js';
 import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle } from './styles.js';
 import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
@@ -63,9 +64,25 @@ export class DocxSession {
       },
       resolveChart: (rId, w, h) => this.chartUrl(this.pkg.relById(rId), w, h),
       resolveShape: (el, w, h) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h),
+      resolveChunk: (rId) => this.chunkPart(rId),
+      chunkList: (kind) => this.chunkList(kind),
     };
+    // (Lists imported content needs are added to numbering.xml as it's read; the part as it was is put back after, the
+    // lists kept for showing them, and written into it only by a save that writes them: save().)
+    const numPath = this.pkg.partByType(REL_TYPES.numbering);
+    const numBytes = numPath && this.pkg.files[numPath];
     const json = readDocument(parseXml(this.originalXml), this._resolvers);
+    if (this._chunkNums && numBytes) {
+      this._chunkNumbering = { path: numPath, bytes: this.pkg.files[numPath], ids: this._chunkNums };
+      this.pkg.files[numPath] = numBytes;
+    }
     this.doc = Node.fromJSON(schema, json);
+    // Imported content as it was read: a save writes its w:altChunk back while its blocks are still so (writer.js).
+    this.doc.descendants((n) => {
+      const c = n.attrs.chunk;
+      if (c) (c.sigs ||= []).push(chunkSig(n));
+      return n.isBlock && !n.isTextblock;
+    });
     this.comments = readComments(this.pkg);
     this.notes = loadNotes(this.pkg);
     // Notes nothing referred to when the document opened are not the editor's to prune: a save keeps them as they were.
@@ -439,6 +456,32 @@ export class DocxSession {
     return (id && this._styleCache.get(id).rPr?.[prop]) ?? this.styles.defaults.rPr[prop];
   }
 
+  /** An imported-content part (w:altChunk's relationship): { kind: 'html'|'text', text }, or null when it's missing or
+   * of a kind that isn't converted (RTF, a whole document, MHT). */
+  chunkPart(rId) {
+    const rel = rId && this.pkg.relById(rId);
+    if (!rel || rel.external || !this.pkg.has(rel.target)) return null;
+    const types = this.pkg.text('[Content_Types].xml') || '';
+    const part = '/' + rel.target.replace(/^\//, '');
+    const ext = (/\.([^./]+)$/.exec(part) || [])[1] || '';
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const over = new RegExp(`<Override\\b(?=[^>]*PartName="${esc(part)}")[^>]*ContentType="([^"]+)"`, 'i').exec(types);
+    const dflt = new RegExp(`<Default\\b(?=[^>]*Extension="${esc(ext)}")[^>]*ContentType="([^"]+)"`, 'i').exec(types);
+    const kind = chunkKind(over?.[1] || dflt?.[1], part);
+    if (!kind) return null;
+    const bytes = this.pkg.files[rel.target];
+    // (UTF-8 unless it says otherwise; one with a byte-order mark for UTF-16 read so.)
+    const utf16 = bytes[0] === 0xff && bytes[1] === 0xfe;
+    return { kind, text: new TextDecoder(utf16 ? 'utf-16le' : 'utf-8').decode(bytes) };
+  }
+
+  /** A list for imported content: its bullets one list (made once), each numbered list its own, numbered from 1. */
+  chunkList(kind) {
+    const id = kind === 'bullet' ? (this._chunkBullets ||= this._addList((absId) => bulletAbstract(absId))) : this._addList((absId) => decimalAbstract(absId));
+    (this._chunkNums ||= new Set()).add(id);
+    return id;
+  }
+
   /** numbering level definition for (numId, ilvl), or null */
   listLevel(numId, ilvl) {
     return listLevel(this.numbering, numId, ilvl);
@@ -468,7 +511,16 @@ export class DocxSession {
     return this._addList((absId) => abstractFor(absId, levels));
   }
 
+  /** numbering.xml with imported content's lists in it (they're in the session's numbering from the start). */
+  _applyChunkNumbering() {
+    const cn = this._chunkNumbering;
+    if (!cn) return;
+    this.pkg.files[cn.path] = cn.bytes;
+    this._chunkNumbering = null;
+  }
+
   _addList(abstractXml) {
+    this._applyChunkNumbering(); // (a new list's ids come after theirs)
     let path = this.pkg.partByType(REL_TYPES.numbering);
     if (!path) {
       path = this.pkg.mainDir + 'numbering.xml';
@@ -689,6 +741,9 @@ export class DocxSession {
   /** Serialize `doc` (default: the loaded one) to .docx bytes. */
   save(doc = this.doc) {
     const xml = writeDocument(doc, this.originalXml, { linkRel: (href) => this._linkRel(href) });
+    // Imported content's lists, written into numbering.xml once a save writes them as paragraphs (an edited chunk).
+    const cn = this._chunkNumbering;
+    if (cn && [...xml.matchAll(/<w:numId w:val="([^"]+)"/g)].some((m) => cn.ids.has(m[1]))) this._applyChunkNumbering();
     // Edited charts: their parts, and the workbooks Word edits them in (chartedit.js). Each save starts from the parts
     // as they were opened, so an edit undone since an earlier save is undone in the file too.
     this._chartOrig ||= new Map(); // chart part path -> { xml, wb: { target, bytes } | null }, as opened

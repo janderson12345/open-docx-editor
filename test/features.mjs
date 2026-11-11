@@ -343,6 +343,24 @@ await page.click('.odx-rtab:text-is("Home")');
 check(one.join(' / ') === '16838x11906L t1440 l2160 / 12240x15840 t1440 l1440', `Page Setup, this section: A4 landscape, left 1.5in, the other section as it was (${one.join(' / ')})`);
 check(both.join(' / ') === '16838x11906L t720 l2160 / 16838x11906L t720 l2160', `Page Setup, whole document: the dialog's page in both sections (${both.join(' / ')})`);
 
+// Imported content (w:altChunk, mkaltchunk.mjs): drawn as the paragraphs Word makes of it, in the cells and the body,
+// with no placeholder left; Find finds its text.
+await open('altchunk.docx');
+const chunk = await page.evaluate(() => ({
+  opaque: document.querySelectorAll('.odx-content .odx-opaque').length,
+  cell: [...document.querySelectorAll('.odx-content td')].map((td) => td.textContent).find((t) => t.startsWith('Basis')),
+  bullets: [...document.querySelectorAll('.odx-content p.odx-li')].map((p) => p.dataset.label + p.textContent).join('|'),
+}));
+check(chunk.opaque === 0 && chunk.cell === 'Basis of Estimate: hours from the last three task orders.', `imported content drawn as text, none as a placeholder (${JSON.stringify(chunk.cell)}, ${chunk.opaque} left)`);
+check(chunk.bullets.includes('First bullet') && chunk.bullets.includes('1.First step'), `its lists are lists (${chunk.bullets})`);
+await page.click('.odx-content p');
+await page.keyboard.press('Control+f');
+await page.fill('.odx-findbar input[aria-label="Find"]', 'task orders');
+await page.press('.odx-findbar input[aria-label="Find"]', 'Enter');
+await page.waitForTimeout(300);
+check((await page.textContent('.odx-findinfo')) === '1 result', 'Find finds imported text');
+await page.keyboard.press('Escape');
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

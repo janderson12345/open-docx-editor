@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Imported content (w:altChunk)**: the HTML or plain text a document carries for Word to convert when it opens it
+  (as mail-merge systems write rich-text fields, often in table cells) is shown as the paragraphs Word makes of it, in
+  place of a placeholder: HTML paragraphs in Times New Roman 12pt with automatic spacing, text outside them in the
+  document's Normal style, headings, lists, links, tables, bold, italic, underline, fonts, sizes and colours, a blank
+  field as one empty paragraph. It can be searched, counted, printed and edited. Saved unedited, each chunk is written
+  back as it was, its part kept; once edited, as the paragraphs it now is, as Word saves it. (RTF and whole-document
+  chunks stay as placeholders.)
+
 - **Faster typing in long documents**: the layout's own measurements (tab widths, row heights, column widths) no longer
   look like edits to the editor, which had re-read and redrawn much of a document of tables at each keystroke; tabs,
   merged rows and print baseline shifts are measured again only where something changed; tracked

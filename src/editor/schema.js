@@ -51,7 +51,7 @@ const tables = tableNodes({
     },
   },
 });
-tables.table.attrs = { tblPr: { default: null }, tblGrid: { default: null }, deco: { default: null }, sdt: { default: null } }; // deco: placement (editor only)
+tables.table.attrs = { tblPr: { default: null }, tblGrid: { default: null }, deco: { default: null }, sdt: { default: null }, chunk: { default: null } }; // deco: placement (editor only); chunk: as a paragraph's
 tables.table.toDOM = (node) => {
   const m = node.attrs.tblPr && /<w:tblStyle w:val="([^"]+)"/.exec(node.attrs.tblPr);
   return ['table', m ? { 'data-tstyle': m[1] } : {}, ['tbody', 0]];
@@ -121,6 +121,7 @@ export const schema = new Schema({
       content: 'inline*',
       attrs: {
         sdt: { default: null }, // block content control (w:sdt) around this block, kept for saving
+        chunk: { default: null }, // imported content (w:altChunk) this block was read from, written back while unedited (reader.js)
         styleId: { default: null },
         align: { default: null },
         numId: { default: null },
@@ -159,7 +160,7 @@ export const schema = new Schema({
       group: 'block',
       atom: true,
       selectable: true,
-      attrs: { sdt: { default: null }, xml: { default: '' }, text: { default: '' }, kind: { default: '' } },
+      attrs: { sdt: { default: null }, chunk: { default: null }, xml: { default: '' }, text: { default: '' }, kind: { default: '' } },
       toDOM: (n) => ['div', { class: 'odx-opaque', 'data-kind': n.attrs.kind, contenteditable: 'false', title: `Preserved ${n.attrs.kind} (not editable yet)` }, n.attrs.text || `[${n.attrs.kind}]`],
     },
 

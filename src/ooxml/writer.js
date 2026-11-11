@@ -44,18 +44,44 @@ export function writeDocument(doc, originalXml, ctx = {}) {
   return originalXml.slice(0, m.index) + `<w:body>${body}</w:body>` + originalXml.slice(m.index + m[0].length);
 }
 
-/** A container's blocks, with runs of blocks from one content control wrapped in its w:sdt again. */
+/**
+ * A container's blocks, with runs of blocks from one content control wrapped in its w:sdt again, and the blocks read
+ * from imported content (w:altChunk) written as the w:altChunk they came from while they're all there as they were
+ * read (as Word keeps a chunk it hasn't converted, so a merge system that wrote it finds it again); once edited, as
+ * the paragraphs they now are (as Word saves a document it has converted the chunk in).
+ */
 export function writeBlocks(parent, ctx) {
   let out = '';
   let open = null;
-  parent.forEach((b) => {
+  const blocks = [];
+  parent.forEach((b) => blocks.push(b));
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    const chunk = b.attrs.chunk;
+    if (chunk && (i === 0 || blocks[i - 1].attrs.chunk !== chunk)) {
+      let j = i;
+      while (j < blocks.length && blocks[j].attrs.chunk === chunk) j++;
+      const sigs = blocks.slice(i, j).map(chunkSig);
+      if (chunk.sigs && sigs.length === chunk.sigs.length && sigs.every((s, k) => s === chunk.sigs[k])) {
+        if (open) { out += open.close; open = null; }
+        out += chunk.xml;
+        i = j - 1;
+        continue;
+      }
+    }
     const sdt = b.attrs.sdt || null;
     if (open && (!sdt || sdt.g !== open.g)) { out += open.close; open = null; }
     if (sdt && !open) { out += sdt.open; open = sdt; }
     out += writeBlock(b, ctx);
-  });
+  }
   if (open) out += open.close;
   return out;
+}
+
+/** A block read from imported content, as compared to tell an edit: its content and attributes, less those the
+ * editor computes for showing it (deco, a table's measured column widths). */
+export function chunkSig(node) {
+  return JSON.stringify(node.toJSON(), (k, v) => (k === 'deco' || k === 'chunk' || k === 'colwidth' || k === 'colwidth0' ? undefined : v));
 }
 
 function writeBlock(node, ctx) {

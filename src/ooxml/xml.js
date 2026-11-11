@@ -20,6 +20,7 @@ export const REL_TYPES = {
   image: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
   theme: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
   settings: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings',
+  aFChunk: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk',
 };
 
 let impl = {
@@ -37,6 +38,11 @@ export function parseXml(text) {
   const err = doc.getElementsByTagName('parsererror')[0];
   if (err) throw new Error('Invalid XML: ' + err.textContent);
   return doc;
+}
+
+/** HTML read as a browser reads it (errors recovered from), for imported content (altchunk.js). */
+export function parseHtml(text) {
+  return new impl.DOMParser().parseFromString(text, 'text/html');
 }
 
 export function serializeXml(node) {

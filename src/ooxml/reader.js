@@ -1,7 +1,8 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
-import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, childNamed, elementKids } from './xml.js';
+import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
+import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
 
@@ -12,13 +13,14 @@ const RPR_MODELLED = new Set(['rStyle', 'rFonts', 'b', 'i', 'strike', 'color', '
 // Paragraph-level markers with no visible content.
 export const ZERO_WIDTH = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'permStart', 'permEnd', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']);
 
-export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null } = {}) {
+export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, resolveChunk = null, chunkList = null } = {}) {
   sdtGroup = 0; // field keys are per document, so reading is repeatable
+  chunkGroup = 0;
   const root = docXml.documentElement;
   const rootNs = nsDecls(root);
   const body = kid(root, 'body');
   if (!body) throw new Error('document.xml has no w:body');
-  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, xml: (el) => outerXml(el, rootNs) };
+  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, resolveChunk, chunkList, xml: (el) => outerXml(el, rootNs) };
 
   let sectPr = null;
   const bodyKids = kids(body);
@@ -134,9 +136,40 @@ function readBlocks(els, ctx) {
     }
     else if (el.namespaceURI === NS.w && el.localName === 'tbl') out.push(readTable(el, ctx));
     else if (el.namespaceURI === NS.w && el.localName === 'sdt' && sdtBlocks(el, ctx, out)) continue;
+    else if (el.namespaceURI === NS.w && el.localName === 'altChunk' && chunkBlocks(el, ctx, out)) continue;
     else out.push({ type: 'opaque_block', attrs: { xml: ctx.xml(el), text: previewText(el), kind: el.localName } });
   }
   return out;
+}
+
+let chunkGroup = 0;
+/**
+ * Imported content (w:altChunk): its part (HTML or plain text) read as the paragraphs and tables Word makes of it
+ * (altchunk.js). Each block carries `chunk`, one object for all of a chunk's blocks: the w:altChunk element as it was,
+ * which a save writes back in their place while they're as they were read (docx.js keeps how that was). Returns false
+ * (keep it opaque) for a part that can't be read: one missing, RTF, a whole document.
+ */
+function chunkBlocks(el, ctx, out) {
+  const part = ctx.resolveChunk?.(el.getAttributeNS(NS.r, 'id'));
+  if (!part) return false;
+  const links = new Map();
+  const wml = chunkToWml(part.text, part.kind, {
+    parseHtml,
+    list: (kind) => ctx.chunkList?.(kind) ?? null,
+    link: (href) => { const id = `odxChunkLink${links.size + 1}`; links.set(id, href); return id; },
+  });
+  if (wml == null) return false;
+  let root;
+  try { root = parseXml(`<w:root xmlns:w="${NS.w}" xmlns:r="${NS.r}">${wml}</w:root>`).documentElement; } catch { return false; }
+  const sub = { ...ctx, resolveLink: (id) => (links.has(id) ? links.get(id) : ctx.resolveLink(id)), xml: (e) => outerXml(e, nsDecls(root)) };
+  const blocks = readBlocks(kids(root), sub);
+  const fix = (n) => {
+    for (const m of n.marks || []) if (m.type === 'link' && links.has(m.attrs.rId)) m.attrs.rId = null; // (a new link: saved with a relationship of its own)
+    (n.content || []).forEach(fix);
+  };
+  const chunk = { xml: ctx.xml(el), g: ++chunkGroup };
+  for (const b of blocks) { fix(b); out.push({ ...b, attrs: { ...(b.attrs || {}), chunk } }); }
+  return true;
 }
 
 function previewText(el) {
