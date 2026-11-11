@@ -118,6 +118,7 @@ fs.writeFileSync('out.docx', s.save());
   ordinary (Transitional) form, which every version of Word opens.
 - **Fast on long documents**: a 300-page file opens in about a second in Chromium; off-screen
   pages skip layout, and pagination runs when you pause typing.
+- **Command search** (Alt+Q, as in Word for the web): every ribbon command by name, with its shortcut; Enter runs it.
 - **Zoom** (View > Zoom, Ctrl+wheel): 10% to 500%, 100%, One Page, and Page Width, which keeps fitting as the window
   resizes. Only the view changes: the pages break the same, and printing and PDF export are at full size.
   `editor.setZoom(1.5)` or `editor.setZoom('pageWidth')`; `editor.zoom` gives the zoom now.

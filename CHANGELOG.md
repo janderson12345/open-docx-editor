@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Command search (Alt+Q)**, as Word for the web's Search box: a box in the ribbon's tab row; type part of a command's
+  name and pick it from the list of every ribbon command, each with its tab and keyboard shortcut. Up/Down and Enter
+  run it (a menu opens, a list takes the focus, anything else is done and the keys go back to the document); Esc goes
+  back to the document. A combo box with its list for screen readers, the number of matches said as you type.
+
 ## 0.7.6 (2026-11-11)
 
 Zoom, and what a screen reader (NVDA) pass over the newer pieces turned up.

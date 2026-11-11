@@ -35,7 +35,7 @@ export function createFindBar(getView, withView) {
     // (The keys stay in the find bar, as in Word's find pane, when a match takes the search into a header, note, text box
     // or comment: their editors take the focus as they open, and the next Enter would have typed into them.)
     const from = findBar.contains(document.activeElement) ? document.activeElement : null;
-    if (from) setTimeout(() => setTimeout(() => { if (!findBar.hidden && from.isConnected) from.focus(); }, 0), 0);
+    if (from) setTimeout(() => setTimeout(() => { if (!findBar.hidden && from.isConnected && !findBar.contains(document.activeElement)) from.focus(); }, 0), 0);
     let n;
     try { n = fn(v); } catch (err) {
       if (!(err instanceof SyntaxError)) throw err;

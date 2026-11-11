@@ -63,6 +63,13 @@ for (const scheme of ['light', 'dark']) {
   await page.waitForSelector('.odx-findbar:not([hidden])');
   await check('Find and Replace');
   await page.keyboard.press('Escape');
+  // The command search (Alt+Q) with its list open.
+  await page.click('.odx-content p');
+  await page.keyboard.press('Alt+q');
+  await page.keyboard.type('page');
+  await page.waitForSelector('.odx-cmdlist:not([hidden])');
+  await check('command search');
+  await page.keyboard.press('Escape');
   // Review > Restrict Editing open; then a document marked final, with its notice and Edit Anyway.
   await page.click('[role=tab]:text-is("Review")');
   await page.click('[aria-label="Restrict editing"]');

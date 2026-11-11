@@ -21,6 +21,7 @@ import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './
 import { createFindBar } from './findbar.js';
 import { protectionOf } from './protect.js';
 import { ZOOM_STEPS } from './zoom.js';
+import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
 import { el, iconize, slug, ribbonKit } from './ribbonkit.js';
@@ -562,7 +563,10 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     try { localStorage.setItem('odx-ribbon', on ? 'simple' : 'classic'); } catch { /* storage blocked */ }
     fitRibbon();
   }
-  strip.append(el('span', { class: 'odx-tabs-fill' }), exitRead, layoutBtn);
+  // Command search (Alt+Q): every ribbon command by name (cmdsearch.js).
+  const cmdSearch = createCommandSearch({ panels, showTab, getView, container,
+    reveal: (c) => { if (c.closest('.odx-cut')) { body.classList.add('odx-expand'); moreBtn.setAttribute('aria-expanded', 'true'); fitRibbon(); } } });
+  strip.append(cmdSearch.box, el('span', { class: 'odx-tabs-fill' }), exitRead, layoutBtn);
   setSimple(simple);
 
   container.classList.add('odx-toolbar');

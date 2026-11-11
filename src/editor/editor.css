@@ -592,3 +592,12 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-pagesetup .odx-num { width: 70px; }
 .odx-protect .odx-check { display: flex; gap: 6px; align-items: center; }
 .odx-protect .odx-check input { width: 24px; height: 24px; margin: 0; } /* (WCAG 2.5.8: at least 24px) */
+/* Command search (Alt+Q, cmdsearch.js): a box in the tab row, its matches in a list under it. */
+.odx-cmdbox { position: relative; margin: 0 8px; align-self: center; }
+.odx-cmdsearch { width: 200px; max-width: 40vw; min-height: 26px; box-sizing: border-box; font: 13px system-ui, sans-serif; padding: 3px 8px; color: var(--odx-bar-fg); background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; }
+.odx-cmdsearch:focus-visible { outline: 2px solid var(--odx-accent); outline-offset: 1px; }
+.odx-cmdlist { position: absolute; top: calc(100% + 2px); left: 0; z-index: 20; min-width: 280px; max-height: 60vh; overflow: auto; background: var(--odx-field); border: 1px solid var(--odx-field-line); border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.18); font: 13px system-ui, sans-serif; color: var(--odx-bar-fg); }
+.odx-cmdopt { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; min-height: 24px; box-sizing: border-box; cursor: pointer; }
+.odx-cmdopt small { opacity: .75; white-space: nowrap; }
+.odx-cmdopt.on, .odx-cmdopt:hover { background: var(--odx-on); }
+@media print { .odx-cmdbox { display: none; } }
