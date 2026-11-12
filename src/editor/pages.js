@@ -804,14 +804,37 @@ export function createPages(view, session, { sheet, scope }) {
   function colSplitTable(b, shift, p) {
     const table = b.el.tagName === 'TABLE' ? b.el : b.el.querySelector('table');
     const trs = table && table.tBodies[0] ? [...table.tBodies[0].rows] : [];
-    if (trs.length < 2) return null;
+    if (!trs.length) return null;
     const top0 = b.el.getBoundingClientRect().top;
-    const at = trs.findIndex((tr) => b.top + shift + (tr.getBoundingClientRect().bottom - top0) > contentBottom(p) + 1);
-    if (at <= 0) return null;
-    const cut = trs[at].getBoundingClientRect().top - top0;
+    const room = contentBottom(p) + 1 - (b.top + shift); // how far down the block the column ends
+    const at = trs.findIndex((tr) => tr.getBoundingClientRect().bottom - top0 > room);
+    if (at < 0) return null;
+    // Inside the row, between its cells' lines, as Word breaks a row line by line (when the row can split and its cells
+    // sit at the top): the lowest place above the column's foot that no line of any cell straddles.
+    let cut = null;
+    const node = b.node.child(at);
+    const rowTop = trs[at].getBoundingClientRect().top - top0;
+    if (!sheet.classList.contains('odx-large') && node && !cantSplit(node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
+      const base = view.dom.getBoundingClientRect().top + b.undo;
+      const spans = [];
+      for (const el of trs[at].querySelectorAll('p')) {
+        const r = el.getBoundingClientRect();
+        const pl = paragraphLines({ el, top: r.top - base, bottom: r.bottom - base, undo: b.undo });
+        if (pl) for (const l of pl) spans.push([l.top - b.top, l.bottom - b.top]);
+        else spans.push([r.top - top0, r.bottom - top0]);
+      }
+      const clean = (y) => !spans.some(([t, z]) => t < y - 0.5 && z > y + 0.5);
+      const tops = [...new Set(spans.map(([t]) => t))].filter((y) => y > rowTop + 1 && y <= room + 0.5 && clean(y)).sort((x, y) => y - x);
+      if (tops.length) cut = tops[0];
+    }
+    if (cut == null) {
+      if (at <= 0) return null;
+      cut = rowTop;
+    }
     let h = 0;
     while (h < b.node.childCount && isHeader(b.node.child(h))) h++;
-    const head = h && h < at && h < trs.length ? trs[h].getBoundingClientRect().top - top0 : 0;
+    const hb = h && h < trs.length ? trs[h].getBoundingClientRect().top - top0 : 0;
+    const head = hb && cut >= hb - 0.5 ? hb : 0; // (the header rows drawn again above what goes on, once the cut is past them)
     return { cut, head, height: b.bottom - b.top, delta: contentTop(p + 1) + head - (b.top + shift + cut) };
   }
 
@@ -1654,11 +1677,11 @@ export function createPages(view, session, { sheet, scope }) {
           overflow = true;
         }
       }
-      else if (inReg && b.node.type === schema.nodes.table && b.bottom + shift > contentBottom(p) + 1) {
+      else if (inCols && b.node.type === schema.nodes.table && b.bottom + shift > contentBottom(p) + 1) {
         const cs = colSplitTable(b, shift, p);
         if (cs) {
           colSplits.set(b.i, cs);
-          rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0) });
+          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0) });
           const nb = blocks[k + 1];
           if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
           continue;
