@@ -28,7 +28,7 @@ const hinted = new Map(); // font (style weight family) + size -> true when Edge
 // Text measured as the page lays it out, in a span of its own. (Not a canvas: Firefox's canvas measures text with
 // hinted widths where its page uses the design ones, which made runs it lays out right look wrong.)
 let probe = null;
-function width(cs, px, text) {
+function width(cs, px, text, caps = 'normal') {
   if (!probe || !probe.isConnected) {
     probe = document.createElement('span');
     probe.setAttribute('aria-hidden', 'true');
@@ -36,6 +36,7 @@ function width(cs, px, text) {
     document.body.append(probe);
   }
   probe.style.font = `${cs.fontStyle} ${cs.fontWeight} ${px}px ${cs.fontFamily}`;
+  probe.style.fontVariantCaps = caps;
   probe.textContent = text;
   return probe.getBoundingClientRect().width;
 }
@@ -137,10 +138,18 @@ export function applyWidths(view) {
     // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
     const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
     const hinted = isHinted(cs);
-    if (hinted || scale !== 1) {
+    // Small caps as Word sets them: lowercase letters as capitals at 80% of the size (to half a point: 9pt in 11pt
+    // text, Word's PDF), the rest as they are; the browser's own small capitals are another width.
+    const smallCaps = cs.fontVariantCaps === 'small-caps';
+    if (hinted || scale !== 1 || smallCaps) {
       const px = parseFloat(cs.fontSize);
-      const actual = width(cs, px, node.text);
-      const target = (hinted ? (width(cs, 100, node.text) * px) / 100 : actual) * scale;
+      const actual = width(cs, px, node.text, smallCaps ? 'small-caps' : 'normal');
+      let design = hinted ? (width(cs, 100, node.text) * px) / 100 : actual;
+      if (smallCaps) {
+        const sc = (Math.round(px * 0.75 * 0.8 * 2) / 2) / 0.75;
+        design = node.text.match(/\p{Ll}+|\P{Ll}+/gu).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? width(cs, sc, part.toUpperCase()) : width(cs, px, part)), 0);
+      }
+      const target = design * scale;
       const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
       if (ls) style.push(`letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)`);
     }
