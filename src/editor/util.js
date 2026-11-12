@@ -32,3 +32,23 @@ export function lineHeightOf(cs) {
   const n = Number(v);
   return Number.isFinite(n) ? `${n * parseFloat(cs.fontSize)}px` : cs.lineHeight;
 }
+
+/**
+ * An element's box as laid out, before its CSS transform (a turned shape's picture, turned about its centre and moved
+ * back where its margins put it, reader.js turned): what takes room on its line and page, where its bounding rect is
+ * the turned outline's. (At 100%, as the layout measures.)
+ */
+export function layoutRect(el) {
+  const r = el.getBoundingClientRect();
+  const t = getComputedStyle(el).transform;
+  if (!t || t === 'none') return r;
+  const m = new DOMMatrix(t);
+  // (Not turned, only moved or flipped: its own rect, moved back. Otherwise its exact size: offsetWidth is rounded.)
+  if (Math.abs(m.b) < 1e-9 && Math.abs(m.c) < 1e-9 && Math.abs(Math.abs(m.a) - 1) < 1e-9 && Math.abs(Math.abs(m.d) - 1) < 1e-9) {
+    return { left: r.left - m.e, right: r.right - m.e, top: r.top - m.f, bottom: r.bottom - m.f, width: r.width, height: r.height };
+  }
+  const cs = getComputedStyle(el);
+  const cx = (r.left + r.right) / 2 - m.e, cy = (r.top + r.bottom) / 2 - m.f;
+  const w = parseFloat(cs.width) || el.offsetWidth, h = parseFloat(cs.height) || el.offsetHeight;
+  return { left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2, width: w, height: h };
+}

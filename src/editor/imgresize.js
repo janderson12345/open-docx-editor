@@ -14,16 +14,23 @@ const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN = 8; // px
 const LINES = /^(?:line|straightConnector1)$/;
 
+/** How far a drawing's shape or group is turned (its a:xfrm rot), in degrees clockwise: 0 for a picture or chart. */
+export function turnOf(xml) {
+  const rot = Number(/<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml || '')?.[1] || 0) / 60000;
+  return ((rot % 360) + 360) % 360;
+}
+
 /**
- * What a selected drawing's handles need to know of its shape: a single preset shape (not a group), unrotated, with
- * its definition, own adjust values, size (EMU) and flips. Null for anything else (pictures, groups, charts).
+ * What a selected drawing's handles need to know of its shape: a single preset shape (not a group), with its
+ * definition, own adjust values, size (EMU) and flips (its turn is the box's, turnOf). Null for anything else
+ * (pictures, groups, charts).
  */
 export function shapeInfo(xml) {
   if (!xml || !/<wps:wsp\b/.test(xml) || /<wpg:/.test(xml)) return null;
   const sp = /<wps:spPr\b[^>]*>[\s\S]*?<\/wps:spPr>/.exec(xml)?.[0];
   const xf = sp && /<a:xfrm\b([^>]*)>[\s\S]*?<a:ext\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(sp);
   const prst = sp && /<a:prstGeom\b[^>]*\bprst="([^"]+)"/.exec(sp)?.[1];
-  if (!xf || !prst || !PRESETS[prst] || Number(/\brot="(-?\d+)"/.exec(xf[1])?.[1] || 0) % 21600000) return null;
+  if (!xf || !prst || !PRESETS[prst]) return null;
   const av = /<a:prstGeom\b[^>]*>[\s\S]*?<\/a:prstGeom>/.exec(sp)?.[0] || '';
   const adjust = Object.fromEntries([...av.matchAll(/<a:gd\b[^>]*\bname="([^"]+)"[^>]*\bfmla="([^"]+)"/g)].map((m) => [m[1], m[2]]));
   const on = (k) => new RegExp(`\\b${k}="(?:1|true)"`).test(xf[1]);
@@ -42,16 +49,37 @@ export function imageResizePlugin() {
         d.dataset.h = h;
         box.append(d);
       }
+      // The rotate handle, above the top edge's middle (a shape's, not a line's or a picture's), as Word's.
+      const rotH = document.createElement('div');
+      rotH.className = 'odx-imgsize-rot';
+      rotH.dataset.kind = 'rot';
+      box.append(rotH);
       let target = null; // { pos, node, img, info }
       let extra = []; // a line's end handles, a shape's adjust handles
       // The drawing's own box (px), in the page's own px whatever the zoom: its picture less the room drawn around it
-      // for arrowheads (--odx-pad).
+      // for arrowheads (--odx-pad), unturned, where it's drawn (a turned shape's picture is turned about its centre, and
+      // moved as Word draws it: reader.js turned), with its centre (cx, cy) and turn.
       const padOf = (node) => Number(/--odx-pad:([\d.]+)px/.exec(node.attrs.place || '')?.[1]) || 0;
       const boxOf = () => {
         const z = zoomOf(view);
-        const r = target.img.getBoundingClientRect();
-        const pad = padOf(target.node);
-        return { left: r.left / z + pad, top: r.top / z + pad, width: Math.max(0, r.width / z - 2 * pad), height: Math.max(0, r.height / z - 2 * pad), z };
+        const { img, node } = target;
+        const r = img.getBoundingClientRect();
+        const t = getComputedStyle(img).transform;
+        const m = t && t !== 'none' ? new DOMMatrix(t) : null;
+        const pad = padOf(node);
+        const w = m ? parseFloat(img.style.width) || node.attrs.width + 2 * pad : r.width / z;
+        const h = m ? parseFloat(img.style.height) || node.attrs.height + 2 * pad : r.height / z;
+        const cx = (r.left + r.right) / 2 / z, cy = (r.top + r.bottom) / 2 / z;
+        return { left: cx - w / 2 + pad, top: cy - h / 2 + pad, width: Math.max(0, w - 2 * pad), height: Math.max(0, h - 2 * pad), z, cx, cy, turn: turnOf(node.attrs.xml) };
+      };
+      // A pointer's place in the box's own (unturned) frame, px from its top left; and a move turned into that frame.
+      const unturn = (dx, dy, deg) => {
+        const a = (-deg * Math.PI) / 180;
+        return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+      };
+      const toBox = (b, clientX, clientY) => {
+        const [x, y] = unturn(clientX / b.z - b.cx, clientY / b.z - b.cy, b.turn);
+        return [x + b.width / 2, y + b.height / 2];
       };
       // Where the extra handles go in a w x h box (px), for the shape `info`.
       const spots = (info, w, h) => {
@@ -74,13 +102,15 @@ export function imageResizePlugin() {
           d.style.top = `${s.y}px`;
         });
       };
-      const place = (info = target?.info, size = null) => {
+      // The overlay over the drawing's box, turned with it (`turn` while the rotate handle is dragged).
+      const place = (info = target?.info, size = null, turn = null) => {
         if (!target || !target.img.isConnected) { box.remove(); return; }
         const host = view.dom.parentElement;
         const o = host.getBoundingClientRect();
         const b = boxOf();
         const w = size ? size.w : b.width, h = size ? size.h : b.height;
-        box.style.cssText = `left:${b.left - o.left / b.z}px;top:${b.top - o.top / b.z}px;width:${w}px;height:${h}px`;
+        const deg = turn ?? b.turn;
+        box.style.cssText = `left:${b.left - o.left / b.z}px;top:${b.top - o.top / b.z}px;width:${w}px;height:${h}px${deg ? `;transform:rotate(${deg}deg)` : ''}`;
         drawExtra(info, w, h);
         if (box.parentElement !== host) host.append(box);
       };
@@ -91,6 +121,8 @@ export function imageResizePlugin() {
         target = node && !view.odx?.readOnly && img && img.tagName === 'IMG' ? { pos: sel.from, node, img, info: isShape(node) ? shapeInfo(node.attrs.xml) : null } : null;
         box.classList.toggle('odx-imgsize-move', !!target && floating(target.node));
         box.classList.toggle('odx-imgsize-line', !!target?.info?.line);
+        // (Shapes and groups turn; a line turns by its ends, a picture or chart not at all here.)
+        box.classList.toggle('odx-imgsize-turns', !!target && isShape(target.node) && !target.info?.line && /<a:xfrm\b/.test(target.node.attrs.xml || ''));
         if (target) target.img.classList.add('odx-sized');
         place();
         if (target) setTimeout(place, 300); // again once pagination has moved things
@@ -140,8 +172,10 @@ export function imageResizePlugin() {
         let w = w0;
         let hh = h0;
         drag(e, (ev) => {
-          const dx = ((ev.clientX - x0) / z) * (h.includes('w') ? -1 : h.includes('e') ? 1 : 0);
-          const dy = ((ev.clientY - y0) / z) * (h.includes('n') ? -1 : h.includes('s') ? 1 : 0);
+          // (A turned shape's handles move along its own sides: the pointer's move turned into its frame.)
+          const [mx, my] = unturn((ev.clientX - x0) / z, (ev.clientY - y0) / z, b0.turn);
+          const dx = mx * (h.includes('w') ? -1 : h.includes('e') ? 1 : 0);
+          const dy = my * (h.includes('n') ? -1 : h.includes('s') ? 1 : 0);
           if (h.length === 2 && (locked || ev.shiftKey) && w0 && h0) {
             // Proportions kept: follow whichever way moved further.
             const k = Math.max((w0 + dx) / w0, (h0 + dy) / h0);
@@ -170,7 +204,13 @@ export function imageResizePlugin() {
         if (!session) return;
         const b0 = boxOf();
         const z = b0.z;
-        const ends = spots(info, b0.width, b0.height); // [start, end] in the box (px)
+        // [start, end] in the box (px); a turned line's where they are on the page (it comes out unturned).
+        const turnPt = (p) => {
+          if (!b0.turn) return p;
+          const [x, y] = unturn(p.x - b0.width / 2, p.y - b0.height / 2, -b0.turn);
+          return { x: x + b0.width / 2, y: y + b0.height / 2 };
+        };
+        const ends = spots(info, b0.width, b0.height).map(turnPt);
         const moving = Number(e.target.dataset.i);
         const fixed = ends[1 - moving];
         const grab = ends[moving];
@@ -195,12 +235,14 @@ export function imageResizePlugin() {
             if (!result) return;
             preview(result);
             if (floating(node)) img.style.translate = `${left}px ${top}px`;
-            place({ ...info, flipH: start.x > end.x, flipV: start.y > end.y }, { w: width, h: height });
+            if (b0.turn) img.style.transform = 'none';
+            place({ ...info, flipH: start.x > end.x, flipV: start.y > end.y }, { w: width, h: height }, 0);
             box.style.translate = img.style.translate;
           });
         }, () => {
           cancelAnimationFrame(frame);
           img.style.translate = '';
+          img.style.transform = '';
           box.style.translate = '';
           if (!result) { place(); return; }
           commit(pos, node, result);
@@ -216,14 +258,15 @@ export function imageResizePlugin() {
         const z = b0.z;
         const i = Number(e.target.dataset.i);
         const hb = e.target.getBoundingClientRect();
-        // (From the handle's centre, wherever on it the pointer went down.)
-        const gx = (hb.left + hb.width / 2) / z - b0.left, gy = (hb.top + hb.height / 2) / z - b0.top;
+        // (From the handle's centre, wherever on it the pointer went down, in the shape's own frame.)
+        const [gx, gy] = toBox(b0, hb.left + hb.width / 2, hb.top + hb.height / 2);
         const x0 = e.clientX, y0 = e.clientY;
         let result = null;
         let adjust = info.adjust;
         let frame = 0;
         drag(e, (ev) => {
-          const bx = gx + (ev.clientX - x0) / z, by = gy + (ev.clientY - y0) / z;
+          const [mx, my] = unturn((ev.clientX - x0) / z, (ev.clientY - y0) / z, b0.turn);
+          const bx = gx + mx, by = gy + my;
           // (In the shape's own units, unflipped.)
           const ux = (info.flipH ? b0.width - bx : bx) / (b0.width || 1) * info.cx;
           const uy = (info.flipV ? b0.height - by : by) / (b0.height || 1) * info.cy;
@@ -240,6 +283,33 @@ export function imageResizePlugin() {
           cancelAnimationFrame(frame);
           if (!result) { place(); return; }
           commit(pos, node, result);
+        });
+      });
+      // The rotate handle: the shape turned about its centre to face the pointer (Shift: in 15-degree steps), its
+      // picture and the overlay turned as it goes.
+      box.addEventListener('pointerdown', (e) => {
+        if (e.target.dataset?.kind !== 'rot' || !target) return;
+        const { img, pos, node } = target;
+        const session = view.odx?.session;
+        if (!session) return;
+        const b0 = boxOf();
+        const base = img.style.transform;
+        const turnedNow = getComputedStyle(img).transform;
+        let deg = b0.turn;
+        drag(e, (ev) => {
+          const a = (Math.atan2(ev.clientY / b0.z - b0.cy, ev.clientX / b0.z - b0.cx) * 180) / Math.PI + 90;
+          deg = ev.shiftKey ? Math.round(a / 15) * 15 : Math.round(a);
+          deg = ((deg % 360) + 360) % 360;
+          // (Its own turn replaced in its transform, a float's move back kept.)
+          const m = turnedNow && turnedNow !== 'none' ? new DOMMatrix(turnedNow) : null;
+          img.style.transform = `${m ? `translate(${m.e}px, ${m.f}px) ` : ''}rotate(${deg}deg)`;
+          place(target.info, null, deg);
+        }, () => {
+          img.style.transform = base;
+          if (deg === b0.turn) { place(); return; }
+          const r = session.rotateShape(node.attrs.xml, deg);
+          if (!r) { place(); return; }
+          commit(pos, node, r);
         });
       });
       // A floating shape (a text box placed on the page) moves by dragging it.
@@ -319,7 +389,16 @@ export function shapeKeysPlugin() {
         if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image' || !isShape(sel.node) || view.odx?.readOnly) return false;
         if (e.key === 'Escape') { view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, sel.to))); return true; }
         const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-        if (!dir || e.altKey) return false;
+        if (!dir) return false;
+        if (e.altKey) {
+          // Alt+Left/Right turn it 15 degrees (Ctrl too: 1), as Word's.
+          if (!dir[0] || e.shiftKey || !/<a:xfrm\b/.test(sel.node.attrs.xml || '') || shapeInfo(sel.node.attrs.xml)?.line) return false;
+          const r = view.odx?.session?.rotateShape(sel.node.attrs.xml, turnOf(sel.node.attrs.xml) + dir[0] * (e.ctrlKey || e.metaKey ? 1 : 15));
+          if (!r) return false;
+          const tr = view.state.tr.setNodeMarkup(sel.from, null, { ...sel.node.attrs, ...r });
+          view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, sel.from)));
+          return true;
+        }
         const step = e.ctrlKey || e.metaKey ? 1 : 8;
         if (e.shiftKey) {
           const { width, height } = sel.node.attrs;

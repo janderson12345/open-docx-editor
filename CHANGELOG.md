@@ -9,6 +9,12 @@
   instead of eight round a box: dragging one moves that end, the line turning to follow (Shift: at 15-degree steps), a
   floating line's place moving with it. Each is one undoable step, saved as Word saves it (checked by opening the saved
   files in Word and comparing its print with ours).
+- **Turning shapes, as in Word.** A selected shape has a rotate handle above it (Shift: 15-degree steps), and Alt+Left
+  or Alt+Right turn it 15 degrees (Ctrl+Alt: 1), as Word's do; its other handles turn with it. Turned shapes are now
+  drawn whole (they were cut off at their box) and where Word draws them: in line with the text, its room round the
+  turned outline (which turning writes, as Word does) taken on the line, the shape drawn as far along as Word draws it;
+  floating, turned about its centre, the text wrapping round the turned outline. Checked against shapes Word turned
+  itself, printed by Word.
 - **A shape drawn past its box**, as a callout's pointer below it, is now drawn whole in line with the text (it was cut
   off at the box); it takes the same room on its line as before.
 - **Fixed: a shape inserted with Insert > Shapes and given an arrowhead** had its arrowhead cut off at its box until

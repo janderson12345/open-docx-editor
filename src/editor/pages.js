@@ -21,7 +21,7 @@ import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
 import { fontsSettled } from './fontcheck.js';
 import { referenceValue, updateFields } from './refs.js';
-import { lineHeightOf } from './util.js';
+import { lineHeightOf, layoutRect } from './util.js';
 import { wrapText } from './textspans.js';
 import { drawBalloons } from './balloons.js';
 import { noteRefs, noteLabel } from './notes.js';
@@ -595,7 +595,8 @@ export function createPages(view, session, { sheet, scope }) {
       range.selectNodeContents(t);
       for (const r of range.getClientRects()) if (r.height > 0) frags.push(r);
     }
-    b.el.querySelectorAll('img:not(.ProseMirror-separator), br:not(.ProseMirror-trailingBreak)').forEach((e) => { const r = e.getBoundingClientRect(); if (r.height > 0) frags.push(r); });
+    // (A turned picture by its box, not its turned outline: the room it takes on its line.)
+    b.el.querySelectorAll('img:not(.ProseMirror-separator), br:not(.ProseMirror-trailingBreak)').forEach((e) => { const r = layoutRect(e); if (r.height > 0) frags.push(r); });
     // A paragraph ending in a line break has an empty last line (drawn by the editor's own break): Word counts it
     // for widow control (three lines and the break split two and two).
     const trailing = frags.length ? b.el.querySelector('br.ProseMirror-trailingBreak') : null;
