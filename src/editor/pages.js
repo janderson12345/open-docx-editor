@@ -1466,6 +1466,36 @@ export function createPages(view, session, { sheet, scope }) {
     }
   }
 
+  // Columns before endnotes (a one-section document in columns): Word ends the text's columns at an even height on its
+  // last sheet, and the endnotes start under the lowest of them, across the page (the generated documents'
+  // endnote-content with columns: Word's second column starts with the first's last lines, the note under both).
+  let colsBal = null; // { sheet, h, bottom }: the last sheet, the height its columns are cut to, where the lowest ends
+  function balanceEndCols(blocks, starts, colSplits) {
+    const has = [...blockNotes.values()].some((l) => l.some((r) => r.kind === 'endnote'));
+    if (!has) { if (colsBal) { colsBal = null; colsAgain = true; } return; }
+    const num = cols.num;
+    let acc = 0;
+    const ends = new Map();
+    for (const b of blocks) {
+      acc += starts.get(b.i) || 0;
+      const cs = colSplits.get(b.i);
+      const top = b.top + acc;
+      const v = pageOf(top);
+      ends.set(v, Math.max(ends.get(v) ?? -Infinity, cs ? top + cs.cut : b.bottom + acc));
+      if (cs) ends.set(v + 1, Math.max(ends.get(v + 1) ?? -Infinity, contentTop(v + 1) + cs.height - cs.cut + (cs.head || 0)));
+    }
+    if (!ends.size) return;
+    const lastV = Math.max(...ends.keys());
+    const sheet = Math.floor(lastV / num);
+    let total = 0, low = 0;
+    for (let q = sheet * num; q < (sheet + 1) * num; q++) if (ends.has(q)) { total += ends.get(q) - contentTop(q); low = Math.max(low, ends.get(q) - contentTop(q)); }
+    // (An even share, and half a line more so the first column takes the odd one, as for a balanced section.)
+    const h = Math.min(total / num + 9, contentBottom(sheet * num) - contentTop(sheet * num));
+    const was = colsBal;
+    if (!was || was.sheet !== sheet || Math.abs(was.h - h) > 1) { colsBal = { sheet, h, bottom: low }; colsAgain = true; }
+    else colsBal.bottom = low;
+  }
+
   // The walk's result applied: margin-tops (node decorations), split tables' padded rows and clip paths (CSS), spacer
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
@@ -1626,6 +1656,9 @@ export function createPages(view, session, { sheet, scope }) {
     notesH = new Map();
     noteFlow = new Map();
     cuts = new Map();
+    // A one-section document in columns with endnotes: its last sheet's columns cut to an even height (worked out a pass
+    // behind, balanceEndCols), as Word balances them before the endnotes.
+    if (cols && colsBal) for (let c = 0; c < cols.num - 1; c++) { const v = colsBal.sheet * cols.num + c; cuts.set(v, contentTop(v) + colsBal.h); }
     colTops = new Map();
     for (const r of colRegs) {
       r.k0 = blocks.findIndex((x) => x.i >= r.lo);
@@ -1873,6 +1906,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (!cols && !regs.length) verticalAlign(doc, blocks, starts, pulls, splits, paraSplits);
     colVa = new Map();
     if (cols && !regs.length) verticalAlignCols(doc, blocks, starts, colSplits);
+    if (cols && !regs.length) balanceEndCols(blocks, starts, colSplits);
     const last = blocks.length ? blocks[blocks.length - 1].bottom + shift : 0;
     pages = Math.max(1, pageOf(Math.max(last - 1, 0)) + 1);
     // (Notes continued past the body's last page: pages of their own, as Word adds.)
@@ -1996,16 +2030,19 @@ export function createPages(view, session, { sheet, scope }) {
           s.append(f);
         }
       }
-      const flow = noteFlow.get(p);
+      // (In a one-section document in columns, notes go by the flow page of a column: the sheet's columns' notes.)
+      let flow = noteFlow.get(p);
+      if (cols && !flow && colsBal && colsBal.sheet === p) for (let c = 1; c < cols.num && !flow; c++) flow = noteFlow.get(p * cols.num + c);
       if (flow) {
         const box = document.createElement('div');
         box.className = 'odx-notes';
-        let top = pageH(p) - marginsAt(p).bottom - notesH.get(p);
+        let top = pageH(p) - marginsAt(p).bottom - (notesH.get(p) ?? flow.h + NOTE_SEP);
         // Endnotes start where the text ends, as in Word (its separator line under the last paragraph's space after),
         // not at the page's foot as footnotes do: the generated documents' endnotes, tools/doc-generator.
         const last = view.dom.lastElementChild;
         if (last && !flow.skip && flow.items.every((r) => r.kind === 'endnote')) {
-          const y = last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
+          // (In columns balanced before them, under the lowest column: balanceEndCols.)
+          const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
           if (y > 0 && y < top) top = y;
         }
         box.style.cssText = `top:${top}px;left:${page.left}px;right:${page.right}px`;
