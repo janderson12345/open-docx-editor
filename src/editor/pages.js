@@ -1800,6 +1800,15 @@ export function createPages(view, session, { sheet, scope }) {
         const cs = wide ? null : colSplit(b, shift, firstOnPage, p);
         if (cs) {
           if ((cols || inReg).unequal) rewrapCarry(b, cs, cols || inReg, p);
+          // (Rewrapped at the next column's width, a paragraph laid out in a narrower one can leave a gap under its box far
+          // taller than its space after; what follows goes under its carried lines at its own spacing, as in Word: the
+          // generated documents' indented paragraphs in a 1.4in first column, the next one 53px low otherwise.)
+          const nx = blocks[k + 1];
+          if (cs.rewrap && nx && nx.node.type === schema.nodes.paragraph) {
+            const want = Math.max(spaceAfter(b.node), spaceBefore(nx.node));
+            const gap = nx.top - b.bottom;
+            if (gap > want + 2) cs.delta -= gap;
+          }
           colSplits.set(b.i, cs);
           if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut) + (cs.head || 0) });
           const nb = blocks[k + 1];
