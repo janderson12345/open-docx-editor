@@ -36,6 +36,21 @@ function runWidth(p, tab, decimal) {
   return Math.max(...line.map((x) => x.right)) - Math.min(...line.map((x) => x.left));
 }
 
+/** Width of the word right after a tab (up to the next space), 0 for none. */
+function firstWordWidth(tab) {
+  const w = document.createTreeWalker(tab.closest('p') || tab.parentNode, NodeFilter.SHOW_TEXT);
+  w.currentNode = tab;
+  let n = w.nextNode();
+  while (n && tab.contains(n)) n = w.nextNode();
+  if (!n) return 0;
+  const m = /^\S+/.exec(n.data);
+  if (!m) return 0;
+  const r = document.createRange();
+  r.setStart(n, 0);
+  r.setEnd(n, m[0].length);
+  return r.getBoundingClientRect().width;
+}
+
 const sized = new WeakMap(); // paragraph element -> what its tabs were sized for
 // (Sized again once a font loads: a web font arriving after the first layout, as Carlito does where Calibri isn't
 // installed, changes every width measured in its stand-in.)
@@ -63,7 +78,7 @@ export function layoutTabsIn(root, session, nodeOf) {
   // font's widths after the tabs, in the text's own spans, and a stop measured before that lands short.)
   const sigOf = (p, tabs) => `${fontLoads}|${p.textContent}|${p.getAttribute('style')}|${p.className}|${p.offsetWidth}|${p.offsetLeft}|${tabs.map((t) => t.offsetLeft).join(',')}|${[...p.querySelectorAll('.odx-t')].map((t) => t.offsetWidth).join(',')}`;
   const todo = [...byPara].filter(([p, tabs]) => sized.get(p) !== sigOf(p, tabs));
-  for (const [, tabs] of todo) for (const s of tabs) s.style.cssText = 'display:inline-block;tab-size:0;width:0';
+  for (const [, tabs] of todo) for (const s of tabs) { s.style.cssText = 'display:inline-block;tab-size:0;width:0'; s.classList.remove('odx-tabnl'); }
   const grid = (session.defaultTabStop || 720) * PX;
   for (const [p, tabs] of todo) {
     let stops = [];
@@ -120,12 +135,26 @@ export function layoutTabsIn(root, session, nodeOf) {
         // the right-aligned text (a tab wider than what is left of the line wraps before it).
         if (w < 0 && x + rw > right + 0.5) w = end - startMargin - used - 0.5;
       } else w = stop.x - x;
+      // A left or default tab whose next word doesn't fit after it on the line goes to the next line with that word, as
+      // Word wraps it, and takes the first stop there (a cell's "...river<tab>version demand": "version" at 0.5in on
+      // the next line). Drawn as a line break and then its width (editor.css: .odx-tabnl).
+      let nl = 0;
+      if (!wraps && (!stop || stop.val === 'left' || stop.val === 'start') && x > startMargin + 1) {
+        const word = firstWordWidth(s);
+        if (word > 0 && x + w + word > right + 0.5) {
+          const x0 = startMargin;
+          // (Only to a left or default stop there: Word's centre or decimal one sets the long text after it otherwise.)
+          const st = stops.find((t) => t.x > x0 + 0.5);
+          if (!st || st.val === 'left' || st.val === 'start') nl = (st ? st.x : (Math.floor(x0 / grid) + 1) * grid) - x0;
+        }
+      }
       // Dot, middle-dot and hyphen leaders are characters, as Word draws them (editor.css); rules stay lines.
       const chars = stop?.leader && ['dot', 'middleDot', 'hyphen'].includes(stop.leader);
       const lead = !chars && stop?.leader && LEADER[stop.leader];
       if (chars) s.dataset.leader = stop.leader; else delete s.dataset.leader;
       aligned = !!stop && ['right', 'end', 'decimal', 'center'].includes(stop.val);
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
+      if (nl) { s.classList.add('odx-tabnl'); s.style.setProperty('--odx-tabnl', `${nl.toFixed(2)}px`); } else s.classList.remove('odx-tabnl');
     }
   }
   for (const [p, tabs] of todo) sized.set(p, sigOf(p, tabs));

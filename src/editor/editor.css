@@ -385,6 +385,10 @@ td[data-odx-phantom] > * { display: none; }
 
 /* ==== The ribbon: tabs, groups, buttons, menus, galleries, the find bar and the context menu ==== */
 .odx-content .odx-tab { white-space: pre; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+/* A tab that goes to the next line with the word after it (tabs.js): a line break, then its width there. */
+:where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl { display: inline !important; width: auto !important; }
+:where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl::before { content: "\A"; white-space: pre; }
+:where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl::after { content: ""; display: inline-block; width: var(--odx-tabnl, 0px); }
 .odx-content p.odx-li.odx-lbl-right::before { text-align: right; position: relative; left: calc(-1 * var(--odx-hang, 18pt)); }
 .odx-group { display: flex; gap: 2px; align-items: center; padding-right: 6px; border-right: 1px solid var(--odx-line); }
 .odx-group:last-child { border-right: 0; }
