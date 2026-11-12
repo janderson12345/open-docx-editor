@@ -329,6 +329,7 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
+  const HF_GAP = 60, HF_FAR = 0.3; // a header or footer too tall for the page: how near the middle Word cuts it; from how near the far edge
   function splitTable(b, shift, tableFirstOnPage) {
     const { rows, headerRows } = b;
     const headH = headerRows ? rows[headerRows - 1].bottom - rows[0].top : 0;
@@ -1945,6 +1946,9 @@ export function createPages(view, session, { sheet, scope }) {
           const h = story(header, 'odx-header', numText, pages);
           // (In the section's own side margins: sample S106's 0.75in sections under a 1in last one.)
           h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          // A header reaching most of the way down the page (past 70% of it) is cut off 60px above the middle of the page,
+          // as Word draws it. (Word's PDFs of the generated documents: a 0.8-page header cut there, a 0.6-page one whole.)
+          if (hf.headerDist + storyHeight(header) > pageH(p) * (1 - HF_FAR)) h.style.cssText += `;max-height:${Math.max(0, pageH(p) / 2 - HF_GAP - hf.headerDist)}px;overflow:hidden`;
           s.append(h);
           // Its watermark (reader.js): on the page itself, centred on the margins or where it says, behind the text.
           for (const img of h.querySelectorAll('img[style*="--odx-wm"]')) {
@@ -1960,6 +1964,10 @@ export function createPages(view, session, { sheet, scope }) {
         if (footer) {
           const f = story(footer, 'odx-footer', numText, pages);
           f.style.cssText = `bottom:${hf.footerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          // A footer reaching most of the way up the page (above 30% of it) starts 46pt below the middle of the page and is
+          // cut off at its distance from the foot, as Word draws it (not running up off the page).
+          const fTop = pageH(p) / 2 + HF_GAP + 4 / 3;
+          if (pageH(p) - hf.footerDist - storyHeight(footer) < pageH(p) * HF_FAR) f.style.cssText = `top:${fTop}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;max-height:${Math.max(0, pageH(p) - hf.footerDist - fTop)}px;overflow:hidden`;
           s.append(f);
         }
       }
