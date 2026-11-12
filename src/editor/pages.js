@@ -332,14 +332,13 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
-  // Does a floating picture in the paragraph (not one placed on the page) reach past its page's text area? (Not one
-  // taller than a page: it can't fit anywhere.)
+  // Does a floating picture in the paragraph (not one placed on the page) reach past its page's text area? (Even one
+  // taller than a page: Word starts the next page with it, a grown text box running past its foot there.)
   const floatsPast = (b, shift, p) => {
     const er = b.el.getBoundingClientRect();
     for (const img of b.el.querySelectorAll('img')) {
       if (getComputedStyle(img).float === 'none') continue;
       const r = img.getBoundingClientRect();
-      if (r.height > pageHeight(p + 1)) continue;
       if (b.top + shift + (r.bottom - er.top) > contentBottom(p) + 1) return true;
     }
     return false;
