@@ -587,7 +587,35 @@ function anchorCss(drawing, page) {
       ? `;--odx-arel:${vRel};--odx-ay:${px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100}px;--odx-ayalign:${childNamed(posV, 'align')?.textContent || 'none'}` : '';
     return `position:absolute;${left}margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1}${onPage}`;
   }
-  const right = hAlign === 'right' || hAlign === 'outside';
+  // Which side the text goes (w:wrapSquare/Tight/Through wrapText): both sides, the left or right only, or the larger
+  // one. Word fills each side the line has beside the shape (from the margin to its left wrap distance, and from its
+  // right one to the other margin) with as many whole words as fit, an empty side where none does (Word's PDFs: a shape
+  // 30px in from the margin, none to its left; 60px in, "The"). One side: a float on the other, as the browser wraps.
+  // Both: the shape set where it is and each line beside it split there by a spacer (wrapboth.js).
+  const wrapEl = [...anchor.childNodes].find((n) => n.localName === wrap);
+  const wrapText = wrapEl?.getAttribute('wrapText') || 'bothSides';
+  const colW = page ? page.w - page.left - page.right : 0;
+  const xCol = !colW ? null : hAlign
+    ? (['column', 'margin'].includes(hRel) ? { left: 0, center: (colW - extW) / 2, right: colW - extW }[hAlign] : hRel === 'page' ? { left: -page.left, center: (page.w - extW) / 2 - page.left, right: page.w - page.left - extW }[hAlign] : null)
+    : (['column', 'margin'].includes(hRel) ? x : fromPage ? x - page.left : null);
+  const dL = px(anchor.getAttribute('distL')), dR = px(anchor.getAttribute('distR'));
+  const gapL = xCol == null ? 0 : xCol - dL, gapR = xCol == null ? 0 : colW - xCol - extW - dR;
+  const MIN_GAP = 6; // px: room for no word at all (an "a" is 6px at 11pt)
+  let side = 'right'; // where the text goes
+  if (xCol != null && /^wrap(Square|Tight|Through)$/.test(wrap) && ['paragraph', 'line'].includes(vRel)) {
+    if (wrapText === 'left') side = 'left';
+    else if (wrapText === 'largest') side = gapL > gapR ? 'left' : 'right';
+    else if (wrapText === 'bothSides') side = gapL < MIN_GAP ? 'right' : gapR < MIN_GAP ? 'left' : 'both';
+  }
+  if (side === 'both') {
+    // (Set where it is, as one not wrapped; the room kept clear round it in --odx-both: top, right, bottom and left.)
+    const dT = px(anchor.getAttribute('distT')), dB = px(anchor.getAttribute('distB'));
+    return `position:absolute;left:calc(var(--odx-page-left, 96px) + ${+xCol.toFixed(2)}px);margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1};--odx-both:${dT}px ${dR}px ${dB}px ${dL}px`;
+  }
+  const right = hAlign === 'right' || hAlign === 'outside' || side === 'left';
+  // (Text on its left only, placed by an offset or aligned left or centred: a float on the right, as far in from the
+  // margin as the shape's right edge.)
+  const fromRight = side === 'left' && !(hAlign === 'right' || hAlign === 'outside') ? colW - xCol - extW : null;
   // Placed against the page or its margins (not its paragraph): pagination lifts it to that page's first paragraph, at
   // that height (pages.js liftFloats). sample S125's arrows, at the top corners of the margins of the page their
   // paragraph is on, with that page's first lines wrapping between them.
@@ -612,8 +640,9 @@ function anchorCss(drawing, page) {
     }
   }
   const r2 = (v) => +v.toFixed(2);
-  const mr = (hAlign === 'right' ? 0 : px(anchor.getAttribute('distR'))) - (right ? 0 : trimSide);
-  const ml = right ? `${r2(px(anchor.getAttribute('distL')) - trimSide)}px` : inFlowX;
+  const mr = fromRight != null ? fromRight : (hAlign === 'right' ? 0 : px(anchor.getAttribute('distR'))) - (right ? 0 : trimSide);
+  // (Aligned, centred say, its place in the column worked out: an offset of 0 had put a centred one at the margin.)
+  const ml = right ? `${r2(px(anchor.getAttribute('distL')) - trimSide)}px` : hAlign && xCol != null ? `${r2(xCol)}px` : inFlowX;
   return `float:${right ? 'right' : 'left'};margin:${y}px ${r2(mr)}px ${r2(px(anchor.getAttribute('distB')) - trimBottom)}px ${ml}${lift}`;
 }
 
@@ -721,13 +750,14 @@ function readDrawing(drawing, ctx, rPrXml) {
   const left = side('l'), right = side('r');
   let effect = [below > 0 && `--odx-fx:${below}px`, above > 0 && `--odx-fxt:${above}px`, left > 0 && `--odx-fxl:${left}px`, right > 0 && `--odx-fxr:${right}px`].filter(Boolean).join(';');
   let src = null;
+  let grown = false;
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
   if (/wordprocessing(Group|Shape)$|\/diagram$/.test(uri)) {
     // An inline shape's outline and arrowheads, drawn past its box as Word draws them: its picture that much larger all
     // round (schema.js: --odx-pad), its effect-extent margins that much smaller, so it takes the same room on its line.
     const pad = ctx.padShapes && extent?.parentNode?.localName === 'inline' ? shapesPad(drawing) : 0;
     src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height, pad) : null;
-    if (src && typeof src === 'object') ({ src, height } = src); // (a text box grown to fit its text)
+    if (src && typeof src === 'object') { ({ src, height } = src); grown = true; } // (a text box grown to fit its text)
     if (!src) return null;
     if (pad) effect = `--odx-fx:${below - pad}px;--odx-fxt:${above - pad}px;--odx-fxl:${left - pad}px;--odx-fxr:${right - pad}px;--odx-pad:${pad}px`;
   } else if (blip) {
@@ -747,7 +777,9 @@ function readDrawing(drawing, ctx, rPrXml) {
       src,
       width,
       height,
-      place: turned(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect, drawing, width, height),
+      // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
+      // keeps other floats on theirs: pages.js floatsPast.)
+      place: ((a) => (grown && /^float:/.test(a) ? `${a};--odx-grown:1` : a))(turned(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect, drawing, width, height)),
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
       // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
       ...(() => {
