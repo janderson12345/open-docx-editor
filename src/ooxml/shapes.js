@@ -98,6 +98,7 @@ let canvas = null;
 function textWidth(text, sizePx, bold, font) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
   if (!canvas) return text.length * sizePx * 0.5;
+  canvas.fontKerning = 'none';
   canvas.font = `${bold ? 'bold ' : ''}${sizePx}px "${font}", sans-serif`;
   return canvas.measureText(text).width;
 }
@@ -193,8 +194,10 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     const lineH = line && rule === 'exact' ? line / TWIPS_PER_PX : line && rule === 'atLeast' ? Math.max(line / TWIPS_PER_PX, one) : one * (line ? line / 240 : 1);
     y += (Number(sp('before')) || 0) / TWIPS_PER_PX;
     for (const ln of lines) {
-      // Baseline: the font's ascent (0.778 of its line: 0.95em of Calibri's 1.22) below the line top, centred in an exact line's extra room.
-      const base = y + (lineH - one) / 2 + one * 0.778;
+      // Baseline: the font's ascent (0.778 of its line: 0.95em of Calibri's 1.22) below the line top, centred in an exact
+      // line's extra room; a multiple line's extra goes below its text, as in the body (Word's PDF of a text box at
+      // 1.08 lines: its first baseline 0.7px higher than centred).
+      const base = y + (rule === 'exact' ? (lineH - one) / 2 : rule === 'atLeast' ? lineH - one : 0) + one * 0.778;
       y += lineH;
       if (!ln.pieces.length) continue;
       // Centred and right-aligned lines move as a whole (trailing spaces don't count).
@@ -207,6 +210,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     }
     y += (Number(sp('after')) || 0) / TWIPS_PER_PX;
   }
+  ctx.textEnd = y + ins('bIns', 4.8); // (where the text ends, for a box that grows to fit it: shapeSvg)
   return out.join('');
 }
 
@@ -243,11 +247,17 @@ function shapeSvg(el, ctx) {
   }
   if (name !== 'wsp') return '';
   const style = child(el, 'style');
-  const body = `<path d="${geometry(spPr, w, h)}" ${paints(spPr, style, ctx.colors)} vector-effect="non-scaling-stroke"/>`;
   const txbx = child(el, 'txbx');
   const ln = child(spPr, 'ln');
   const line = ln && !child(ln, 'noFill') && child(ln, 'solidFill') ? px(ln.getAttribute('w') || EMU_PER_PX) : 0;
-  return `<g transform="${t}">${body}${txbx ? textBox(txbx, child(el, 'bodyPr'), w, h, ctx, line) : ''}</g>`;
+  const bodyPr = child(el, 'bodyPr');
+  const text = txbx ? textBox(txbx, bodyPr, w, h, ctx, line) : '';
+  // "Resize shape to fit text" (a:spAutoFit): Word makes the box as tall as its text when it lays the page out, whatever
+  // height the file gives it (a text box of four paragraphs in 4.2in: Word's body text wraps beside it to its end).
+  let hh = h;
+  if (txbx && child(bodyPr, 'spAutoFit') && ctx.textEnd > h + 0.5) { hh = ctx.textEnd; ctx.grown = Math.max(ctx.grown || 0, hh - h); }
+  const body = `<path d="${geometry(spPr, w, hh)}" ${paints(spPr, style, ctx.colors)} vector-effect="non-scaling-stroke"/>`;
+  return `<g transform="${t}">${body}${text}</g>`;
 }
 
 /**
@@ -259,7 +269,10 @@ export function shapesSvg(drawing, ctx, width, height) {
   const data = desc(drawing, 'graphicData');
   const root = data && els(data).find((n) => n.localName === 'wgp' || n.localName === 'wsp');
   if (!root || !width || !height) return null;
-  const inner = shapeSvg(root, { colors: {}, font: 'Calibri', ...ctx });
+  const c = { colors: {}, font: 'Calibri', ...ctx };
+  const inner = shapeSvg(root, c);
   if (!inner) return null;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" overflow="visible">${inner}</svg>`;
+  // A single text box that grows to fit its text (shapeSvg) is that much taller; ctx.grown tells the caller.
+  if (root.localName === 'wsp' && c.grown) { height = Math.round((height + c.grown) * 100) / 100; ctx.grownTo = height; }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" overflow="visible" style="font-variant-ligatures:none;font-kerning:none">${inner}</svg>`; // (no ligatures or kerning, as Word sets text and the body has it: a text box's "ti" came out as one glyph)
 }

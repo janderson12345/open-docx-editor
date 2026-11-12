@@ -180,8 +180,11 @@ export class DocxSession {
         return { pPr: { ...this.styles.defaults.pPr, ...st.pPr }, rPr, font };
       };
       const char = (id) => (id ? resolveStyle(this.styles.styles, id).rPr : {});
-      const svg = shapesSvg(drawing, { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme }, width, height);
-      return svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      const c = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme };
+      const svg = shapesSvg(drawing, c, width, height);
+      const src = svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      // (A text box grown to fit its text: its new height too.)
+      return src && c.grownTo ? { src, height: c.grownTo } : src;
     } catch {
       return null;
     }

@@ -694,7 +694,7 @@ function readDrawing(drawing, ctx, rPrXml) {
   // has it on the next. +30 lines within 1px over the samples; rounding anchored ones still gave 6 fewer.)
   const emu = (v) => Math.round(emuToPx(v || 0) * 100) / 100;
   const width = extent ? emu(extent.getAttribute('cx')) : null;
-  const height = extent ? emu(extent.getAttribute('cy')) : null;
+  let height = extent ? emu(extent.getAttribute('cy')) : null;
   // An inline picture's effect extent (room for a shadow or glow) also takes space on its line, as in Word.
   const fx = extent?.parentNode?.localName === 'inline' && [...extent.parentNode.childNodes].find((n) => n.localName === 'effectExtent');
   // Rounded as a whole, like the picture itself; its top part above the picture (an outline all round: the picture sits
@@ -711,6 +711,7 @@ function readDrawing(drawing, ctx, rPrXml) {
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
   if (/wordprocessing(Group|Shape)$/.test(uri)) {
     src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height) : null;
+    if (src && typeof src === 'object') ({ src, height } = src); // (a text box grown to fit its text)
     if (!src) return null;
   } else if (blip) {
     // An SVG picture (Word 2016+): the SVG itself (asvg:svgBlip in the blip's extensions), the PNG beside it a fallback.
