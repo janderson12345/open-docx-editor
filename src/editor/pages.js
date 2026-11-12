@@ -126,7 +126,10 @@ export function createPages(view, session, { sheet, scope }) {
     return p;
   };
   const contentTop = (p) => colTops.get(p) ?? pageTop(p) + marginsAt(p).top;
-  const contentBottom = (p) => Math.min(pageTop(p) + pageH(p) - marginsAt(p).bottom - (notesH.get(p) || 0), cuts.get(p) ?? Infinity);
+  // (With notes at its foot, the body's text keeps clear of the separator by a few px more: Word's separator is a line
+  // of its own, and a line of body text ending 4px above our note box went to the next page in Word.)
+  const contentBottom = (p) => Math.min(pageTop(p) + pageH(p) - marginsAt(p).bottom - (notesH.get(p) ? notesH.get(p) + NOTE_BODY_GAP : 0), cuts.get(p) ?? Infinity);
+  const NOTE_BODY_GAP = 4;
   // Footnotes: which go at the bottom of each page, and the room they take there.
   let notesOn = new Map(); // page -> [{ kind, id, n }]
   let notesH = new Map(); // page -> px
