@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.8 (2026-11-12)
 
 - **Aptos stand-ins look more like Aptos.** Where a computer lacks Aptos (an Office cloud font browsers can't use), its
   letters are now Source Sans 3's (Adobe, SIL Open Font License) fitted to Aptos's widths and x-height, instead of
