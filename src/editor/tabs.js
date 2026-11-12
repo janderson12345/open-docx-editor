@@ -79,6 +79,7 @@ export function layoutTabsIn(root, session, nodeOf) {
     const startMargin = parseFloat(rtl ? cs.marginRight : cs.marginLeft) || 0;
     // A hanging indent is a stop too: a tab on the first line, before the indent, goes to it first.
     const indent = (parseFloat(cs.textIndent) || 0) < 0 ? startMargin : null;
+    let aligned = false; // the tab before was a right, centre or decimal one
     for (const s of tabs) {
       // (The paragraph's box read again for each tab: sizing the one before can move the page, as a scrollbar
       // appearing does, and a stop measured from where the paragraph was would land short.)
@@ -100,7 +101,15 @@ export function layoutTabsIn(root, session, nodeOf) {
       // footer: "Revision Date: …" ends at the right stop, and the tab after it makes an empty line).
       const wraps = !stop && x >= right - 1;
       if (wraps) w = right - x + 1;
-      else if (!stop) w = (Math.floor(x / grid) + 1) * grid - x;
+      // (After text aligned at a stop, which ends the half pixel short of it that the slack below leaves, the next default
+      // stop is past that one: a default stop there too gave the next tab no width, where Word's goes on to the next,
+      // tools/doc-generator's centre and decimal stops.)
+      else if (!stop) {
+        const next = (v) => (Math.floor(v / grid) + 1) * grid;
+        // (Not at the line's end: a tab after text right-aligned at the right margin stays on the line there, sample
+        // Attachment D's two-part headings.)
+        w = (aligned && next(x + 0.5) < right - 0.5 ? next(x + 0.5) : next(x)) - x;
+      }
       else if (stop.val === 'right' || stop.val === 'end' || stop.val === 'decimal' || stop.val === 'center') {
         const rw = runWidth(p, s, stop.val === 'decimal');
         const end = Math.min(stop.x, right);
@@ -115,6 +124,7 @@ export function layoutTabsIn(root, session, nodeOf) {
       const chars = stop?.leader && ['dot', 'middleDot', 'hyphen'].includes(stop.leader);
       const lead = !chars && stop?.leader && LEADER[stop.leader];
       if (chars) s.dataset.leader = stop.leader; else delete s.dataset.leader;
+      aligned = !!stop && ['right', 'end', 'decimal', 'center'].includes(stop.val);
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
     }
   }

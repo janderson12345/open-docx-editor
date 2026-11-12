@@ -55,11 +55,17 @@ const one = async (page, f) => {
 };
 
 const jobs = Number(process.env.ODX_JOBS || 16);
+const FRESH = process.env.ODX_REUSE !== '1';
 await Promise.all(Array.from({ length: jobs }, async () => {
   let page = await fresh();
+  let used = false;
   while (todo.length) {
     const f = todo.shift();
     try {
+      // A fresh page for each document: the editor keeps measurements per font across documents (line pitches,
+      // baselines, width corrections), and a document printed after another could come out laid out differently.
+      if (FRESH && used) { await page.close(); page = await fresh(); }
+      used = true;
       await Promise.race([one(page, f), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 120000))]);
       if (++done % 250 === 0) console.log(`printed ${done} of ${total}`);
     } catch (e) {
