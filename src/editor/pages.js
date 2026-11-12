@@ -330,14 +330,15 @@ export function createPages(view, session, { sheet, scope }) {
       const top = rows[j].top + shift + extra;
       const bottom = rows[j].bottom + shift + extra;
       const pg = pageOf(top);
-      if (bottom + (rows[j].line || 0) <= contentBottom(pg)) continue;
+      const brk = j > headerRows && j > 0 && b.node.child(j) && rowBreakAt(b.node, j) && top > contentTop(pg) + headH + 1;
+      if (!brk && bottom + (rows[j].line || 0) <= contentBottom(pg)) continue;
       // Word breaks a row inside its cells, line by line, unless the row says it can't split, or (sample S072) the room left
       // on the page is less than the row's minimum height (w:trHeight "at least"): then the row moves whole.
       const tr = b.node.child(j)?.attrs.trPr || '';
       const minM = /<w:trHeight\b[^>]*w:val="(\d+(?:\.\d+)?)"/.exec(tr);
       const minH = minM && !/<w:trHeight\b[^>]*w:hRule="(?:exact|auto)"/.test(tr) ? twipsToPx(minM[1]) : 0;
       const short = minH && contentBottom(pg) - top < minH && minH <= pageHeight(pg + 1);
-      const rs = j >= headerRows && lineSplits && !short && splitRow(b, j, shift + extra, headH);
+      const rs = !brk && j >= headerRows && lineSplits && !short && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
         for (const [q, cut] of rs.crossings) {
@@ -880,7 +881,15 @@ export function createPages(view, session, { sheet, scope }) {
   const unfloated = new WeakSet();
   let applied = new Map(); // block index -> { extra px we added above it }
   const keep = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.keepNext ?? session.styleProp(node.attrs.styleId, 'keepNext'));
-  const breakBefore = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.pageBreakBefore ?? session.styleProp(node.attrs.styleId, 'pageBreakBefore'));
+  const paraBreakBefore = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.pageBreakBefore ?? session.styleProp(node.attrs.styleId, 'pageBreakBefore'));
+  // A table row starts a page when the first paragraph of its first cell says to, as in Word (the row moves, under its
+  // header rows; a paragraph in another cell, or after the first, doesn't), unless the row above keeps with it (a
+  // paragraph in it keeps with the next); a table whose first row does, starts one.
+  const rowBreaksBefore = (row) => !!row.firstChild?.firstChild && paraBreakBefore(row.firstChild.firstChild);
+  const rowKeeps = (row) => { let any = false; row.descendants((n) => { if (n.type === schema.nodes.paragraph) { if (keep(n)) any = true; return false; } return true; }); return any; };
+  const rowBreakAt = (table, j) => j > 0 && rowBreaksBefore(table.child(j)) && !rowKeeps(table.child(j - 1));
+  const rowBreakIn = (table) => { for (let j = 1; j < table.childCount; j++) if (rowBreakAt(table, j)) return true; return false; };
+  const breakBefore = (node) => paraBreakBefore(node) || (node.type === schema.nodes.table && !!node.firstChild && rowBreaksBefore(node.firstChild));
   const spaceBefore = (node) => {
     if (node.type !== schema.nodes.paragraph) return 0;
     // HTML-style automatic spacing (w:beforeAutospacing) comes to nothing at the top of a page (but Word 2003's plain 5pt,
@@ -1274,6 +1283,7 @@ export function createPages(view, session, { sheet, scope }) {
   // The walk's result applied: margin-tops (node decorations), split tables' padded rows and clip paths (CSS), spacer
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
+  const outOfFlow = (el) => { const cs = getComputedStyle(el); return cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed'; };
   function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
@@ -1292,7 +1302,11 @@ export function createPages(view, session, { sheet, scope }) {
     for (const list of pulls.values()) for (const [i, d] of list) extra.set(i, (extra.get(i) || 0) + d);
     for (const [i, delta] of extra) {
       const k = index.get(i);
-      const gap = k > 0 ? blocks[k].top - blocks[k - 1].bottom : blocks[k].top - (parseFloat(getComputedStyle(dom).paddingTop) || 0); // the page's top padding is the first section's plain top margin, not one moved down for a tall header
+      // (From the block before it in the flow: a margin doesn't count from a floating table's bottom, the text beside it
+      // starts at its top. A paragraph after one, starting a page, went to 342px above the page: everything after it lost.)
+      let q = k - 1;
+      while (q >= 0 && outOfFlow(blocks[q].el)) q--;
+      const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - (parseFloat(getComputedStyle(dom).paddingTop) || 0); // the page's top padding is the first section's plain top margin, not one moved down for a tall header
       const margin = Math.round((gap + delta) * 10) / 10;
       applied.set(i, { extra: margin - gap });
       // Under the bottom margin of the block before, a smaller margin collapses into it: give the difference as a negative
@@ -1585,7 +1599,7 @@ export function createPages(view, session, { sheet, scope }) {
           target = p + 1;
           overflow = true;
         }
-      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && bottom + shift > contentBottom(p) + 1) {
+      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + 1 || (b.rows && rowBreakIn(b.node)))) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
@@ -1597,7 +1611,7 @@ export function createPages(view, session, { sheet, scope }) {
           continue;
         }
         // A table whose first row can't start here moves to the next page even when it's longer than a page (it splits there).
-        if (!firstOnPage && (b.rows || b.bottom - b.top <= pageHeight(p + 1))) {
+        if (!firstOnPage && bottom + shift > contentBottom(p) + 1 && (b.rows || b.bottom - b.top <= pageHeight(p + 1))) {
           target = p + 1;
           overflow = true;
         }
@@ -1637,7 +1651,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (split) breakPending = split.breakAfter;
       }
       // A moved table may still need splitting on its new page.
-      if (moved.rows && moved.bottom + shift > contentBottom(target) + 1) {
+      if (moved.rows && (moved.bottom + shift > contentBottom(target) + 1 || rowBreakIn(moved.node))) {
         const split = splitTable(moved, shift, true);
         if (split) {
           splits.set(moved.i, split);

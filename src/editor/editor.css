@@ -135,6 +135,8 @@
 .odx-exporting .odx-content > * { content-visibility: visible !important; }
 .odx-content { tab-size: 0.5in; }
 .odx-content .odx-page-break { display: inline; }
+/* A page or column break in a table cell does nothing in Word: not even a new line (the text after it goes on in the line). */
+:where(.odx-content, .odx-repeat) td .odx-page-break > br { display: none; }
 .odx-content img { max-width: 100%; vertical-align: bottom; }
 /* A picture's line: Word adds only the extra space of "multiple" line spacing below the picture (no font descent). */
 .odx-content p > img:not(.ProseMirror-separator):not([style*="position"]) { margin-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 1em + var(--odx-fx, 0px)); margin-top: var(--odx-fxt, 0px); margin-left: var(--odx-fxl, 0px); margin-right: var(--odx-fxr, 0px); } /* --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr: room for the picture's effect extent */
