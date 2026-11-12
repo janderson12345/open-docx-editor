@@ -727,7 +727,12 @@ export function createPages(view, session, { sheet, scope }) {
     }
     if (at <= 0) return null;
     const cut = lines[at].top - b.top;
-    return { cut, height: b.bottom - b.top, delta: contentTop(p + 1) - (lines[at].top + shift) };
+    // (A line carried to the next column sits as the paragraph's first line does: a text box taller than its line, a
+    // Title's 28pt in Aptos Display, starts above it, as in Word: the first line in column 2 3.4px low without it.)
+    const pcs = getComputedStyle(b.el);
+    const lead0 = lines[0].screenTop - (b.el.getBoundingClientRect().top + parseFloat(pcs.paddingTop) + parseFloat(pcs.borderTopWidth));
+    const above = lead0 < 0 && lead0 >= -6 ? lead0 : 0;
+    return { cut, height: b.bottom - b.top, delta: contentTop(p + 1) + above - (lines[at].top + shift) };
   }
 
   // Columns of their own widths: a paragraph going on in a column of another width is laid out again at that width, as
