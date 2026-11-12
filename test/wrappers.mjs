@@ -38,6 +38,13 @@ for (const name of Object.keys(APPS)) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // The stand-in fonts' default address (jsDelivr, this version on npm) answered from the repository's own copy: the
+  // test needs no network, and a version not yet published is still found.
+  await page.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/open-docx-editor@[^/]+\/src\/fonts\//, (route) => {
+    const file = path.resolve('src/fonts', new URL(route.request().url()).pathname.replace(/^.*?\/src\/fonts\//, ''));
+    if (!file.startsWith(path.resolve('src/fonts')) || !fs.existsSync(file)) return route.fulfill({ status: 404 });
+    return route.fulfill({ body: fs.readFileSync(file), headers: { 'access-control-allow-origin': '*' }, contentType: file.endsWith('.css') ? 'text/css' : 'font/woff2' });
+  });
   await page.goto(`${base}${name}.html`);
   try {
     await page.waitForFunction(() => window.__wr && document.querySelector('.odx-content p'), null, { timeout: 15000 });
