@@ -326,12 +326,36 @@ export function createPages(view, session, { sheet, scope }) {
     const inRow = new Set();
     const heads = [];
     let extra = 0;
+    const extraAt = [];
     for (let j = 0; j < rows.length; j++) {
+      extraAt[j] = extra;
       const top = rows[j].top + shift + extra;
       const bottom = rows[j].bottom + shift + extra;
       const pg = pageOf(top);
       const brk = j > headerRows && j > 0 && b.node.child(j) && rowBreakAt(b.node, j) && top > contentTop(pg) + headH + 1;
       if (!brk && bottom + (rows[j].line || 0) <= contentBottom(pg)) continue;
+      // Keep with next: the rows above that keep with this one (a paragraph in each keeps with the next) go to the next
+      // page with it, as in Word; when they reach the table's first row, the table moves (sample: Heading 1 in its cells).
+      if (!brk) {
+        let s = j;
+        while (s > headerRows && rowKeeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
+        if (s < j) {
+          const topS = rows[s].top + shift + extraAt[s];
+          const firstS = s === 0 ? tableFirstOnPage : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
+          const tall = rows[j].bottom - rows[s].top + headH > pageHeight(pg + 1);
+          if (!firstS && !tall && s <= headerRows && !tableFirstOnPage) return null;
+          if (!firstS && !tall && s > headerRows) {
+            const d = contentTop(pg + 1) + headH - topS;
+            pushes.set(s, d);
+            offs.set(s, extraAt[s]);
+            if (!headerRows) closes.push(contentTop(pg + 1));
+            heads.push(contentTop(pg + 1));
+            extra = extraAt[s] + d;
+            j = s;
+            continue;
+          }
+        }
+      }
       // Word breaks a row inside its cells, line by line, unless the row says it can't split, or (sample S072) the room left
       // on the page is less than the row's minimum height (w:trHeight "at least"): then the row moves whole.
       const tr = b.node.child(j)?.attrs.trPr || '';
@@ -380,6 +404,29 @@ export function createPages(view, session, { sheet, scope }) {
   };
   const cantSplit = (row) => /<w:cantSplit(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '') || keepsWhole(row);
 
+  // Our spacers in a cell (not in the tables in it), and how much they have made a row of a table in a cell taller:
+  // what's below them is measured less that, at its natural place.
+  const spacersIn = (td) => [...td.querySelectorAll('.odx-push')].filter((e) => e.closest('td') === td).map((e) => e.getBoundingClientRect());
+  const grown = (ntr) => {
+    if (!ntr.querySelector('.odx-push')) return 0;
+    let nat = -Infinity;
+    for (const ntd of ntr.cells) {
+      const last = ntd.lastElementChild;
+      if (!last) continue;
+      const lb = last.getBoundingClientRect().bottom;
+      nat = Math.max(nat, lb - undoIn(ntd, lb) + (parseFloat(getComputedStyle(ntd).paddingBottom) || 0));
+    }
+    return Number.isFinite(nat) ? Math.max(0, ntr.getBoundingClientRect().bottom - nat) : 0;
+  };
+  const tablesIn = (td) => [...td.children].map((e) => (e.tagName === 'TABLE' ? e : e.classList.contains('tableWrapper') ? e.querySelector(':scope > table') : null)).filter(Boolean);
+  function undoIn(td, y) {
+    let u = spacersIn(td).reduce((sum, r) => sum + (r.bottom <= y + 0.5 ? r.height : 0), 0);
+    for (const t of tablesIn(td)) for (const ntr of t.rows) {
+      if (ntr.getBoundingClientRect().bottom > y + 0.5) break;
+      u += grown(ntr);
+    }
+    return u;
+  }
   /**
    * Lines of each cell of row j that move to the next page(s), measured like
    * paragraphs. `rowShift` is how far the row has moved from its natural place.
@@ -388,39 +435,14 @@ export function createPages(view, session, { sheet, scope }) {
   function splitRow(b, j, rowShift, headH) {
     if (cantSplit(b.node.child(j))) return null;
     const tr = b.table.tBodies[0].rows[j];
-    // Cells centred or bottom-aligned in the row would shift as lines move, so such a row moves whole.
-    if ([...tr.cells].some((td) => !td.hasAttribute('data-odx-phantom') && !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) return null;
     const base = view.dom.getBoundingClientRect().top + b.rows[j].undo;
     const pushes = [];
     const crossings = new Map(); // page -> bottom of the row's part that stays on it
     let keeps = false;
     let newBottom = -Infinity;
-    for (const td of tr.cells) {
-      if (td.hasAttribute('data-odx-phantom')) continue; // an empty grid slot, nothing to move
-      const paras = [...td.children].filter((e) => e.tagName === 'P');
-      if (paras.length !== td.children.length) return null; // nested tables and the like: move the row whole
-      const own = [...td.querySelectorAll('.odx-push')].map((e) => e.getBoundingClientRect());
-      const above = (y) => own.reduce((sum, r) => sum + (r.bottom <= y + 0.5 ? r.height : 0), 0);
-      const lines = [];
-      for (const p of paras) {
-        const r = p.getBoundingClientRect();
-        const undo = b.rows[j].undo + own.reduce((sum, q) => sum + (q.bottom <= r.top + 0.5 ? q.height : 0), 0);
-        const pl = paragraphLines({ el: p, top: r.top - base - above(r.top), bottom: r.bottom - base - above(r.bottom), undo });
-        // A paragraph's last line also carries its bottom border and padding (a signature rule, say), which has to fit too.
-        // Where a first line's text sits against the top of its paragraph's content (the text box can start above the
-        // line when the line is shorter than the font): a line carried to the next page sits that way too.
-        const ps = getComputedStyle(p);
-        const lead = pl ? pl[0].screenTop - (r.top + parseFloat(ps.paddingTop) + parseFloat(ps.borderTopWidth)) : 0;
-        if (pl) pl.forEach((l, k) => lines.push(k === pl.length - 1 ? { ...l, p, lead, bottom: Math.max(l.bottom, r.bottom - base - above(r.bottom)) } : { ...l, p, lead }));
-        else lines.push({ top: r.top - base - above(r.top), bottom: r.bottom - base - above(r.bottom), p, empty: true });
-      }
-      if (!lines.length) continue;
-      const cs = getComputedStyle(td);
-      const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
-      const padBottom = parseFloat(cs.paddingBottom) || 0;
-      const line = parseFloat(td.style.getPropertyValue('--odx-bdb')) || 0; // the line under the row, the next row's: it has to fit too
-      let extra = 0;
-      let first = -1;
+    // The lines of a run of paragraphs in one cell from `extra0` on: which move to the next page, as a paragraph's.
+    function runLines(lines, extra0, padTop, padBottom, line, seq0, out) {
+      let extra = extra0;
       for (let n = 0; n < lines.length; n++) {
         let top = lines[n].top + rowShift + extra;
         const bottom = lines[n].bottom + rowShift + extra;
@@ -441,20 +463,85 @@ export function createPages(view, session, { sheet, scope }) {
         const delta = Math.round((contentTop(pg + 1) + headH + padTop + lead - top) * 10) / 10;
         if (delta <= 0) continue;
         const pos = whole ? view.posAtDOM(lines[n].p, 0) : lineStart(lines[n].p, lines[n].screenTop);
-        if (pos == null) return null;
+        if (pos == null) return false;
         pushes.push({ pos, delta });
         const kept = n > 0 && pageOf(lines[n - 1].top + rowShift + extra) === pg ? lines[n - 1].bottom + rowShift + extra + padBottom : -Infinity;
         crossings.set(pg, Math.max(crossings.get(pg) ?? -Infinity, kept));
-        if (first < 0) first = n;
+        if (seq0 + n === 0) out.atStart = true;
+        else out.kept = true;
         extra += delta;
       }
+      if (lines.length) out.end = Math.max(out.end, lines[lines.length - 1].bottom + rowShift + extra + padBottom);
+      return extra;
+    }
+    // One cell from `extra0` on (`undoOut`: the natural offset the cells round it give a place in it). Its paragraphs line
+    // by line; a table in it row by row, each of its cells as one of these, the row as tall as its tallest (Word breaks a
+    // table in a cell across pages too). false: the row has to move whole.
+    function plan(td, undoOut, extra0, padTop0, padBottom0, line, seq0, out) {
+      // Cells centred or bottom-aligned in the row would shift as lines move, so such a row moves whole.
+      if (!/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
+      const cs = getComputedStyle(td);
+      const padTop = padTop0 + (parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
+      const padBottom = padBottom0 + (parseFloat(cs.paddingBottom) || 0);
+      const undoAt = (y) => undoOut(y) + undoIn(td, y);
+      let extra = extra0;
+      let seq = seq0;
+      let lines = [];
+      const flush = () => {
+        const e = runLines(lines, extra, padTop, padBottom, line, seq, out);
+        if (e === false) return false;
+        extra = e;
+        seq += lines.length;
+        lines = [];
+        return true;
+      };
+      for (const el of td.children) {
+        if (el.tagName === 'P') {
+          const r = el.getBoundingClientRect();
+          const undo = b.rows[j].undo + undoAt(r.top);
+          const top = r.top - base - undoAt(r.top);
+          const bottom = r.bottom - base - undoAt(r.bottom);
+          const pl = paragraphLines({ el, top, bottom, undo });
+          // A paragraph's last line also carries its bottom border and padding (a signature rule, say), which has to fit too.
+          // Where a first line's text sits against the top of its paragraph's content (the text box can start above the
+          // line when the line is shorter than the font): a line carried to the next page sits that way too.
+          const ps = getComputedStyle(el);
+          const lead = pl ? pl[0].screenTop - (r.top + parseFloat(ps.paddingTop) + parseFloat(ps.borderTopWidth)) : 0;
+          if (pl) pl.forEach((l, k) => lines.push(k === pl.length - 1 ? { ...l, p: el, lead, bottom: Math.max(l.bottom, bottom) } : { ...l, p: el, lead }));
+          else lines.push({ top, bottom, p: el, empty: true });
+          continue;
+        }
+        const t = el.tagName === 'TABLE' ? el : el.classList.contains('tableWrapper') ? el.querySelector(':scope > table') : null;
+        if (!t || !t.tBodies[0] || !flush()) return false; // anything else in the cell: move the row whole
+        for (const ntr of t.tBodies[0].rows) {
+          if (/<w:cantSplit/.test(ntr.dataset?.trpr || '')) return false;
+          const start = extra;
+          let most = start;
+          for (const ntd of ntr.cells) {
+            if (ntd.hasAttribute('data-odx-phantom')) continue;
+            const e = plan(ntd, undoAt, start, padTop, padBottom, 0, seq, out);
+            if (e === false) return false;
+            most = Math.max(most, e);
+          }
+          extra = most;
+          seq += 1;
+        }
+      }
+      if (!flush()) return false;
+      return extra;
+    }
+    for (const td of tr.cells) {
+      if (td.hasAttribute('data-odx-phantom')) continue; // an empty grid slot, nothing to move
+      const line = parseFloat(td.style.getPropertyValue('--odx-bdb')) || 0; // the line under the row, the next row's: it has to fit too
+      const out = { atStart: false, kept: false, end: -Infinity };
+      if (plan(td, () => 0, 0, 0, 0, line, 0, out) === false) return null;
       // The row splits only when a cell that breaks keeps some of its lines here (as in Word);
       // if one would have to move whole, so does the row.
-      if (first > 0) keeps = true;
-      else if (first === 0) return null;
-      const end = lines[lines.length - 1].bottom + rowShift + extra + padBottom;
-      for (const [q, v] of crossings) if (pageOf(end - 1) === q) crossings.set(q, Math.max(v, end)); // cells that end on that page
-      newBottom = Math.max(newBottom, lines[lines.length - 1].bottom + rowShift + extra + padBottom);
+      if (out.atStart) return null;
+      if (out.kept) keeps = true;
+      if (!Number.isFinite(out.end)) continue;
+      for (const [q, v] of crossings) if (pageOf(out.end - 1) === q) crossings.set(q, Math.max(v, out.end)); // cells that end on that page
+      newBottom = Math.max(newBottom, out.end);
     }
     if (!keeps || !pushes.length) return null;
     return { pushes, crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
@@ -1053,7 +1140,7 @@ export function createPages(view, session, { sheet, scope }) {
               for (const td of tr.cells) {
                 const last = td.lastElementChild;
                 if (!last) continue;
-                const spacers = [...td.querySelectorAll('.odx-push')].reduce((sum, e) => sum + e.getBoundingClientRect().height, 0);
+                const spacers = undoIn(td, Infinity); // (in a table in the cell, a row's tallest cell's)
                 bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
               }
               if (!(bottom > rr.top)) bottom = rr.bottom;
@@ -1859,6 +1946,8 @@ export function createPages(view, session, { sheet, scope }) {
     setGap(0);
     // The print is taken right after this handler: finish the layout now rather than on later frames, which a page
     // printed in the background may not get (its pages kept their on-screen gaps).
+    // (At least once: the fields' update can draw tables again, at their grid's widths, and the layout before had passed.)
+    passed = false;
     for (let k = 0; k < 8 && !passed; k++) {
       if (frame) cancelAnimationFrame(frame);
       layout();
