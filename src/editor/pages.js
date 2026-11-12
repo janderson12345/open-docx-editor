@@ -329,6 +329,7 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
+  const HF_GAP = 60, HF_FAR = 0.3; // a header or footer too tall for the page: how near the middle Word cuts it; from how near the far edge
   function splitTable(b, shift, tableFirstOnPage) {
     const { rows, headerRows } = b;
     const headH = headerRows ? rows[headerRows - 1].bottom - rows[0].top : 0;
@@ -1333,8 +1334,9 @@ export function createPages(view, session, { sheet, scope }) {
           const v2 = v + 1, q = place(k, v2), up2 = v2 - q.s;
           lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
           const head = cs.head || 0;
-          contHeads.push({ b, cont: true, cut: cs.cut, rewrap: cs.rewrap, dx: q.x - x, dy: (contentTop(v2) + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
-          if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) - up2 * pitch) - (b.top + sh - up * pitch) });
+          const va = colVa.get(v2) || 0; // (centred on the page: verticalAlignCols)
+          contHeads.push({ b, cont: true, cut: cs.cut, rewrap: cs.rewrap, dx: q.x - x, dy: (contentTop(v2) + va + head - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
+          if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) + va - up2 * pitch) - (b.top + sh - up * pitch) });
         }
         if (!cols) sh += (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0); // (what a block split over pages pushes below it)
       }
@@ -1379,6 +1381,13 @@ export function createPages(view, session, { sheet, scope }) {
       acc += extra.get(b.i) || 0;
       const split = (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0);
       const r = { b, top: b.top + acc, bottom: b.bottom + acc + split, split: split !== 0, sect, after: parseFloat(getComputedStyle(b.el).marginBottom) || 0 };
+      // How low it reaches with what floats in it (a text box, a picture): Word centres those too.
+      r.reach = r.bottom;
+      const er = b.el.getBoundingClientRect();
+      for (const f of b.el.querySelectorAll('img')) {
+        if (getComputedStyle(f).position !== 'absolute' && getComputedStyle(f).float === 'none') continue;
+        r.reach = Math.max(r.reach, b.top + acc + (f.getBoundingClientRect().bottom - er.top));
+      }
       acc += split;
       r.p = pageOf(r.top);
       if (sectCache.ends.get(b.i)) { r.sectEnd = true; sect++; }
@@ -1396,13 +1405,49 @@ export function createPages(view, session, { sheet, scope }) {
       if (g.some((r) => r.split || r.bottom > contentBottom(p) + 1)) continue;
       // (Nor a page that another section goes on to share, after a continuous break: the room below is that one's.)
       if (at.some((r) => r.p === p && r.sect !== g[0].sect && r.top > end.top)) continue;
-      const slack = contentBottom(p) - (end.bottom + end.after);
+      // (The lowest of its last block, with its space after, and anything floating on the page: a frame, a text box.)
+      const slack = contentBottom(p) - Math.max(end.bottom + end.after, ...g.map((r) => r.reach + (outOfFlow(r.b.el) ? r.after : 0)));
       if (slack <= 0.5) continue; // (a full page: nothing to move)
       const moves = v === 'both' ? g.slice(1).map((r) => [r, slack / (g.length - 1)]) : [[g[0], v === 'center' ? (slack - (g[0].top - contentTop(p))) / 2 : slack]];
       let total = 0;
       for (const [r, d] of moves) { starts.set(r.b.i, (starts.get(r.b.i) || 0) + d); total += d; }
       const next = at.find((r) => r.p > p); // (the next page's first block; an empty section-ending paragraph goes down with the rest)
       if (next && total) starts.set(next.b.i, (starts.get(next.b.i) || 0) - total);
+    }
+  }
+
+  // A one-section document in newspaper columns centred (or set at the bottom) on its pages: each sheet's columns moved
+  // down together by the room under its fullest column, as Word does (the text a column carries on into the next too).
+  let colVa = new Map(); // flow page -> px its column's content is moved down
+  function verticalAlignCols(doc, blocks, starts, colSplits) {
+    const v = /<w:vAlign\b[^>]*w:val="(center|bottom)"/.exec(doc.attrs.sectPr || '')?.[1];
+    if (!v || sectionXmls(doc).length > 1) return;
+    const num = cols.num;
+    let acc = 0;
+    const at = blocks.map((b) => {
+      acc += starts.get(b.i) || 0;
+      const cs = colSplits.get(b.i);
+      const top = b.top + acc;
+      return { b, top, end: cs ? top + cs.cut : b.bottom + acc + (parseFloat(getComputedStyle(b.el).marginBottom) || 0), carry: cs ? cs.height - cs.cut + (cs.head || 0) : 0, v: pageOf(top) };
+    });
+    const ends = new Map(); // flow page -> how low its column's content reaches
+    for (const r of at) {
+      ends.set(r.v, Math.max(ends.get(r.v) ?? -Infinity, r.end));
+      if (r.carry) ends.set(r.v + 1, Math.max(ends.get(r.v + 1) ?? -Infinity, contentTop(r.v + 1) + r.carry));
+    }
+    const sheets = new Set([...ends.keys()].map((q) => Math.floor(q / num)));
+    for (const sh of sheets) {
+      let slack = Infinity;
+      for (let q = sh * num; q < (sh + 1) * num; q++) if (ends.has(q)) slack = Math.min(slack, contentBottom(q) - ends.get(q));
+      if (!Number.isFinite(slack) || slack <= 0.5) continue;
+      const first = at.find((r) => Math.floor(r.v / num) === sh);
+      if (!first) continue;
+      const d = v === 'center' ? (slack - (first.top - contentTop(first.v))) / 2 : slack;
+      if (d <= 0.5) continue;
+      starts.set(first.b.i, (starts.get(first.b.i) || 0) + d);
+      for (let q = sh * num; q < (sh + 1) * num; q++) colVa.set(q, d);
+      const next = at.find((r) => Math.floor(r.v / num) > sh);
+      if (next) starts.set(next.b.i, (starts.get(next.b.i) || 0) - d);
     }
   }
 
@@ -1805,6 +1850,8 @@ export function createPages(view, session, { sheet, scope }) {
       }
     }
     if (!cols && !regs.length) verticalAlign(doc, blocks, starts, pulls, splits, paraSplits);
+    colVa = new Map();
+    if (cols && !regs.length) verticalAlignCols(doc, blocks, starts, colSplits);
     const last = blocks.length ? blocks[blocks.length - 1].bottom + shift : 0;
     pages = Math.max(1, pageOf(Math.max(last - 1, 0)) + 1);
     // (Notes continued past the body's last page: pages of their own, as Word adds.)
@@ -1903,6 +1950,9 @@ export function createPages(view, session, { sheet, scope }) {
           const h = story(header, 'odx-header', numText, pages);
           // (In the section's own side margins: sample S106's 0.75in sections under a 1in last one.)
           h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          // A header reaching most of the way down the page (past 70% of it) is cut off 60px above the middle of the page,
+          // as Word draws it. (Word's PDFs of the generated documents: a 0.8-page header cut there, a 0.6-page one whole.)
+          if (hf.headerDist + storyHeight(header) > pageH(p) * (1 - HF_FAR)) h.style.cssText += `;max-height:${Math.max(0, pageH(p) / 2 - HF_GAP - hf.headerDist)}px;overflow:hidden`;
           s.append(h);
           // Its watermark (reader.js): on the page itself, centred on the margins or where it says, behind the text.
           for (const img of h.querySelectorAll('img[style*="--odx-wm"]')) {
@@ -1918,6 +1968,10 @@ export function createPages(view, session, { sheet, scope }) {
         if (footer) {
           const f = story(footer, 'odx-footer', numText, pages);
           f.style.cssText = `bottom:${hf.footerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          // A footer reaching most of the way up the page (above 30% of it) starts 46pt below the middle of the page and is
+          // cut off at its distance from the foot, as Word draws it (not running up off the page).
+          const fTop = pageH(p) / 2 + HF_GAP + 4 / 3;
+          if (pageH(p) - hf.footerDist - storyHeight(footer) < pageH(p) * HF_FAR) f.style.cssText = `top:${fTop}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;max-height:${Math.max(0, pageH(p) - hf.footerDist - fTop)}px;overflow:hidden`;
           s.append(f);
         }
       }
