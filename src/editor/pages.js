@@ -2046,6 +2046,9 @@ export function createPages(view, session, { sheet, scope }) {
           if (y > 0 && y < top) top = y;
         }
         box.style.cssText = `top:${top}px;left:${page.left}px;right:${page.right}px`;
+        // (Endnotes in a document of newspaper columns are in the columns too, balanced, the separator at the top of the
+        // first, as Word lays them out.)
+        const inCols = cols && !cols.unequal && cols.num > 1 && !flow.skip && flow.items.every((r) => r.kind === 'endnote');
         const sep = document.createElement('div');
         sep.className = 'odx-note-sep';
         // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)
@@ -2055,7 +2058,12 @@ export function createPages(view, session, { sheet, scope }) {
         inner.style.marginTop = `${-flow.skip}px`;
         inner.append(...flow.items.map((r) => noteEl(r.note, r.kind, r.n)));
         clip.append(inner);
-        box.append(sep, clip);
+        if (inCols) {
+          clip.style.height = 'auto';
+          inner.style.cssText += `;column-count:${cols.num};column-gap:${cols.space}px;column-fill:balance`;
+          inner.prepend(sep);
+          box.append(clip);
+        } else box.append(sep, clip);
         s.append(box);
       }
       frag.append(s);
