@@ -331,7 +331,10 @@ function paragraphPlugin(session) {
         const sd = !fr && parent === doc && sides.get(index);
         if (sd) {
           // (Added to the paragraph's own indents, the last margin it sets.)
-          const own = (k) => { const v = [...style].reverse().find((x) => x.startsWith(`${k}:`)); return v ? v.slice(k.length + 1).trim() : '0pt'; };
+          // (Else the paragraph's own or its style's indent, which this margin would otherwise replace: a Quote's 0.6in
+          // each side in a column.)
+          const ind = (k) => { const tw = node.attrs.view[k] ?? session.styleProp(node.attrs.styleId, k); return tw ? `calc(${tw / 20}pt - var(--odx-${k === 'indLeft' ? 'bdl' : 'bdr'}, 0pt))` : '0pt'; };
+          const own = (k) => { const v = [...style].reverse().find((x) => x.startsWith(`${k}:`)); return v ? v.slice(k.length + 1).trim() : ind(k === 'margin-inline-start' ? 'indLeft' : 'indRight'); };
           // (The section's sides are the page's left and right: a right-to-left paragraph's start is its right.)
           const rtl = (node.attrs.view.bidi ?? session.styleProp(node.attrs.styleId, 'bidi')) === true;
           const [ds, de] = rtl ? [sd[1], sd[0]] : sd;
