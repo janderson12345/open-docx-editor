@@ -132,6 +132,7 @@ export function createPages(view, session, { sheet, scope }) {
   let notesH = new Map(); // page -> px
   let cuts = new Map(); // page -> y: a table set down near its page's foot ends the text there (pagination's band)
   const NOTE_SEP = 14; // separator line and the space around it
+  const ENDNOTE_LEAD = 4; // Word's separator under the text is a line of the Normal style, a little taller than NOTE_SEP
   const noteHeights = new Map(); // note doc -> px
   const noteEl = (note, kind, n) => {
     const el = document.createElement('div');
@@ -1766,7 +1767,15 @@ export function createPages(view, session, { sheet, scope }) {
       if (flow) {
         const box = document.createElement('div');
         box.className = 'odx-notes';
-        box.style.cssText = `top:${pageH(p) - marginsAt(p).bottom - notesH.get(p)}px;left:${page.left}px;right:${page.right}px`;
+        let top = pageH(p) - marginsAt(p).bottom - notesH.get(p);
+        // Endnotes start where the text ends, as in Word (its separator line under the last paragraph's space after),
+        // not at the page's foot as footnotes do: the generated documents' endnotes, tools/doc-generator.
+        const last = view.dom.lastElementChild;
+        if (last && !flow.skip && flow.items.every((r) => r.kind === 'endnote')) {
+          const y = last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
+          if (y > 0 && y < top) top = y;
+        }
+        box.style.cssText = `top:${top}px;left:${page.left}px;right:${page.right}px`;
         const sep = document.createElement('div');
         sep.className = 'odx-note-sep';
         // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)

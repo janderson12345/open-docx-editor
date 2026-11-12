@@ -164,7 +164,8 @@ export function sizeCss(pt) {
   // (Plus the character spacing in force, --odx-csp, which a run of its own size would otherwise lose.)
   return `font-size:${pt}pt;letter-spacing:calc(var(--odx-csp, 0px) + ${ls > 1e-4 ? ls.toFixed(4) : 0}px)`; // (0 too: else a size's own would pass to text of another size)
 }
-export const scaleCss = (pct) => `letter-spacing:${+(((Number(pct) - 100) / 100) * 0.55).toFixed(4)}em`;
+// (--odx-w: the scale itself, which widths.js makes exact for each run's own text once it's laid out.)
+export const scaleCss = (pct) => `--odx-w:${Number(pct) / 100};letter-spacing:calc(var(--odx-csp, 0px) + ${+(((Number(pct) - 100) / 100) * 0.55).toFixed(4)}em)`;
 
 const HIGHLIGHT = {
   yellow: '#ffff00', green: '#00ff00', cyan: '#00ffff', magenta: '#ff00ff', blue: '#0000ff',

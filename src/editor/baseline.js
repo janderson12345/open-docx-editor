@@ -114,7 +114,14 @@ export function shiftFor(el, host, anchored = false) {
     const [top, box] = textBox(pcs, rcs, host);
     const h = parseFloat(lineHeightOf(pcs));
     const d = Math.round(((h - box) / 2 - top) * 100) / 100;
-    return h < box && d > 0.1 && d < 1 ? d : 0;
+    if (h < box) return d > 0.1 && d < 1 ? d : 0;
+    // A line taller than its text: Word sets the text at its bottom, its descent on the line's foot, where the browser
+    // centres it (11pt Calibri at exactly 15pt printed 1.3px high: the generated documents, tools/doc-generator).
+    const nat = (parseFloat(rcs.getPropertyValue('--odx-lh')) || 1.17) * fs;
+    if (h <= nat + 0.5 || family !== known(rcs)) return 0;
+    const off = OFFSET[family] || 0;
+    const e = Math.round((h - nat + asc * fs - browserOffset(pcs, rcs, host) + off) * 100) / 100;
+    return e > 0.05 && e < 3 ? e : 0;
   }
   // A line taller than its text: the browser puts half the extra height above the text. Word puts all of it above
   // for at-least spacing, and none for multiple spacing (double-spaced text sits at its line's top).

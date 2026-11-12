@@ -76,10 +76,14 @@ export function applyWidths(view) {
     if (host && host.classList.contains('odx-wfix')) host = host.parentElement;
     if (!host) return false;
     const cs = getComputedStyle(host);
-    if (!isHinted(cs)) { remember(0); return false; }
+    // A character scale (w:w): the run's text as wide as Word makes it, its width times the scale (scaleCss's
+    // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
+    const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
+    const hinted = isHinted(cs);
+    if (!hinted && scale === 1) { remember(0); return false; }
     const px = parseFloat(cs.fontSize);
     const actual = width(cs, px, node.text);
-    const target = (width(cs, 100, node.text) * px) / 100;
+    const target = (hinted ? (width(cs, 100, node.text) * px) / 100 : actual) * scale;
     const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
     remember(ls);
     if (ls) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)` }, { key: `w:${pos}:${node.nodeSize}:${ls}` }));
