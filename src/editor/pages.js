@@ -898,7 +898,7 @@ export function createPages(view, session, { sheet, scope }) {
   const isHeader = (row) => /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '');
   const hasPageBreak = (node) => {
     let found = false;
-    if (node.type === schema.nodes.paragraph) node.forEach((c) => { if (c.type === schema.nodes.hard_break && c.attrs.type === 'page') found = true; });
+    if (node.type === schema.nodes.paragraph) node.forEach((c) => { if (c.type === schema.nodes.hard_break && (c.attrs.type === 'page' || c.attrs.type === 'column')) found = true; });
     return found;
   };
 

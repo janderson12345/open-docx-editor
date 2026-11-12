@@ -177,7 +177,8 @@ export const schema = new Schema({
       // A text-wrapping break that clears floats (w:clear) drops below floating pictures and tables beside it, as a
       // zero-height block with CSS clear; with nothing beside it, it ends the line like a plain break would. (The zero-width
       // space after it gives the next line its height even when nothing else follows.)
-      toDOM: (n) => (n.attrs.type === 'page' ? ['span', { class: 'odx-page-break', contenteditable: 'false' }, ['br']]
+      // (A column break where there is one column is a page break, as in Word: it starts the next column, the next page's.)
+      toDOM: (n) => (n.attrs.type === 'page' || n.attrs.type === 'column' ? ['span', { class: 'odx-page-break', contenteditable: 'false', ...(n.attrs.type === 'column' ? { 'data-break': 'column' } : {}) }, ['br']]
         : n.attrs.clear && n.attrs.clear !== 'none' ? ['span', { class: 'odx-clear', contenteditable: 'false' }, ['span', { style: `display:block;clear:${n.attrs.clear === 'all' ? 'both' : n.attrs.clear}` }], '​']
           : ['br']),
     },
@@ -385,9 +386,11 @@ function rextraCss(items) {
       if (!b || b === 'none' || b === 'nil') continue;
       const sz = Math.max(0.25, Number(/w:sz="(\d+)"/.exec(xml)?.[1] || 4) / 8), space = Number(/w:space="(\d+)"/.exec(xml)?.[1] || 0);
       const color = /w:color="([0-9A-Fa-f]{6})"/.exec(xml)?.[1];
-      // (Its line is taller by what the border and its space reach past the line's own room, above and below, as in Word:
-      // a 0.5pt box adds nothing (sample S125), a 1pt one 1px, 1.5pt with 4pt of space 8px (test/fixtures/effects.docx).)
-      const grow = Math.max(0, sz + space - 0.5);
+      // (Its line is taller by the border and its space, above and below, as in Word: 0.67px each side for a 0.5pt box at
+      // 1.08, 1.5 and double spacing (the generated documents, tools/doc-generator), a 1pt one 1px, 1.5pt with 4pt of
+      // space 8px (test/fixtures/effects.docx). Fitted at 0.5pt less, the generated documents' lines came out 0.67px
+      // high each side; the samples didn't change.)
+      const grow = sz + space;
       css.push(`border:${sz}pt ${b === 'double' ? 'double' : b === 'dotted' ? 'dotted' : /dash/i.test(b) ? 'dashed' : 'solid'} ${color ? '#' + color : 'currentColor'}`, `padding:0 ${space}pt`);
       if (grow) css.push(`--odx-grow-up:${grow}pt`, `--odx-grow-down:${grow}pt`);
     }
