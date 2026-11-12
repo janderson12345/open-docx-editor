@@ -45,6 +45,9 @@ export class DocxSession {
     // Word version's layout the document asks for; the layout follows those it knows (docs/LAYOUT.md).
     const compat = settings && /<w:compat>([\s\S]*?)<\/w:compat>/.exec(this.pkg.text(settings) || '')?.[1];
     this.compat = new Set(compat ? [...compat.matchAll(/<w:(\w+)\b([^>]*)\/?>/g)].filter(([, n, a]) => n !== 'compatSetting' && !/w:val="(?:0|false|off)"/.test(a)).map(([, n]) => n) : []);
+    // Word hyphenates the document's words at line ends (w:autoHyphenation; a paragraph's suppressAutoHyphens stops it).
+    this.autoHyphenation = !!settings && /<w:autoHyphenation(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
+    this.doNotHyphenateCaps = !!settings && /<w:doNotHyphenateCaps(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
     // Track Changes on when the document was saved (the editor updates this as it's toggled).
     this.settingsPath = settings;
     this.trackRevisions = this._trackRevisions0 = !!settings && /<w:trackRevisions(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');

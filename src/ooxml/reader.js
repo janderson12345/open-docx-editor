@@ -194,7 +194,7 @@ function readParagraph(p, ctx) {
       attrs.ilvl = props.ilvl;
     }
     for (const c of kids(pPr)) if (!(c.namespaceURI === NS.w && PPR_MODELLED.has(c.localName))) attrs.extra.push([c.localName, ctx.xml(c)]);
-    for (const k of ['before', 'beforeAuto', 'after', 'afterAuto', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs', 'bidi']) if (props[k] != null) attrs.view[k] = props[k];
+    for (const k of ['before', 'beforeAuto', 'after', 'afterAuto', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'noHyph', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs', 'bidi']) if (props[k] != null) attrs.view[k] = props[k];
   }
   // Word's paragraph identities (w14:paraId, w14:textId) and revision-save ids (w:rsid*), written back as they were.
   const own = [...p.attributes].filter((a) => a.prefix !== 'xmlns' && a.name !== 'xmlns').map((a) => [a.name, a.value]);

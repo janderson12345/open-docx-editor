@@ -707,6 +707,26 @@ const colsFwd = await colsSaved();
 check(colsSel === 'First |1 / Second|2c / Third  / Fourth / |1c' && colsFwd === 'First  / Second|1 / Third  / Fourth / |2c',
   `Columns for the selected text, and from here on (${colsSel} || ${colsFwd})`);
 
+// Automatic hyphenation (w:autoHyphenation): words' break points shown as soft hyphens, so a narrow paragraph's lines
+// end in a hyphen as in Word; not in a paragraph with suppressAutoHyphens; nothing of it saved; printed with its hyphens.
+await open('hyphenation.docx');
+await page.waitForFunction(() => document.querySelectorAll('.odx-content .odx-shy, .odx-content p.odx-hyph').length > 0, null, { timeout: 5000 }).catch(() => {});
+const hy = await page.evaluate(() => {
+  const [a, b] = document.querySelectorAll('.odx-content > p');
+  const lines = (p) => { const r = document.createRange(); r.selectNodeContents(p); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; };
+  // (Soft hyphens where the browser can't hyphenate itself, its own hyphens:auto where it can: hyphenate.js.)
+  const on = (p) => p.querySelectorAll('.odx-shy').length > 10 || p.classList.contains('odx-hyph');
+  return { onA: on(a), onB: on(b), linesA: lines(a), linesB: lines(b) };
+});
+const hySaved = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+const hyPrinted = await page.evaluate(() => [...document.querySelectorAll('.odx-printlines p')].filter((p) => /-$/.test(p.textContent)).length);
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.includes('\u00ad') && /<w:suppressAutoHyphens\/>/.test(hySaved) && hyPrinted > 0,
+  `automatic hyphenation: break points shown, not saved, printed with hyphens (${JSON.stringify({ ...hy, hyPrinted })})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

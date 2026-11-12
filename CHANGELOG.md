@@ -23,6 +23,13 @@
   continuous section breaks before and after it, as Word's menu does; "One/Two/Three, from here on" applies from the
   cursor on (More Columns' "This point forward"). A break at a paragraph's start or end splits nothing. The menu's tick
   now shows the cursor's section, not the last one.
+- **Automatic hyphenation.** A document with Word's automatic hyphenation on (`w:autoHyphenation`) now hyphenates
+  English words at line ends, on screen and in print, in every browser, as Word does. A browser that hyphenates
+  English itself (Firefox) does it; where it can't (Edge and Chrome on Windows), break points come from the TeX
+  English patterns (at least two letters before a break, three after), shown as soft hyphens that never enter the
+  document's text. Paragraphs or styles with "Don't hyphenate" (`w:suppressAutoHyphens`) are left alone, and words in
+  capitals when the document says so. Against Word's own print every line lands where Word's does; Word's dictionary
+  sometimes splits a word a syllable earlier. Adds the `hyphen` package (its English patterns: about 50KB).
 - **Justified text:** a paragraph's last line that fits only with its spaces squeezed (as Word 2013+ does) was
   squeezed several pixels too far; it now ends where Word's does, within a pixel.
 

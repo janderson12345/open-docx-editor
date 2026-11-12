@@ -136,6 +136,8 @@ export function readPPr(pPr) {
   if (kl != null) p.keepLines = kl;
   const wc = onOff(kid(pPr, 'widowControl'));
   if (wc != null) p.widowControl = wc;
+  const nh = onOff(kid(pPr, 'suppressAutoHyphens'));
+  if (nh != null) p.noHyph = nh;
   const tabs = kid(pPr, 'tabs');
   if (tabs) p.tabs = kids(tabs).filter((t) => t.localName === 'tab').map((t) => ({ val: attr(t, 'val'), pos: Number(attr(t, 'pos')), leader: attr(t, 'leader') || null }));
   const cs = onOff(kid(pPr, 'contextualSpacing'));

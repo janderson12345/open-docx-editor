@@ -222,6 +222,18 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
         frag = c;
       }
       line.append(frag);
+      // A line broken at an automatic hyphenation point (hyphenate.js: the browser's own, or its soft hyphens): on screen
+      // the browser draws the hyphen there, but in the copy (white-space: pre) nothing breaks, so the hyphen is written
+      // in, in the run's font. (The browser's own: the next line goes on in the same word, the same text node.)
+      const shyAt = (n) => !!n?.parentElement?.closest('.odx-shy');
+      const next = ls[k + 1]?.start;
+      const inWord = next && el.closest('[data-hyph]') && next[0] === ln.end[0] && next[1] === ln.end[1] && ln.end[0].nodeType === 3
+        && /\p{L}/u.test(ln.end[0].data[ln.end[1] - 1] || '') && /\p{L}/u.test(ln.end[0].data[ln.end[1]] || '');
+      if (k < ls.length - 1 && (shyAt(ln.end[0]) || shyAt(ls[k + 1].start[0]) || inWord)) {
+        const own = [...line.querySelectorAll('.odx-shy')].pop();
+        if (shyAt(ln.end[0]) && own) own.textContent = '-';
+        else { const t = texts(line).pop(); if (t) t.data += '-'; }
+      }
       if (side) {
         const lx = left + beside + origin.left;
         const cutL = Math.max(0, side.left - lx), cutR = Math.max(0, lx + width - beside - side.right);

@@ -13,5 +13,5 @@ const tbl = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>'
   + '</w:tblBorders><w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>'
   + [1, 2, 3].map(row).join('') + '</w:tbl>';
 const files = unzipSync(blankDocxBytes());
-files['word/document.xml'] = strToU8(strFromU8(files['word/document.xml']).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${tbl}<w:p/>$1`));
+files['word/document.xml'] = strToU8(strFromU8(files['word/document.xml']).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body><w:p><w:r><w:t>Merging cells.</w:t></w:r></w:p>${tbl}<w:p/>$1`));
 fs.writeFileSync(new URL('./merge-format.docx', import.meta.url), zipSync(files));

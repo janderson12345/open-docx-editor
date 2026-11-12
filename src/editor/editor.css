@@ -82,6 +82,9 @@
 /* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
    paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
 .odx-content p.odx-endbreak::after { content: "\200b"; }
+/* Automatic hyphenation (hyphenate.js): the browser's own where it has it, else soft hyphens shown only at a line's end. */
+.odx-content p.odx-hyph { hyphens: auto; }
+.odx-content .odx-shy { hyphens: manual; }
 .odx-content p.odx-endbreak > br.ProseMirror-trailingBreak { display: none; }
 /* Word doesn't apply ligatures or kerning unless the document asks for them (w:kern). */
 .odx-content, .odx-hf td, .odx-notes, .odx-noteedit { font-variant-ligatures: none; font-kerning: none; } /* (Notes and header tables too: footnote text kerned came out 0.6% narrow, corpus 3, taking a word Word wraps; sample S109's header cells. Not header and footer paragraphs: their print shifts were fitted kerned.) */
