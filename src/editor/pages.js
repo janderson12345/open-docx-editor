@@ -1356,7 +1356,7 @@ export function createPages(view, session, { sheet, scope }) {
         const cs = colSplits.get(b.i);
         if (cs) {
           colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){clip-path:inset(-20px -200px ${(cs.height - cs.cut).toFixed(2)}px -200px)}`);
-          const v2 = v + 1, q = place(k, v2), up2 = v2 - q.s;
+          const v2 = v + (cs.to || 1), q = place(k, v2), up2 = v2 - q.s;
           lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
           const head = cs.head || 0;
           const va = colVa.get(v2) || 0; // (centred on the page: verticalAlignCols)
@@ -1798,6 +1798,21 @@ export function createPages(view, session, { sheet, scope }) {
         target = p + 1;
         overflow = true;
       }
+      else if (cols && !lineSplits && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && (() => {
+        // A page or column break inside a paragraph in newspaper columns: its lines from the break go on at the top of the
+        // next page's first column, or of the next column, as in Word (its text after a page break had stayed in the
+        // column, and what followed went on in the next column of the same page).
+        const lines = paragraphLines(b);
+        const at = lines ? lines.findIndex((l, n) => n > 0 && l.forced) : -1;
+        if (at <= 0) return false;
+        const to = breakKindOf(b.node) === 'page' ? cols.num - (p % cols.num) : 1;
+        const cs = { cut: lines[at].top - b.top, height: b.bottom - b.top, delta: contentTop(p + to) - (lines[at].top + shift), to };
+        colSplits.set(b.i, cs);
+        const nb = blocks[k + 1];
+        if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
+        breakPending = false;
+        return true;
+      })()) continue;
       else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift > contentBottom(p) + lineSlack(b.el) - 1) {
         // In columns a paragraph goes on in the next column line by line, as in Word: it stays put, cut at the column's
         // bottom, and its lines from there are drawn again at the next column's top (drawHeads); what follows it moves
