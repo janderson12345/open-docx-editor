@@ -376,7 +376,7 @@ export function createPages(view, session, { sheet, scope }) {
       const minM = /<w:trHeight\b[^>]*w:val="(\d+(?:\.\d+)?)"/.exec(tr);
       const minH = minM && !/<w:trHeight\b[^>]*w:hRule="(?:exact|auto)"/.test(tr) ? twipsToPx(minM[1]) : 0;
       const short = minH && contentBottom(pg) - top < minH && minH <= pageHeight(pg + 1);
-      const rs = !brk && j >= headerRows && lineSplits && !short && splitRow(b, j, shift + extra, headH);
+      const rs = !brk && j >= headerRows && lineSplits && !short && !(j > headerRows && j < rows.length - 1 && rowKeeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
         for (const [q, cut] of rs.crossings) {
@@ -1010,7 +1010,7 @@ export function createPages(view, session, { sheet, scope }) {
   // header rows; a paragraph in another cell, or after the first, doesn't), unless the row above keeps with it (a
   // paragraph in it keeps with the next); a table whose first row does, starts one.
   const rowBreaksBefore = (row) => !!row.firstChild?.firstChild && paraBreakBefore(row.firstChild.firstChild);
-  const rowKeeps = (row) => { let any = false; row.descendants((n) => { if (n.type === schema.nodes.paragraph) { if (keep(n)) any = true; return false; } return true; }); return any; };
+  const rowKeeps = (row) => { let any = false; row.firstChild?.descendants((n) => { if (n.type === schema.nodes.paragraph) { if (keep(n)) any = true; return false; } return true; }); return any; };
   const rowBreakAt = (table, j) => j > 0 && rowBreaksBefore(table.child(j)) && !rowKeeps(table.child(j - 1));
   const rowBreakIn = (table) => { for (let j = 1; j < table.childCount; j++) if (rowBreakAt(table, j)) return true; return false; };
   const breakBefore = (node) => paraBreakBefore(node) || (node.type === schema.nodes.table && !!node.firstChild && rowBreaksBefore(node.firstChild));
