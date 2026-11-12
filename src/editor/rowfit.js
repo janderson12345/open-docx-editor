@@ -11,12 +11,15 @@ const fitted = new WeakMap(); // table element -> what it was fitted for (rows, 
  */
 export function fitRowspans(root) {
   let changed = false;
+  // The height a cell's content needs: from its first block to its last, with its margins and padding (not from the
+  // cell's top: centred or bottom-aligned content sits lower in a row grown for it, and measured from there it asked for
+  // more on every pass: a merged, bottom-aligned cell's text pushed onto the next page).
   const own = (td) => {
-    const last = td.lastElementChild;
+    const first = td.firstElementChild, last = td.lastElementChild;
     if (!last) return 0;
     const cs = getComputedStyle(td);
-    const r = td.getBoundingClientRect();
-    return last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - r.top + (parseFloat(cs.paddingBottom) || 0);
+    const top = first.getBoundingClientRect().top - (parseFloat(getComputedStyle(first).marginTop) || 0) - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.borderTopWidth) || 0);
+    return last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - top + (parseFloat(cs.paddingBottom) || 0);
   };
   for (const table of root.querySelectorAll('table')) {
     // (Only tables with cells merged down, and of those only one whose text or width changed since it was fitted:
