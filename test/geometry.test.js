@@ -1,7 +1,7 @@
 import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guides, geometryPaths, readGeometry, adjustOf } from '../src/ooxml/geometry.js';
+import { guides, geometryPaths, readGeometry, adjustOf, adjustHandles, dragAdjust } from '../src/ooxml/geometry.js';
 import { PRESETS, SHAPE_GALLERY } from '../src/ooxml/presets.js';
 import { shapesSvg } from '../src/ooxml/shapes.js';
 import { parseXml } from '../src/ooxml/xml.js';
@@ -66,4 +66,28 @@ test('SmartArt: drawn from the drawing Word saves with it (shapes, text, colourf
   // Basic Block List in a colourful variation: five different fills (hueOff steps).
   const fills = new Set([...svgs[1].matchAll(/<path d="[^"]*" fill="#([0-9A-F]{6})"/g)].map((m) => m[1]));
   assert.ok(fills.size >= 5, [...fills].join(','));
+});
+
+test('adjust handles: where they are, and the values that put one where it is dragged', () => {
+  const W = 914400, H = 685800; // 96 x 72 px
+  // A rounded rectangle's corner handle sits on its top edge, where the rounding ends.
+  const [rr] = adjustHandles(PRESETS.roundRect, W, H, {});
+  assert.equal(Math.round(rr.x), Math.round(H * 0.16667));
+  assert.equal(rr.y, 0);
+  // Dragged right, the corner value follows it (within a unit); held to its limit (half the shorter side).
+  const v = dragAdjust(PRESETS.roundRect, W, H, {}, 0, rr.x + 95250, 0);
+  assert.ok(Math.abs(adjustHandles(PRESETS.roundRect, W, H, v)[0].x - (rr.x + 95250)) < 20, JSON.stringify(v));
+  assert.deepEqual(dragAdjust(PRESETS.roundRect, W, H, {}, 0, W * 5, 0), { adj: 'val 50000' });
+  // A callout's pointer has no limits: it goes where it's dragged, both ways.
+  const [tip] = adjustHandles(PRESETS.wedgeRectCallout, W, H, {});
+  const t = dragAdjust(PRESETS.wedgeRectCallout, W, H, {}, 0, tip.x + 400000, tip.y + 300000);
+  const now = adjustHandles(PRESETS.wedgeRectCallout, W, H, t)[0];
+  assert.ok(Math.hypot(now.x - tip.x - 400000, now.y - tip.y - 300000) < 30, JSON.stringify(t));
+  // A polar handle (a block arc's angle) lands on its circle, at the angle of the point dragged to.
+  const arc = dragAdjust(PRESETS.blockArc, W, W, {}, 0, 0, W / 2);
+  assert.ok(Math.abs(Number(arc.adj1.split(' ')[1]) - 10800000) < 60000, JSON.stringify(arc));
+  // Every preset's handles are readable (the ECMA file's ahLst), each at a number.
+  let n = 0;
+  for (const [name] of SHAPE_GALLERY) for (const p of adjustHandles(PRESETS[name], W, H, {})) { n++; assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), name); }
+  assert.ok(n > 60, `${n} handles in the gallery's shapes`);
 });

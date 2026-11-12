@@ -11,7 +11,9 @@ gd y2 = */ h adj3 100000
 gd x2 = */ w adj4 100000
 path M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2`,
+path(fill=none) M x1 y1 L x2 y2
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2`,
   accentBorderCallout2: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -26,7 +28,10 @@ gd y3 = */ h adj5 100000
 gd x3 = */ w adj6 100000
 path M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2 L x3 y3`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3`,
   accentBorderCallout3: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -45,7 +50,11 @@ gd y4 = */ h adj7 100000
 gd x4 = */ w adj8 100000
 path M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3
+ah xy gdRefX=adj8 minX=-2147483647 maxX=2147483647 gdRefY=adj7 minY=-2147483647 maxY=2147483647 x=x4 y=y4`,
   accentCallout1: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 112500
@@ -56,7 +65,9 @@ gd y2 = */ h adj3 100000
 gd x2 = */ w adj4 100000
 path(stroke=0) M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2`,
+path(fill=none) M x1 y1 L x2 y2
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2`,
   accentCallout2: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -71,7 +82,10 @@ gd y3 = */ h adj5 100000
 gd x3 = */ w adj6 100000
 path(stroke=0) M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2 L x3 y3`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3`,
   accentCallout3: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -90,7 +104,11 @@ gd y4 = */ h adj7 100000
 gd x4 = */ w adj8 100000
 path(stroke=0) M l t L r t L r b L l b Z
 path(fill=none) M x1 t Z L x1 b
-path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3
+ah xy gdRefX=adj8 minX=-2147483647 maxX=2147483647 gdRefY=adj7 minY=-2147483647 maxY=2147483647 x=x4 y=y4`,
   actionButtonBackPrevious: `gd dx2 = */ ss 3 8
 gd g9 = +- vc 0 dx2
 gd g10 = +- vc dx2 0
@@ -372,7 +390,9 @@ gd cang1 = +- stAng 0 cd4
 gd cang2 = +- enAng cd4 0
 gd cang3 = +/ cang1 cang2 2
 path(stroke=0) M x1 y1 A wd2 hd2 stAng swAng L hc vc Z
-path(fill=none) M x1 y1 A wd2 hd2 stAng swAng`,
+path(fill=none) M x1 y1 A wd2 hd2 stAng swAng
+ah polar gdRefAng=adj1 minAng=0 maxAng=21599999 x=x1 y=y1
+ah polar gdRefAng=adj2 minAng=0 maxAng=21599999 x=x2 y=y2`,
   bentArrow: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -400,18 +420,25 @@ gd y3 = +- dh2 th 0
 gd y4 = +- y3 dh2 0
 gd y5 = +- dh2 bd 0
 gd y6 = +- y3 bd2 0
-path M l b L l y5 A bd bd cd2 cd4 L x4 dh2 L x4 t L r aw2 L x4 y4 L x4 y3 L x3 y3 A bd2 bd2 3cd4 -5400000 L th b Z`,
+path M l b L l y5 A bd bd cd2 cd4 L x4 dh2 L x4 t L r aw2 L x4 y4 L x4 y3 L x3 y3 A bd2 bd2 3cd4 -5400000 L th b Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=th y=b
+ah xy gdRefY=adj2 minY=0 maxY=50000 x=r y=y4
+ah xy gdRefX=adj3 minX=0 maxX=50000 x=x4 y=t
+ah xy gdRefX=adj4 minX=0 maxX=maxAdj4 x=bd y=t`,
   bentConnector2: `path(fill=none) M l t L r t L r b`,
   bentConnector3: `av adj1 = val 50000
 gd x1 = */ w adj1 100000
-path(fill=none) M l t L x1 t L x1 b L r b`,
+path(fill=none) M l t L x1 t L x1 b L r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x1 y=vc`,
   bentConnector4: `av adj1 = val 50000
 av adj2 = val 50000
 gd x1 = */ w adj1 100000
 gd x2 = +/ x1 r 2
 gd y2 = */ h adj2 100000
 gd y1 = +/ t y2 2
-path(fill=none) M l t L x1 t L x1 y2 L r y2 L r b`,
+path(fill=none) M l t L x1 t L x1 y2 L r y2 L r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x1 y=y1
+ah xy gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=x2 y=y2`,
   bentConnector5: `av adj1 = val 50000
 av adj2 = val 50000
 av adj3 = val 50000
@@ -421,7 +448,10 @@ gd x2 = +/ x1 x3 2
 gd y2 = */ h adj2 100000
 gd y1 = +/ t y2 2
 gd y3 = +/ b y2 2
-path(fill=none) M l t L x1 t L x1 y2 L x3 y2 L x3 b L r b`,
+path(fill=none) M l t L x1 t L x1 y2 L x3 y2 L x3 b L r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x1 y=y1
+ah xy gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj3 minX=-2147483647 maxX=2147483647 x=x3 y=y3`,
   bentUpArrow: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -441,7 +471,10 @@ gd y2 = +- b 0 dy2
 gd x0 = */ x4 1 2
 gd y3 = +/ y2 b 2
 gd y15 = +/ y1 b 2
-path M l y2 L x2 y2 L x2 y1 L x1 y1 L x3 t L r y1 L x4 y1 L x4 b L l b Z`,
+path M l y2 L x2 y2 L x2 y1 L x1 y1 L x3 t L r y1 L x4 y1 L x4 b L l b Z
+ah xy gdRefY=adj1 minY=0 maxY=50000 x=l y=y2
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x1 y=t
+ah xy gdRefY=adj3 minY=0 maxY=50000 x=x2 y=y1`,
   bevel: `av adj = val 12500
 gd a = pin 0 adj 50000
 gd x1 = */ ss a 100000
@@ -452,7 +485,8 @@ path(fill=lightenLess, stroke=0) M l t L r t L x2 x1 L x1 x1 Z
 path(fill=darkenLess, stroke=0) M l b L x1 y2 L x2 y2 L r b Z
 path(fill=lighten, stroke=0) M l t L x1 x1 L x1 y2 L l b Z
 path(fill=darken, stroke=0) M r t L r b L x2 y2 L x2 x1 Z
-path(fill=none) M l t L r t L r b L l b Z M x1 x1 L x2 x1 L x2 y2 L x1 y2 Z M l t L x1 x1 M l b L x1 y2 M r t L x2 x1 M r b L x2 y2`,
+path(fill=none) M l t L r t L r b L l b Z M x1 x1 L x2 x1 L x2 y2 L x1 y2 Z M l t L x1 x1 M l b L x1 y2 M r t L x2 x1 M r b L x2 y2
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   blockArc: `av adj1 = val 10800000
 av adj2 = val 0
 av adj3 = val 25000
@@ -527,7 +561,9 @@ gd y6 = +/ y3 y2 2
 gd cang1 = +- stAng 0 cd4
 gd cang2 = +- istAng cd4 0
 gd cang3 = +/ cang1 cang2 2
-path M x1 y1 A wd2 hd2 stAng swAng L x2 y2 A iwd2 ihd2 istAng iswAng Z`,
+path M x1 y1 A wd2 hd2 stAng swAng L x2 y2 A iwd2 ihd2 istAng iswAng Z
+ah polar gdRefAng=adj1 minAng=0 maxAng=21599999 x=x1 y=y1
+ah polar gdRefR=adj3 minR=0 maxR=50000 gdRefAng=adj2 minAng=0 maxAng=21599999 x=x2 y=y2`,
   borderCallout1: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 112500
@@ -537,7 +573,9 @@ gd x1 = */ w adj2 100000
 gd y2 = */ h adj3 100000
 gd x2 = */ w adj4 100000
 path M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2`,
+path(fill=none) M x1 y1 L x2 y2
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2`,
   borderCallout2: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -551,7 +589,10 @@ gd x2 = */ w adj4 100000
 gd y3 = */ h adj5 100000
 gd x3 = */ w adj6 100000
 path M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2 L x3 y3`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3`,
   borderCallout3: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -569,7 +610,11 @@ gd x3 = */ w adj6 100000
 gd y4 = */ h adj7 100000
 gd x4 = */ w adj8 100000
 path M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3
+ah xy gdRefX=adj8 minX=-2147483647 maxX=2147483647 gdRefY=adj7 minY=-2147483647 maxY=2147483647 x=x4 y=y4`,
   bracePair: `av adj = val 8333
 gd a = pin 0 adj 25000
 gd x1 = */ ss a 100000
@@ -584,7 +629,8 @@ gd il = +- x1 it 0
 gd ir = +- r 0 il
 gd ib = +- b 0 it
 path(stroke=0) M x2 b A x1 x1 cd4 cd4 L x1 y3 A x1 x1 0 -5400000 A x1 x1 cd4 -5400000 L x1 x1 A x1 x1 cd2 cd4 L x3 t A x1 x1 3cd4 cd4 L x4 y2 A x1 x1 cd2 -5400000 A x1 x1 3cd4 -5400000 L x4 y4 A x1 x1 0 cd4 Z
-path(fill=none) M x2 b A x1 x1 cd4 cd4 L x1 y3 A x1 x1 0 -5400000 A x1 x1 cd4 -5400000 L x1 x1 A x1 x1 cd2 cd4 M x3 t A x1 x1 3cd4 cd4 L x4 y2 A x1 x1 cd2 -5400000 A x1 x1 3cd4 -5400000 L x4 y4 A x1 x1 0 cd4`,
+path(fill=none) M x2 b A x1 x1 cd4 cd4 L x1 y3 A x1 x1 0 -5400000 A x1 x1 cd4 -5400000 L x1 x1 A x1 x1 cd2 cd4 M x3 t A x1 x1 3cd4 cd4 L x4 y2 A x1 x1 cd2 -5400000 A x1 x1 3cd4 -5400000 L x4 y4 A x1 x1 0 cd4
+ah xy gdRefY=adj minY=0 maxY=25000 x=l y=x1`,
   bracketPair: `av adj = val 16667
 gd a = pin 0 adj 50000
 gd x1 = */ ss a 100000
@@ -594,7 +640,8 @@ gd il = */ x1 29289 100000
 gd ir = +- r 0 il
 gd ib = +- b 0 il
 path(stroke=0) M l x1 A x1 x1 cd2 cd4 L x2 t A x1 x1 3cd4 cd4 L r y2 A x1 x1 0 cd4 L x1 b A x1 x1 cd4 cd4 Z
-path(fill=none) M x1 b A x1 x1 cd4 cd4 L l x1 A x1 x1 cd2 cd4 M x2 t A x1 x1 3cd4 cd4 L r y2 A x1 x1 0 cd4`,
+path(fill=none) M x1 b A x1 x1 cd4 cd4 L l x1 A x1 x1 cd2 cd4 M x2 t A x1 x1 3cd4 cd4 L r y2 A x1 x1 0 cd4
+ah xy gdRefY=adj minY=0 maxY=50000 x=l y=x1`,
   callout1: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 112500
@@ -604,7 +651,9 @@ gd x1 = */ w adj2 100000
 gd y2 = */ h adj3 100000
 gd x2 = */ w adj4 100000
 path(stroke=0) M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2`,
+path(fill=none) M x1 y1 L x2 y2
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2`,
   callout2: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -618,7 +667,10 @@ gd x2 = */ w adj4 100000
 gd y3 = */ h adj5 100000
 gd x3 = */ w adj6 100000
 path(stroke=0) M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2 L x3 y3`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3`,
   callout3: `av adj1 = val 18750
 av adj2 = val -8333
 av adj3 = val 18750
@@ -636,7 +688,11 @@ gd x3 = */ w adj6 100000
 gd y4 = */ h adj7 100000
 gd x4 = */ w adj8 100000
 path(stroke=0) M l t L r t L r b L l b Z
-path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4`,
+path(fill=none) M x1 y1 L x2 y2 L x3 y3 L x4 y4
+ah xy gdRefX=adj2 minX=-2147483647 maxX=2147483647 gdRefY=adj1 minY=-2147483647 maxY=2147483647 x=x1 y=y1
+ah xy gdRefX=adj4 minX=-2147483647 maxX=2147483647 gdRefY=adj3 minY=-2147483647 maxY=2147483647 x=x2 y=y2
+ah xy gdRefX=adj6 minX=-2147483647 maxX=2147483647 gdRefY=adj5 minY=-2147483647 maxY=2147483647 x=x3 y=y3
+ah xy gdRefX=adj8 minX=-2147483647 maxX=2147483647 gdRefY=adj7 minY=-2147483647 maxY=2147483647 x=x4 y=y4`,
   can: `av adj = val 25000
 gd maxAdj = */ 50000 h ss
 gd a = pin 0 adj maxAdj
@@ -645,7 +701,8 @@ gd y2 = +- y1 y1 0
 gd y3 = +- b 0 y1
 path(stroke=0) M l y1 A wd2 y1 cd2 -10800000 L r y3 A wd2 y1 0 cd2 Z
 path(fill=lighten, stroke=0) M l y1 A wd2 y1 cd2 cd2 A wd2 y1 0 cd2 Z
-path(fill=none) M r y1 A wd2 y1 0 cd2 A wd2 y1 cd2 cd2 L r y3 A wd2 y1 0 cd2 L l y1`,
+path(fill=none) M r y1 A wd2 y1 0 cd2 A wd2 y1 cd2 cd2 L r y3 A wd2 y1 0 cd2 L l y1
+ah xy gdRefY=adj minY=0 maxY=maxAdj x=hc y=y2`,
   chartPlus: `path(fill=none, w=10, h=10) M 5 0 L 5 10 M 0 5 L 10 5
 path(stroke=0, w=10, h=10) M 0 0 L 0 10 L 10 10 L 10 0 Z`,
   chartStar: `path(fill=none, w=10, h=10) M 0 0 L 10 10 M 0 10 L 10 0 M 5 0 L 5 10
@@ -661,7 +718,8 @@ gd x3 = */ x2 1 2
 gd dx = +- x2 0 x1
 gd il = ?: dx x1 l
 gd ir = ?: dx x2 r
-path M l t L x2 t L r vc L x2 b L l b L x1 vc Z`,
+path M l t L x2 t L r vc L x2 b L l b L x1 vc Z
+ah xy gdRefX=adj minX=0 maxX=maxAdj x=x2 y=t`,
   chord: `av adj1 = val 2700000
 av adj2 = val 16200000
 gd stAng = pin 0 adj1 21599999
@@ -691,7 +749,9 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M x1 y1 A wd2 hd2 stAng swAng Z`,
+path M x1 y1 A wd2 hd2 stAng swAng Z
+ah polar gdRefAng=adj1 minAng=0 maxAng=21599999 x=x1 y=y1
+ah polar gdRefAng=adj2 minAng=0 maxAng=21599999 x=x2 y=y2`,
   circularArrow: `av adj1 = val 12500
 av adj2 = val 1142319
 av adj3 = val 20457681
@@ -889,7 +949,11 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M xE yE A rw1 rh1 stAng swAng L xGp yGp L xA yA L xBp yBp L xC yC A rw2 rh2 istAng iswAng Z`,
+path M xE yE A rw1 rh1 stAng swAng L xGp yGp L xA yA L xBp yBp L xC yC A rw2 rh2 istAng iswAng Z
+ah polar gdRefAng=adj2 minAng=0 maxAng=maxAng x=xA y=yA
+ah polar gdRefAng=adj4 minAng=0 maxAng=21599999 x=xE y=yE
+ah polar gdRefR=adj1 minR=0 maxR=maxAdj1 gdRefAng=adj3 minAng=0 maxAng=21599999 x=xF y=yF
+ah polar gdRefR=adj5 minR=0 maxR=25000 x=xB y=yB`,
   cloud: `gd il = */ w 2977 21600
 gd it = */ h 3262 21600
 gd ir = */ w 17087 21600
@@ -949,7 +1013,8 @@ path(w=43200, h=43200) M 3900 14370 A 6753 9190 -11429249 7426832 A 5333 7267 -8
 path M x23 yPos A g26 g26 0 21600000 Z
 path M x24 g17 A g25 g25 0 21600000 Z
 path M x25 g24 A g12 g12 0 21600000 Z
-path(fill=none, w=43200, h=43200) M 4693 26177 A 4345 5945 5204520 1585770 M 6928 34899 A 4360 5918 4416628 686848 M 16478 39090 A 6752 9215 8257449 844866 M 28827 34751 A 6752 9215 387196 959901 M 34129 22954 A 5785 7867 -4217541 4255042 M 41798 15354 A 5333 7273 1819082 1665090 M 38324 5426 A 4857 6595 -824660 891534 M 29078 3952 A 4857 6595 -8950887 1091722 M 22141 4720 A 4365 5945 -9809656 1061181 M 14000 5192 A 6753 9190 -4002417 739161 M 4127 15789 A 6753 9190 9459261 711490`,
+path(fill=none, w=43200, h=43200) M 4693 26177 A 4345 5945 5204520 1585770 M 6928 34899 A 4360 5918 4416628 686848 M 16478 39090 A 6752 9215 8257449 844866 M 28827 34751 A 6752 9215 387196 959901 M 34129 22954 A 5785 7867 -4217541 4255042 M 41798 15354 A 5333 7273 1819082 1665090 M 38324 5426 A 4857 6595 -824660 891534 M 29078 3952 A 4857 6595 -8950887 1091722 M 22141 4720 A 4365 5945 -9809656 1061181 M 14000 5192 A 6753 9190 -4002417 739161 M 4127 15789 A 6753 9190 9459261 711490
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=xPos y=yPos`,
   corner: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj1 = */ 100000 h ss
@@ -964,7 +1029,9 @@ gd cy1 = +/ y1 b 2
 gd d = +- w 0 h
 gd it = ?: d y1 t
 gd ir = ?: d r x1
-path M l t L x1 t L x1 y1 L r y1 L r b L l b Z`,
+path M l t L x1 t L x1 y1 L r y1 L r b L l b Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=l y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t`,
   cornerTabs: `gd md = mod w h 0
 gd dx = */ 1 md 20
 gd y1 = +- 0 b dx
@@ -985,14 +1052,16 @@ gd x3 = +/ y1 r 2
 path(stroke=0) M l y1 L x4 y1 L x4 b L l b Z
 path(fill=darkenLess, stroke=0) M x4 y1 L r t L r y4 L x4 b Z
 path(fill=lightenLess, stroke=0) M l y1 L y1 t L r t L x4 y1 Z
-path(fill=none) M l y1 L y1 t L r t L r y4 L x4 b L l b Z M l y1 L x4 y1 L r t M x4 y1 L x4 b`,
+path(fill=none) M l y1 L y1 t L r t L r y4 L x4 b L l b Z M l y1 L x4 y1 L r t M x4 y1 L x4 b
+ah xy gdRefY=adj minY=0 maxY=100000 x=l y=y1`,
   curvedConnector2: `path(fill=none) M l t C wd2 t r hd2 r b`,
   curvedConnector3: `av adj1 = val 50000
 gd x2 = */ w adj1 100000
 gd x1 = +/ l x2 2
 gd x3 = +/ r x2 2
 gd y3 = */ h 3 4
-path(fill=none) M l t C x1 t x2 hd4 x2 vc C x2 y3 x3 b r b`,
+path(fill=none) M l t C x1 t x2 hd4 x2 vc C x2 y3 x3 b r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x2 y=vc`,
   curvedConnector4: `av adj1 = val 50000
 av adj2 = val 50000
 gd x2 = */ w adj1 100000
@@ -1005,7 +1074,9 @@ gd y1 = +/ t y4 2
 gd y2 = +/ t y1 2
 gd y3 = +/ y1 y4 2
 gd y5 = +/ b y4 2
-path(fill=none) M l t C x1 t x2 y2 x2 y1 C x2 y3 x4 y4 x3 y4 C x5 y4 r y5 r b`,
+path(fill=none) M l t C x1 t x2 y2 x2 y1 C x2 y3 x4 y4 x3 y4 C x5 y4 r y5 r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x2 y=y1
+ah xy gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=x3 y=y4`,
   curvedConnector5: `av adj1 = val 50000
 av adj2 = val 50000
 av adj3 = val 50000
@@ -1023,7 +1094,10 @@ gd y3 = +/ y1 y4 2
 gd y5 = +/ b y4 2
 gd y6 = +/ y5 y4 2
 gd y7 = +/ y5 b 2
-path(fill=none) M l t C x2 t x3 y2 x3 y1 C x3 y3 x4 y4 x1 y4 C x5 y4 x6 y6 x6 y5 C x6 y7 x7 b r b`,
+path(fill=none) M l t C x2 t x3 y2 x3 y1 C x3 y3 x4 y4 x1 y4 C x5 y4 x6 y6 x6 y5 C x6 y7 x7 b r b
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 x=x3 y=y1
+ah xy gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=x1 y=y4
+ah xy gdRefX=adj3 minX=-2147483647 maxX=2147483647 x=x6 y=y5`,
   curvedDownArrow: `av adj1 = val 25000
 av adj2 = val 50000
 av adj3 = val 25000
@@ -1070,7 +1144,10 @@ gd swAng2 = +- dang2 0 cd4
 gd swAng3 = +- cd4 dang2 0
 path(stroke=0) M x6 b L x4 y1 L x5 y1 A wR h stAng mswAng L x3 t A wR h 3cd4 swAng L x8 y1 Z
 path(fill=darkenLess, stroke=0) M ix iy A wR h stAng2 swAng2 L l b A wR h cd2 swAng3 Z
-path(fill=none) M ix iy A wR h stAng2 swAng2 L l b A wR h cd2 cd4 L x3 t A wR h 3cd4 swAng L x8 y1 L x6 b L x4 y1 L x5 y1 A wR h stAng mswAng`,
+path(fill=none) M ix iy A wR h stAng2 swAng2 L l b A wR h cd2 cd4 L x3 t A wR h 3cd4 swAng L x8 y1 L x6 b L x4 y1 L x5 y1 A wR h stAng mswAng
+ah xy gdRefX=adj1 minX=0 maxX=adj2 x=x7 y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x4 y=b
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y1`,
   curvedLeftArrow: `av adj1 = val 25000
 av adj2 = val 50000
 av adj3 = val 25000
@@ -1116,7 +1193,10 @@ gd swAng3 = +- swAng dang2 0
 gd stAng3 = +- 0 0 dang2
 path(stroke=0) M l y6 L x1 y4 L x1 y5 A w hR swAng swAng2 A w hR stAng3 swAng3 L x1 y8 Z
 path(fill=darkenLess, stroke=0) M r y3 A w hR 0 -5400000 L l t A w hR 3cd4 cd4 Z
-path(fill=none) M r y3 A w hR 0 -5400000 L l t A w hR 3cd4 cd4 L r y3 A w hR 0 swAng L x1 y8 L l y6 L x1 y4 L x1 y5 A w hR swAng swAng2`,
+path(fill=none) M r y3 A w hR 0 -5400000 L l t A w hR 3cd4 cd4 L r y3 A w hR 0 swAng L x1 y8 L l y6 L x1 y4 L x1 y5 A w hR swAng swAng2
+ah xy gdRefY=adj1 minY=0 maxY=a2 x=x1 y=y5
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=r y=y4
+ah xy gdRefX=adj3 minX=0 maxX=maxAdj3 x=x1 y=b`,
   curvedRightArrow: `av adj1 = val 25000
 av adj2 = val 50000
 av adj3 = val 25000
@@ -1163,7 +1243,10 @@ gd swAng3 = +- cd4 dang2 0
 gd stAng3 = +- cd2 0 dang2
 path(stroke=0) M l hR A w hR cd2 mswAng L x1 y4 L r y6 L x1 y8 L x1 y7 A w hR stAng swAng Z
 path(fill=darkenLess, stroke=0) M r th A w hR 3cd4 swAng2 A w hR stAng3 swAng3 Z
-path(fill=none) M l hR A w hR cd2 mswAng L x1 y4 L r y6 L x1 y8 L x1 y7 A w hR stAng swAng L l hR A w hR cd2 cd4 L r th A w hR 3cd4 swAng2`,
+path(fill=none) M l hR A w hR cd2 mswAng L x1 y4 L r y6 L x1 y8 L x1 y7 A w hR stAng swAng L l hR A w hR cd2 cd4 L r th A w hR 3cd4 swAng2
+ah xy gdRefY=adj1 minY=0 maxY=a2 x=x1 y=y5
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=r y=y4
+ah xy gdRefX=adj3 minX=0 maxX=maxAdj3 x=x1 y=b`,
   curvedUpArrow: `av adj1 = val 25000
 av adj2 = val 50000
 av adj3 = val 25000
@@ -1211,7 +1294,10 @@ gd swAng3 = +- swAng dang2 0
 gd stAng2 = +- cd4 0 dang2
 path(stroke=0) M x6 t L x8 y1 L x7 y1 A wR h stAng3 swAng3 A wR h stAng2 swAng2 L x4 y1 Z
 path(fill=darkenLess, stroke=0) M wR b A wR h cd4 cd4 L th t A wR h cd2 -5400000 Z
-path(fill=none) M ix iy A wR h stAng2 swAng2 L x4 y1 L x6 t L x8 y1 L x7 y1 A wR h stAng3 swAng L wR b A wR h cd4 cd4 L th t A wR h cd2 -5400000`,
+path(fill=none) M ix iy A wR h stAng2 swAng2 L x4 y1 L x6 t L x8 y1 L x7 y1 A wR h stAng3 swAng L wR b A wR h cd4 cd4 L th t A wR h cd2 -5400000
+ah xy gdRefX=adj1 minX=0 maxX=a2 x=x7 y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x4 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y1`,
   decagon: `av vf = val 105146
 gd shd2 = */ hd2 vf 100000
 gd dx1 = cos wd2 2160000
@@ -1235,7 +1321,8 @@ gd x3 = +/ x2 r 2
 gd y2 = */ h a 100000
 gd y1 = */ y2 1 2
 gd y3 = +/ y2 b 2
-path M l y2 L x2 t L r t L l b Z`,
+path M l y2 L x2 t L r t L l b Z
+ah xy gdRefY=adj minY=0 maxY=100000 x=l y=y2`,
   diamond: `gd ir = */ w 3 4
 gd ib = */ h 3 4
 path M l vc L hc t L r vc L hc b Z`,
@@ -1259,7 +1346,8 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M l vc A wd2 hd2 cd2 cd4 A wd2 hd2 3cd4 cd4 A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z M dr vc A iwd2 ihd2 cd2 -5400000 A iwd2 ihd2 cd4 -5400000 A iwd2 ihd2 0 -5400000 A iwd2 ihd2 3cd4 -5400000 Z`,
+path M l vc A wd2 hd2 cd2 cd4 A wd2 hd2 3cd4 cd4 A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z M dr vc A iwd2 ihd2 cd2 -5400000 A iwd2 ihd2 cd4 -5400000 A iwd2 ihd2 0 -5400000 A iwd2 ihd2 3cd4 -5400000 Z
+ah polar gdRefR=adj minR=0 maxR=50000 x=dr y=vc`,
   doubleWave: `av adj1 = val 6250
 av adj2 = val 0
 gd a1 = pin 0 adj1 12500
@@ -1298,7 +1386,9 @@ gd il = max x2 x9
 gd ir = min x8 x15
 gd it = */ h a1 50000
 gd ib = +- b 0 it
-path M x2 y1 C x3 y2 x4 y3 x5 y1 C x6 y2 x7 y3 x8 y1 L x15 y4 C x14 y6 x13 y5 x12 y4 C x11 y6 x10 y5 x9 y4 Z`,
+path M x2 y1 C x3 y2 x4 y3 x5 y1 C x6 y2 x7 y3 x8 y1 L x15 y4 C x14 y6 x13 y5 x12 y4 C x11 y6 x10 y5 x9 y4 Z
+ah xy gdRefY=adj1 minY=0 maxY=12500 x=l y=y1
+ah xy gdRefX=adj2 minX=-10000 maxX=10000 x=xAdj y=b`,
   downArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 100000 h ss
@@ -1311,7 +1401,9 @@ gd x1 = +- hc 0 dx1
 gd x2 = +- hc dx1 0
 gd dy2 = */ x1 dy1 wd2
 gd y2 = +- y1 dy2 0
-path M l y1 L x1 y1 L x1 t L x2 t L x2 y1 L r y1 L hc b Z`,
+path M l y1 L x1 y1 L x1 t L x2 t L x2 y1 L r y1 L hc b Z
+ah xy gdRefX=adj1 minX=0 maxX=100000 x=x1 y=t
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=l y=y1`,
   downArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -1335,7 +1427,11 @@ gd dy3 = */ ss a3 100000
 gd y3 = +- b 0 dy3
 gd y2 = */ h a4 100000
 gd y1 = */ y2 1 2
-path M l t L r t L r y2 L x3 y2 L x3 y3 L x4 y3 L hc b L x1 y3 L x2 y3 L x2 y2 L l y2 Z`,
+path M l t L r t L r y2 L x3 y2 L x3 y3 L x4 y3 L hc b L x1 y3 L x2 y3 L x2 y2 L l y2 Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x2 y=y3
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=b
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y3
+ah xy gdRefY=adj4 minY=0 maxY=maxAdj4 x=l y=y2`,
   ellipse: `gd idx = cos wd2 2700000
 gd idy = sin hd2 2700000
 gd il = +- hc 0 idx
@@ -1391,7 +1487,10 @@ gd cy7 = +- q1 q1 y7
 gd y8 = +- b 0 dy1
 path(stroke=0) M l t Q cx1 cy1 x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 Q cx2 cy1 r t L x6 y2 L r rh Q cx5 cy4 x5 y5 L x5 y6 Q hc cy6 x2 y6 L x2 y5 Q cx4 cy4 l rh L wd8 y2 Z
 path(fill=darkenLess, stroke=0) M x3 y7 L x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 L x4 y7 Q hc cy7 x3 y7 Z
-path(fill=none) M l t Q cx1 cy1 x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 Q cx2 cy1 r t L x6 y2 L r rh Q cx5 cy4 x5 y5 L x5 y6 Q hc cy6 x2 y6 L x2 y5 Q cx4 cy4 l rh L wd8 y2 Z M x2 y5 L x2 y3 M x5 y3 L x5 y5 M x3 y1 L x3 y7 M x4 y7 L x4 y1`,
+path(fill=none) M l t Q cx1 cy1 x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 Q cx2 cy1 r t L x6 y2 L r rh Q cx5 cy4 x5 y5 L x5 y6 Q hc cy6 x2 y6 L x2 y5 Q cx4 cy4 l rh L wd8 y2 Z M x2 y5 L x2 y3 M x5 y3 L x5 y5 M x3 y1 L x3 y7 M x4 y7 L x4 y1
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=hc y=q1
+ah xy gdRefX=adj2 minX=25000 maxX=75000 x=x2 y=b
+ah xy gdRefY=adj3 minY=minAdj3 maxY=a1 x=l y=y8`,
   ellipseRibbon2: `av adj1 = val 25000
 av adj2 = val 50000
 av adj3 = val 12500
@@ -1450,7 +1549,10 @@ gd cu7 = +- q1 q1 u7
 gd cy7 = +- b 0 cu7
 path(stroke=0) M l b Q cx1 cy1 x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 Q cx2 cy1 r b L x6 y2 L r q1 Q cx5 cy4 x5 y5 L x5 y6 Q hc cy6 x2 y6 L x2 y5 Q cx4 cy4 l q1 L wd8 y2 Z
 path(fill=darkenLess, stroke=0) M x3 y7 L x3 y1 L x2 y3 Q hc cy3 x5 y3 L x4 y1 L x4 y7 Q hc cy7 x3 y7 Z
-path(fill=none) M l b L wd8 y2 L l q1 Q cx4 cy4 x2 y5 L x2 y6 Q hc cy6 x5 y6 L x5 y5 Q cx5 cy4 r q1 L x6 y2 L r b Q cx2 cy1 x4 y1 L x5 y3 Q hc cy3 x2 y3 L x3 y1 Q cx1 cy1 l b Z M x2 y3 L x2 y5 M x5 y5 L x5 y3 M x3 y7 L x3 y1 M x4 y1 L x4 y7`,
+path(fill=none) M l b L wd8 y2 L l q1 Q cx4 cy4 x2 y5 L x2 y6 Q hc cy6 x5 y6 L x5 y5 Q cx5 cy4 r q1 L x6 y2 L r b Q cx2 cy1 x4 y1 L x5 y3 Q hc cy3 x2 y3 L x3 y1 Q cx1 cy1 l b Z M x2 y3 L x2 y5 M x5 y5 L x5 y3 M x3 y7 L x3 y1 M x4 y1 L x4 y7
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=hc y=rh
+ah xy gdRefX=adj2 minX=25000 maxX=100000 x=x2 y=t
+ah xy gdRefY=adj3 minY=minAdj3 maxY=a1 x=l y=dy1`,
   flowChartAlternateProcess: `gd x2 = +- r 0 ssd6
 gd y2 = +- b 0 ssd6
 gd il = */ ssd6 29289 100000
@@ -1578,13 +1680,15 @@ gd y2 = +- b 0 dy2
 gd y1 = +- y2 dy1 0
 path(stroke=0) M l t L r t L r y2 L x1 b L l b Z
 path(fill=darkenLess, stroke=0) M x1 b L x2 y1 L r y2 Z
-path(fill=none) M x1 b L x2 y1 L r y2 L x1 b L l b L l t L r t L r y2`,
+path(fill=none) M x1 b L x2 y1 L r y2 L x1 b L l b L l t L r t L r y2
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=b`,
   frame: `av adj1 = val 12500
 gd a1 = pin 0 adj1 50000
 gd x1 = */ ss a1 100000
 gd x4 = +- r 0 x1
 gd y4 = +- b 0 x1
-path M l t L r t L r b L l b Z M x1 x1 L x1 y4 L x4 y4 L x4 x1 Z`,
+path M l t L r t L r b L l b Z M x1 x1 L x1 y4 L x4 y4 L x4 x1 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=x1 y=t`,
   funnel: `gd d = */ ss 1 20
 gd rw2 = +- wd2 0 d
 gd rh2 = +- hd4 0 d
@@ -1726,7 +1830,9 @@ gd xCxn1 = +/ xB1 xC1 2
 gd yCxn1 = +/ yB1 yC1 2
 gd yCxn2 = +- b 0 yCxn1
 gd xCxn4 = +/ r 0 xCxn1
-path M xA1 yA1 L xB1 yB1 L xC1 yC1 L xD1 yD1 A rw rh bD1 swAng2 L xC1 yB2 L xB1 yC2 L xA1 yD2 A rw rh bD2 swAng1 L xF6 yB3 L xE6 yB3 L xA6 yD3 A rw rh bD3 swAng1 L xB4 yC2 L xC4 yB2 L xD4 yA2 A rw rh bD4 swAng2 L xB5 yC1 L xC5 yB1 L xD5 yA1 A rw rh bD5 swAng1 L xE6 yC6 L xF6 yC6 L xD6 yD6 A rw rh bD6 swAng1 Z`,
+path M xA1 yA1 L xB1 yB1 L xC1 yC1 L xD1 yD1 A rw rh bD1 swAng2 L xC1 yB2 L xB1 yC2 L xA1 yD2 A rw rh bD2 swAng1 L xF6 yB3 L xE6 yB3 L xA6 yD3 A rw rh bD3 swAng1 L xB4 yC2 L xC4 yB2 L xD4 yA2 A rw rh bD4 swAng2 L xB5 yC1 L xC5 yB1 L xD5 yA1 A rw rh bD5 swAng1 L xE6 yC6 L xF6 yC6 L xD6 yD6 A rw rh bD6 swAng1 Z
+ah xy gdRefY=adj1 minY=0 maxY=20000 x=xD6 y=yD6
+ah xy gdRefX=adj2 minX=0 maxX=5358 x=xA6 y=yD6`,
   gear9: `av adj1 = val 10000
 av adj2 = val 1763
 gd a1 = pin 0 adj1 20000
@@ -1971,7 +2077,9 @@ gd xCxn5 = +/ r 0 xCxn4
 gd xCxn6 = +/ r 0 xCxn3
 gd xCxn7 = +/ r 0 xCxn2
 gd xCxn8 = +/ r 0 xCxn1
-path M xA1 yA1 L xB1 yB1 L xC1 yC1 L xD1 yD1 A rw rh bD1 swAng1 L xB2 yB2 L xC2 yC2 L xD2 yD2 A rw rh bD2 swAng2 L xB3 yB3 L xC3 yC3 L xD3 yD3 A rw rh bD3 swAng3 L xB4 yB4 L xC4 yC4 L xD4 yD4 A rw rh bD4 swAng4 L xB5 yC4 L xC5 yB4 L xD5 yA4 A rw rh bD5 swAng3 L xB6 yC3 L xC6 yB3 L xD6 yA3 A rw rh bD6 swAng2 L xB7 yC2 L xC7 yB2 L xD7 yA2 A rw rh bD7 swAng1 L xB8 yC1 L xC8 yB1 L xD8 yA1 A rw rh bD8 swAng5 L xE9 yC9 L xF9 yC9 L xD9 yD9 A rw rh bD9 swAng5 Z`,
+path M xA1 yA1 L xB1 yB1 L xC1 yC1 L xD1 yD1 A rw rh bD1 swAng1 L xB2 yB2 L xC2 yC2 L xD2 yD2 A rw rh bD2 swAng2 L xB3 yB3 L xC3 yC3 L xD3 yD3 A rw rh bD3 swAng3 L xB4 yB4 L xC4 yC4 L xD4 yD4 A rw rh bD4 swAng4 L xB5 yC4 L xC5 yB4 L xD5 yA4 A rw rh bD5 swAng3 L xB6 yC3 L xC6 yB3 L xD6 yA3 A rw rh bD6 swAng2 L xB7 yC2 L xC7 yB2 L xD7 yA2 A rw rh bD7 swAng1 L xB8 yC1 L xC8 yB1 L xD8 yA1 A rw rh bD8 swAng5 L xE9 yC9 L xF9 yC9 L xD9 yD9 A rw rh bD9 swAng5 Z
+ah xy gdRefY=adj1 minY=0 maxY=20000 x=xD9 y=yD9
+ah xy gdRefX=adj2 minX=0 maxX=2679 x=xA9 y=yD9`,
   halfFrame: `av adj1 = val 33333
 av adj2 = val 33333
 gd maxAdj2 = */ 100000 w ss
@@ -1990,7 +2098,9 @@ gd cx1 = */ x1 1 2
 gd cy1 = +/ y2 b 2
 gd cx2 = +/ x2 r 2
 gd cy2 = */ y1 1 2
-path M l t L r t L x2 y1 L x1 y1 L x1 y2 L l b Z`,
+path M l t L r t L x2 y1 L x1 y1 L x1 y2 L l b Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=l y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t`,
   heart: `gd dx1 = */ w 49 48
 gd dx2 = */ w 10 48
 gd x1 = +- hc 0 dx1
@@ -2046,7 +2156,8 @@ gd il = */ w q8 24
 gd it = */ h q8 24
 gd ir = +- r 0 il
 gd ib = +- b 0 it
-path M l vc L x1 y1 L x2 y1 L r vc L x2 y2 L x1 y2 Z`,
+path M l vc L x1 y1 L x2 y1 L r vc L x2 y2 L x1 y2 Z
+ah xy gdRefX=adj minX=0 maxX=maxAdj x=x1 y=t`,
   homePlate: `av adj = val 50000
 gd maxAdj = */ 100000 w ss
 gd a = pin 0 adj maxAdj
@@ -2054,7 +2165,8 @@ gd dx1 = */ ss a 100000
 gd x1 = +- r 0 dx1
 gd ir = +/ x1 r 2
 gd x2 = */ x1 1 2
-path M l t L x1 t L r vc L x1 b L l b Z`,
+path M l t L x1 t L r vc L x1 b L l b Z
+ah xy gdRefX=adj minX=0 maxX=maxAdj x=x1 y=t`,
   horizontalScroll: `av adj = val 12500
 gd a = pin 0 adj 25000
 gd ch = */ ss a 100000
@@ -2069,7 +2181,8 @@ gd x3 = +- r 0 ch
 gd x4 = +- r 0 ch2
 path(stroke=0) M r ch2 A ch2 ch2 0 cd4 L x4 ch2 A ch4 ch4 0 cd2 L x3 ch L ch2 ch A ch2 ch2 3cd4 -5400000 L l y7 A ch2 ch2 cd2 -10800000 L ch y6 L x4 y6 A ch2 ch2 cd4 -5400000 Z M ch2 y4 A ch2 ch2 cd4 -5400000 A ch4 ch4 0 -10800000 Z
 path(fill=darkenLess, stroke=0) M ch2 y4 A ch2 ch2 cd4 -5400000 A ch4 ch4 0 -10800000 Z M x4 ch A ch2 ch2 cd4 -16200000 A ch4 ch4 cd2 -10800000 Z
-path(fill=none) M l y3 A ch2 ch2 cd2 cd4 L x3 ch L x3 ch2 A ch2 ch2 cd2 cd2 L r y5 A ch2 ch2 0 cd4 L ch y6 L ch y7 A ch2 ch2 0 cd2 Z M x3 ch L x4 ch A ch2 ch2 cd4 -5400000 M x4 ch L x4 ch2 A ch4 ch4 0 cd2 M ch2 y4 L ch2 y3 A ch4 ch4 cd2 cd2 A ch2 ch2 0 cd2 M ch y3 L ch y6`,
+path(fill=none) M l y3 A ch2 ch2 cd2 cd4 L x3 ch L x3 ch2 A ch2 ch2 cd2 cd2 L r y5 A ch2 ch2 0 cd4 L ch y6 L ch y7 A ch2 ch2 0 cd2 Z M x3 ch L x4 ch A ch2 ch2 cd4 -5400000 M x4 ch L x4 ch2 A ch4 ch4 0 cd2 M ch2 y4 L ch2 y3 A ch4 ch4 cd2 cd2 A ch2 ch2 0 cd2 M ch y3 L ch y6
+ah xy gdRefX=adj minX=0 maxX=25000 x=ch y=t`,
   irregularSeal1: `gd x5 = */ w 4627 21600
 gd x12 = */ w 8485 21600
 gd x21 = */ w 16702 21600
@@ -2103,7 +2216,9 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc dy1 0
 gd dx1 = */ y1 dx2 hd2
 gd x1 = +- x2 0 dx1
-path M l vc L x2 t L x2 y1 L r y1 L r y2 L x2 y2 L x2 b Z`,
+path M l vc L x2 t L x2 y1 L r y1 L r y2 L x2 y2 L x2 b Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=r y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x2 y=t`,
   leftArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -2127,7 +2242,11 @@ gd x1 = */ ss a3 100000
 gd dx2 = */ w a4 100000
 gd x2 = +- r 0 dx2
 gd x3 = +/ x2 r 2
-path M l vc L x1 y1 L x1 y2 L x2 y2 L x2 t L r t L r b L x2 b L x2 y3 L x1 y3 L x1 y4 Z`,
+path M l vc L x1 y1 L x1 y2 L x2 y2 L x2 t L r t L r b L x2 b L x2 y3 L x1 y3 L x1 y4 Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=x1 y=y2
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=l y=y1
+ah xy gdRefX=adj3 minX=0 maxX=maxAdj3 x=x1 y=t
+ah xy gdRefX=adj4 minX=0 maxX=maxAdj4 x=x2 y=b`,
   leftBrace: `av adj1 = val 8333
 av adj2 = val 50000
 gd a2 = pin 0 adj2 100000
@@ -2145,7 +2264,9 @@ gd il = +- r 0 dx1
 gd it = +- y1 0 dy1
 gd ib = +- b dy1 y1
 path(stroke=0) M r b A wd2 y1 cd4 cd4 L hc y4 A wd2 y1 0 -5400000 A wd2 y1 cd4 -5400000 L hc y1 A wd2 y1 cd2 cd4 Z
-path(fill=none) M r b A wd2 y1 cd4 cd4 L hc y4 A wd2 y1 0 -5400000 A wd2 y1 cd4 -5400000 L hc y1 A wd2 y1 cd2 cd4`,
+path(fill=none) M r b A wd2 y1 cd4 cd4 L hc y4 A wd2 y1 0 -5400000 A wd2 y1 cd4 -5400000 L hc y1 A wd2 y1 cd2 cd4
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=hc y=y1
+ah xy gdRefY=adj2 minY=0 maxY=100000 x=l y=y3`,
   leftBracket: `av adj = val 8333
 gd maxAdj = */ 50000 h ss
 gd a = pin 0 adj maxAdj
@@ -2157,7 +2278,8 @@ gd il = +- r 0 dx1
 gd it = +- y1 0 dy1
 gd ib = +- b dy1 y1
 path(stroke=0) M r b A w y1 cd4 cd4 L l y1 A w y1 cd2 cd4 Z
-path(fill=none) M r b A w y1 cd4 cd4 L l y1 A w y1 cd2 cd4`,
+path(fill=none) M r b A w y1 cd4 cd4 L l y1 A w y1 cd2 cd4
+ah xy gdRefY=adj minY=0 maxY=maxAdj x=l y=y1`,
   leftCircularArrow: `av adj1 = val 12500
 av adj2 = val -1142319
 av adj3 = val 1142319
@@ -2368,7 +2490,11 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M xE yE L xD yD A rw2 rh2 istAng iswAng L xBp yBp L xA yA L xGp yGp L xF yF A rw1 rh1 stAng0 swAng0 Z`,
+path M xE yE L xD yD A rw2 rh2 istAng iswAng L xBp yBp L xA yA L xGp yGp L xF yF A rw1 rh1 stAng0 swAng0 Z
+ah polar gdRefAng=adj2 minAng=minAng maxAng=0 x=xA y=yA
+ah polar gdRefAng=adj4 minAng=0 maxAng=21599999 x=xE y=yE
+ah polar gdRefR=adj1 minR=0 maxR=maxAdj1 gdRefAng=adj3 minAng=0 maxAng=21599999 x=xF y=yF
+ah polar gdRefR=adj5 minR=0 maxR=25000 x=xB y=yB`,
   leftRightArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 50000 w ss
@@ -2382,7 +2508,9 @@ gd y2 = +- vc dy 0
 gd dx1 = */ y1 x2 hd2
 gd x1 = +- x2 0 dx1
 gd x4 = +- x3 dx1 0
-path M l vc L x2 t L x2 y1 L x3 y1 L x3 t L r vc L x3 b L x3 y2 L x2 y2 L x2 b Z`,
+path M l vc L x2 t L x2 y1 L x3 y1 L x3 t L r vc L x3 b L x3 y2 L x2 y2 L x2 b Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=x3 y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x2 y=t`,
   leftRightArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -2407,7 +2535,11 @@ gd x4 = +- r 0 x1
 gd dx2 = */ w a4 200000
 gd x2 = +- hc 0 dx2
 gd x3 = +- hc dx2 0
-path M l vc L x1 y1 L x1 y2 L x2 y2 L x2 t L x3 t L x3 y2 L x4 y2 L x4 y1 L r vc L x4 y4 L x4 y3 L x3 y3 L x3 b L x2 b L x2 y3 L x1 y3 L x1 y4 Z`,
+path M l vc L x1 y1 L x1 y2 L x2 y2 L x2 t L x3 t L x3 y2 L x4 y2 L x4 y1 L r vc L x4 y4 L x4 y3 L x3 y3 L x3 b L x2 b L x2 y3 L x1 y3 L x1 y4 Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=x1 y=y2
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=l y=y1
+ah xy gdRefX=adj3 minX=0 maxX=maxAdj3 x=x1 y=t
+ah xy gdRefX=adj4 minX=0 maxX=maxAdj4 x=x2 y=b`,
   leftRightCircularArrow: `av adj1 = val 12500
 av adj2 = val 1142319
 av adj3 = val 20457681
@@ -2643,7 +2775,11 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M xL yL L xKp yKp L xE yE A rw1 rh1 st2 swAng L xGp yGp L xA yA L xBp yBp L xC yC A rw2 rh2 istAng iswAng L xJp yJp Z`,
+path M xL yL L xKp yKp L xE yE A rw1 rh1 st2 swAng L xGp yGp L xA yA L xBp yBp L xC yC A rw2 rh2 istAng iswAng L xJp yJp Z
+ah polar gdRefAng=adj2 minAng=0 maxAng=maxAng x=xA y=yA
+ah polar gdRefAng=adj4 minAng=0 maxAng=21599999 x=xE y=yE
+ah polar gdRefR=adj1 minR=0 maxR=maxAdj1 gdRefAng=adj3 minAng=0 maxAng=21599999 x=xF y=yF
+ah polar gdRefR=adj5 minR=0 maxR=25000 x=xB y=yB`,
   leftRightRibbon: `av adj1 = val 50000
 av adj2 = val 50000
 av adj3 = val 16667
@@ -2672,7 +2808,10 @@ gd y1 = +- ly1 hR 0
 gd y2 = +- ry2 0 hR
 path(stroke=0) M l ly2 L x1 t L x1 ly1 L hc ly1 A wd32 hR 3cd4 cd2 A wd32 hR 3cd4 -10800000 L x4 ry2 L x4 ry1 L r ry3 L x4 b L x4 ry4 L hc ry4 A wd32 hR cd4 cd4 L x2 ly3 L x1 ly3 L x1 ly4 Z
 path(fill=darkenLess, stroke=0) M x3 y1 A wd32 hR 0 cd4 A wd32 hR 3cd4 -10800000 L x3 ry2 Z
-path(fill=none) M l ly2 L x1 t L x1 ly1 L hc ly1 A wd32 hR 3cd4 cd2 A wd32 hR 3cd4 -10800000 L x4 ry2 L x4 ry1 L r ry3 L x4 b L x4 ry4 L hc ry4 A wd32 hR cd4 cd4 L x2 ly3 L x1 ly3 L x1 ly4 Z M x3 y1 L x3 ry2 M x2 y2 L x2 ly3`,
+path(fill=none) M l ly2 L x1 t L x1 ly1 L hc ly1 A wd32 hR 3cd4 cd2 A wd32 hR 3cd4 -10800000 L x4 ry2 L x4 ry1 L r ry3 L x4 b L x4 ry4 L hc ry4 A wd32 hR cd4 cd4 L x2 ly3 L x1 ly3 L x1 ly4 Z M x3 y1 L x3 ry2 M x2 y2 L x2 ly3
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=x4 y=ry2
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t
+ah xy gdRefY=adj3 minY=0 maxY=33333 x=x3 y=ry2`,
   leftRightUpArrow: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -2697,7 +2836,10 @@ gd y3 = +- y4 0 dx3
 gd y5 = +- y4 dx3 0
 gd il = */ dx3 x1 dx2
 gd ir = +- r 0 il
-path M l y4 L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L hc t L x5 x1 L x4 x1 L x4 y3 L x6 y3 L x6 y2 L r y4 L x6 b L x6 y5 L x1 y5 L x1 b Z`,
+path M l y4 L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L hc t L x5 x1 L x4 x1 L x4 y3 L x6 y3 L x6 y2 L r y4 L x6 b L x6 y5 L x1 y5 L x1 b Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x3 y=x1
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x2 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=x1`,
   leftUpArrow: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -2721,7 +2863,10 @@ gd y5 = +- y4 dx3 0
 gd il = */ dx3 x1 dx4
 gd cx1 = +/ x1 x5 2
 gd cy1 = +/ x1 y5 2
-path M l y4 L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L x4 t L r x1 L x5 x1 L x5 y5 L x1 y5 L x1 b Z`,
+path M l y4 L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L x4 t L r x1 L x5 x1 L x5 y5 L x1 y5 L x1 b Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=x3 y=y3
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x2 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=x3 y=x1`,
   lightningBolt: `gd x1 = */ w 5022 21600
 gd x3 = */ w 8472 21600
 gd x4 = */ w 8757 21600
@@ -2764,7 +2909,10 @@ gd y5 = +- b 0 y1
 gd x1 = +- hc 0 dx1
 gd x3 = +- hc dx1 0
 gd x2 = +- hc 0 rad
-path M hc y1 A rad rad 3cd4 21600000 Z M hc y5 A rad rad cd4 21600000 Z M x1 y3 L x3 y3 L x3 y4 L x1 y4 Z`,
+path M hc y1 A rad rad 3cd4 21600000 Z M hc y5 A rad rad cd4 21600000 Z M x1 y3 L x3 y3 L x3 y4 L x1 y4 Z
+ah xy gdRefY=adj1 minY=1000 maxY=36745 x=l y=y3
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=r y=y2
+ah xy gdRefX=adj3 minX=1000 maxX=maxAdj3 x=x2 y=t`,
   mathEqual: `av adj1 = val 23520
 av adj2 = val 11760
 gd a1 = pin 0 adj1 36745
@@ -2782,7 +2930,9 @@ gd x1 = +- hc 0 dx1
 gd x2 = +- hc dx1 0
 gd yC1 = +/ y1 y2 2
 gd yC2 = +/ y3 y4 2
-path M x1 y1 L x2 y1 L x2 y2 L x1 y2 Z M x1 y3 L x2 y3 L x2 y4 L x1 y4 Z`,
+path M x1 y1 L x2 y1 L x2 y2 L x1 y2 Z M x1 y3 L x2 y3 L x2 y4 L x1 y4 Z
+ah xy gdRefY=adj1 minY=0 maxY=36745 x=l y=y1
+ah xy gdRefY=adj2 minY=0 maxY=mAdj2 x=r y=y2`,
   mathMinus: `av adj1 = val 23520
 gd a1 = pin 0 adj1 100000
 gd dy1 = */ h a1 200000
@@ -2791,7 +2941,8 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc dy1 0
 gd x1 = +- hc 0 dx1
 gd x2 = +- hc dx1 0
-path M x1 y1 L x2 y1 L x2 y2 L x1 y2 Z`,
+path M x1 y1 L x2 y1 L x2 y2 L x1 y2 Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=l y=y1`,
   mathMultiply: `av adj1 = val 23520
 gd a1 = pin 0 adj1 51965
 gd th = */ ss a1 100000
@@ -2824,7 +2975,8 @@ gd yH = +- b 0 yB
 gd yI = +- b 0 yC
 gd xC2 = +- r 0 xM
 gd yC3 = +- b 0 yM
-path M xA yA L xB yB L hc yC L xD yB L xE yA L xF vc L xE yG L xD yH L hc yI L xB yH L xA yG L xL vc Z`,
+path M xA yA L xB yB L hc yC L xD yB L xE yA L xF vc L xE yG L xD yH L hc yI L xB yH L xA yG L xL vc Z
+ah xy gdRefY=adj1 minY=0 maxY=51965 x=l y=th`,
   mathNotEqual: `av adj1 = val 23520
 av adj2 = val 6600000
 av adj3 = val 11760
@@ -2883,7 +3035,10 @@ gd yC1 = +/ ry ly 2
 gd yC2 = +/ y1 y2 2
 gd yC3 = +/ y3 y4 2
 gd yC4 = +/ dry dly 2
-path M x1 y1 L x6 y1 L lx ly L rx ry L rx6 y1 L x8 y1 L x8 y2 L rx5 y2 L rx4 y3 L x8 y3 L x8 y4 L rx3 y4 L drx dry L dlx dly L x3 y4 L x1 y4 L x1 y3 L x4 y3 L x5 y2 L x1 y2 Z`,
+path M x1 y1 L x6 y1 L lx ly L rx ry L rx6 y1 L x8 y1 L x8 y2 L rx5 y2 L rx4 y3 L x8 y3 L x8 y4 L rx3 y4 L drx dry L dlx dly L x3 y4 L x1 y4 L x1 y3 L x4 y3 L x5 y2 L x1 y2 Z
+ah xy gdRefY=adj1 minY=0 maxY=50000 x=l y=y1
+ah polar gdRefAng=adj2 minAng=4200000 maxAng=6600000 x=lx y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y2`,
   mathPlus: `av adj1 = val 23520
 gd a1 = pin 0 adj1 73490
 gd dx1 = */ w 73490 200000
@@ -2897,7 +3052,8 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc 0 dx2
 gd y3 = +- vc dx2 0
 gd y4 = +- vc dy1 0
-path M x1 y2 L x2 y2 L x2 y1 L x3 y1 L x3 y2 L x4 y2 L x4 y3 L x3 y3 L x3 y4 L x2 y4 L x2 y3 L x1 y3 Z`,
+path M x1 y2 L x2 y2 L x2 y1 L x3 y1 L x3 y2 L x4 y2 L x4 y3 L x3 y3 L x3 y4 L x2 y4 L x2 y3 L x1 y3 Z
+ah xy gdRefY=adj1 minY=0 maxY=73490 x=l y=y2`,
   moon: `av adj = val 50000
 gd a = pin 0 adj 87500
 gd g0 = */ ss a 100000
@@ -2933,7 +3089,8 @@ gd stAng1 = at2 dx2 dy2
 gd enAngp1 = at2 dx2 hd2
 gd enAng1 = +- enAngp1 0 21600000
 gd swAng1 = +- enAng1 0 stAng1
-path M r b A w hd2 cd4 cd2 A g18w dy1 stAng1 swAng1 Z`,
+path M r b A w hd2 cd4 cd2 A g18w dy1 stAng1 swAng1 Z
+ah xy gdRefX=adj minX=0 maxX=87500 x=g0w y=vc`,
   noSmoking: `av adj = val 18750
 gd a = pin 0 adj 50000
 gd dr = */ ss a 100000
@@ -2967,7 +3124,8 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M l vc A wd2 hd2 cd2 cd4 A wd2 hd2 3cd4 cd4 A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z M x1 y1 A iwd2 ihd2 stAng1 swAng Z M x2 y2 A iwd2 ihd2 stAng2 swAng Z`,
+path M l vc A wd2 hd2 cd2 cd4 A wd2 hd2 3cd4 cd4 A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z M x1 y1 A iwd2 ihd2 stAng1 swAng Z M x2 y2 A iwd2 ihd2 stAng2 swAng Z
+ah polar gdRefR=adj minR=0 maxR=50000 x=dr y=vc`,
   nonIsoscelesTrapezoid: `av adj1 = val 25000
 av adj2 = val 25000
 gd maxAdj = */ 50000 w ss
@@ -2983,7 +3141,9 @@ gd adjm = max a1 a2
 gd it = */ hd3 adjm maxAdj
 gd irt = */ wd3 a2 maxAdj
 gd ir = +- r 0 irt
-path M l b L x2 t L x3 t L r b Z`,
+path M l b L x2 t L x3 t L r b Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj x=x2 y=t
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj x=x3 y=t`,
   notchedRightArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 100000 w ss
@@ -2996,7 +3156,9 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc dy1 0
 gd x1 = */ dy1 dx2 hd2
 gd x3 = +- r 0 x1
-path M l y1 L x2 y1 L x2 t L r vc L x2 b L x2 y2 L l y2 L x1 vc Z`,
+path M l y1 L x2 y1 L x2 t L r vc L x2 b L x2 y2 L l y2 L x1 vc Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=r y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x2 y=t`,
   octagon: `av adj = val 29289
 gd a = pin 0 adj 50000
 gd x1 = */ ss a 100000
@@ -3005,7 +3167,8 @@ gd y2 = +- b 0 x1
 gd il = */ x1 1 2
 gd ir = +- r 0 il
 gd ib = +- b 0 il
-path M l x1 L x1 t L x2 t L r x1 L r y2 L x2 b L x1 b L l y2 Z`,
+path M l x1 L x1 t L x2 t L r x1 L r y2 L x2 b L x1 b L l y2 Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   parallelogram: `av adj = val 25000
 gd maxAdj = */ 100000 w ss
 gd a = pin 0 adj maxAdj
@@ -3025,7 +3188,8 @@ gd ib = +- b 0 it
 gd q3 = */ h hc x2
 gd y1 = pin 0 q3 h
 gd y2 = +- b 0 y1
-path M l b L x2 t L r t L x5 b Z`,
+path M l b L x2 t L r t L x5 b Z
+ah xy gdRefX=adj minX=0 maxX=maxAdj x=x2 y=t`,
   pentagon: `av hf = val 105146
 av vf = val 110557
 gd swd2 = */ wd2 hf 100000
@@ -3068,7 +3232,9 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M x1 y1 A wd2 hd2 stAng swAng L hc vc Z`,
+path M x1 y1 A wd2 hd2 stAng swAng L hc vc Z
+ah polar gdRefAng=adj1 minAng=0 maxAng=21599999 x=x1 y=y1
+ah polar gdRefAng=adj2 minAng=0 maxAng=21599999 x=x2 y=y2`,
   pieWedge: `gd g1 = cos w 13500000
 gd g2 = sin h 13500000
 gd x1 = +- r g1 0
@@ -3082,7 +3248,8 @@ gd y2 = +- b 0 x1
 gd il = */ x1 70711 100000
 gd ir = +- r 0 il
 gd ib = +- b 0 il
-path M l x1 A x1 x1 cd4 -5400000 L x2 t A x1 x1 cd2 -5400000 L r y2 A x1 x1 3cd4 -5400000 L x1 b A x1 x1 0 -5400000 Z`,
+path M l x1 A x1 x1 cd4 -5400000 L x2 t A x1 x1 cd2 -5400000 L r y2 A x1 x1 3cd4 -5400000 L x1 b A x1 x1 0 -5400000 Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   plaqueTabs: `gd md = mod w h 0
 gd dx = */ 1 md 20
 gd y1 = +- 0 b dx
@@ -3101,7 +3268,8 @@ gd il = ?: d l x1
 gd ir = ?: d r x2
 gd it = ?: d x1 t
 gd ib = ?: d y2 b
-path M l x1 L x1 x1 L x1 t L x2 t L x2 x1 L r x1 L r y2 L x2 y2 L x2 b L x1 b L x1 y2 L l y2 Z`,
+path M l x1 L x1 x1 L x1 t L x2 t L x2 x1 L r x1 L r y2 L x2 y2 L x2 b L x1 b L x1 y2 L l y2 Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   quadArrow: `av adj1 = val 22500
 av adj2 = val 22500
 av adj3 = val 22500
@@ -3126,7 +3294,10 @@ gd y4 = +- vc dx3 0
 gd y6 = +- b 0 x1
 gd il = */ dx3 x1 dx2
 gd ir = +- r 0 il
-path M l vc L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L hc t L x5 x1 L x4 x1 L x4 y3 L x6 y3 L x6 y2 L r vc L x6 y5 L x6 y4 L x4 y4 L x4 y6 L x5 y6 L hc b L x2 y6 L x3 y6 L x3 y4 L x1 y4 L x1 y5 Z`,
+path M l vc L x1 y2 L x1 y3 L x3 y3 L x3 x1 L x2 x1 L hc t L x5 x1 L x4 x1 L x4 y3 L x6 y3 L x6 y2 L r vc L x6 y5 L x6 y4 L x4 y4 L x4 y6 L x5 y6 L hc b L x2 y6 L x3 y6 L x3 y4 L x1 y4 L x1 y5 Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x3 y=x1
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x2 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=x1`,
   quadArrowCallout: `av adj1 = val 18515
 av adj2 = val 18515
 av adj3 = val 18515
@@ -3158,7 +3329,11 @@ gd y3 = +- vc 0 dx2
 gd y6 = +- vc dx2 0
 gd y4 = +- vc 0 dx3
 gd y5 = +- vc dx3 0
-path M l vc L ah y3 L ah y4 L x2 y4 L x2 y2 L x4 y2 L x4 ah L x3 ah L hc t L x6 ah L x5 ah L x5 y2 L x7 y2 L x7 y4 L x8 y4 L x8 y3 L r vc L x8 y6 L x8 y5 L x7 y5 L x7 y7 L x5 y7 L x5 y8 L x6 y8 L hc b L x3 y8 L x4 y8 L x4 y7 L x2 y7 L x2 y5 L ah y5 L ah y6 Z`,
+path M l vc L ah y3 L ah y4 L x2 y4 L x2 y2 L x4 y2 L x4 ah L x3 ah L hc t L x6 ah L x5 ah L x5 y2 L x7 y2 L x7 y4 L x8 y4 L x8 y3 L r vc L x8 y6 L x8 y5 L x7 y5 L x7 y7 L x5 y7 L x5 y8 L x6 y8 L hc b L x3 y8 L x4 y8 L x4 y7 L x2 y7 L x2 y5 L ah y5 L ah y6 Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x4 y=ah
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x3 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=ah
+ah xy gdRefY=adj4 minY=a1 maxY=maxAdj4 x=l y=y2`,
   rect: `path M l t L r t L r b L l b Z`,
   ribbon: `av adj1 = val 16667
 av adj2 = val 50000
@@ -3183,7 +3358,9 @@ gd y5 = +- b 0 hR
 gd y6 = +- y2 0 hR
 path(stroke=0) M l t L x4 t A wd32 hR 3cd4 cd2 L x3 y1 A wd32 hR 3cd4 -10800000 L x8 y2 A wd32 hR cd4 -10800000 L x7 y1 A wd32 hR cd4 cd2 L r t L x10 y3 L r y4 L x9 y4 L x9 y5 A wd32 hR 0 cd4 L x3 b A wd32 hR cd4 cd4 L x2 y4 L l y4 L wd8 y3 Z
 path(fill=darkenLess, stroke=0) M x5 hR A wd32 hR 0 cd4 L x3 y1 A wd32 hR 3cd4 -10800000 L x5 y2 Z M x6 hR A wd32 hR cd2 -5400000 L x8 y1 A wd32 hR 3cd4 cd2 L x6 y2 Z
-path(fill=none) M l t L x4 t A wd32 hR 3cd4 cd2 L x3 y1 A wd32 hR 3cd4 -10800000 L x8 y2 A wd32 hR cd4 -10800000 L x7 y1 A wd32 hR cd4 cd2 L r t L x10 y3 L r y4 L x9 y4 L x9 y5 A wd32 hR 0 cd4 L x3 b A wd32 hR cd4 cd4 L x2 y4 L l y4 L wd8 y3 Z M x5 hR L x5 y2 M x6 y2 L x6 hR M x2 y4 L x2 y6 M x9 y6 L x9 y4`,
+path(fill=none) M l t L x4 t A wd32 hR 3cd4 cd2 L x3 y1 A wd32 hR 3cd4 -10800000 L x8 y2 A wd32 hR cd4 -10800000 L x7 y1 A wd32 hR cd4 cd2 L r t L x10 y3 L r y4 L x9 y4 L x9 y5 A wd32 hR 0 cd4 L x3 b A wd32 hR cd4 cd4 L x2 y4 L l y4 L wd8 y3 Z M x5 hR L x5 y2 M x6 y2 L x6 hR M x2 y4 L x2 y6 M x9 y6 L x9 y4
+ah xy gdRefY=adj1 minY=0 maxY=33333 x=hc y=y2
+ah xy gdRefX=adj2 minX=25000 maxX=75000 x=x2 y=t`,
   ribbon2: `av adj1 = val 16667
 av adj2 = val 50000
 gd a1 = pin 0 adj1 33333
@@ -3209,7 +3386,9 @@ gd y6 = +- b 0 hR
 gd y7 = +- y1 0 hR
 path(stroke=0) M l b L x4 b A wd32 hR cd4 -10800000 L x3 y1 A wd32 hR cd4 cd2 L x8 y2 A wd32 hR 3cd4 cd2 L x7 y1 A wd32 hR 3cd4 -10800000 L r b L x10 y3 L r y4 L x9 y4 L x9 hR A wd32 hR 0 -5400000 L x3 t A wd32 hR 3cd4 -5400000 L x2 y4 L l y4 L wd8 y3 Z
 path(fill=darkenLess, stroke=0) M x5 y6 A wd32 hR 0 -5400000 L x3 y1 A wd32 hR cd4 cd2 L x5 y2 Z M x6 y6 A wd32 hR cd2 cd4 L x8 y1 A wd32 hR cd4 -10800000 L x6 y2 Z
-path(fill=none) M l b L wd8 y3 L l y4 L x2 y4 L x2 hR A wd32 hR cd2 cd4 L x8 t A wd32 hR 3cd4 cd4 L x9 y4 L x9 y4 L r y4 L x10 y3 L r b L x7 b A wd32 hR cd4 cd2 L x8 y1 A wd32 hR cd4 -10800000 L x3 y2 A wd32 hR 3cd4 -10800000 L x4 y1 A wd32 hR 3cd4 cd2 Z M x5 y2 L x5 y6 M x6 y6 L x6 y2 M x2 y7 L x2 y4 M x9 y4 L x9 y7`,
+path(fill=none) M l b L wd8 y3 L l y4 L x2 y4 L x2 hR A wd32 hR cd2 cd4 L x8 t A wd32 hR 3cd4 cd4 L x9 y4 L x9 y4 L r y4 L x10 y3 L r b L x7 b A wd32 hR cd4 cd2 L x8 y1 A wd32 hR cd4 -10800000 L x3 y2 A wd32 hR 3cd4 -10800000 L x4 y1 A wd32 hR 3cd4 cd2 Z M x5 y2 L x5 y6 M x6 y6 L x6 y2 M x2 y7 L x2 y4 M x9 y4 L x9 y7
+ah xy gdRefY=adj1 minY=0 maxY=33333 x=hc y=y2
+ah xy gdRefX=adj2 minX=25000 maxX=75000 x=x2 y=b`,
   rightArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 100000 w ss
@@ -3222,7 +3401,9 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc dy1 0
 gd dx2 = */ y1 dx1 hd2
 gd x2 = +- x1 dx2 0
-path M l y1 L x1 y1 L x1 t L r vc L x1 b L x1 y2 L l y2 Z`,
+path M l y1 L x1 y1 L x1 t L r vc L x1 b L x1 y2 L l y2 Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=l y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t`,
   rightArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -3246,7 +3427,11 @@ gd dx3 = */ ss a3 100000
 gd x3 = +- r 0 dx3
 gd x2 = */ w a4 100000
 gd x1 = */ x2 1 2
-path M l t L x2 t L x2 y2 L x3 y2 L x3 y1 L r vc L x3 y4 L x3 y3 L x2 y3 L x2 b L l b Z`,
+path M l t L x2 t L x2 y2 L x3 y2 L x3 y1 L r vc L x3 y4 L x3 y3 L x2 y3 L x2 b L l b Z
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=x3 y=y2
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=r y=y1
+ah xy gdRefX=adj3 minX=0 maxX=maxAdj3 x=x3 y=t
+ah xy gdRefX=adj4 minX=0 maxX=maxAdj4 x=x2 y=b`,
   rightBrace: `av adj1 = val 8333
 av adj2 = val 50000
 gd a2 = pin 0 adj2 100000
@@ -3265,7 +3450,9 @@ gd ir = +- l dx1 0
 gd it = +- y1 0 dy1
 gd ib = +- b dy1 y1
 path(stroke=0) M l t A wd2 y1 3cd4 cd4 L hc y2 A wd2 y1 cd2 -5400000 A wd2 y1 3cd4 -5400000 L hc y4 A wd2 y1 0 cd4 Z
-path(fill=none) M l t A wd2 y1 3cd4 cd4 L hc y2 A wd2 y1 cd2 -5400000 A wd2 y1 3cd4 -5400000 L hc y4 A wd2 y1 0 cd4`,
+path(fill=none) M l t A wd2 y1 3cd4 cd4 L hc y2 A wd2 y1 cd2 -5400000 A wd2 y1 3cd4 -5400000 L hc y4 A wd2 y1 0 cd4
+ah xy gdRefY=adj1 minY=0 maxY=maxAdj1 x=hc y=y1
+ah xy gdRefY=adj2 minY=0 maxY=100000 x=r y=y3`,
   rightBracket: `av adj = val 8333
 gd maxAdj = */ 50000 h ss
 gd a = pin 0 adj maxAdj
@@ -3277,14 +3464,16 @@ gd ir = +- l dx1 0
 gd it = +- y1 0 dy1
 gd ib = +- b dy1 y1
 path(stroke=0) M l t A w y1 3cd4 cd4 L r y2 A w y1 0 cd4 Z
-path(fill=none) M l t A w y1 3cd4 cd4 L r y2 A w y1 0 cd4`,
+path(fill=none) M l t A w y1 3cd4 cd4 L r y2 A w y1 0 cd4
+ah xy gdRefY=adj minY=0 maxY=maxAdj x=r y=y1`,
   round1Rect: `av adj = val 16667
 gd a = pin 0 adj 50000
 gd dx1 = */ ss a 100000
 gd x1 = +- r 0 dx1
 gd idx = */ dx1 29289 100000
 gd ir = +- r 0 idx
-path M l t L x1 t A dx1 dx1 3cd4 cd4 L r b L l b Z`,
+path M l t L x1 t A dx1 dx1 3cd4 cd4 L r b L l b Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   round2DiagRect: `av adj1 = val 16667
 av adj2 = val 0
 gd a1 = pin 0 adj1 50000
@@ -3300,7 +3489,9 @@ gd d = +- dx1 0 dx2
 gd dx = ?: d dx1 dx2
 gd ir = +- r 0 dx
 gd ib = +- b 0 dx
-path M x1 t L x2 t A a a 3cd4 cd4 L r y1 A x1 x1 0 cd4 L a b A a a cd4 cd4 L l x1 A x1 x1 cd2 cd4 Z`,
+path M x1 t L x2 t A a a 3cd4 cd4 L r y1 A x1 x1 0 cd4 L a b A a a cd4 cd4 L l x1 A x1 x1 cd2 cd4 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=x1 y=t
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x2 y=t`,
   round2SameRect: `av adj1 = val 16667
 av adj2 = val 0
 gd a1 = pin 0 adj1 50000
@@ -3316,7 +3507,9 @@ gd bdx = */ bx1 29289 100000
 gd il = ?: d tdx bdx
 gd ir = +- r 0 il
 gd ib = +- b 0 bdx
-path M tx1 t L tx2 t A tx1 tx1 3cd4 cd4 L r by1 A bx1 bx1 0 cd4 L bx1 b A bx1 bx1 cd4 cd4 L l tx1 A tx1 tx1 cd2 cd4 Z`,
+path M tx1 t L tx2 t A tx1 tx1 3cd4 cd4 L r by1 A bx1 bx1 0 cd4 L bx1 b A bx1 bx1 cd4 cd4 L l tx1 A tx1 tx1 cd2 cd4 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=tx2 y=t
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=bx1 y=b`,
   roundRect: `av adj = val 16667
 gd a = pin 0 adj 50000
 gd x1 = */ ss a 100000
@@ -3325,7 +3518,8 @@ gd y2 = +- b 0 x1
 gd il = */ x1 29289 100000
 gd ir = +- r 0 il
 gd ib = +- b 0 il
-path M l x1 A x1 x1 cd2 cd4 L x2 t A x1 x1 3cd4 cd4 L r y2 A x1 x1 0 cd4 L x1 b A x1 x1 cd4 cd4 Z`,
+path M l x1 A x1 x1 cd2 cd4 L x2 t A x1 x1 3cd4 cd4 L r y2 A x1 x1 0 cd4 L x1 b A x1 x1 cd4 cd4 Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   rtTriangle: `gd it = */ h 7 12
 gd ir = */ w 7 12
 gd ib = */ h 11 12
@@ -3354,14 +3548,16 @@ gd hR = */ h 1125 21600
 path(stroke=0) M l vc A wd2 hd2 cd2 21600000 Z
 path(fill=darkenLess) M x2 y1 A wR hR cd2 21600000 M x3 y1 A wR hR cd2 21600000
 path(fill=none) M x1 y2 Q hc y5 x4 y2
-path(fill=none) M l vc A wd2 hd2 cd2 21600000 Z`,
+path(fill=none) M l vc A wd2 hd2 cd2 21600000 Z
+ah xy gdRefY=adj minY=-4653 maxY=4653 x=hc y=y4`,
   snip1Rect: `av adj = val 16667
 gd a = pin 0 adj 50000
 gd dx1 = */ ss a 100000
 gd x1 = +- r 0 dx1
 gd it = */ dx1 1 2
 gd ir = +/ x1 r 2
-path M l t L x1 t L r dx1 L r b L l b Z`,
+path M l t L x1 t L r dx1 L r b L l b Z
+ah xy gdRefX=adj minX=0 maxX=50000 x=x1 y=t`,
   snip2DiagRect: `av adj1 = val 0
 av adj2 = val 16667
 gd a1 = pin 0 adj1 50000
@@ -3377,7 +3573,9 @@ gd dx = ?: d lx1 rx1
 gd il = */ dx 1 2
 gd ir = +- r 0 il
 gd ib = +- b 0 il
-path M lx1 t L rx2 t L r rx1 L r ly1 L lx2 b L rx1 b L l ry1 L l lx1 Z`,
+path M lx1 t L rx2 t L r rx1 L r ly1 L lx2 b L rx1 b L l ry1 L l lx1 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=lx1 y=t
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=rx2 y=t`,
   snip2SameRect: `av adj1 = val 16667
 av adj2 = val 0
 gd a1 = pin 0 adj1 50000
@@ -3393,7 +3591,9 @@ gd il = */ dx 1 2
 gd ir = +- r 0 il
 gd it = */ tx1 1 2
 gd ib = +/ by1 b 2
-path M tx1 t L tx2 t L r tx1 L r by1 L bx2 b L bx1 b L l by1 L l tx1 Z`,
+path M tx1 t L tx2 t L r tx1 L r by1 L bx2 b L bx1 b L l by1 L l tx1 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=tx2 y=t
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=bx1 y=b`,
   snipRoundRect: `av adj1 = val 16667
 av adj2 = val 16667
 gd a1 = pin 0 adj1 50000
@@ -3403,7 +3603,9 @@ gd dx2 = */ ss a2 100000
 gd x2 = +- r 0 dx2
 gd il = */ x1 29289 100000
 gd ir = +/ x2 r 2
-path M x1 t L x2 t L r dx2 L r b L l b L l x1 A x1 x1 cd2 cd4 Z`,
+path M x1 t L x2 t L r dx2 L r b L l b L l x1 A x1 x1 cd2 cd4 Z
+ah xy gdRefX=adj1 minX=0 maxX=50000 x=x1 y=t
+ah xy gdRefX=adj2 minX=0 maxX=50000 x=x2 y=t`,
   squareTabs: `gd md = mod w h 0
 gd dx = */ 1 md 20
 gd y1 = +- 0 b dx
@@ -3445,7 +3647,8 @@ gd sy2 = +- vc 0 sdy2
 gd sy3 = +- vc sdy2 0
 gd sy4 = +- vc sdy1 0
 gd yAdj = +- vc 0 ihd2
-path M x1 y2 L sx2 sy2 L x2 y1 L sx3 sy1 L hc t L sx4 sy1 L x3 y1 L sx5 sy2 L x4 y2 L sx6 vc L x4 y3 L sx5 sy3 L x3 y4 L sx4 sy4 L hc b L sx3 sy4 L x2 y4 L sx2 sy3 L x1 y3 L sx1 vc Z`,
+path M x1 y2 L sx2 sy2 L x2 y1 L sx3 sy1 L hc t L sx4 sy1 L x3 y1 L sx5 sy2 L x4 y2 L sx6 vc L x4 y3 L sx5 sy3 L x3 y4 L sx4 sy4 L hc b L sx3 sy4 L x2 y4 L sx2 sy3 L x1 y3 L sx1 vc Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star12: `av adj = val 37500
 gd a = pin 0 adj 50000
 gd dx1 = cos wd2 1800000
@@ -3477,7 +3680,8 @@ gd sy4 = +- vc sdy3 0
 gd sy5 = +- vc sdy2 0
 gd sy6 = +- vc sdy1 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy3 L x1 hd4 L sx2 sy2 L wd4 y1 L sx3 sy1 L hc t L sx4 sy1 L x3 y1 L sx5 sy2 L x4 hd4 L sx6 sy3 L r vc L sx6 sy4 L x4 y3 L sx5 sy5 L x3 y4 L sx4 sy6 L hc b L sx3 sy6 L wd4 y4 L sx2 sy5 L x1 y3 L sx1 sy4 Z`,
+path M l vc L sx1 sy3 L x1 hd4 L sx2 sy2 L wd4 y1 L sx3 sy1 L hc t L sx4 sy1 L x3 y1 L sx5 sy2 L x4 hd4 L sx6 sy3 L r vc L sx6 sy4 L x4 y3 L sx5 sy5 L x3 y4 L sx4 sy6 L hc b L sx3 sy6 L wd4 y4 L sx2 sy5 L x1 y3 L sx1 sy4 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star16: `av adj = val 37500
 gd a = pin 0 adj 50000
 gd dx1 = */ wd2 92388 100000
@@ -3531,7 +3735,8 @@ gd it = +- vc 0 idy
 gd ir = +- hc idx 0
 gd ib = +- vc idy 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy4 L x1 y3 L sx2 sy3 L x2 y2 L sx3 sy2 L x3 y1 L sx4 sy1 L hc t L sx5 sy1 L x4 y1 L sx6 sy2 L x5 y2 L sx7 sy3 L x6 y3 L sx8 sy4 L r vc L sx8 sy5 L x6 y4 L sx7 sy6 L x5 y5 L sx6 sy7 L x4 y6 L sx5 sy8 L hc b L sx4 sy8 L x3 y6 L sx3 sy7 L x2 y5 L sx2 sy6 L x1 y4 L sx1 sy5 Z`,
+path M l vc L sx1 sy4 L x1 y3 L sx2 sy3 L x2 y2 L sx3 sy2 L x3 y1 L sx4 sy1 L hc t L sx5 sy1 L x4 y1 L sx6 sy2 L x5 y2 L sx7 sy3 L x6 y3 L sx8 sy4 L r vc L sx8 sy5 L x6 y4 L sx7 sy6 L x5 y5 L sx6 sy7 L x4 y6 L sx5 sy8 L hc b L sx4 sy8 L x3 y6 L sx3 sy7 L x2 y5 L sx2 sy6 L x1 y4 L sx1 sy5 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star24: `av adj = val 37500
 gd a = pin 0 adj 50000
 gd dx1 = cos wd2 900000
@@ -3609,7 +3814,8 @@ gd it = +- vc 0 idy
 gd ir = +- hc idx 0
 gd ib = +- vc idy 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy6 L x1 y5 L sx2 sy5 L x2 y4 L sx3 sy4 L x3 y3 L sx4 sy3 L x4 y2 L sx5 sy2 L x5 y1 L sx6 sy1 L hc t L sx7 sy1 L x6 y1 L sx8 sy2 L x7 y2 L sx9 sy3 L x8 y3 L sx10 sy4 L x9 y4 L sx11 sy5 L x10 y5 L sx12 sy6 L r vc L sx12 sy7 L x10 y6 L sx11 sy8 L x9 y7 L sx10 sy9 L x8 y8 L sx9 sy10 L x7 y9 L sx8 sy11 L x6 y10 L sx7 sy12 L hc b L sx6 sy12 L x5 y10 L sx5 sy11 L x4 y9 L sx4 sy10 L x3 y8 L sx3 sy9 L x2 y7 L sx2 sy8 L x1 y6 L sx1 sy7 Z`,
+path M l vc L sx1 sy6 L x1 y5 L sx2 sy5 L x2 y4 L sx3 sy4 L x3 y3 L sx4 sy3 L x4 y2 L sx5 sy2 L x5 y1 L sx6 sy1 L hc t L sx7 sy1 L x6 y1 L sx8 sy2 L x7 y2 L sx9 sy3 L x8 y3 L sx10 sy4 L x9 y4 L sx11 sy5 L x10 y5 L sx12 sy6 L r vc L sx12 sy7 L x10 y6 L sx11 sy8 L x9 y7 L sx10 sy9 L x8 y8 L sx9 sy10 L x7 y9 L sx8 sy11 L x6 y10 L sx7 sy12 L hc b L sx6 sy12 L x5 y10 L sx5 sy11 L x4 y9 L sx4 sy10 L x3 y8 L sx3 sy9 L x2 y7 L sx2 sy8 L x1 y6 L sx1 sy7 Z
+ah xy gdRefY=adj minY=0 maxY=ssd2 x=hc y=yAdj`,
   star32: `av adj = val 37500
 gd a = pin 0 adj 50000
 gd dx1 = */ wd2 98079 100000
@@ -3711,7 +3917,8 @@ gd it = +- vc 0 idy
 gd ir = +- hc idx 0
 gd ib = +- vc idy 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy8 L x1 y7 L sx2 sy7 L x2 y6 L sx3 sy6 L x3 y5 L sx4 sy5 L x4 y4 L sx5 sy4 L x5 y3 L sx6 sy3 L x6 y2 L sx7 sy2 L x7 y1 L sx8 sy1 L hc t L sx9 sy1 L x8 y1 L sx10 sy2 L x9 y2 L sx11 sy3 L x10 y3 L sx12 sy4 L x11 y4 L sx13 sy5 L x12 y5 L sx14 sy6 L x13 y6 L sx15 sy7 L x14 y7 L sx16 sy8 L r vc L sx16 sy9 L x14 y8 L sx15 sy10 L x13 y9 L sx14 sy11 L x12 y10 L sx13 sy12 L x11 y11 L sx12 sy13 L x10 y12 L sx11 sy14 L x9 y13 L sx10 sy15 L x8 y14 L sx9 sy16 L hc b L sx8 sy16 L x7 y14 L sx7 sy15 L x6 y13 L sx6 sy14 L x5 y12 L sx5 sy13 L x4 y11 L sx4 sy12 L x3 y10 L sx3 sy11 L x2 y9 L sx2 sy10 L x1 y8 L sx1 sy9 Z`,
+path M l vc L sx1 sy8 L x1 y7 L sx2 sy7 L x2 y6 L sx3 sy6 L x3 y5 L sx4 sy5 L x4 y4 L sx5 sy4 L x5 y3 L sx6 sy3 L x6 y2 L sx7 sy2 L x7 y1 L sx8 sy1 L hc t L sx9 sy1 L x8 y1 L sx10 sy2 L x9 y2 L sx11 sy3 L x10 y3 L sx12 sy4 L x11 y4 L sx13 sy5 L x12 y5 L sx14 sy6 L x13 y6 L sx15 sy7 L x14 y7 L sx16 sy8 L r vc L sx16 sy9 L x14 y8 L sx15 sy10 L x13 y9 L sx14 sy11 L x12 y10 L sx13 sy12 L x11 y11 L sx12 sy13 L x10 y12 L sx11 sy14 L x9 y13 L sx10 sy15 L x8 y14 L sx9 sy16 L hc b L sx8 sy16 L x7 y14 L sx7 sy15 L x6 y13 L sx6 sy14 L x5 y12 L sx5 sy13 L x4 y11 L sx4 sy12 L x3 y10 L sx3 sy11 L x2 y9 L sx2 sy10 L x1 y8 L sx1 sy9 Z
+ah xy gdRefY=adj minY=0 maxY=ssd2 x=hc y=yAdj`,
   star4: `av adj = val 12500
 gd a = pin 0 adj 50000
 gd iwd2 = */ wd2 a 50000
@@ -3723,7 +3930,8 @@ gd sx2 = +- hc sdx 0
 gd sy1 = +- vc 0 sdy
 gd sy2 = +- vc sdy 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy1 L hc t L sx2 sy1 L r vc L sx2 sy2 L hc b L sx1 sy2 Z`,
+path M l vc L sx1 sy1 L hc t L sx2 sy1 L r vc L sx2 sy2 L hc b L sx1 sy2 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star5: `av adj = val 19098
 av hf = val 105146
 av vf = val 110557
@@ -3755,7 +3963,8 @@ gd sy1 = +- svc 0 sdy1
 gd sy2 = +- svc 0 sdy2
 gd sy3 = +- svc ihd2 0
 gd yAdj = +- svc 0 ihd2
-path M x1 y1 L sx2 sy1 L hc t L sx3 sy1 L x4 y1 L sx4 sy2 L x3 y2 L hc sy3 L x2 y2 L sx1 sy2 Z`,
+path M x1 y1 L sx2 sy1 L hc t L sx3 sy1 L x4 y1 L sx4 sy2 L x3 y2 L hc sy3 L x2 y2 L sx1 sy2 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star6: `av adj = val 28868
 av hf = val 115470
 gd a = pin 0 adj 50000
@@ -3775,7 +3984,8 @@ gd sdy1 = sin ihd2 3600000
 gd sy1 = +- vc 0 sdy1
 gd sy2 = +- vc sdy1 0
 gd yAdj = +- vc 0 ihd2
-path M x1 hd4 L sx2 sy1 L hc t L sx3 sy1 L x2 hd4 L sx4 vc L x2 y2 L sx3 sy2 L hc b L sx2 sy2 L x1 y2 L sx1 vc Z`,
+path M x1 hd4 L sx2 sy1 L hc t L sx3 sy1 L x2 hd4 L sx4 vc L x2 y2 L sx3 sy2 L hc b L sx2 sy2 L x1 y2 L sx1 vc Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star7: `av adj = val 34601
 av hf = val 102572
 av vf = val 105210
@@ -3817,7 +4027,8 @@ gd sy2 = +- svc 0 sdy2
 gd sy3 = +- svc sdy3 0
 gd sy4 = +- svc ihd2 0
 gd yAdj = +- svc 0 ihd2
-path M x1 y2 L sx1 sy2 L x2 y1 L sx3 sy1 L hc t L sx4 sy1 L x5 y1 L sx6 sy2 L x6 y2 L sx5 sy3 L x4 y3 L hc sy4 L x3 y3 L sx2 sy3 Z`,
+path M x1 y2 L sx1 sy2 L x2 y1 L sx3 sy1 L hc t L sx4 sy1 L x5 y1 L sx6 sy2 L x6 y2 L sx5 sy3 L x4 y3 L hc sy4 L x3 y3 L sx2 sy3 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   star8: `av adj = val 37500
 gd a = pin 0 adj 50000
 gd dx1 = cos wd2 2700000
@@ -3841,7 +4052,8 @@ gd sy2 = +- vc 0 sdy2
 gd sy3 = +- vc sdy2 0
 gd sy4 = +- vc sdy1 0
 gd yAdj = +- vc 0 ihd2
-path M l vc L sx1 sy2 L x1 y1 L sx2 sy1 L hc t L sx3 sy1 L x2 y1 L sx4 sy2 L r vc L sx4 sy3 L x2 y2 L sx3 sy4 L hc b L sx2 sy4 L x1 y2 L sx1 sy3 Z`,
+path M l vc L sx1 sy2 L x1 y1 L sx2 sy1 L hc t L sx3 sy1 L x2 y1 L sx4 sy2 L r vc L sx4 sy3 L x2 y2 L sx3 sy4 L hc b L sx2 sy4 L x1 y2 L sx1 sy3 Z
+ah xy gdRefY=adj minY=0 maxY=50000 x=hc y=yAdj`,
   straightConnector1: `path(fill=none) M l t L r b`,
   stripedRightArrow: `av adj1 = val 50000
 av adj2 = val 50000
@@ -3856,7 +4068,9 @@ gd y1 = +- vc 0 dy1
 gd y2 = +- vc dy1 0
 gd dx6 = */ dy1 dx5 hd2
 gd x6 = +- r 0 dx6
-path M l y1 L ssd32 y1 L ssd32 y2 L l y2 Z M ssd16 y1 L ssd8 y1 L ssd8 y2 L ssd16 y2 Z M x4 y1 L x5 y1 L x5 t L r vc L x5 b L x5 y2 L x4 y2 Z`,
+path M l y1 L ssd32 y1 L ssd32 y2 L l y2 Z M ssd16 y1 L ssd8 y1 L ssd8 y2 L ssd16 y2 Z M x4 y1 L x5 y1 L x5 t L r vc L x5 b L x5 y2 L x4 y2 Z
+ah xy gdRefY=adj1 minY=0 maxY=100000 x=l y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x5 y=t`,
   sun: `av adj = val 25000
 gd a = pin 12500 adj 46875
 gd g0 = +- 50000 0 a
@@ -3905,7 +4119,8 @@ gd y15 = */ h g15 100000
 gd y16 = */ h g16 100000
 gd y17 = */ h g17 100000
 gd y18 = */ h g18 100000
-path M r vc L x15 y18 L x15 y14 Z M ox1 oy1 L x16 y13 L x17 y12 Z M hc t L x18 y10 L x14 y10 Z M ox2 oy1 L x13 y12 L x12 y13 Z M l vc L x10 y14 L x10 y18 Z M ox2 oy2 L x12 y17 L x13 y16 Z M hc b L x14 y15 L x18 y15 Z M ox1 oy2 L x17 y16 L x16 y17 Z M x19 vc A wR hR cd2 21600000 Z`,
+path M r vc L x15 y18 L x15 y14 Z M ox1 oy1 L x16 y13 L x17 y12 Z M hc t L x18 y10 L x14 y10 Z M ox2 oy1 L x13 y12 L x12 y13 Z M l vc L x10 y14 L x10 y18 Z M ox2 oy2 L x12 y17 L x13 y16 Z M hc b L x14 y15 L x18 y15 Z M ox1 oy2 L x17 y16 L x16 y17 Z M x19 vc A wR hR cd2 21600000 Z
+ah xy gdRefX=adj minX=12500 maxX=46875 x=x19 y=vc`,
   swooshArrow: `av adj1 = val 25000
 av adj2 = val 16667
 gd a1 = pin 1 adj1 75000
@@ -3933,7 +4148,9 @@ gd xP1 = val wd6
 gd dy5 = */ hd6 1 2
 gd yP2 = +- yF dy5 0
 gd xP2 = val wd4
-path M l b Q xP1 yP1 xB yB L xC t L r yD L xE yE L xF yF Q xP2 yP2 l b Z`,
+path M l b Q xP1 yP1 xB yB L xC t L r yD L xE yE L xF yF Q xP2 yP2 l b Z
+ah xy gdRefY=adj1 minY=1 maxY=75000 x=xF y=yF
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=xB y=yB`,
   teardrop: `av adj = val 100000
 gd a = pin 0 adj 200000
 gd r2 = sqrt 2
@@ -3953,7 +4170,8 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M l vc A wd2 hd2 cd2 cd4 Q x2 t x1 y1 Q r y2 r vc A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z`,
+path M l vc A wd2 hd2 cd2 cd4 Q x2 t x1 y1 Q r y2 r vc A wd2 hd2 0 cd4 A wd2 hd2 cd4 cd4 Z
+ah xy gdRefX=adj minX=0 maxX=200000 x=x1 y=t`,
   trapezoid: `av adj = val 25000
 gd maxAdj = */ 50000 w ss
 gd a = pin 0 adj maxAdj
@@ -3964,13 +4182,15 @@ gd x4 = +- r 0 x1
 gd il = */ wd3 a maxAdj
 gd it = */ hd3 a maxAdj
 gd ir = +- r 0 il
-path M l b L x2 t L x3 t L r b Z`,
+path M l b L x2 t L x3 t L r b Z
+ah xy gdRefX=adj minX=0 maxX=maxAdj x=x2 y=t`,
   triangle: `av adj = val 50000
 gd a = pin 0 adj 100000
 gd x1 = */ w a 200000
 gd x2 = */ w a 100000
 gd x3 = +- x1 wd2 0
-path M l b L x2 t L r b Z`,
+path M l b L x2 t L r b Z
+ah xy gdRefX=adj minX=0 maxX=100000 x=x2 y=t`,
   upArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 100000 h ss
@@ -3983,7 +4203,9 @@ gd x1 = +- hc 0 dx1
 gd x2 = +- hc dx1 0
 gd dy2 = */ x1 dy1 wd2
 gd y2 = +- y1 0 dy2
-path M l y1 L hc t L r y1 L x2 y1 L x2 b L x1 b L x1 y1 Z`,
+path M l y1 L hc t L r y1 L x2 y1 L x2 b L x1 b L x1 y1 Z
+ah xy gdRefX=adj1 minX=0 maxX=100000 x=x1 y=b
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=l y=y1`,
   upArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -4007,7 +4229,11 @@ gd y1 = */ ss a3 100000
 gd dy2 = */ h a4 100000
 gd y2 = +- b 0 dy2
 gd y3 = +/ y2 b 2
-path M l y2 L x2 y2 L x2 y1 L x1 y1 L hc t L x4 y1 L x3 y1 L x3 y2 L r y2 L r b L l b Z`,
+path M l y2 L x2 y2 L x2 y1 L x1 y1 L hc t L x4 y1 L x3 y1 L x3 y2 L r y2 L r b L l b Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x2 y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y1
+ah xy gdRefY=adj4 minY=0 maxY=maxAdj4 x=l y=y2`,
   upDownArrow: `av adj1 = val 50000
 av adj2 = val 50000
 gd maxAdj2 = */ 50000 h ss
@@ -4021,7 +4247,9 @@ gd x2 = +- hc dx1 0
 gd dy1 = */ x1 y2 wd2
 gd y1 = +- y2 0 dy1
 gd y4 = +- y3 dy1 0
-path M l y2 L hc t L r y2 L x2 y2 L x2 y3 L r y3 L hc b L l y3 L x1 y3 L x1 y2 Z`,
+path M l y2 L hc t L r y2 L x2 y2 L x2 y3 L r y3 L hc b L l y3 L x1 y3 L x1 y2 Z
+ah xy gdRefX=adj1 minX=0 maxX=100000 x=x1 y=y3
+ah xy gdRefY=adj2 minY=0 maxY=maxAdj2 x=l y=y2`,
   upDownArrowCallout: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -4046,7 +4274,11 @@ gd y4 = +- b 0 y1
 gd dy2 = */ h a4 200000
 gd y2 = +- vc 0 dy2
 gd y3 = +- vc dy2 0
-path M l y2 L x2 y2 L x2 y1 L x1 y1 L hc t L x4 y1 L x3 y1 L x3 y2 L r y2 L r y3 L x3 y3 L x3 y4 L x4 y4 L hc b L x1 y4 L x2 y4 L x2 y3 L l y3 Z`,
+path M l y2 L x2 y2 L x2 y1 L x1 y1 L hc t L x4 y1 L x3 y1 L x3 y2 L r y2 L r y3 L x3 y3 L x3 y4 L x4 y4 L hc b L x1 y4 L x2 y4 L x2 y3 L l y3 Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=x2 y=y1
+ah xy gdRefX=adj2 minX=0 maxX=maxAdj2 x=x1 y=t
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=r y=y1
+ah xy gdRefY=adj4 minY=0 maxY=maxAdj4 x=l y=y2`,
   uturnArrow: `av adj1 = val 25000
 av adj2 = val 25000
 av adj3 = val 25000
@@ -4084,7 +4316,12 @@ gd x7 = +- x6 dh2 0
 gd x4 = +- x9 0 bd
 gd x5 = +- x7 0 bd2
 gd cx = +/ th x7 2
-path M l b L l bd A bd bd cd2 cd4 L x4 t A bd bd 3cd4 cd4 L x9 y4 L r y4 L x8 y5 L x6 y4 L x7 y4 L x7 x3 A bd2 bd2 0 -5400000 L x3 th A bd2 bd2 3cd4 -5400000 L th b Z`,
+path M l b L l bd A bd bd cd2 cd4 L x4 t A bd bd 3cd4 cd4 L x9 y4 L r y4 L x8 y5 L x6 y4 L x7 y4 L x7 x3 A bd2 bd2 0 -5400000 L x3 th A bd2 bd2 3cd4 -5400000 L th b Z
+ah xy gdRefX=adj1 minX=0 maxX=maxAdj1 x=th y=b
+ah xy gdRefX=adj2 minX=0 maxX=25000 x=x6 y=b
+ah xy gdRefY=adj3 minY=0 maxY=maxAdj3 x=x6 y=y4
+ah xy gdRefX=adj4 minX=0 maxX=maxAdj4 x=bd y=t
+ah xy gdRefY=adj5 minY=minAdj5 maxY=100000 x=r y=y5`,
   verticalScroll: `av adj = val 12500
 gd a = pin 0 adj 25000
 gd ch = */ ss a 100000
@@ -4099,7 +4336,8 @@ gd y3 = +- b 0 ch
 gd y4 = +- b 0 ch2
 path(stroke=0) M ch2 b A ch2 ch2 cd4 -5400000 L ch2 y4 A ch4 ch4 cd4 -10800000 L ch y3 L ch ch2 A ch2 ch2 cd2 cd4 L x7 t A ch2 ch2 3cd4 cd2 L x6 ch L x6 y4 A ch2 ch2 0 cd4 Z M x4 ch2 A ch2 ch2 0 cd4 A ch4 ch4 cd4 cd2 Z
 path(fill=darkenLess, stroke=0) M x4 ch2 A ch2 ch2 0 cd4 A ch4 ch4 cd4 cd2 Z M ch y4 A ch2 ch2 0 3cd4 A ch4 ch4 3cd4 cd2 Z
-path(fill=none) M ch y3 L ch ch2 A ch2 ch2 cd2 cd4 L x7 t A ch2 ch2 3cd4 cd2 L x6 ch L x6 y4 A ch2 ch2 0 cd4 L ch2 b A ch2 ch2 cd4 cd2 Z M x3 t A ch2 ch2 3cd4 cd2 A ch4 ch4 cd4 cd2 L x4 ch2 M x6 ch L x3 ch M ch2 y3 A ch4 ch4 3cd4 cd2 L ch y4 M ch2 b A ch2 ch2 cd4 -5400000 L ch y3`,
+path(fill=none) M ch y3 L ch ch2 A ch2 ch2 cd2 cd4 L x7 t A ch2 ch2 3cd4 cd2 L x6 ch L x6 y4 A ch2 ch2 0 cd4 L ch2 b A ch2 ch2 cd4 cd2 Z M x3 t A ch2 ch2 3cd4 cd2 A ch4 ch4 cd4 cd2 L x4 ch2 M x6 ch L x3 ch M ch2 y3 A ch4 ch4 3cd4 cd2 L ch y4 M ch2 b A ch2 ch2 cd4 -5400000 L ch y3
+ah xy gdRefY=adj minY=0 maxY=25000 x=l y=ch`,
   wave: `av adj1 = val 12500
 av adj2 = val 0
 gd a1 = pin 0 adj1 20000
@@ -4132,7 +4370,9 @@ gd il = max x2 x6
 gd ir = min x5 x10
 gd it = */ h a1 50000
 gd ib = +- b 0 it
-path M x2 y1 C x3 y2 x4 y3 x5 y1 L x10 y4 C x8 y6 x7 y5 x6 y4 Z`,
+path M x2 y1 C x3 y2 x4 y3 x5 y1 L x10 y4 C x8 y6 x7 y5 x6 y4 Z
+ah xy gdRefY=adj1 minY=0 maxY=20000 x=l y=y1
+ah xy gdRefX=adj2 minX=-10000 maxX=10000 x=xAdj y=b`,
   wedgeEllipseCallout: `av adj1 = val -20833
 av adj2 = val 62500
 gd dxPos = */ w adj1 100000
@@ -4163,7 +4403,8 @@ gd il = +- hc 0 idx
 gd ir = +- hc idx 0
 gd it = +- vc 0 idy
 gd ib = +- vc idy 0
-path M xPos yPos L x1 y1 A wd2 hd2 stAng1 swAng Z`,
+path M xPos yPos L x1 y1 A wd2 hd2 stAng1 swAng Z
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=xPos y=yPos`,
   wedgeRectCallout: `av adj1 = val -20833
 av adj2 = val 62500
 gd dxPos = */ w adj1 100000
@@ -4200,7 +4441,8 @@ gd t7 = ?: dxPos yPos y1
 gd yr = ?: dz y1 t7
 gd t8 = ?: dyPos yPos b
 gd yb = ?: dz t8 b
-path M l t L x1 t L xt yt L x2 t L r t L r y1 L xr yr L r y2 L r b L x2 b L xb yb L x1 b L l b L l y2 L xl yl L l y1 Z`,
+path M l t L x1 t L xt yt L x2 t L r t L r y1 L xr yr L r y2 L r b L x2 b L xb yb L x1 b L l b L l y2 L xl yl L l y1 Z
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=xPos y=yPos`,
   wedgeRoundRectCallout: `av adj1 = val -20833
 av adj2 = val 62500
 av adj3 = val 16667
@@ -4242,5 +4484,6 @@ gd v2 = +- b 0 u1
 gd il = */ u1 29289 100000
 gd ir = +- r 0 il
 gd ib = +- b 0 il
-path M l u1 A u1 u1 cd2 cd4 L x1 t L xt yt L x2 t L u2 t A u1 u1 3cd4 cd4 L r y1 L xr yr L r y2 L r v2 A u1 u1 0 cd4 L x2 b L xb yb L x1 b L u1 b A u1 u1 cd4 cd4 L l y2 L xl yl L l y1 Z`,
+path M l u1 A u1 u1 cd2 cd4 L x1 t L xt yt L x2 t L u2 t A u1 u1 3cd4 cd4 L r y1 L xr yr L r y2 L r v2 A u1 u1 0 cd4 L x2 b L xb yb L x1 b L u1 b A u1 u1 cd4 cd4 L l y2 L xl yl L l y1 Z
+ah xy gdRefX=adj1 minX=-2147483647 maxX=2147483647 gdRefY=adj2 minY=-2147483647 maxY=2147483647 x=xPos y=yPos`,
 };

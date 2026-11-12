@@ -154,6 +154,7 @@
 .odx-content td > .tableWrapper + p:last-child:has(> br.ProseMirror-trailingBreak:only-child) { margin-top: 0 !important; margin-bottom: 0 !important; height: 0 !important; min-height: 0 !important; overflow: hidden; }
 .odx-content p:has(> img[style*="vertical-align: baseline"])::before { content: "\200b"; }
 .odx-content img.ProseMirror-selectednode { outline: 2px solid var(--odx-accent); }
+.odx-content img.ProseMirror-selectednode.odx-sized { outline: none; } /* (the handles' box drawn instead: the drawing's own box, not its picture with the room round it; none for a line, as in Word) */
 .odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
 .odx-all-markup .odx-content ins.odx-ins { color: #b5179e; text-decoration: underline; }
 .odx-content ins.odx-ins { text-decoration: none; }
@@ -548,6 +549,11 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-imgsize-w { left: 0; top: 50%; cursor: ew-resize; }
 /* A floating shape is moved by dragging it (imgresize.js). */
 .odx-imgsize.odx-imgsize-move { pointer-events: auto; cursor: move; touch-action: none; }
+/* A line: a handle at each end, no box. A shape's adjust handles: yellow, as Word's. */
+.odx-imgsize.odx-imgsize-line { outline: none; }
+.odx-imgsize-line > .odx-imgsize-h { display: none; }
+.odx-imgsize-end, .odx-imgsize-adj { position: absolute; width: 8px; height: 8px; margin: -5px 0 0 -5px; border: 1px solid var(--odx-accent); border-radius: 50%; background: #fff; pointer-events: auto; touch-action: none; cursor: crosshair; }
+.odx-imgsize-adj { background: #ffd400; border-color: #6b5800; cursor: pointer; z-index: 1; }
 /* Text box editing (txbxedit.js) */
 .odx-txbxedit .odx-hfedit-tag { top: calc(100% + 4px); }
 /* Show/Hide ¶ (marks.js): drawn over the text, taking no room, never printed. */
