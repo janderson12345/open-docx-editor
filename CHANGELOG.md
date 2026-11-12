@@ -23,6 +23,23 @@
   continuous section breaks before and after it, as Word's menu does; "One/Two/Three, from here on" applies from the
   cursor on (More Columns' "This point forward"). A break at a paragraph's start or end splits nothing. The menu's tick
   now shows the cursor's section, not the last one.
+- **Shapes.** Shapes are drawn from DrawingML's own geometry: guide formulas, adjust values, arcs and the shapes'
+  shaded faces (a cylinder's top, a cube's sides), for about 75 of Word's preset shapes (stars, arrows, flowchart
+  shapes, brackets and braces, block arcs, polygons...) and for custom geometry, where only 7 were drawn before
+  (others came out as rectangles). Each preset was checked against Word's own drawing of it. Lines get their
+  arrowheads (triangle, stealth, open arrow, diamond, oval; small to large), sized as Word's. Theme colours are mixed as
+  Word mixes them (a shade or tint in linear light, "darker 25%" on HSL luminance), a document without a theme takes the
+  current Office theme's colours, and text in a shape without a colour of its own takes the shape's font colour. An
+  inline line's arrowheads are drawn past its box as in Word, without moving the text.
+- **All 187 preset shapes**, from the definitions in the Office Open XML standard (ECMA-376), generated into
+  `src/ooxml/presets-data.js` by `tools/presets/build-presets.py`.
+- **SmartArt** is drawn, from the drawing Word saves with each diagram: its shapes, connectors and text (DrawingML
+  text: insets, anchoring, alignment, bullets, spacing, sizes and colours), colourful variations and styles. Checked
+  against Word's print of eight layouts (process, block list, organization chart, cycle, bullet list, Venn, pyramid,
+  block process): text within 2px. Not yet: gradient fills (drawn in their first colour), and a diagram Word lays out
+  again on opening rather than as saved (the pyramid's text colour).
+- **Insert > Shapes**: a gallery of the shapes, each inserted in line with the text, styled as Word's (accent 1 fill,
+  a darker outline), and a line or an arrow.
 - **AI writing in the editor** (Home > AI Writing, with the host's model as the `ai` option): rewrite the selection
   or the cursor's paragraph (shorter, longer, more formal or casual, spelling and grammar), summarize it or the
   document, or ask about it. Rewrites go in as tracked changes under `aiAuthor` ('AI'), only the edited words marked;

@@ -2,7 +2,7 @@
 // original package so every part we don't edit is written back unchanged.
 import { Node } from 'prosemirror-model';
 import { DocxPackage } from './package.js';
-import { REL_TYPES, NS, kids, parseXml, serializeXml } from './xml.js';
+import { REL_TYPES, NS, kids, parseXml, serializeXml, esc } from './xml.js';
 import { readDocument, readStory } from './reader.js';
 import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
 import { chunkKind } from './altchunk.js';
@@ -11,7 +11,7 @@ import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
 import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
-import { shapesSvg } from './shapes.js';
+import { shapesSvg, diagramSvg } from './shapes.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
 import { isEmf, emfToSvg } from './emf.js';
@@ -66,7 +66,8 @@ export class DocxSession {
         return rel && rel.external ? rel.rawTarget : null;
       },
       resolveChart: (rId, w, h) => this.chartUrl(this.pkg.relById(rId), w, h),
-      resolveShape: (el, w, h) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h),
+      resolveShape: (el, w, h, pad) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h, pad),
+      padShapes: true,
       resolveChunk: (rId) => this.chunkPart(rId),
       chunkList: (kind) => this.chunkList(kind),
       styleId: (id) => this.builtInId(id),
@@ -158,7 +159,7 @@ export class DocxSession {
   }
 
   /** Shapes and groups drawn as an SVG data URL; their pictures are inlined as data URLs. */
-  shapeUrl(drawing, relOf, width, height) {
+  shapeUrl(drawing, relOf, width, height, pad = 0) {
     this._dataUrls ||= new Map();
     const image = (rId) => {
       const rel = rId && relOf(rId);
@@ -183,11 +184,22 @@ export class DocxSession {
       // Tables in text boxes: their style's borders, cell margins and paragraph settings (the default table style when
       // they name none).
       const tableStyle = (id) => { const sid = id || this.styles.defaultTable; return (sid && resolveTableStyle(this.styles.styles, sid)) || null; };
-      const c = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph };
-      const svg = shapesSvg(drawing, c, width, height);
+      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph };
+      // SmartArt: the drawing Word saves beside the diagram's data (its data part's dsp:dataModelExt names it).
+      const ids = [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'relIds');
+      if (ids) {
+        const dm = relOf(ids.getAttributeNS(NS.r, 'dm'));
+        const data = dm && !dm.external && this.pkg.text(dm.target);
+        const ext = data && /<dsp:dataModelExt\b[^>]*\brelId="([^"]+)"/.exec(data)?.[1];
+        const part = ext && relOf(ext);
+        const xml = part && !part.external && this.pkg.text(part.target);
+        const svg = xml && diagramSvg(parseXml(xml).documentElement, sctx, width, height);
+        return svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      }
+      const svg = shapesSvg(drawing, sctx, width, height, pad);
       const src = svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       // (A text box grown to fit its text: its new height too.)
-      return src && c.grownTo ? { src, height: c.grownTo } : src;
+      return src && sctx.grownTo ? { src, height: sctx.grownTo } : src;
     } catch {
       return null;
     }
@@ -773,6 +785,33 @@ export class DocxSession {
       + '<mc:Fallback><w:pict><v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/></v:shapetype>'
       + `<v:shape id="Text Box ${id}" o:spid="_x0000_s${id}" type="#_x0000_t202" style="width:${pt(width)}pt;height:${pt(height)}pt" fillcolor="white [3201]" strokeweight=".5pt">`
       + `<v:textbox>${text}</v:textbox></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>`;
+    let src = null;
+    this._fragment(`<w:p>${xml}</w:p>`).descendants((n) => { if (src == null && n.type.name === 'image') src = n.attrs.src; });
+    return { xml, src };
+  }
+
+  /**
+   * A new shape in line with the text, as Word 2013+'s Insert > Shapes makes one: preset geometry `prst`, in the
+   * theme's colours (accent 1 fill, its darker shade as a 1pt outline; a line 1pt in accent 1, with an arrowhead at its
+   * end for `arrow`). Returns { xml, src }.
+   */
+  addShape(prst, width, height, { arrow = false } = {}) {
+    this._picId = (this._picId || 1000) + 1;
+    const id = this._picId;
+    const line = prst === 'line';
+    const ns = 'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+      + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+    const style = line
+      ? '<wps:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style>'
+      : '<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style>';
+    const ln = line ? `<a:ln w="12700">${arrow ? '<a:tailEnd type="triangle"/>' : ''}</a:ln>` : '';
+    const xml = `<w:r><w:drawing ${ns}><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`
+      + `<wp:docPr id="${id}" name="${line ? 'Straight Connector' : 'Shape'} ${id}"/><wp:cNvGraphicFramePr/>`
+      + '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/>'
+      + `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/></a:xfrm><a:prstGeom prst="${esc(prst)}"><a:avLst/></a:prstGeom>${ln}</wps:spPr>`
+      + style
+      + '<wps:bodyPr rot="0" spcFirstLastPara="0" vertOverflow="overflow" horzOverflow="overflow" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" numCol="1" spcCol="0" rtlCol="0" fromWordArt="0" anchor="ctr" anchorCtr="0" forceAA="0" compatLnSpc="1"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp><a:noAutofit/></wps:bodyPr>'
+      + '</wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
     let src = null;
     this._fragment(`<w:p>${xml}</w:p>`).descendants((n) => { if (src == null && n.type.name === 'image') src = n.attrs.src; });
     return { xml, src };
