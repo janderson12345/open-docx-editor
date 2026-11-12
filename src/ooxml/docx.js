@@ -12,6 +12,7 @@ import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
 import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
 import { shapesSvg, diagramSvg } from './shapes.js';
+import { PRESETS } from './presets.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
 import { isEmf, emfToSvg } from './emf.js';
@@ -751,6 +752,38 @@ export class DocxSession {
       .replace(/margin-left:(-?[\d.]+)pt/, (m, v) => `margin-left:${+(Number(v) + pt(dx)).toFixed(2)}pt`)
       .replace(/margin-top:(-?[\d.]+)pt/, (m, v) => `margin-top:${+(Number(v) + pt(dy)).toFixed(2)}pt`));
     return this._shapeNode(xml);
+  }
+
+  /**
+   * A shape with new adjust values (`values`: { adj1: 'val 25000' }, from geometry.js dragAdjust): its a:prstGeom's
+   * a:avLst written again with every value its preset has, in the preset's order (Word won't open a file whose list
+   * has only some of them), the others as they were or their defaults. Returns { xml, src, width, height, place }.
+   */
+  adjustShape(runXml, values) {
+    const at = /<a:prstGeom\b[^>]*?\bprst="([^"]+)"[^>]*?(?:\/>|>[\s\S]*?<\/a:prstGeom>)/.exec(runXml);
+    const def = at && PRESETS[at[1]];
+    if (!def) return null;
+    const own = Object.fromEntries([...at[0].matchAll(/<a:gd\b[^>]*\bname="([^"]+)"[^>]*\bfmla="([^"]+)"/g)].map((m) => [m[1], m[2]]));
+    const all = { ...own, ...values };
+    const gds = def.av.map(([name, fmla]) => `<a:gd name="${esc(name)}" fmla="${esc(all[name] ?? fmla)}"/>`).join('');
+    const geom = `${/^<a:prstGeom\b[^>]*?(?=\/?>)/.exec(at[0])[0]}><a:avLst>${gds}</a:avLst></a:prstGeom>`;
+    return this._shapeNode(runXml.slice(0, at.index) + geom + runXml.slice(at.index + at[0].length));
+  }
+
+  /**
+   * A line (or any shape) at a new size and direction: `width` x `height` px, flipped (a:xfrm flipH/flipV) as given, as
+   * dragging one of a line's ends makes it; moved by (dx, dy) px too when it floats. Returns as resizeShape does.
+   */
+  lineShape(runXml, width, height, flipH, flipV, dx = 0, dy = 0) {
+    const sized = this.resizeShape(runXml, width, height);
+    if (!sized) return null;
+    const flip = (xml) => xml.replace(/(<wps:spPr\b[^>]*>\s*<a:xfrm)\b([^>]*)>/, (m, a, attrs) => {
+      const rest = attrs.replace(/\s+flip[HV]="[^"]*"/g, '');
+      return `${a}${rest}${flipH ? ' flipH="1"' : ''}${flipV ? ' flipV="1"' : ''}>`;
+    });
+    let out = this._shapeNode(flip(sized.xml));
+    if (out && (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5)) out = this.moveShape(out.xml, dx, dy) || out;
+    return out;
   }
 
   /** A shape's run XML read again: its drawing, size and placement as the reader makes them. */

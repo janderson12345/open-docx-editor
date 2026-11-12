@@ -65,10 +65,12 @@ function stackDrawings(content) {
 }
 
 /** A header or footer part (w:hdr / w:ftr) as a doc. */
-export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null } = {}, sectPrXml = null) {
+export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, padShapes = false } = {}, sectPrXml = null) {
   const root = xmlDoc.documentElement;
   const rootNs = nsDecls(root);
-  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, xml: (el) => outerXml(el, rootNs) };
+  // (padShapes: room drawn round an inline shape's arrowheads, as readDocument; for a shape inserted or changed in the
+  // body, read as a story, so it's drawn as it will be when the document is opened again.)
+  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, padShapes, xml: (el) => outerXml(el, rootNs) };
   // (A story read for the body (a shape moved or resized there): its drawings placed and sized on the body's page.)
   if (sectPrXml) { ctx.pages = [pageBox(parseXml(sectPrXml).documentElement)]; ctx.sect = 0; }
   const content = readBlocks(kids(root), ctx);

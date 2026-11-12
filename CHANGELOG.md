@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Resizing shapes as in Word.** A shape's corner handles now resize it freely, as Word's do (Shift keeps its
+  proportions, as does a shape locked to them; pictures keep theirs, as before). Its yellow handles change its adjust
+  values (an arrow's head and shaft, a rounded rectangle's corners, a callout's pointer, a block arc's angles: each of
+  the standard's handles for all 187 preset shapes), the shape redrawn as it's dragged. A line has a handle at each end
+  instead of eight round a box: dragging one moves that end, the line turning to follow (Shift: at 15-degree steps), a
+  floating line's place moving with it. Each is one undoable step, saved as Word saves it (checked by opening the saved
+  files in Word and comparing its print with ours).
+- **A shape drawn past its box**, as a callout's pointer below it, is now drawn whole in line with the text (it was cut
+  off at the box); it takes the same room on its line as before.
+- **Fixed: a shape inserted with Insert > Shapes and given an arrowhead** had its arrowhead cut off at its box until
+  the document was opened again.
+
 ## 0.7.8 (2026-11-12)
 
 - **Aptos stand-ins look more like Aptos.** Where a computer lacks Aptos (an Office cloud font browsers can't use), its

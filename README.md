@@ -159,7 +159,9 @@ fs.writeFileSync('out.docx', s.save());
 - **Wrap Text** (Layout > Wrap Text, or a picture's context menu): In Line with Text, Square, Tight, Through, Top and
   Bottom, Behind Text and In Front of Text, for a picture or shape, saved as Word writes it.
 - **Shapes**: Insert > Shapes offers Word's shapes, a line and an arrow, each added in line with the text in the theme's
-  colours.
+  colours. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
+  change it as Word's do (an arrow's head, a rounded rectangle's corners, a callout's pointer); a line has a handle at
+  each end instead (Shift: at 15-degree steps). Saved in the shape's own drawing XML, one undoable step each.
 - **Text boxes**: Insert > Text Box adds one in line with the text; double-click one to edit its text; click away (or Escape) to put it back. Both the shape
   and the copy Word keeps for older versions are updated. In a group of shapes, the box you double-click opens.
   Select one and drag a handle to resize it (its text wraps again), or drag a floating one to move it; from the

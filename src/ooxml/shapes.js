@@ -548,5 +548,31 @@ export function shapesPad(drawing) {
     const k = { sm: 2, med: 3, lg: 5 };
     pad = Math.max(pad, w / 2 + Math.max(...ends.map((e) => Math.max(w, 8 / 3) * Math.max(k[e.getAttribute('w')] || 3, k[e.getAttribute('len')] || 3))));
   }
+  // A single shape drawn past its box (a callout's pointer, or one dragged out by its adjust handle): room for that
+  // too, only when it's more than a pixel out (outlines just inside or on the box keep none, as above).
+  const data = desc(drawing, 'graphicData');
+  const sp = data && [...data.childNodes].find((n) => n.localName === 'wsp');
+  const spPr = sp && child(sp, 'spPr');
+  const ext = spPr && desc(spPr, 'ext');
+  if (ext) {
+    const w = px(ext.getAttribute('cx')), h = px(ext.getAttribute('cy'));
+    const out = w && h ? Math.max(0, ...geometry(spPr, w, h).map((q) => overflow(q.d, w, h))) : 0;
+    if (out > 1) {
+      const ln = child(spPr, 'ln');
+      pad = Math.max(pad, out + (ln?.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
+    }
+  }
   return Math.ceil(pad);
+}
+
+/** How far an SVG path (as geometry.js writes them) goes outside a w x h box, by its points (an arc by its ends). */
+function overflow(d, w, h) {
+  let out = 0;
+  const see = (x, y) => { out = Math.max(out, -x, -y, x - w, y - h); };
+  for (const [, k, args] of d.matchAll(/([MLCQA])([^MLCQAZ]*)/g)) {
+    const n = args.trim().split(/[\s,]+/).filter(Boolean).map(Number);
+    if (k === 'A') { if (n.length >= 7) see(n[5], n[6]); continue; }
+    for (let i = 0; i + 1 < n.length; i += 2) see(n[i], n[i + 1]);
+  }
+  return out;
 }

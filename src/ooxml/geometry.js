@@ -115,6 +115,70 @@ export function geometryPaths(def, w, h, adjust = {}, scale = 1) {
   });
 }
 
+// --- Adjust handles (a:ahLst): the yellow dots that change a shape's adjust values ------------------------------------
+
+/**
+ * Where a w x h shape's adjust handles are (in its own units, as w and h): [{ x, y }], one for each of the definition's
+ * handles (def.ah: { kind: 'xy'|'polar', gdRefX, minX, ..., x, y }), with the shape's own adjust values.
+ */
+export function adjustHandles(def, w, h, adjust = {}) {
+  if (!def?.ah?.length) return [];
+  const g = guides(def, w, h, adjust);
+  const val = (a) => (a in g ? g[a] : Number(a) || 0);
+  return def.ah.map((a) => ({ x: val(a.x), y: val(a.y) }));
+}
+
+/**
+ * The adjust values that put handle `i` of a w x h shape nearest (x, y) (its own units), within the handle's limits:
+ * { name: 'val N' } for the values it moves (a:avLst's gd fmla). A handle's position is a guide computed from the
+ * values, which can't in general be solved backwards, so each value is searched for (within its limits, the others
+ * held), the closest found then narrowed down; twice over, for a handle moving two that interact (a polar handle's
+ * angle and radius).
+ */
+export function dragAdjust(def, w, h, adjust, i, x, y) {
+  const a = def?.ah?.[i];
+  if (!a) return {};
+  const cur = { ...adjust };
+  const valueOf = (name) => { const g = guides(def, w, h, cur); return g[name]; };
+  const limit = (f, fallback) => { if (f == null) return fallback; const g = guides(def, w, h, cur); return f in g ? g[f] : Number(f); };
+  const refs = a.kind === 'xy'
+    ? [[a.gdRefX, a.minX, a.maxX], [a.gdRefY, a.minY, a.maxY]]
+    : [[a.gdRefAng, a.minAng, a.maxAng], [a.gdRefR, a.minR, a.maxR]];
+  const live = refs.filter(([ref]) => ref);
+  const miss = (name, v) => {
+    cur[name] = `val ${v}`;
+    const g = guides(def, w, h, cur);
+    const px = a.x in g ? g[a.x] : Number(a.x) || 0, py = a.y in g ? g[a.y] : Number(a.y) || 0;
+    // (An xy handle's value moves it one way only: measured that way, so the other doesn't pull it.)
+    if (a.kind === 'xy') return name === a.gdRefX ? Math.abs(px - x) : Math.abs(py - y);
+    return Math.hypot(px - x, py - y);
+  };
+  for (let round = 0; round < (live.length > 1 ? 3 : 1); round++) {
+    for (const [ref, minF, maxF] of live) {
+      const now = valueOf(ref) ?? 0;
+      // (Unlimited values, as a callout's pointer, searched within a wide span around where they are.)
+      let lo = Math.max(limit(minF, -1e6), now - 2e6), hi = Math.min(limit(maxF, 1e6), now + 2e6);
+      if (!(hi >= lo)) [lo, hi] = [hi, lo];
+      const N = 96;
+      let best = lo, bestMiss = Infinity;
+      for (let k = 0; k <= N; k++) {
+        const v = lo + ((hi - lo) * k) / N;
+        const m = miss(ref, v);
+        if (m < bestMiss) { bestMiss = m; best = v; }
+      }
+      // Narrowed down around the best (golden-section search on the miss).
+      let s0 = Math.max(lo, best - (hi - lo) / N), s1 = Math.min(hi, best + (hi - lo) / N);
+      for (let k = 0; k < 40 && s1 - s0 > 0.5; k++) {
+        const m1 = s0 + (s1 - s0) * 0.382, m2 = s0 + (s1 - s0) * 0.618;
+        if (miss(ref, m1) <= miss(ref, m2)) s1 = m2; else s0 = m1;
+      }
+      const v = Math.round((s0 + s1) / 2);
+      cur[ref] = `val ${miss(ref, v) <= bestMiss + 1e-6 ? v : Math.round(best)}`;
+    }
+  }
+  return Object.fromEntries(live.map(([ref]) => [ref, cur[ref]]));
+}
+
 // --- a:custGeom / a definition's XML, read into the same form ---------------------------------------------------------
 
 const kidsOf = (el) => (el ? [...el.childNodes].filter((n) => n.nodeType === 1) : []);
@@ -142,7 +206,11 @@ export function readGeometry(el) {
       }
     }).filter(Boolean),
   }));
-  return { av: gds(kidOf(el, 'avLst')), gd: gds(kidOf(el, 'gdLst')), path };
+  const ah = kidsOf(kidOf(el, 'ahLst')).filter((n) => n.localName === 'ahXY' || n.localName === 'ahPolar').map((n) => {
+    const pos = kidOf(n, 'pos');
+    return { kind: n.localName === 'ahXY' ? 'xy' : 'polar', ...Object.fromEntries([...n.attributes].map((at) => [at.name, at.value])), x: pos?.getAttribute('x') ?? 0, y: pos?.getAttribute('y') ?? 0 };
+  });
+  return { av: gds(kidOf(el, 'avLst')), gd: gds(kidOf(el, 'gdLst')), path, ah };
 }
 
 /** A shape's own adjust values (its a:prstGeom or a:custGeom's a:avLst): { name: fmla }. */

@@ -4,6 +4,7 @@
 //   av NAME = FORMULA        an adjust value's default (a shape's own a:avLst replaces it)
 //   gd NAME = FORMULA        a guide
 //   path[(fill=none|darken|darkenLess|lighten|lightenLess, stroke=0, w=N, h=N)] COMMANDS
+//   ah xy|polar KEY=VALUE... an adjust handle (a:ahXY/a:ahPolar's attributes, and x= y= its position's guides)
 // where COMMANDS are M x y, L x y, A wR hR stAng swAng, C x1 y1 x2 y2 x y, Q x1 y1 x y and Z, each value a guide's name
 // or a number. geometry.js draws them.
 
@@ -13,12 +14,14 @@ const ARGS = { M: 2, L: 2, A: 4, C: 6, Q: 4, Z: 0 };
 
 /** A definition in the form above, as geometry.js reads one: { av, gd, path }. */
 function def(text) {
-  const out = { av: [], gd: [], path: [] };
+  const out = { av: [], gd: [], path: [], ah: [] };
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
     const m = /^(av|gd)\s+(\S+)\s*=\s*(.+)$/.exec(line);
     if (m) { out[m[1]].push([m[2], m[3].trim()]); continue; }
+    const h = /^ah\s+(xy|polar)\s+(.*)$/.exec(line);
+    if (h) { out.ah.push({ kind: h[1], ...Object.fromEntries(h[2].split(/\s+/).map((kv) => kv.split('='))) }); continue; }
     const p = /^path(?:\(([^)]*)\))?\s+(.*)$/.exec(line);
     if (!p) continue;
     const opts = Object.fromEntries((p[1] || '').split(',').filter(Boolean).map((kv) => kv.split('=').map((s) => s.trim())));
