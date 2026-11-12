@@ -15,7 +15,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
-import { storyDrawer, hfNodes } from './hfstory.js';
+import { storyDrawer, hfNodes, styleStoryTables } from './hfstory.js';
 import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
@@ -139,6 +139,7 @@ export function createPages(view, session, { sheet, scope }) {
     el.dataset.kind = kind;
     el.dataset.id = note.id;
     el.append(serializer.serializeFragment(note.doc.content));
+    styleStoryTables(session, note.doc, el, { note: true }); // (a table in a note: its columns, borders and shading, as in the body)
     wrapText(el);
     el.querySelectorAll(`[data-kind="${kind}Ref"]`).forEach((m) => { m.textContent = noteLabel(kind, n); });
     return el;
@@ -154,7 +155,13 @@ export function createPages(view, session, { sheet, scope }) {
       sheet.append(box);
       const top = box.getBoundingClientRect().top;
       noteHeights.set(note.doc, box.getBoundingClientRect().height);
-      noteBounds.set(note.doc, [...el.children].map((c) => c.getBoundingClientRect().bottom - top).filter((b) => b > 0));
+      // (A table's rows each end a place it can be cut too: a note holding a long table goes on on the next page from
+      // the row that doesn't fit, as in Word.)
+      noteBounds.set(note.doc, [...el.children].flatMap((c) => {
+        const t = c.tagName === 'TABLE' ? c : c.querySelector(':scope > table');
+        const rows = t && t.tBodies[0] ? [...t.tBodies[0].rows] : [];
+        return (rows.length ? rows : [c]).map((e) => e.getBoundingClientRect().bottom - top);
+      }).filter((b) => b > 0));
       box.remove();
     }
     return noteHeights.get(note.doc);
@@ -174,8 +181,12 @@ export function createPages(view, session, { sheet, scope }) {
       const items = [...carry, ...(notesOn.get(p) || [])];
       if (!items.length) continue;
       const total = items.reduce((t, r) => t + r.h, 0) - skip;
-      const room = Math.max(40, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
+      let room = Math.max(40, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
       if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
+      // Too long for the page: in Word it takes all the room under the text with its reference (that text's page ends
+      // there), not only what the page keeps for its body.
+      const ats = (notesOn.get(p) || []).map((r) => r.at).filter((v) => v != null);
+      if (ats.length) room = Math.max(40, Math.min(room, pageTop(p) + pageH(p) - marginsAt(p).bottom - Math.max(...ats) - NOTE_SEP));
       // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
       let at = 0, cut = 0;
       for (const r of items) {
@@ -198,11 +209,13 @@ export function createPages(view, session, { sheet, scope }) {
   };
   let blockNotes = new Map(); // block index -> [{ kind, id, n, h }]
   const placed = new Map(); // note key -> page
-  const reserveNotes = (i, p) => {
+  // (`at`: where the block holding the references ends, when known: a note too long for its page has the room below it.)
+  const reserveNotes = (i, p, at = null) => {
     for (const r of blockNotes.get(i) || []) {
       const key = r.kind + r.id;
       if (placed.has(key)) continue;
       placed.set(key, p);
+      r.at = at;
       if (!notesOn.has(p)) notesOn.set(p, []);
       notesOn.get(p).push(r);
       sumNotes(p);
@@ -1616,7 +1629,8 @@ export function createPages(view, session, { sheet, scope }) {
         if (e.moved != null) { shift += e.moved; top += e.moved; p = pageOf(top); }
         if (e.again) balanceAgain = true;
       }
-      reserveNotes(b.i, p);
+      // (Below it, its space after and the note separator's line as Word draws it, when a note has to start under it.)
+      reserveNotes(b.i, p, b.bottom + shift + spaceAfter(b.node) + 16);
       // A new section's margins: from this page if it starts one, else from the next.
       while (margins.length > 1 && margins[margins.length - 1][0] > p + 1) margins.pop(); // left by an earlier pass over these blocks
       const sect = k > 0 && sectEnds.get(blocks[k - 1].i);
