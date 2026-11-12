@@ -181,6 +181,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
             const inked = textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter;
             if (wrap && cur.x + inked > right + 0.5 && cur.pieces.length) { newLine(); cur = lines[lines.length - 1]; }
             const last = cur.pieces[cur.pieces.length - 1];
+            cur.one = Math.max(cur.one || 0, sizePx * lineFactor(font)); // (each line as tall as its own text: Word's)
             if (last && last.open === open && last.end === cur.x) last.text += word;
             else cur.pieces.push({ x: cur.x, text: word, open });
             cur.pieces[cur.pieces.length - 1].ink = cur.x + inked;
@@ -193,11 +194,18 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     const sizePx = maxSize || (markSz * 4) / 3;
     const line = Number(sp('line')) || 0;
     const rule = lineRule;
-    // Each font's own single line (Calibri 1.22em, Times New Roman 1.15em), as in the body.
-    const one = sizePx * lineF;
-    const lineH = line && rule === 'exact' ? line / TWIPS_PER_PX : line && rule === 'atLeast' ? Math.max(line / TWIPS_PER_PX, one) : one * (line ? line / 240 : 1);
-    y += (Number(sp('before')) || 0) / TWIPS_PER_PX;
+    // Each font's own single line (Calibri 1.22em, Times New Roman 1.15em), as in the body, each line its own text's.
+    const heightOf = (o) => (line && rule === 'exact' ? line / TWIPS_PER_PX : line && rule === 'atLeast' ? Math.max(line / TWIPS_PER_PX, o) : o * (line ? line / 240 : 1));
+    // The space between paragraphs is the larger of the one's after and the next's before, as Word sets a text box's
+    // (none between two of the same style that say so, w:contextualSpacing).
+    const before = (Number(sp('before')) || 0) / TWIPS_PER_PX;
+    const ctx2 = wa(child(pPr, 'contextualSpacing'), 'val');
+    const contextual = child(pPr, 'contextualSpacing') ? !/^(0|false|off)$/.test(ctx2 || '') : !!st.pPr.contextualSpacing;
+    if (contextual && prevStyle === (sid || '')) { y -= prevAfter; }
+    else y += Math.max(0, before - prevAfter);
     for (const ln of lines) {
+      const one = ln.one || sizePx * lineF;
+      const lineH = heightOf(one);
       // Baseline: the font's ascent (0.778 of its line: 0.95em of Calibri's 1.22) below the line top, centred in an exact
       // line's extra room; a multiple line's extra goes below its text, as in the body (Word's PDF of a text box at
       // 1.08 lines: its first baseline 0.7px higher than centred).
@@ -212,8 +220,12 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
         out.push(`<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}" xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`);
       }
     }
-    y += (Number(sp('after')) || 0) / TWIPS_PER_PX;
+    const after = (Number(sp('after')) || 0) / TWIPS_PER_PX;
+    y += after;
+    prevAfter = after;
+    prevStyle = sid || '';
   };
+  let prevAfter = 0, prevStyle = null;
   // A table: its grid's columns from L, each row as tall as its tallest cell, the cells' paragraphs (and tables) laid
   // out in them with the cell margins, and the borders the table or its style gives drawn as lines.
   const layTable = (tbl, L, R) => {
@@ -244,6 +256,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
         if (merge === 'cont') continue; // (its text is the cell above's)
         const x0 = xs[Math.min(c, grid.length)], x1 = xs[Math.min(c + span, grid.length)];
         y = top + mT;
+        prevAfter = 0; prevStyle = null;
         layBlocks(tc, x0 + mL, x1 - mR, ts || {});
         const k = merge === 'restart' ? last(j, c) : j;
         if (k > j) owed.set(k, Math.max(owed.get(k) ?? 0, y + mB));
@@ -251,6 +264,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       }
       y = Math.max(bottom, owed.get(j) ?? 0);
     });
+    prevAfter = 0; prevStyle = null;
     const x0 = xs[0], x1 = xs[xs.length - 1];
     const ln = (a, b, c2, d) => out.push(`<path d="M${a.toFixed(1)} ${b.toFixed(1)}L${c2.toFixed(1)} ${d.toFixed(1)}" stroke="#000" stroke-width="0.67" fill="none"/>`);
     if (sides.includes('top')) ln(x0, top0, x1, top0);
