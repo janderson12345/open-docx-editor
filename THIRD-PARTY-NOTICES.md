@@ -16,9 +16,16 @@ under its own license, all of them permissive. Their license texts are in each p
 | pako | MIT AND Zlib | (pdf-lib's and utif's compression) |
 | tslib | 0BSD | (pdf-lib's helpers) |
 | yjs, y-prosemirror, lib0, isomorphic.js | MIT | co-editing (`open-docx-editor/collab`) |
+| hyphen | ISC (its English patterns: TeX's hyph-en-us, free to copy) | automatic hyphenation, where the browser has none of its own |
 
 The packages used only to develop and test it (`devDependencies` in `package.json`: esbuild, Playwright, axe-core,
 the `docx` package, mammoth, pdf.js and others) are not part of what it ships.
+
+## The Office Open XML standard
+
+`src/ooxml/presets-data.js` holds the preset shapes' geometry (their guides and paths) from the Office Open XML
+standard, ECMA-376 Part 1 (5th edition), file `presetShapeDefinitions.xml`, copyright Ecma International, which
+publishes the standard free of charge for anyone to use; `tools/presets/build-presets.py` makes the file from it.
 
 ## Fonts and Microsoft material
 

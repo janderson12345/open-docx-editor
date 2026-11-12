@@ -1,0 +1,46 @@
+name: Publish
+
+# Publishes the package to npm when a GitHub release is published (or by hand, for a tag that is already released),
+# through npm's trusted publishing: npm trusts this workflow by its OpenID Connect identity, so no npm token is stored
+# anywhere, and the package gets a provenance statement linking it to this repository and commit.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag to publish (for example v0.7.7)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      # (Node 24's npm, 11.5.1 or later, publishes with trusted publishing.)
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      # The version published is the tag's (v0.7.7 publishes 0.7.7): a mismatch stops it.
+      - name: Check the version matches the tag
+        run: |
+          tag="${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}"
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then echo "Tag $tag but package.json says $version"; exit 1; fi
+      # (prepublishOnly builds dist/.)
+      - run: npm publish --access public
