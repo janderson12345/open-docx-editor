@@ -125,6 +125,15 @@ export function shiftFor(el, host, anchored = false) {
   }
   // A line taller than its text: the browser puts half the extra height above the text. Word puts all of it above
   // for at-least spacing, and none for multiple spacing (double-spaced text sits at its line's top).
+  // A picture in the first line taller than its text: the line's top is the picture's, its baseline the picture's foot,
+  // in the browser as in Word, with no extra spacing above the text to move (a 0.33in picture in a double-spaced line
+  // printed 8px high: the generated documents, tools/doc-generator).
+  const tr = text.parentElement.getBoundingClientRect();
+  for (const img of el.querySelectorAll('img')) {
+    if (/position:\s*absolute|float:/.test(img.getAttribute('style') || '')) continue;
+    const r = img.getBoundingClientRect();
+    if (r.height > tr.height + 1 && r.bottom > tr.top && r.top < tr.bottom) return 0;
+  }
   const ncs = fs === parseFloat(rcs.fontSize) && family === known(rcs) ? rcs : pcs;
   const natural = (parseFloat(ncs.getPropertyValue('--odx-lh')) || 1.17) * fs;
   const room = Math.max(0, parseFloat(lineHeightOf(pcs)) - natural);
