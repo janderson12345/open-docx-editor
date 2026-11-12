@@ -6,7 +6,7 @@ import { REL_TYPES, NS, kids, parseXml, serializeXml } from './xml.js';
 import { readDocument, readStory } from './reader.js';
 import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
 import { chunkKind } from './altchunk.js';
-import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle } from './styles.js';
+import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle, resolveTableStyle } from './styles.js';
 import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
@@ -177,10 +177,13 @@ export class DocxSession {
         const st = sid ? resolveStyle(this.styles.styles, sid) : { pPr: {}, rPr: {} };
         const rPr = { ...this.styles.defaults.rPr, ...st.rPr };
         const font = rPr.font || (rPr.themeFont && this.theme[rPr.themeFont.startsWith('major') ? 'major' : 'minor']) || this.theme.minor;
-        return { pPr: { ...this.styles.defaults.pPr, ...st.pPr }, rPr, font };
+        return { pPr: { ...this.styles.defaults.pPr, ...st.pPr }, rPr, font, own: st.pPr }; // (own: the style's alone, for a table style to go under)
       };
       const char = (id) => (id ? resolveStyle(this.styles.styles, id).rPr : {});
-      const c = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme };
+      // Tables in text boxes: their style's borders, cell margins and paragraph settings (the default table style when
+      // they name none).
+      const tableStyle = (id) => { const sid = id || this.styles.defaultTable; return (sid && resolveTableStyle(this.styles.styles, sid)) || null; };
+      const c = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph };
       const svg = shapesSvg(drawing, c, width, height);
       const src = svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       // (A text box grown to fit its text: its new height too.)

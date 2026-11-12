@@ -119,12 +119,16 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   const wrap = bodyPr?.getAttribute('wrap') !== 'none';
   const out = [];
   let y = t;
-  // (Paragraphs in block content controls too: a cover page's title and author boxes hold theirs in w:sdt.)
-  const paras = (el) => els(el).flatMap((n) => (n.localName === 'p' ? [n] : n.localName === 'sdt' ? paras(child(n, 'sdtContent')) : []));
-  for (const p of paras(desc(txbx, 'txbxContent'))) {
+  // One paragraph between x = L and R (`tbl`: the table style round it, whose paragraph settings beat Normal's).
+  const layPara = (p, L, R, tbl) => {
+    const l = L; // (tab stops count from the paragraph's box)
     const pPr = child(p, 'pPr');
     // The paragraph's style (and the document defaults) under its own formatting.
-    const st = ctx.para ? ctx.para(wa(child(pPr, 'pStyle'), 'val')) : { pPr: {}, rPr: {}, font: font0 };
+    const sid = wa(child(pPr, 'pStyle'), 'val');
+    const st0 = ctx.para ? ctx.para(sid) : { pPr: {}, rPr: {}, font: font0 };
+    // (In a table, its style's paragraph settings go over Normal's and the document defaults, under any other style's own.)
+    const normal = !sid || sid === ctx.normal;
+    const st = tbl ? { ...st0, pPr: normal ? { ...st0.pPr, ...tbl.pPr } : { ...st0.pPr, ...tbl.pPr, ...(st0.own || {}) }, rPr: normal ? { ...st0.rPr, ...tbl.rPr } : st0.rPr } : st0;
     const markSz = Number(wa(desc(child(pPr, 'rPr'), 'sz'), 'val')) / 2 || (st.rPr.size ? st.rPr.size / 2 : 11);
     const spacing = child(pPr, 'spacing');
     const sp = (k) => (wa(spacing, k) != null ? Number(wa(spacing, k)) : st.pPr[k]);
@@ -136,7 +140,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     const indR = wa(ind, 'right') ?? wa(ind, 'end') ?? st.pPr.indRight ?? 0;
     const indF = wa(ind, 'firstLine') != null || wa(ind, 'hanging') != null ? (Number(wa(ind, 'firstLine')) || 0) - (Number(wa(ind, 'hanging')) || 0) : st.pPr.indFirst ?? 0;
     const left = l + twipsToPx(indL);
-    const right = w - r - twipsToPx(indR);
+    const right = R - twipsToPx(indR);
     const first = left + twipsToPx(indF);
     // Lines of placed pieces: { x, ink (where its last visible glyph ends), text, open (its tspan's start tag) }.
     const lines = [{ pieces: [], x: first }];
@@ -209,7 +213,63 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       }
     }
     y += (Number(sp('after')) || 0) / TWIPS_PER_PX;
+  };
+  // A table: its grid's columns from L, each row as tall as its tallest cell, the cells' paragraphs (and tables) laid
+  // out in them with the cell margins, and the borders the table or its style gives drawn as lines.
+  const layTable = (tbl, L, R) => {
+    const tblPr = child(tbl, 'tblPr');
+    const ts = ctx.tableStyle ? ctx.tableStyle(wa(child(tblPr, 'tblStyle'), 'val')) : null;
+    const grid = els(child(tbl, 'tblGrid')).filter((n) => n.localName === 'gridCol').map((g) => twipsToPx(wa(g, 'w') || 0));
+    if (!grid.length) return;
+    const xs = [L];
+    for (const g of grid) xs.push(xs[xs.length - 1] + g);
+    const marEl = child(tblPr, 'tblCellMar');
+    const mar = (side, d) => { const e = child(marEl, side) || child(marEl, side === 'left' ? 'start' : side === 'right' ? 'end' : side); return e ? twipsToPx(wa(e, 'w') || 0) : ts?.cellMar?.[side] ?? d; };
+    const mL = mar('left', 7.2), mR = mar('right', 7.2), mT = mar('top', 0), mB = mar('bottom', 0);
+    const bd = child(tblPr, 'tblBorders');
+    const lined = (side) => { const e = child(bd, side); if (e) return !/^(nil|none)$/.test(wa(e, 'val') || ''); const t = ts?.borders?.[side]; return !!t && !/^(nil|none)$/.test(t.val || ''); };
+    const sides = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].filter(lined);
+    const rows = els(tbl).filter((n) => n.localName === 'tr');
+    // Each row's cells with their grid columns, and how far down each cell merged down (w:vMerge) reaches.
+    const cellsOf = rows.map((tr) => { let c = 0; return els(tr).filter((n) => n.localName === 'tc').map((tc) => { const tcPr = child(tc, 'tcPr'); const span = Number(wa(child(tcPr, 'gridSpan'), 'val')) || 1; const vm = child(tcPr, 'vMerge'); const cell = { tc, c, span, merge: vm ? (wa(vm, 'val') === 'restart' ? 'restart' : 'cont') : null }; c += span; return cell; }); });
+    const last = (j, c) => { let k = j; while (k + 1 < rows.length && cellsOf[k + 1].some((x) => x.c === c && x.merge === 'cont')) k++; return k; };
+    const top0 = y;
+    const rowTops = [];
+    const owed = new Map(); // row index -> the lowest a cell merged down to it from above reaches
+    rows.forEach((tr, j) => {
+      const top = y;
+      rowTops.push(top);
+      let bottom = top;
+      for (const { tc, c, span, merge } of cellsOf[j]) {
+        if (merge === 'cont') continue; // (its text is the cell above's)
+        const x0 = xs[Math.min(c, grid.length)], x1 = xs[Math.min(c + span, grid.length)];
+        y = top + mT;
+        layBlocks(tc, x0 + mL, x1 - mR, ts || {});
+        const k = merge === 'restart' ? last(j, c) : j;
+        if (k > j) owed.set(k, Math.max(owed.get(k) ?? 0, y + mB));
+        else bottom = Math.max(bottom, y + mB);
+      }
+      y = Math.max(bottom, owed.get(j) ?? 0);
+    });
+    const x0 = xs[0], x1 = xs[xs.length - 1];
+    const ln = (a, b, c2, d) => out.push(`<path d="M${a.toFixed(1)} ${b.toFixed(1)}L${c2.toFixed(1)} ${d.toFixed(1)}" stroke="#000" stroke-width="0.67" fill="none"/>`);
+    if (sides.includes('top')) ln(x0, top0, x1, top0);
+    if (sides.includes('bottom')) ln(x0, y, x1, y);
+    if (sides.includes('left')) ln(x0, top0, x0, y);
+    if (sides.includes('right')) ln(x1, top0, x1, y);
+    if (sides.includes('insideH')) for (const t of rowTops.slice(1)) ln(x0, t, x1, t);
+    if (sides.includes('insideV')) for (const x of xs.slice(1, -1)) ln(x, top0, x, y);
+  };
+  // A run of blocks: paragraphs, tables, and the paragraphs of block content controls (a cover page's title and author
+  // boxes hold theirs in w:sdt).
+  function layBlocks(el, L, R, tbl) {
+    for (const n of els(el)) {
+      if (n.localName === 'p') layPara(n, L, R, tbl);
+      else if (n.localName === 'tbl') layTable(n, L, R);
+      else if (n.localName === 'sdt') layBlocks(child(n, 'sdtContent'), L, R, tbl);
+    }
   }
+  layBlocks(desc(txbx, 'txbxContent'), l, w - r, null);
   ctx.textEnd = y + ins('bIns', 4.8); // (where the text ends, for a box that grows to fit it: shapeSvg)
   return out.join('');
 }
