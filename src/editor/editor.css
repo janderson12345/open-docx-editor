@@ -314,6 +314,9 @@ td[data-odx-phantom] > * { display: none; }
 .odx-txbxedit .odx-hf { position: static; opacity: 1; }
 /* Superscript and subscript text doesn't make its line taller in Word (sample S062® on every line stays 18.7px apart). */
 :where(.odx-content, .odx-hf) sup, :where(.odx-content, .odx-hf) sub { line-height: 0; --odx-lhv: 0; font-size: 65%; font-size: round(down, calc(2em / 3 + 0.01pt), 0.5pt); } /* Word's size for raised and lowered text: two thirds, down to the half point (6.5pt from 10pt, 7pt from 11pt, 8pt from 12pt) */
+/* Raised by about a third of the text's size, lowered by a fifteenth (Word's PDFs at 10 to 18pt: 3-6pt up, 0.5-2pt down), in the raised text's own ems. */
+:where(.odx-content, .odx-hf) sup { vertical-align: 0.51em; }
+:where(.odx-content, .odx-hf) sub { vertical-align: -0.1em; }
 /* Paragraphs joined by a deleted paragraph mark (joins.js): in Word's final view the text runs on into the next paragraph. */
 .odx-content .odx-joined { display: none; }
 /* Style separators (hidden paragraph marks, joins.js): the next paragraph's text runs on in the first one. */
