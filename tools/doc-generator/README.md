@@ -48,7 +48,8 @@ node tools/doc-generator/run.mjs <work folder> [--steps word,ours,score,report] 
 - `ours`: builds the demo page and prints every document through it, in Edge (`print-fast.mjs`: as
   `tools/word-compare/print-ours.mjs` prints, but each browser page reused and each document printed as soon as the
   editor has laid it out, 16 at a time: the full set in about 15 minutes).
-- `score`: extracts the lines of both (`tools/word-compare/lines.cjs`) and scores each document (`score.py`).
+- `score`: extracts the lines of both (`lines.cjs`: `tools/word-compare`'s, but text on one baseline split
+  at gaps over 12pt, so columns side by side are lines of their own) and scores each document (`score.py`).
 - `report`: `report-<run>.md` (and `.json`): features worst first, the pairs worse together than either alone, the
   documents worst first with how to make each again, and anything Word or the editor couldn't print.
 
