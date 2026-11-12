@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Aptos stand-ins look more like Aptos.** Where a computer lacks Aptos (an Office cloud font browsers can't use), its
+  letters are now Source Sans 3's (Adobe, SIL Open Font License) fitted to Aptos's widths and x-height, instead of
+  Arial's design: closer a, t, y and G, lighter and the right height. Letter widths are unchanged, so lines break where
+  Word breaks them as before.
+- **Stand-in fonts load only when needed, from a CDN by default.** The editor links its stand-ins' stylesheet from
+  jsDelivr (this release's files on npm) and the browser downloads a font only when a document uses it and the computer
+  lacks it; the Aptos stand-ins no longer sit inside the editor's stylesheet (about 250 KB smaller). The Calibri,
+  Cambria, Arial, Times New Roman and Courier New stand-ins come the same way, with no import needed. `fonts.base`
+  serves them from your own server instead (copy the package's `src/fonts`), or `false` if you import
+  `open-docx-editor/fonts.css` yourself.
+- **Choose the font for a missing one**: `fonts.substitutes` ({ 'Font': 'Family' | { family, url } }) draws your choice
+  where a font is missing, a font the browser has or one loaded from a URL you give (not fitted to the missing font's
+  widths).
+- **Fixed: tables on later pages jumped up when clicking.** In a document with a table at the top of each page (after
+  a page break), each click that moved the caret into or out of a table pulled tables up onto the page before, on top
+  of the ones there; the document itself was unchanged. Tables now stay on their pages.
+
 ## 0.7.7 (2026-11-12)
 
 - **Command search (Alt+Q)**, as Word for the web's Search box: a box in the ribbon's tab row; type part of a command's

@@ -11,7 +11,7 @@ const onMissingFonts = (fonts) => {
 };
 // (drafts: unsaved changes kept in this browser and offered back when the same file is opened again)
 // (window.odxAi: an AI model for Home > AI Writing, when the page has one: the tests give a stand-in.)
-const editor = mountDocxEditor(app, { pdf: exportPdf, onMissingFonts, drafts: true, ai: window.odxAi || null, onOpened: () => { note.hidden = true; } });
+const editor = mountDocxEditor(app, { pdf: exportPdf, onMissingFonts, drafts: true, ai: window.odxAi || null, fonts: { base: './dist/fonts/' }, onOpened: () => { note.hidden = true; } });
 window.odx = editor; // handy for debugging and tests
 
 // Drag a .docx onto the page to open it.

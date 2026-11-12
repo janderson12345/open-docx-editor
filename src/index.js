@@ -10,6 +10,8 @@ export * as track from './editor/track.js';
 export { listFields, fieldValues, setFieldValues, setForms } from './editor/fields.js';
 export { readFieldValues, fillFields } from './fieldsNode.js';
 export { mailMerge, mergeFieldNames, formatMergeValue } from './merge.js';
+export { FONTS_CDN } from './editor/fontload.js';
+export { VERSION } from './version.js';
 
 /**
  * One-call setup: toolbar + editor in `container`.
@@ -28,6 +30,7 @@ import { editorAgent } from './agent.js';
 import { setProtection } from './editor/protect.js';
 import { announce } from './editor/live.js';
 import * as mm from './editor/mailmerge.js';
+import { useFonts } from './editor/fontload.js';
 import { mailMerge as mergeDocx, mergeFieldNames } from './merge.js';
 
 const DRAFT_DAYS = 14;
@@ -57,6 +60,11 @@ function printOf(bytes) {
  *   [{ font, substitute, standIn }] (substitute: the font drawn instead, or null for a generic one; standIn: one of
  *   the editor's own fonts sized to its widths), when there are any. Lines
  *   in a substitute may break differently from Word's; 'open-docx-editor/fonts.css' supplies metric-compatible ones.
+ * - `fonts`: { base, substitutes }. `base`: where the stand-in fonts load from (a folder holding the package's
+ *   src/fonts: fonts.css and files/), by default this release's on jsDelivr; false if the host loads them itself. A
+ *   browser downloads one only when a document uses that font and the computer lacks it. `substitutes`:
+ *   { 'Font Name': 'Family' | { family, url } }, drawn where that font is missing (url: a font file to load for it);
+ *   they aren't fitted to the missing font's widths, so lines may break differently from Word.
  * - `ai`: your AI model, for Home > AI Writing: async ({ action, instruction, prompt, text, before, after, document,
  *   signal }) => text. `action` is 'rewrite', 'shorter', 'longer', 'formal', 'casual' or 'proofread' (rewrite `text`,
  *   the selection or the cursor's paragraph; `instruction` says how), 'summarize' (`text`, or `document` when nothing is
@@ -72,7 +80,9 @@ function printOf(bytes) {
  *   Restrict Editing (and Mark as Final, Always open read-only) for a host that enforces its own rights.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge, ai = null, aiAuthor = 'AI' } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge, ai = null, aiAuthor = 'AI', fonts = {} } = {}) {
+  // The stand-in fonts (this release's on jsDelivr, or the host's copy at fonts.base) and the host's substitutes.
+  useFonts(fonts || {});
   const bar = document.createElement('div');
   const host = document.createElement('div');
   container.replaceChildren(bar, host);
