@@ -2,7 +2,8 @@
 // (device) advances, not the scaled design ones Word uses: Cambria 10pt comes out 3.6% narrower than its design widths,
 // 12pt 1.9% wider, 11pt right, and Word's lines take fewer or more words (corpus 2's justified
 // Cambria paragraph a line shorter). Each run in such a font and size gets the difference back as letter spacing: its
-// text's width at 100px, scaled, against its width at its size, shared out per character.
+// text's width at 100px, scaled, against its width at its size, shared out per character (on top of the run's own
+// character spacing, --odx-csp).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { fitOf } from './fittext.js';
@@ -65,7 +66,7 @@ export function applyWidths(view) {
     // An unchanged run in an unchanged paragraph keeps its correction (ProseMirror keeps both nodes): no style lookups.
     const known = memo.get(parent)?.get(node);
     if (known !== undefined) {
-      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:${known}px` }, { key: `w:${known}` }));
+      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:calc(var(--odx-csp, 0px) + ${known}px)` }, { key: `w:${known}` }));
       return false;
     }
     if (!memo.has(parent)) memo.set(parent, new WeakMap());
@@ -81,7 +82,7 @@ export function applyWidths(view) {
     const target = (width(cs, 100, node.text) * px) / 100;
     const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
     remember(ls);
-    if (ls) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:${ls}px` }, { key: `w:${pos}:${node.nodeSize}:${ls}` }));
+    if (ls) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)` }, { key: `w:${pos}:${node.nodeSize}:${ls}` }));
     return false;
   });
   const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)

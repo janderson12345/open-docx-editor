@@ -45,6 +45,8 @@ export function readRPr(rPr) {
   if (kern) p.kern = Number(attr(kern, 'val') || 0);
   const scale = kid(rPr, 'w');
   if (scale) p.scale = Number(attr(scale, 'val') || 100);
+  const csp = kid(rPr, 'spacing'); // character spacing, twips (a style's: Title's -10)
+  if (csp) p.charSpacing = Number(attr(csp, 'val')) || 0;
   return p;
 }
 
@@ -159,7 +161,8 @@ export const twipsToPt = (t) => t / 20;
 export function sizeCss(pt) {
   const px = (pt * 4) / 3;
   const ls = (px - Math.floor(px * 100 + 1e-6) / 100) * 0.43;
-  return `font-size:${pt}pt;letter-spacing:${ls > 1e-4 ? ls.toFixed(4) : 0}px`; // (0 too: else a size's own would pass to text of another size)
+  // (Plus the character spacing in force, --odx-csp, which a run of its own size would otherwise lose.)
+  return `font-size:${pt}pt;letter-spacing:calc(var(--odx-csp, 0px) + ${ls > 1e-4 ? ls.toFixed(4) : 0}px)`; // (0 too: else a size's own would pass to text of another size)
 }
 export const scaleCss = (pct) => `letter-spacing:${+(((Number(pct) - 100) / 100) * 0.55).toFixed(4)}em`;
 
@@ -267,6 +270,9 @@ export function rPrToCss(p, theme) {
   // 12pt runs unkerned). Where the size is known with it.
   if (p.kern != null) css.push(`font-kerning:${p.kern && (p.size == null || p.size >= p.kern) ? 'normal' : 'none'}`);
   if (p.scale && p.scale !== 100) css.push(scaleCss(p.scale));
+  // Character spacing from a style (Title's 0.5pt tighter, compared with Word's PDF): kept in --odx-csp, which a run's
+  // own size (sizeCss) and widths.js's correction add to.
+  if (p.charSpacing != null) css.push(`--odx-csp:${p.charSpacing / 20}pt`, ...(p.size ? [] : ['letter-spacing:var(--odx-csp)']));
   if (p.hidden) css.push('display:none');
   css.push(...csVars(p, theme));
   return css.join(';');

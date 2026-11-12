@@ -350,7 +350,7 @@ function rextraCss(items) {
   const on = (xml) => !/w:val="(0|false|off)"/.test(xml);
   for (const [name, xml] of items) {
     if (name === 'rFonts' && /w:cs="([^"]+)"/.test(xml)) css.push(`--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(xml)[1])}`);
-    if (name === 'spacing') css.push(`letter-spacing:${Number(val(xml)) / 20}pt`);
+    if (name === 'spacing') css.push(`--odx-csp:${Number(val(xml)) / 20}pt`, 'letter-spacing:var(--odx-csp)');
     else if (name === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(major|minor)/.test(xml)) {
       // A theme font on a run: the theme's body or heading font (variables set with the document's styles).
       const t = /w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(xml)[1];

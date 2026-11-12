@@ -43,6 +43,10 @@ const one = async (page, f) => {
     for (let y = 0; y < c.scrollHeight; y += 800) { c.scrollTop = y; await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
     c.scrollTop = 0;
     await document.fonts.ready;
+    // Then until the pages stop changing for 300ms (columns and justified lines settle a pass or two later), at most 5s.
+    const sig = () => { const p = document.querySelectorAll('.odx-canvas *').length; return `${p}:${c.scrollHeight}:${c.innerHTML.length}`; };
+    let last = sig(), still = 0;
+    for (let t = 0; t < 5000 && still < 300; t += 50) { await new Promise((r) => setTimeout(r, 50)); const now = sig(); still = now === last ? still + 50 : 0; last = now; }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   }, [b64, f]);
   await page.emulateMedia({ media: 'print' });
