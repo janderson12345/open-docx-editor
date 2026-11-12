@@ -5,7 +5,7 @@
 import { lineHeightOf } from './util.js';
 
 // hhea ascender + line gap, per em, of the fonts Word documents use most.
-const ASCENT = {
+export const ASCENT = {
   arial: 0.938, 'liberation sans': 0.938, helvetica: 0.938, 'times new roman': 0.9336, 'liberation serif': 0.9336,
   calibri: 0.9707, 'calibri light': 0.9707, carlito: 0.9707, cambria: 0.9502, caladea: 0.9502, verdana: 1.0054,
   'dejavu sans': 1.0054, tahoma: 1.0005, 'segoe ui': 1.0791, georgia: 0.917, 'courier new': 0.8325, 'liberation mono': 0.8325,

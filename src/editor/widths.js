@@ -7,6 +7,8 @@
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { fitOf } from './fittext.js';
+import { ASCENT } from './baseline.js';
+import { lineFactor } from '../ooxml/props.js';
 
 const key = new PluginKey('odx-widths');
 export const widthsPlugin = new Plugin({
@@ -49,6 +51,60 @@ function isHinted(cs) {
   return hinted.get(k);
 }
 
+// A run in another font than its paragraph's (Cambria or Courier New words in a Calibri paragraph). Word makes a line
+// as tall as the highest ascent and the deepest descent on it (hhea, with the line gap above), so a run whose font
+// reaches no further than the paragraph's leaves the line as it is, and one with a deeper descent (Courier New) makes
+// it taller below only. The browser centres each run's leading on its own font's box, so a run in a font with a
+// smaller box but a taller ascent made the line taller (Cambria: 1.3px, Courier New twice Word's 0.7px). Such a run
+// gets the line height that keeps its box inside the paragraph font's, moved out only as far as Word's grows.
+const boxes = new Map(); // font, size, line height -> [above, below] the baseline of a text span's box, px
+let lineProbe = null;
+function spanBox(font, lh, where) {
+  const k = `${font}|${lh}`;
+  if (boxes.has(k)) return boxes.get(k);
+  if (!lineProbe) {
+    lineProbe = document.createElement('div');
+    lineProbe.setAttribute('aria-hidden', 'true');
+    lineProbe.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:nowrap;line-height:0';
+    lineProbe.innerHTML = '<span>X</span><i style="display:inline-block;width:0;height:0"></i>';
+  }
+  where.append(lineProbe);
+  const span = lineProbe.firstChild;
+  span.style.font = font;
+  span.style.lineHeight = `${lh}px`;
+  const r = span.getBoundingClientRect();
+  const base = lineProbe.lastChild.getBoundingClientRect().top;
+  const half = (lh - r.height) / 2;
+  const v = [base - r.top + half, r.bottom - base + half, base - r.top, r.bottom - base];
+  lineProbe.remove();
+  boxes.set(k, v);
+  return v;
+}
+const famOf = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => ASCENT[f]) || '';
+const fontOfCs = (cs) => `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+/** The line height (px) for a text span in another font than its paragraph's, or 0 to leave it. */
+function mixedLine(host, cs) {
+  const p = host.closest('p');
+  if (!p) return 0;
+  const pcs = getComputedStyle(p);
+  if (pcs.fontFamily === cs.fontFamily || parseFloat(pcs.getPropertyValue('--odx-runmult')) === 0) return 0;
+  const fr = famOf(cs), fp = famOf(pcs);
+  if (!fr || !fp || fr === fp) return 0;
+  // The run's own line height, as the paragraph gives it (not one set here before).
+  const v = getComputedStyle(host.parentElement).getPropertyValue('--odx-lhv').trim();
+  const lhOf = (size) => (v.endsWith('px') ? parseFloat(v) : (Number(v) || 0) * size);
+  const sr = parseFloat(cs.fontSize), sp = parseFloat(pcs.fontSize);
+  const lr = lhOf(sr), lp = lhOf(sp);
+  if (!lr || !lp) return 0;
+  const [ap, bp] = spanBox(fontOfCs(pcs), lp, p);
+  const [ar, br, Ab, Db] = spanBox(fontOfCs(cs), lr, p);
+  const grow = (k) => Math.max(0, k(fr) * sr - k(fp) * sp);
+  const up = grow((f) => ASCENT[f]), down = grow((f) => lineFactor(f) - ASCENT[f]);
+  if (ar <= ap + up + 0.05 && br <= bp + down + 0.05) return 0;
+  const lh = Math.min(2 * (ap + up) - (Ab - Db), 2 * (bp + down) + (Ab - Db));
+  return lh > 0 && lh < lr - 0.05 ? Math.round(lh * 100) / 100 : 0;
+}
+
 let last = '';
 // Corrections by paragraph and run (parent node -> run node -> letter spacing, 0 for none), until fonts load.
 let memo = new WeakMap();
@@ -66,7 +122,7 @@ export function applyWidths(view) {
     // An unchanged run in an unchanged paragraph keeps its correction (ProseMirror keeps both nodes): no style lookups.
     const known = memo.get(parent)?.get(node);
     if (known !== undefined) {
-      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:calc(var(--odx-csp, 0px) + ${known}px)` }, { key: `w:${known}` }));
+      if (known) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: known }, { key: `w:${known}` }));
       return false;
     }
     if (!memo.has(parent)) memo.set(parent, new WeakMap());
@@ -76,17 +132,23 @@ export function applyWidths(view) {
     if (host && host.classList.contains('odx-wfix')) host = host.parentElement;
     if (!host) return false;
     const cs = getComputedStyle(host);
+    const style = [];
     // A character scale (w:w): the run's text as wide as Word makes it, its width times the scale (scaleCss's
     // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
     const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
     const hinted = isHinted(cs);
-    if (!hinted && scale === 1) { remember(0); return false; }
-    const px = parseFloat(cs.fontSize);
-    const actual = width(cs, px, node.text);
-    const target = (hinted ? (width(cs, 100, node.text) * px) / 100 : actual) * scale;
-    const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
-    remember(ls);
-    if (ls) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: `letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)` }, { key: `w:${pos}:${node.nodeSize}:${ls}` }));
+    if (hinted || scale !== 1) {
+      const px = parseFloat(cs.fontSize);
+      const actual = width(cs, px, node.text);
+      const target = (hinted ? (width(cs, 100, node.text) * px) / 100 : actual) * scale;
+      const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
+      if (ls) style.push(`letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)`);
+    }
+    const lh = mixedLine(host, cs);
+    if (lh) style.push(`--odx-lhv:${lh}px`);
+    const css = style.join(';');
+    remember(css);
+    if (css) decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'odx-wfix', style: css }, { key: `w:${pos}:${node.nodeSize}:${css}` }));
     return false;
   });
   const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
