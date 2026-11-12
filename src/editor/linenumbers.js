@@ -3,8 +3,8 @@
 // empty one that only ends a section), every countBy-th number shown, right-aligned w:distance left of the text
 // (0.25in when auto), on the line's baseline; restarting each page, each section, or going on from the section before
 // (continuous), from w:start + 1. Drawn after each layout pass into a layer of the page, so they print and go into PDF
-// export, and never move the text. (All checked with Word's PDF of test/fixtures/line-numbers.docx.) Not yet in a
-// section of several columns: there the numbers sit left of the page's text, not of each column.
+// export, and never move the text. (All checked with Word's PDF of test/fixtures/line-numbers.docx.) In a section of
+// several columns, left of each column's text (the generated documents' two columns, tools/doc-generator).
 import { sectionXmls, sectionEnd } from './sections.js';
 
 /** A section's line numbering, or null: { countBy, start, distance (px), restart }. */
@@ -14,7 +14,9 @@ export function lineNumbering(sectPr) {
   const a = (n) => new RegExp(`w:${n}="([^"]*)"`).exec(el)?.[1];
   const countBy = Number(a('countBy') || 0);
   if (!(countBy > 0)) return null; // (Word numbers lines only with a count to show them by)
-  const distance = a('distance') && a('distance') !== 'auto' ? Number(a('distance')) / 15 : 24;
+  // (Auto: 0.25in, or 0.125in in a section of columns: Word's PDF of two columns, the generated documents.)
+  const cols = Number(/<w:cols\b[^>]*\sw:num="(\d+)"/.exec(sectPr || '')?.[1] || 1);
+  const distance = a('distance') && a('distance') !== 'auto' ? Number(a('distance')) / 15 : cols > 1 ? 12 : 24;
   return { countBy, start: Number(a('start') || 0), distance, restart: a('restart') || 'newPage' };
 }
 
@@ -58,7 +60,13 @@ export function drawLineNumbers(view, layer, pageOf) {
     const suppressed = (node.attrs.extra || []).some((e) => e[0] === 'suppressLineNumbers' && !/w:val="(?:0|false|off)"/.test(e[1]));
     // (Nor the empty paragraph that only ends a section: Word doesn't count it.)
     if (rule && node.type.name === 'paragraph' && el && el.nodeType === 1 && !suppressed && !(ends && !node.childCount) && !el.classList.contains('odx-all-del')) {
-      for (const baseline of lineBaselines(el, range)) {
+      // The column's text edge: the paragraph's box less its start indent (a line carried to the next column is drawn
+      // there, left of where the paragraph's box is).
+      const pr = el.getBoundingClientRect();
+      const indent = parseFloat(getComputedStyle(el).marginLeft) || 0;
+      for (const [baseline, x] of lineBaselines(el, range)) {
+        const edge = x < pr.left - 1 || x > pr.right + 1 ? x - indent : pr.left - indent;
+        const at = Math.abs(edge - left) < 2 ? left : edge;
         const p = pageOf(baseline - flowTop);
         if (p !== page && rule.restart === 'newPage') n = rule.start;
         page = p;
@@ -67,7 +75,7 @@ export function drawLineNumbers(view, layer, pageOf) {
         const s = document.createElement('span');
         s.className = 'odx-lnnum';
         s.textContent = String(n);
-        s.style.cssText = `left:${left - rule.distance - origin.left}px;top:${baseline - numAscent - origin.top}px`;
+        s.style.cssText = `left:${at - rule.distance - origin.left}px;top:${baseline - numAscent - origin.top}px`;
         frag.append(s);
       }
     }
@@ -95,14 +103,14 @@ function lineBaselines(p, range) {
     for (const r of range.getClientRects()) {
       if (!r.height) continue;
       // (A box starting at or below the line's foot, 2px allowed for runs in other sizes, starts a new line.)
-      if (r.top >= lineBottom - 2) { out.push(r.top + ascent(cs)); lineBottom = r.bottom; }
+      if (r.top >= lineBottom - 2) { out.push([r.top + ascent(cs), r.left]); lineBottom = r.bottom; }
       else lineBottom = Math.max(lineBottom, r.bottom);
     }
   }
   // An empty paragraph is a line too.
   if (!out.length) {
     const r = p.getClientRects()[0];
-    if (r) out.push(r.top + (parseFloat(getComputedStyle(p).paddingTop) || 0) + ascent(getComputedStyle(p)));
+    if (r) out.push([r.top + (parseFloat(getComputedStyle(p).paddingTop) || 0) + ascent(getComputedStyle(p)), r.left]);
   }
   return out;
 }
