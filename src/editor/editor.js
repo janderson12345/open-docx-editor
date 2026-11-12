@@ -79,8 +79,18 @@ class StyledTableView extends TableView {
       this.table.style.minWidth = '';
       for (const col of this.colgroup.children) col.style.width = '';
     } else this.table.classList.remove('odx-autofit');
+    // The table's placement, set property by property: the wrapper's style also carries the view's decorations (the
+    // page push's margin-top), which a whole new style attribute would wipe out on each update (a click moving the caret
+    // updates the view), leaving the table pulled up onto the page before.
     const place = (node.attrs.deco && node.attrs.deco.style) || '';
-    if (this.dom.getAttribute('style') !== place) this.dom.setAttribute('style', place);
+    if (place !== (this.place || '')) {
+      const parsed = document.createElement('div').style;
+      parsed.cssText = place;
+      for (const name of this.placed || []) this.dom.style.removeProperty(name);
+      this.placed = [...parsed];
+      for (const name of this.placed) this.dom.style.setProperty(name, parsed.getPropertyValue(name), parsed.getPropertyPriority(name));
+      this.place = place;
+    }
     // A table ending in an exact row has its bottom border below that row in Word, not in it: room for it (editor.css).
     const below = lastExactBorder(node);
     if (below) this.table.style.setProperty('--odx-lastadd', `${below}px`);
