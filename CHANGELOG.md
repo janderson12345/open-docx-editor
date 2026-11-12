@@ -12,6 +12,9 @@
 - **Documents from Word in other languages.** Word keeps a built-in style's English name but gives it the language's own
   id ("Ttulo1" for Heading 1 in Spanish). A table of contents, a pasted heading and HTML imported into the document
   now use the document's own Heading and TOC styles instead of adding English copies alongside them.
+- **Insert Table uses Word's Table Grid style**, adding it to the document if it lacks it. Its lines now show while
+  editing (they were only in the saved file), and the cells' text has no space after, so rows are as tall as Word's.
+  A pasted table without table properties is also drawn with the lines it is saved with.
 
 ## 0.7.6 (2026-11-11)
 

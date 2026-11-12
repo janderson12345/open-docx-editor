@@ -197,7 +197,8 @@ export class DocxSession {
     const xml = path && this.pkg.text(path);
     if (!xml) return false;
     // (Not one the document has under its own id: Spanish Word's "TtuloTDC" is its TOC Heading.)
-    const add = ids.filter((id) => BUILT_IN[id] && !this.styles.styles.has(this.builtInId(id))).map((id) => BUILT_IN[id]);
+    const add = ids.filter((id) => BUILT_IN[id] && !this.styles.styles.has(this.builtInId(id)))
+      .map((id) => BUILT_IN[id].replace(/(<w:basedOn w:val=")([^"]+)/, (_, a, base) => a + this.builtInId(base)));
     if (!add.length) return false;
     this.pkg.setText(path, xml.replace(/<\/w:styles>\s*$/, `${add.join('')}</w:styles>`));
     this.styles = readStyles(this.pkg);
@@ -826,11 +827,12 @@ function noteRefs(doc) {
 function builtInName(id) {
   const m = /^(Heading|TOC)([1-9])$/.exec(id);
   if (m) return `${m[1].toLowerCase()} ${m[2]}`;
-  return { Title: 'title', Subtitle: 'subtitle', TOCHeading: 'toc heading', Quote: 'quote', IntenseQuote: 'intense quote', ListParagraph: 'list paragraph', NoSpacing: 'no spacing', Caption: 'caption' }[id] || null;
+  return { TableGrid: 'table grid', Title: 'title', Subtitle: 'subtitle', TOCHeading: 'toc heading', Quote: 'quote', IntenseQuote: 'intense quote', ListParagraph: 'list paragraph', NoSpacing: 'no spacing', Caption: 'caption' }[id] || null;
 }
 
 // Built-in styles as Word's own template defines them (Word adds them to a document as it first uses them).
 const BUILT_IN = {
+  TableGrid: '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr></w:style>',
   TOCHeading: '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`TOC${i + 1}`, `<w:style w:type="paragraph" w:styleId="TOC${i + 1}"><w:name w:val="toc ${i + 1}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/>${i ? `<w:ind w:left="${i * 220}"/>` : ''}</w:pPr></w:style>`])),
 };

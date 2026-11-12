@@ -462,7 +462,14 @@ const LOOK_BITS = { firstRow: 0x20, lastRow: 0x40, firstColumn: 0x80, lastColumn
  * Per-cell CSS for one table: borders (table, style, conditional regions, cell),
  * shading and conditional text formatting. `cells` is [{ row, col, rowspan, colspan, tcPr }].
  */
+/**
+ * The table properties a table made in the editor (Insert Table without a Table Grid style, a pasted table) is saved
+ * with, and drawn with: single lines all round and between its cells.
+ */
+export const DEFAULT_TBLPR = '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders><w:tblLook w:val="04A0"/></w:tblPr>';
+
 export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, theme) {
+  tblPrXml ||= DEFAULT_TBLPR; // (as it is saved)
   let styleId = null;
   let direct = {};
   let look = { firstRow: true, firstColumn: true, noVBand: true };

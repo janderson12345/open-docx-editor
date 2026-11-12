@@ -636,6 +636,39 @@ const locXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () =
 check(loc.toc === 'TDC1,TDC2,Ttulo1,Ttulo2,TtuloTDC' && loc.pasted === 'Ttulo1' && !/w:styleId="(TOC1|TOCHeading|Heading1)"/.test(locXml),
   `a localised document's TOC and pasted heading use its own style ids (${JSON.stringify(loc)})`);
 
+// Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
+// cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+await page.click('.odx-rtab:text-is("Insert")');
+await page.click('button[title="Insert table"]');
+await page.click('.odx-pop .odx-item >> nth=0');
+await page.waitForTimeout(500);
+const grid = await page.evaluate(() => {
+  const t = document.querySelector('.odx-content table');
+  const td = t.querySelector('td');
+  return { tstyle: t.dataset.tstyle, lines: getComputedStyle(td).boxShadow.split('inset').length - 1, after: getComputedStyle(td.querySelector('p')).marginBottom, rows: [...t.querySelectorAll('tr')].map((r) => Math.round(r.getBoundingClientRect().height)) };
+});
+const gridXml = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
+check(grid.tstyle === 'TableGrid' && grid.lines >= 3 && grid.after === '0px' && grid.rows.every((h) => h >= 18 && h <= 20)
+  && /<w:tblStyle w:val="TableGrid"\/>/.test(strFromU8(gridXml['word/document.xml'])) && /w:styleId="TableGrid"[\s\S]*?<w:insideV w:val="single"/.test(strFromU8(gridXml['word/styles.xml'])),
+  `an inserted table is in Word's Table Grid style, its lines drawn (${JSON.stringify(grid)})`);
+
+// Merging cells keeps the first cell's formatting (shading, borders, alignment) and every cell's paragraphs, as Word.
+await open('merge-format.docx');
+await page.locator('.odx-content td p', { hasText: 'A1' }).first().click();
+await page.locator('.odx-content td p', { hasText: 'A3' }).first().click({ modifiers: ['Shift'] });
+await page.evaluate(() => document.querySelector('button[title="Merge cells"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })));
+await page.waitForTimeout(400);
+const merged = await page.evaluate(() => {
+  const td = document.querySelector('.odx-content td');
+  return { span: td.rowSpan, paras: td.querySelectorAll('p').length, bg: getComputedStyle(td).backgroundColor, va: getComputedStyle(td).verticalAlign, align: getComputedStyle(td.querySelector('p')).textAlign };
+});
+const mergedXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+check(merged.span === 3 && merged.paras === 3 && merged.bg === 'rgb(255, 230, 153)' && merged.va === 'middle' && merged.align === 'center'
+  && /<w:vMerge w:val="restart"\/><w:tcBorders><w:left w:val="single" w:sz="24"[^>]*\/><\/w:tcBorders><w:shd [^>]*w:fill="FFE699"\/><w:vAlign w:val="center"\/>/.test(mergedXml),
+  `merged cells keep their formatting (${JSON.stringify(merged)})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

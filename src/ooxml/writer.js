@@ -3,6 +3,7 @@
 // for everything that was carried through untouched.
 import { TableMap } from 'prosemirror-tables';
 import { esc } from './xml.js';
+import { DEFAULT_TBLPR } from './styles.js';
 import { EMU_PER_PX, pxToEmu } from './units.js';
 
 // Child order required by the WordprocessingML schema (ECMA-376 Part 1, §17).
@@ -300,7 +301,6 @@ export function rPr(marks) {
 
 // --- Tables ---------------------------------------------------------------
 
-const DEFAULT_TBLPR = '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders><w:tblLook w:val="04A0"/></w:tblPr>';
 const sameWidths = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
 
 function writeTable(table, ctx) {

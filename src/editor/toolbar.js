@@ -21,6 +21,7 @@ import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './
 import { createFindBar } from './findbar.js';
 import { protectionOf } from './protect.js';
 import { ZOOM_STEPS } from './zoom.js';
+import { esc } from '../ooxml/xml.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
@@ -702,7 +703,15 @@ function insertTable(rows, cols) {
     } catch { /* the default */ }
     const w = Math.floor(text / cols);
     const cell = () => table_cell.create({ colwidth: [w] }, paragraph.create());
-    const t = table.create(null, Array.from({ length: rows }, () => table_row.create(null, Array.from({ length: cols }, cell))));
+    // In Word's Table Grid style, as Word's Insert Table: added to the document if it lacks it (lines all round and
+    // between cells, the cells' text without space after); by the document's own id for it in another language.
+    const session = dispatch && view?.odx?.session;
+    if (session?.addBuiltInStyles(['TableGrid'])) view.odx.restyle?.();
+    const grid = session && session.builtInId('TableGrid');
+    const tblPr = grid && session.styles.styles.has(grid)
+      ? `<w:tblPr><w:tblStyle w:val="${esc(grid)}"/><w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>`
+      : null;
+    const t = table.create({ tblPr },Array.from({ length: rows }, () => table_row.create(null, Array.from({ length: cols }, cell))));
     if (dispatch) {
       const tr = state.tr.replaceSelectionWith(t);
       // put the caret in the first cell of the new table
