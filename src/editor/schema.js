@@ -371,7 +371,12 @@ function rextraCss(items) {
     else if (name === 'w' && Number(val(xml)) && Number(val(xml)) !== 100) css.push(scaleCss(val(xml)));
     else if (name === 'kern') css.push(`font-kerning:${Number(val(xml)) ? 'normal' : 'none'}`);
     // Raised or lowered text (half-points) moves its line's top and bottom with it, as in Word: a baseline shift, not an offset.
-    else if (name === 'position') css.push(`vertical-align:${Number(val(xml)) / 2}pt`);
+    // (In an exactly spaced line, --odx-runmult 0, the line stays as it is: the text is offset instead, as in Word.)
+    else if (name === 'position') {
+      const pt = Number(val(xml)) / 2;
+      const on = 'min(1, var(--odx-runmult, 1) * 1000)';
+      css.push(`vertical-align:calc(${pt}pt * ${on})`, 'position:relative', `top:calc(${-pt}pt * (1 - ${on}))`);
+    }
     // A colour that also names a theme colour (kept raw so saving keeps the theme link): its value still applies.
     else if (name === 'color' && /^[0-9A-Fa-f]{6}$/.test(val(xml) || '')) css.push(`color:#${val(xml)}`);
     // Text effects as Word 2013+ draws them (compared with its PDFs): outline is hollow letters, shadow a grey copy down
