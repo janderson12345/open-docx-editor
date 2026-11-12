@@ -625,6 +625,14 @@ function bandFloats(content) {
   const top = (pl) => parseFloat((/margin(?:-top)?:\s*(?:calc\()?(-?[\d.]+)px/.exec(pl) || [])[1]) || 0;
   const b0 = top(band.attrs.place);
   const b1 = b0 + Number(band.attrs.height || 0);
+  // A band placed from its paragraph's top that starts within its first line takes that line's place: Word moves every
+  // line it would cross below it, so all of the paragraph's text goes under it, also the text before its anchor (the
+  // generated documents' picture 0.1in down, anchored mid-line: the line before it had stayed above it).
+  const at = content.indexOf(band);
+  if (at > 0 && b0 < 15 && !/--odx-band/.test(band.attrs.place) && !content.slice(0, at).some((n) => n.type === 'hard_break')) {
+    content.splice(at, 1);
+    content.unshift(band);
+  }
   for (const n of imgs) {
     if (n === band || !/^float:(left|right)/.test(n.attrs.place)) continue;
     const y = top(n.attrs.place.replace(/^float:\w+;/, ''));
