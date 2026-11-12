@@ -472,7 +472,7 @@ export function createPages(view, session, { sheet, scope }) {
           top = lines[n].top + rowShift + extra;
         }
         const whole = lines[n].empty || lines[n] === lines.find((l) => l.p === lines[n].p);
-        const lead = whole || Math.abs(lines[n].lead) > 3 ? 0 : lines[n].lead;
+        const lead = whole || Math.abs(lines[n].lead) > 10 ? 0 : lines[n].lead;
         const delta = Math.round((contentTop(pg + 1) + headH + padTop + lead - top) * 10) / 10;
         if (delta <= 0) continue;
         const pos = whole ? view.posAtDOM(lines[n].p, 0) : lineStart(lines[n].p, lines[n].screenTop);
