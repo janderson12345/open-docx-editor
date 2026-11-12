@@ -23,6 +23,8 @@
   continuous section breaks before and after it, as Word's menu does; "One/Two/Three, from here on" applies from the
   cursor on (More Columns' "This point forward"). A break at a paragraph's start or end splits nothing. The menu's tick
   now shows the cursor's section, not the last one.
+- **Justified text:** a paragraph's last line that fits only with its spaces squeezed (as Word 2013+ does) was
+  squeezed several pixels too far; it now ends where Word's does, within a pixel.
 
 ## 0.7.6 (2026-11-11)
 

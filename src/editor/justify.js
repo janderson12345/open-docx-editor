@@ -138,9 +138,10 @@ function squeezedLines(view, node, pos, el) {
     if (typeof window !== 'undefined' && window.__sqdbg) window.__sqdbg.push({ word: view.state.doc.textBetween(wd.from, wd.to), before: view.state.doc.textBetween(Math.max(lineFrom, wd.from - 40), wd.from), over, n, spaceW: spaceW + wd.space, w: wd.w, em: wd.em });
     if (n && over / n <= per && over / wd.w + SHARE_WEIGHT * over / (spaceW + wd.space) <= MAX_OUT) {
       // A little extra: canvas and layout widths differ slightly, and justification spreads it back out
-      // (never so much that the word after it could fit too).
+      // (never so much that the word after it could fit too). Not on a paragraph's last line, or one ending in a
+      // line break: nothing spreads those, so only half a pixel in all (Word squeezes those by just what fits).
       const after = words[k + 1]?.brk ? null : words[k + 1];
-      const slack = Math.min(0.3, after ? (after.space + after.w) / 2 / n : 0.3);
+      const slack = after ? Math.min(0.3, (after.space + after.w) / 2 / n) : Math.min(0.3, 0.5 / n);
       out.push({ from: lineFrom, to: wd.to, squeeze: over / n + slack });
       width = 0; // the next word starts a new line
       lineFrom = wd.to;
