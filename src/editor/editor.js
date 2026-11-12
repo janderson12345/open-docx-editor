@@ -226,8 +226,8 @@ function paragraphPlugin(session) {
             const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml);
             // A floating table in the text between two paragraphs: Word keeps both their spaces, the one after the first
             // and the one before the second (they don't overlap as they would side by side), and the table starts below
-            // the first's. Given as the table's own top margin and the second's, the first's taken off (editor.css: while
-            // the table floats; one the layout puts in the flow, longer than a page, has its margins as they are).
+            // the first's (editor.css: while the table floats; one the layout puts in the flow, longer than a page, has its
+            // margins as they are).
             let style = place;
             if (/(?:^|;)float:/.test(place || '') && before) {
               floatGap = twipsToPx(spacing(before.node, 'after'));
