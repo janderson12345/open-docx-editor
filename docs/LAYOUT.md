@@ -16,6 +16,9 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   and its comment says what it fixed. Fitted constants (a font's print offset) say which measurement they came from.
 - The tools (print with Word, print with Edge, extract lines, compare) live in `tools/word-compare`; see
   CONTRIBUTING.md for running them.
+- **Generated documents:** `tools/doc-generator` makes about 7,500 documents from combinations of 121 features
+  (each alone, every pair, random mixes), has Word print them, and reports which combinations differ, worst first.
+  On them, 87.8% of Word's lines are on the same page within 1px (78.2% before the rules below marked *generated*).
 
 ## How layout works
 
@@ -125,6 +128,22 @@ document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcom
 - `useFELayout`, `doNotBreakWrappedTables`, `forgetLastTabAlignment`, `underlineTabInNumList`: Word draws the test
   documents the same with them and without them.
 
+**Found with the generated documents** (`tools/doc-generator`; each also checked on the 151 documents)
+- A style's character spacing applies (Title's 0.5pt tighter), on top of a run's own size and width corrections.
+- A run in another font than its paragraph's makes the line taller only where its ascent or descent reaches further
+  than the paragraph font's (Cambria in Calibri: not at all; Courier New: below, by its deeper descent).
+- Character scale (w:w) is exact for each run's own text: its width times the scale.
+- A run border makes its line taller by the border's width and space, above and below.
+- Text in an exactly spaced line taller than the text sits at the line's foot, its descent on the bottom.
+- A tab after text aligned at a stop goes to the default stop past it, not to one at the same place.
+- A column break where there is one column starts a new page.
+- Endnotes start under the last paragraph (Word's separator is a line of the Normal style), not at the page's foot.
+- A text box that resizes to fit its text (spAutoFit) is as tall as its text; its multiple-spaced lines put the extra
+  below the text; its text has no ligatures or kerning.
+- A picture with text above and below, placed within its paragraph's first line, has all of that paragraph's text
+  under it.
+- Line numbers in a section of columns sit beside each column, 0.125in from its text when the distance is automatic.
+
 ## Tried and dropped
 
 - Lifting text by half the leading (hurt documents with exact spacing).
@@ -137,6 +156,12 @@ document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcom
 - Cambria Math line boxes for symbols the text's font lacks.
 
 ## Open differences
+
+- Found with the generated documents, not yet matched: the document grid (w:docGrid lines: Word sets each line to the
+  grid's pitch, centred); keep-with-next at the top of a page's second column (Word moves the heading to the next
+  page); a frame taller than the room left on its page (Word moves it to the next); vertical centring of a page in
+  columns; a header or footer taller than half the page; a tab whose next word doesn't fit (Word wraps the tab with
+  it); very narrow unequal columns with paragraph formatting.
 
 - Text after a floating table that leaves a narrow gap beside it (under an inch): Word sets the text in that gap.
 - A line holding superscript and subscript can break a word earlier than Word's.
