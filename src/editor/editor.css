@@ -214,8 +214,8 @@
 /* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
    sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
 .odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); }
-.odx-content table, .odx-hf table { border-collapse: collapse; table-layout: fixed; margin: 0; font: inherit; color: inherit; white-space: inherit; } /* (a quirks-mode page doesn't inherit fonts into tables) */
-.odx-content td, .odx-content th, .odx-hf td, .odx-hf th { padding: 0 7px; vertical-align: top; box-sizing: border-box; position: relative; overflow-x: clip; } /* headers and footers too: Word puts cell text at the top */
+.odx-content table, .odx-hf table, .odx-notes table { border-collapse: collapse; table-layout: fixed; margin: 0; font: inherit; color: inherit; white-space: inherit; } /* (a quirks-mode page doesn't inherit fonts into tables) */
+.odx-content td, .odx-content th, .odx-hf td, .odx-hf th, .odx-notes td, .odx-notes th { padding: 0 7px; vertical-align: top; box-sizing: border-box; position: relative; overflow-x: clip; } /* headers, footers and notes too: Word puts cell text at the top */
 .odx-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(43,108,223,.15); pointer-events: none; }
 .odx-content .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: var(--odx-accent); pointer-events: none; }
 .odx-content.resize-cursor { cursor: col-resize; }

@@ -14,6 +14,44 @@ import { docProps, fillFields } from './pagefields.js';
 /** Header and footer paragraphs -> their nodes, for laying out their tabs once drawn. */
 export const hfNodes = new WeakMap();
 
+/** A story's tables (a header's, a footer's, a note's) given the same placement, column widths, borders and shading the
+ *  body's decorations give its tables. */
+export function styleStoryTables(session, doc, el, { note = false } = {}) {
+  const tables = [];
+  doc.descendants((n) => { if (n.type === schema.nodes.table) tables.push(n); });
+  const doms = el.querySelectorAll('table');
+  tables.forEach((t, k) => {
+    const dom = doms[k];
+    if (!dom) return;
+    const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml);
+    // (A note's tables don't float: Word has no text wrapping in notes, and puts one that says so in the note's flow.)
+    if (place && !(note && /(?:^|;)float:/.test(place))) dom.style.cssText += ';' + place;
+    const map = TableMap.get(t);
+    const cells = [];
+    const seen = new Set();
+    for (const rel of map.map) {
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const node = t.nodeAt(rel);
+      if (!node || !node.type.spec.tableRole?.includes('cell')) continue;
+      const r = map.findCell(rel);
+      cells.push({ node, row: r.top, col: r.left, rowspan: r.bottom - r.top, colspan: r.right - r.left, tcPr: node.attrs.tcPr });
+    }
+    const res = tableCellCss(session.styles, t.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme);
+    const firstRow = dom.rows[0];
+    const ws = firstRow ? [...firstRow.cells].map((td) => (td.getAttribute('data-colwidth') || '').split(',').map(Number)).flat() : [];
+    if (ws.length && ws.every((w) => w > 0)) {
+      const cg = document.createElement('colgroup');
+      for (const w of ws) cg.appendChild(document.createElement('col')).style.width = w + 'px';
+      dom.prepend(cg);
+      dom.style.width = ws.reduce((a, b) => a + b, 0) + 'px';
+      dom.style.tableLayout = 'fixed';
+    }
+    const tds = [...dom.rows].flatMap((tr) => [...tr.cells]);
+    cells.forEach((c, i) => { if (res.css[i] && tds[i]) tds[i].style.cssText += ';' + res.css[i]; });
+  });
+}
+
 /**
  * A function drawing one story of `session`: `(doc, cls, pageNo, pages)` -> its element, classed `odx-hf <cls>`, its
  * PAGE fields showing `pageNo` (a number, or { n, fmt }) and NUMPAGES `pages`.
@@ -21,41 +59,7 @@ export const hfNodes = new WeakMap();
 export function storyDrawer(session) {
   const serializer = DOMSerializer.fromSchema(schema);
   let props = null; // the file's properties, for header and footer fields
-  // Header/footer tables get the same placement, borders and shading the body's decorations give.
-  const styleTables = (doc, el) => {
-    const tables = [];
-    doc.descendants((n) => { if (n.type === schema.nodes.table) tables.push(n); });
-    const doms = el.querySelectorAll('table');
-    tables.forEach((t, k) => {
-      const dom = doms[k];
-      if (!dom) return;
-      const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml);
-      if (place) dom.style.cssText += ';' + place;
-      const map = TableMap.get(t);
-      const cells = [];
-      const seen = new Set();
-      for (const rel of map.map) {
-        if (seen.has(rel)) continue;
-        seen.add(rel);
-        const node = t.nodeAt(rel);
-        if (!node || !node.type.spec.tableRole?.includes('cell')) continue;
-        const r = map.findCell(rel);
-        cells.push({ node, row: r.top, col: r.left, rowspan: r.bottom - r.top, colspan: r.right - r.left, tcPr: node.attrs.tcPr });
-      }
-      const res = tableCellCss(session.styles, t.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme);
-      const firstRow = dom.rows[0];
-      const ws = firstRow ? [...firstRow.cells].map((td) => (td.getAttribute('data-colwidth') || '').split(',').map(Number)).flat() : [];
-      if (ws.length && ws.every((w) => w > 0)) {
-        const cg = document.createElement('colgroup');
-        for (const w of ws) cg.appendChild(document.createElement('col')).style.width = w + 'px';
-        dom.prepend(cg);
-        dom.style.width = ws.reduce((a, b) => a + b, 0) + 'px';
-        dom.style.tableLayout = 'fixed';
-      }
-      const tds = [...dom.rows].flatMap((tr) => [...tr.cells]);
-      cells.forEach((c, i) => { if (res.css[i] && tds[i]) tds[i].style.cssText += ';' + res.css[i]; });
-    });
-  };
+  const styleTables = (doc, el) => styleStoryTables(session, doc, el);
   return (doc, cls, pageNo, pages) => {
     const el = document.createElement('div');
     el.className = `odx-hf ${cls}`;
