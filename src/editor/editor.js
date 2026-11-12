@@ -233,6 +233,10 @@ function paragraphPlugin(session) {
               floatGap = twipsToPx(spacing(before.node, 'after'));
               if (floatGap) style += `;--odx-fgap:${+floatGap.toFixed(2)}px`;
             }
+            // In a section of newspaper columns among others (or with its own side margins), as narrow as its column, as
+            // the paragraphs are: an autofit table fits itself to the column, as in Word.
+            const sd = parent === doc && sides.get(index);
+            if (sd && !/(?:^|;)float:/.test(place || '')) style = [style, `margin-inline-start:${sd[0]}px`, `margin-inline-end:calc(${sd[1]}px${sd[2] ? ' + var(--odx-coln, 0px)' : ''})`].filter(Boolean).join(';');
             decos.push({ cell: true, pos, node, deco: style ? { style } : null });
             tableCells(node, pos, tableCache, session).forEach((c) => decos.push(c));
           }
