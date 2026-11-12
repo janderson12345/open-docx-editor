@@ -196,8 +196,18 @@ const ALTS = new Map();
 // Merged in, not replaced: two editors on one page each keep their documents' stand-ins (a font name's stand-in comes
 // from its own font table entry, so one name rarely has two).
 export function setFontAlts(map) { for (const [k, v] of map || []) ALTS.set(k, v); }
+// The host's own substitutes (mountDocxEditor's fonts.substitutes, fontload.js): font name -> the family it wants drawn
+// where that font is missing, before the editor's stand-ins.
+const HOST = new Map();
+export function setFontSubstitutes(map) { for (const [k, v] of map || []) HOST.set(k, v); }
 
 export function fontStack(name) {
+  const host = HOST.get(name);
+  if (host && host !== name) return [quoted(name), quoted(host), ...baseStack(name).split(', ').slice(1)].join(', ');
+  return baseStack(name);
+}
+
+function baseStack(name) {
   if (listed(name)) return '"Segoe UI", sans-serif';
   if (twin(name)) return fontStack(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...fontStack(face(name)).split(', ')].join(', ');
@@ -244,6 +254,8 @@ function measure(key) {
 // A face named as a font ("Times New Roman Bold", sample S078's headings): its family's metrics.
 const face = (name) => { const m = /^(.+?) (bold|italic|bold italic)$/i.exec(name || ''); return m && LINE[m[1].toLowerCase()] ? m[1] : null; };
 export const lineFactor = (name) => {
+  // (A font missing here, drawn in the host's substitute: that font's line, unless the editor knows the missing one's.)
+  if (HOST.has(name) && !LINE[(name || '').toLowerCase()] && !(typeof document !== 'undefined' && measure((name || '').toLowerCase()))) return lineFactor(HOST.get(name));
   if (twin(name)) return lineFactor(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return lineFactor(face(name));
   const key = listed(name) ? 'segoe ui' : (name || '').toLowerCase();

@@ -374,6 +374,18 @@ await page.waitForTimeout(300);
 check((await page.textContent('.odx-findinfo')) === '1 of 1', 'Find finds imported text');
 await page.keyboard.press('Escape');
 
+// Tables after page breaks stay on their pages when clicks move the caret between them (mkpagedtables.mjs): the
+// table's own placement style must not wipe out its page push.
+await open('paged-tables.docx');
+const tableTops = () => page.evaluate(() => [...document.querySelectorAll('.odx-content > .tableWrapper')].map((t) => Math.round(t.getBoundingClientRect().top + document.querySelector('.odx-canvas').scrollTop)).join(' '));
+const tops0 = await tableTops();
+for (const at of ['A. SCOPE', 'B. MILESTONES', 'A. SCOPE', 'C. APPROACH']) {
+  await page.click(`.odx-content td:has-text("${at}")`);
+  await page.waitForTimeout(300);
+}
+const tops1 = await tableTops();
+check(tops0 === tops1 && new Set(tops0.split(' ')).size === 3, `tables after page breaks keep their places after clicks (${tops0} -> ${tops1})`);
+
 // List numbers in their level's bold, italic and colour, else the paragraph mark's (mklists2.mjs; as in Word's PDF).
 await open('lists-more.docx');
 const lbls = await page.evaluate(() => [...document.querySelectorAll('.odx-content p.odx-li')].slice(0, 6).map((p) => { const b = getComputedStyle(p, '::before'); return `${b.fontWeight >= 700 ? 'b' : ''}${b.fontStyle === 'italic' ? 'i' : ''}${b.color === 'rgb(192, 0, 0)' ? 'red' : ''}`; }));
@@ -783,6 +795,16 @@ check(shp.length === 2 && shp[0].w === 96 && /fill="#156082"/.test(shp[0].svg) &
   && /<a:prstGeom prst="line">[\s\S]*?<a:tailEnd type="triangle"\/>/.test(shpXml) && /<path d="M[^"]*Z" fill="#/.test(shp[1].svg),
   `Insert > Shapes: a rectangle and an arrow, drawn and saved as Word's (${shp.map((s) => `${s.w}x${s.h}`).join(', ')})`);
 await page.click('.odx-rtab:text-is("Home")');
+
+// The stand-in fonts: their stylesheet linked from fonts.base (here the demo's own copy), and the Aptos stand-in (Source
+// Sans 3's letters at Aptos's widths) loaded from its file when asked for.
+const fontsLoad = await page.evaluate(async () => {
+  const link = document.querySelector('link[data-odx-fonts]');
+  await document.fonts.load('16px odx-aptos', 'Image Test');
+  const faces = [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'odx-aptos' && f.status === 'loaded');
+  return { href: link?.href.replace(location.origin, ''), rules: link?.sheet?.cssRules.length || 0, loaded: faces.length };
+});
+check(fontsLoad.href === '/dist/fonts/fonts.css' && fontsLoad.rules > 20 && fontsLoad.loaded >= 1, `stand-in fonts linked from fonts.base and loaded when used (${JSON.stringify(fontsLoad)})`);
 
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);

@@ -47,7 +47,16 @@ export interface MountOptions {
   ai?: (request: AiRequest) => Promise<string | { text: string }>;
   /** The name AI Writing's tracked changes go under ('AI'). */
   aiAuthor?: string;
+  /**
+   * The stand-in fonts: `base`, where they load from (a folder with the package's src/fonts contents; default this
+   * release's on jsDelivr; false: the host loads them itself), and `substitutes` for fonts a computer lacks.
+   */
+  fonts?: { base?: string | false; substitutes?: Record<string, string | { family: string; url?: string }> };
 }
+
+/** This release's version, and the jsDelivr address its stand-in fonts load from by default. */
+export const VERSION: string;
+export const FONTS_CDN: string;
 
 /** What AI Writing asks your model: an action on `text` (the selection, or the cursor's paragraph). */
 export interface AiRequest {

@@ -10,6 +10,8 @@ const pick = { closed: 0, delivered: 0 };
 window.addEventListener('focus', () => { pick.closed = performance.now(); });
 document.addEventListener('change', (e) => { if (e.target.type === 'file') pick.delivered = performance.now(); }, true);
 const editor = window.odx = mountDocxEditor(app, {
+  // (The stand-in fonts are in this page itself: tools/build-demo.mjs.)
+  fonts: { base: false },
   onOpened(t, name) {
     const fm = [...document.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Forms mode')?.querySelector('input'); if (fm) fm.checked = editor.forms;
     const ms = (v) => Math.round(v);

@@ -1,7 +1,8 @@
-"""Builds the Aptos stand-in fonts from Arimo (Arial's widths and design; SIL Open Font License 1.1, src/fonts/LICENSE.md:
-the fonts made are modified versions of it, under the same license and with names of their own).
+"""Builds the Aptos stand-in fonts from a source font (Source Sans 3; SIL Open Font License 1.1, src/fonts/LICENSE.md:
+the fonts made are modified versions of it, under the same license and with names of their own, not its reserved one).
 
-  python aptos_standin.py cmap <arimo.woff2>            -> prints {code point: advance in em}, as JSON
+  python aptos_standin.py cmap <font>                   -> prints {code point: advance in em}, as JSON
+  python aptos_standin.py xheight <font>                -> prints its x-height in em (OS/2 sxHeight)
   python aptos_standin.py build <spec.json>             -> writes each face's .woff2
 
 spec.json: {"faces": [{"src": arimo.woff2, "out": out.woff2, "name": "...", "scale": s,
@@ -82,9 +83,9 @@ def build_face(face):
     fb.setupHorizontalHeader(ascent=hhea.ascent, descent=hhea.descent)
     fb.setupNameTable({'familyName': face['name'], 'styleName': face.get('style', 'Regular'),
                        'psName': face['name'].replace(' ', '') + '-' + face.get('style', 'Regular').replace(' ', ''),
-                       'copyright': 'Copyright 2020 The Arimo Project Authors (https://github.com/googlefonts/arimo). '
-                                    'Modified (letter widths) by open-docx-editor. Licensed under the SIL Open Font '
-                                    'License, Version 1.1 (https://openfontlicense.org).'})
+                       'copyright': src['name'].getDebugName(0).strip() + '. Modified (letter widths) by '
+                                    'open-docx-editor. Licensed under the SIL Open Font License, Version 1.1 '
+                                    '(https://openfontlicense.org).'})
     os2 = src['OS/2']
     fb.setupOS2(sTypoAscender=os2.sTypoAscender, sTypoDescender=os2.sTypoDescender, sTypoLineGap=os2.sTypoLineGap,
                 usWinAscent=os2.usWinAscent, usWinDescent=os2.usWinDescent, usWeightClass=os2.usWeightClass,
@@ -95,9 +96,16 @@ def build_face(face):
     fb.save(face['out'])
 
 
+def xheight(path):
+    font = TTFont(path)
+    print(font['OS/2'].sxHeight / font['head'].unitsPerEm)
+
+
 def main():
     if sys.argv[1] == 'cmap':
         cmap(sys.argv[2])
+    elif sys.argv[1] == 'xheight':
+        xheight(sys.argv[2])
     else:
         with open(sys.argv[2], encoding='utf-8') as f:
             spec = json.load(f)

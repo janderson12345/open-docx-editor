@@ -228,24 +228,28 @@ or endorsed by Microsoft.
 
 ## Fonts
 
-Word documents mostly use Microsoft's fonts (Calibri, Cambria, Arial, Times New Roman, Courier New). The editor lays
-text out in the fonts installed on the computer, as Word does, so on a computer without those fonts lines can break
-in different places. Two things help:
+Word documents mostly use Microsoft's fonts (Calibri, Cambria, Arial, Times New Roman, Courier New, Aptos). The
+editor lays text out in the fonts installed on the computer, as Word does, and uses a stand-in where one is missing:
 
-- **Metric-compatible fonts**, with the same character widths as Microsoft's: Carlito (Calibri), Caladea (Cambria),
-  and Arimo, Tinos and Cousine (Arial, Times New Roman, Courier New), named in the stylesheet Liberation Sans, Serif
-  and Mono, the names documents use for them. They're bundled (SIL Open Font License
-  and Apache License 2.0, 1.6 MB, Latin and Latin Extended); import them once and they're used wherever the
-  original is missing. Each matches its original's character widths and line height:
+- **Stand-ins with the same character widths**, so lines break where Word breaks them: Carlito (Calibri), Caladea
+  (Cambria), Arimo, Tinos and Cousine (Arial, Times New Roman, Courier New; named Liberation Sans, Serif and Mono, the
+  names documents use for them), and for Aptos and Aptos Display, Source Sans 3's letters fitted to Aptos's widths and
+  x-height. Open-licensed (SIL Open Font License, Apache License 2.0; Latin and Latin Extended).
+- **Loaded only when needed**: the editor links their stylesheet from jsDelivr (this release's files on npm), and the
+  browser downloads a font only when a document uses it and the computer lacks it. To serve them yourself (no outside
+  CDN), copy the package's `src/fonts` folder (`fonts.css` and `files/`) to your server and point the editor at it; or
+  import them through your bundler and turn the link off:
 
   ```js
-  import 'open-docx-editor/fonts.css';
+  mountDocxEditor(el, { fonts: { base: '/static/docx-fonts/' } });   // your copy of src/fonts
+  import 'open-docx-editor/fonts.css'; mountDocxEditor(el, { fonts: { base: false } }); // or bundled
   ```
+- **Your own choice for a missing font**: `fonts.substitutes` names the font to draw instead (one the browser has, or
+  one loaded from a URL you give). It isn't fitted to the missing font's widths, so lines may break differently:
 
-  Without a bundler, link the package's `src/fonts/fonts.css` (or `dist/fonts/fonts.css` from a build), keeping its
-  `files/` folder beside it.
-- **Aptos** (Word's newer default font, which browsers rarely have) is drawn by stand-in fonts built into the editor's
-  stylesheet, each letter at Aptos's width, so lines break where Word breaks them.
+  ```js
+  mountDocxEditor(el, { fonts: { substitutes: { Grandview: 'Inter', Seaford: { family: 'Lato', url: '/fonts/lato.woff2' } } } });
+  ```
 - **Knowing when a font is missing**: `onMissingFonts` reports the fonts a document asks for that the computer lacks,
   and what it shows instead, so you can tell the user.
 

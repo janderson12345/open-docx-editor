@@ -18,11 +18,13 @@ are replaced.
 
 ## The Aptos stand-ins
 
-`src/editor/editor.css` embeds eight small fonts for Aptos and Aptos Display (regular, bold, italic, bold italic):
-Arimo's Latin letters, each narrowed or widened sideways to the width the editor gives Aptos's letter (fitted to Word's
-PDFs), all at one height. `build-aptos.mjs` measures those widths as editor.css draws them (in Microsoft Edge), builds
-the fonts with `aptos_standin.py` (Python with fontTools and brotli) and writes them into editor.css between its markers:
+`src/fonts/files/odx-aptos-*.woff2` are eight small fonts for Aptos and Aptos Display (regular, bold, italic, bold
+italic), with their `@font-face` lines in `src/fonts/fonts.css`: Source Sans 3's Latin letters (its letters are closer
+to Aptos's than Arial's design), each narrowed or widened sideways to the width the editor gives Aptos's letter (fitted
+to Word's PDFs), the font scaled so its x-height is Aptos's. `build-aptos.mjs` measures those widths as the stand-ins
+draw them now (in Microsoft Edge), builds the fonts with `aptos_standin.py` (Python with fontTools and brotli) and
+writes them and their CSS. It needs Source Sans 3's TTFs (from github.com/adobe-fonts/source-sans releases):
 
 ```sh
-node tools/fonts/build-aptos.mjs
+node tools/fonts/build-aptos.mjs <folder with SourceSans3-Regular.ttf, -Bold.ttf, -It.ttf, -BoldIt.ttf>
 ```
