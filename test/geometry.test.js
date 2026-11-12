@@ -53,3 +53,17 @@ test('every gallery shape is defined or left out; theme colours as Word mixes th
   assert.match(svg('<a:schemeClr val="accent1"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>'), /fill="#8FAB?D[BC]"/);
   assert.match(svg('<a:srgbClr val="156082"><a:shade val="15000"/></a:srgbClr>'), /fill="#042433"/);
 });
+
+test('SmartArt: drawn from the drawing Word saves with it (shapes, text, colourful variations)', async () => {
+  const fs = await import('node:fs');
+  const { DocxSession } = await import('../src/ooxml/docx.js');
+  const s = new DocxSession(new Uint8Array(fs.readFileSync(new URL('./fixtures/smartart.docx', import.meta.url))));
+  const svgs = [];
+  s.doc.descendants((n) => { if (n.type.name === 'image' && /^data:image\/svg/.test(n.attrs.src || '')) svgs.push(decodeURIComponent(n.attrs.src.split(',')[1])); });
+  assert.equal(svgs.length, 8);
+  // Basic Process: three rounded boxes with their text, two arrows between.
+  assert.match(svgs[0], />Plan<\/tspan>[\s\S]*>Build<\/tspan>[\s\S]*>Test<\/tspan>/);
+  // Basic Block List in a colourful variation: five different fills (hueOff steps).
+  const fills = new Set([...svgs[1].matchAll(/<path d="[^"]*" fill="#([0-9A-F]{6})"/g)].map((m) => m[1]));
+  assert.ok(fills.size >= 5, [...fills].join(','));
+});

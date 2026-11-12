@@ -30,7 +30,7 @@ function color(el, colors) {
   for (const m of els(el)) {
     const v = Number(m.getAttribute('val')) / 100000;
     if (m.localName === 'alpha') alpha = v;
-    else if (['shade', 'tint', 'lumMod', 'lumOff'].includes(m.localName)) hex = modify(hex, m.localName, v);
+    else if (['shade', 'tint', 'lumMod', 'lumOff', 'hueOff', 'hueMod', 'satOff', 'satMod'].includes(m.localName)) hex = modify(hex, m.localName, v);
   }
   return { hex, alpha };
 }
@@ -40,7 +40,8 @@ const toSrgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.0
 const hexOf = (rgb) => rgb.map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
 /**
  * A colour changed as DrawingML says: shade and tint in linear light (towards black, towards white: Word's accent 1
- * #156082 at shade 15% is #042433), lumMod and lumOff on its HSL luminance ("Accent 1, Darker 25%" is lumMod 75%).
+ * #156082 at shade 15% is #042433), lumMod and lumOff on its HSL luminance ("Accent 1, Darker 25%" is lumMod 75%),
+ * hueOff/hueMod and satOff/satMod on its hue and saturation (SmartArt's colourful variations step the hue).
  */
 function modify(hex, kind, v) {
   const rgb = [16, 8, 0].map((s) => ((parseInt(hex, 16) >> s) & 255) / 255);
@@ -49,11 +50,18 @@ function modify(hex, kind, v) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b);
   let l = (max + min) / 2;
   const d = max - min;
-  const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  let sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
   let h = 0;
   if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  l = kind === 'lumMod' ? l * v : l + v;
+  if (kind === 'lumMod') l *= v;
+  else if (kind === 'lumOff') l += v;
+  else if (kind === 'satMod') sat *= v;
+  else if (kind === 'satOff') sat += v;
+  else if (kind === 'hueMod') h *= v;
+  else if (kind === 'hueOff') h += (v * 100000) / 60000 / 60; // (60000ths of a degree, in sixths of the circle)
+  h = ((h % 6) + 6) % 6;
   l = Math.min(1, Math.max(0, l));
+  sat = Math.min(1, Math.max(0, sat));
   const c = (1 - Math.abs(2 * l - 1)) * sat;
   const x = c * (1 - Math.abs((h % 2 + 2) % 2 - 1));
   const m0 = l - c / 2;
@@ -193,7 +201,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       const rf = child(rPr, 'rFonts');
       const theme = wa(rf, 'asciiTheme');
       const font = wa(rf, 'ascii') || wa(rf, 'hAnsi') || (theme && ctx.theme?.[theme.startsWith('major') ? 'major' : 'minor']) || cs.font || st.font || font0;
-      const open = `<tspan font-family="${esc(font)}" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
         if (n.localName === 'tab') {
@@ -247,11 +255,116 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   return out.join('');
 }
 
+/**
+ * A DrawingML text body (a:txBody: SmartArt's shapes) as SVG text in the box { x, y, w, h } (px): its insets, vertical
+ * anchor, paragraphs' alignment, margins, bullets, line and paragraph spacing, and runs' size, weight, colour and font.
+ * Lines wrap word by word at the box's inner width. Sizes are a:rPr sz (hundredths of a point); a normAutofit's
+ * fontScale and lnSpcReduction shrink them as Word does.
+ */
+function dmlText(txBody, box, ctx) {
+  const bodyPr = child(txBody, 'bodyPr');
+  const ins = (k, d) => px(bodyPr?.getAttribute(k) ?? d);
+  const [l, t, r, b] = [ins('lIns', 91440), ins('tIns', 45720), ins('rIns', 91440), ins('bIns', 45720)];
+  const auto = child(bodyPr, 'normAutofit');
+  const scale = auto ? (Number(auto.getAttribute('fontScale')) || 100000) / 100000 : 1;
+  const lnRed = auto ? (Number(auto.getAttribute('lnSpcReduction')) || 0) / 100000 : 0;
+  const wrap = bodyPr?.getAttribute('wrap') !== 'none';
+  const left0 = box.x + l, right0 = box.x + box.w - r;
+  const lines = []; // { y (top, from 0), h, base, pieces: [{ x, text, open, ink }], align, left, right }
+  let y = 0;
+  let lastAft = 0;
+  const pts = (v) => (Number(v) || 0) / 100 * (4 / 3); // hundredths of a point -> px
+  for (const p of els(txBody).filter((n) => n.localName === 'p')) {
+    const pPr = child(p, 'pPr');
+    const runs = els(p).filter((n) => n.localName === 'r' || n.localName === 'br' || n.localName === 'fld');
+    const endPr = child(p, 'endParaRPr');
+    const firstRPr = child(runs.find((n) => n.localName !== 'br'), 'rPr') || endPr;
+    const size0 = (Number(firstRPr?.getAttribute('sz')) || 1800) / 100 * scale;
+    const align = { ctr: 'center', r: 'right', just: 'left', dist: 'left' }[pPr?.getAttribute('algn')] || 'left';
+    const marL = px(pPr?.getAttribute('marL') || 0);
+    const indent = px(pPr?.getAttribute('indent') || 0);
+    const spc = (name, sizePt) => {
+      const e = child(pPr, name);
+      const pct = child(e, 'spcPct');
+      const ptsEl = child(e, 'spcPts');
+      if (ptsEl) return pts(ptsEl.getAttribute('val'));
+      return pct ? (Number(pct.getAttribute('val')) / 100000) * sizePt * 1.2 * (4 / 3) : 0;
+    };
+    const lnPct = child(child(pPr, 'lnSpc'), 'spcPct');
+    const lnPts = child(child(pPr, 'lnSpc'), 'spcPts');
+    const mult = (lnPct ? Number(lnPct.getAttribute('val')) / 100000 : 1) - lnRed;
+    y += spc('spcBef', size0);
+    const bu = child(pPr, 'buChar');
+    let cur = { pieces: [], x: left0 + marL + indent, max: 0, lf: 1.2 };
+    const para = [cur];
+    if (bu && runs.length) {
+      const buFont = child(pPr, 'buFont')?.getAttribute('typeface') || ctx.font;
+      const sizePx = (size0 * 4) / 3;
+      cur.pieces.push({ x: cur.x, text: bu.getAttribute('char') || '\u2022', open: `<tspan font-family="${esc(buFont)}, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${ctx.textColor || '000000'}">`, ink: cur.x + sizePx * 0.5 });
+      cur.x = left0 + marL;
+      cur.max = sizePx;
+    }
+    const newLine = () => { cur = { pieces: [], x: left0 + marL, max: 0, lf: 1.2 }; para.push(cur); };
+    for (const run of runs) {
+      if (run.localName === 'br') { newLine(); continue; }
+      const rPr = child(run, 'rPr');
+      const sizePt = (Number(rPr?.getAttribute('sz')) || Number(firstRPr?.getAttribute('sz')) || 1800) / 100 * scale;
+      const sizePx = (sizePt * 4) / 3;
+      const fill = child(rPr, 'solidFill');
+      const c = fill ? color(els(fill)[0], ctx.colors)?.hex : null;
+      const bold = rPr?.getAttribute('b') === '1';
+      const italic = rPr?.getAttribute('i') === '1';
+      const latin = child(rPr, 'latin')?.getAttribute('typeface');
+      const font = !latin || latin.startsWith('+mn') ? ctx.font : latin.startsWith('+mj') ? ctx.theme?.major || ctx.font : latin;
+      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${c || ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}>`;
+      const text = textOfRun(run);
+      cur.lf = Math.max(cur.lf, lineFactor(font));
+      for (const word of text.match(/\S*\s*/g).filter(Boolean)) {
+        const width = textWidth(word, sizePx, bold, font);
+        const inked = textWidth(word.trimEnd(), sizePx, bold, font);
+        if (wrap && cur.x + inked > right0 + 0.5 && cur.pieces.length) newLine();
+        const last = cur.pieces[cur.pieces.length - 1];
+        if (last && last.open === open && last.end === cur.x) last.text += word;
+        else cur.pieces.push({ x: cur.x, text: word, open });
+        const pc = cur.pieces[cur.pieces.length - 1];
+        pc.ink = cur.x + inked;
+        cur.x += width;
+        pc.end = cur.x;
+        cur.max = Math.max(cur.max, sizePx);
+      }
+    }
+    for (const ln of para) {
+      const sizePx = ln.max || (size0 * 4) / 3;
+      const h = lnPts ? pts(lnPts.getAttribute('val')) : sizePx * ln.lf * mult;
+      lines.push({ y, h, base: y + h - sizePx * ln.lf * 0.222 * Math.min(1, mult), pieces: ln.pieces, align, left: left0 + marL, right: right0 });
+      y += h;
+    }
+    lastAft = spc('spcAft', size0);
+    y += lastAft;
+  }
+  // (The last paragraph's space after doesn't count where the text is centred or set at the bottom, as in Word.)
+  const used = y - lastAft;
+  const anchor = bodyPr?.getAttribute('anchor') || 't';
+  const room = box.h - t - b;
+  const top = box.y + t + (anchor === 'ctr' ? (room - used) / 2 : anchor === 'b' ? room - used : 0);
+  const out = [];
+  for (const ln of lines) {
+    if (!ln.pieces.length) continue;
+    const ink = ln.pieces[ln.pieces.length - 1].ink;
+    const shift = ln.align === 'center' ? (ln.right - ink) / 2 - (ln.pieces[0].x - ln.left) / 2 : ln.align === 'right' ? ln.right - ink : 0;
+    for (const pc of ln.pieces) out.push(`<text x="${(pc.x + shift).toFixed(1)}" y="${(top + ln.base).toFixed(1)}" xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`);
+  }
+  return out.join('');
+}
+
+/** A text run's (a:r, a:fld) text. */
+const textOfRun = (run) => els(run).filter((n) => n.localName === 't').map((n) => n.textContent).join('');
+
 function shapeSvg(el, ctx) {
   const name = el.localName;
-  if (name === 'wgp' || name === 'grpSp') {
+  if (name === 'wgp' || name === 'grpSp' || name === 'spTree') {
     const xfrm = child(child(el, 'grpSpPr'), 'xfrm');
-    const inner = els(el).filter((n) => ['wsp', 'pic', 'grpSp'].includes(n.localName)).map((n) => shapeSvg(n, ctx)).join('');
+    const inner = els(el).filter((n) => ['wsp', 'sp', 'pic', 'grpSp'].includes(n.localName)).map((n) => shapeSvg(n, ctx)).join('');
     if (!xfrm) return inner;
     const [ext, chOff, chExt] = ['ext', 'chOff', 'chExt'].map((k) => child(xfrm, k));
     const off = name === 'wgp' ? null : child(xfrm, 'off'); // the outer group's frame is the drawing itself
@@ -278,7 +391,7 @@ function shapeSvg(el, ctx) {
     const href = blip && ctx.image(blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed'));
     return href ? `<image transform="${t}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" preserveAspectRatio="none" href="${href}"/>` : '';
   }
-  if (name !== 'wsp') return '';
+  if (name !== 'wsp' && name !== 'sp') return '';
   const style = child(el, 'style');
   const pt = paints(spPr, style, ctx.colors);
   const paths = geometry(spPr, w, h);
@@ -293,7 +406,15 @@ function shapeSvg(el, ctx) {
   // (Text without a colour of its own takes the shape's font colour, wps:style's fontRef: white on Word's default shapes.)
   const fontRef = style && child(style, 'fontRef');
   const textColor = fontRef && els(fontRef)[0] ? color(els(fontRef)[0], ctx.colors)?.hex : null;
-  return `<g transform="${t}">${body}${txbx ? textBox(txbx, child(el, 'bodyPr'), w, h, textColor ? { ...ctx, textColor } : ctx, line) : ''}</g>`;
+  // DrawingML text (a:txBody: SmartArt's shapes), in its own rectangle (dsp:txXfrm) where it has one, unrotated.
+  const txBody = child(el, 'txBody');
+  let dml = '';
+  if (txBody) {
+    const tx = child(child(el, 'txXfrm'), 'off') ? child(el, 'txXfrm') : null;
+    const box = tx ? { x: px(child(tx, 'off').getAttribute('x')) - x, y: px(child(tx, 'off').getAttribute('y')) - y, w: px(child(tx, 'ext').getAttribute('cx')), h: px(child(tx, 'ext').getAttribute('cy')) } : { x: 0, y: 0, w, h };
+    dml = `<g transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">${dmlText(txBody, box, textColor ? { ...ctx, textColor } : ctx)}</g>`;
+  }
+  return `<g transform="${t}">${body}${txbx ? textBox(txbx, child(el, 'bodyPr'), w, h, textColor ? { ...ctx, textColor } : ctx, line) : ''}</g>${dml}`;
 }
 
 /**
@@ -309,6 +430,18 @@ export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   if (!inner) return null;
   const W = width + 2 * pad, H = height + 2 * pad;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${-pad} ${-pad} ${W} ${H}" overflow="visible">${inner}</svg>`;
+}
+
+/**
+ * SVG for a SmartArt diagram (a:graphicData .../diagram), from the drawing Word saves with it (diagrams/drawingN.xml:
+ * dsp:drawing's dsp:spTree, its shapes placed in the diagram's frame), sized to its extent.
+ */
+export function diagramSvg(drawingPart, ctx, width, height) {
+  const tree = desc(drawingPart, 'spTree');
+  if (!tree || !width || !height) return null;
+  const inner = shapeSvg(tree, { colors: {}, font: 'Calibri', ...ctx });
+  if (!inner) return null;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" overflow="visible">${inner}</svg>`;
 }
 
 /**

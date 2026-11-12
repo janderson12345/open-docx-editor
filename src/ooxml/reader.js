@@ -710,7 +710,7 @@ function readDrawing(drawing, ctx, rPrXml) {
   let effect = [below > 0 && `--odx-fx:${below}px`, above > 0 && `--odx-fxt:${above}px`, left > 0 && `--odx-fxl:${left}px`, right > 0 && `--odx-fxr:${right}px`].filter(Boolean).join(';');
   let src = null;
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
-  if (/wordprocessing(Group|Shape)$/.test(uri)) {
+  if (/wordprocessing(Group|Shape)$|\/diagram$/.test(uri)) {
     // An inline shape's outline and arrowheads, drawn past its box as Word draws them: its picture that much larger all
     // round (schema.js: --odx-pad), its effect-extent margins that much smaller, so it takes the same room on its line.
     const pad = ctx.padShapes && extent?.parentNode?.localName === 'inline' ? shapesPad(drawing) : 0;

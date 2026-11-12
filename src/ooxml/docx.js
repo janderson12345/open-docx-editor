@@ -11,7 +11,7 @@ import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
 import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
-import { shapesSvg } from './shapes.js';
+import { shapesSvg, diagramSvg } from './shapes.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
 import { isEmf, emfToSvg } from './emf.js';
@@ -181,7 +181,19 @@ export class DocxSession {
         return { pPr: { ...this.styles.defaults.pPr, ...st.pPr }, rPr, font };
       };
       const char = (id) => (id ? resolveStyle(this.styles.styles, id).rPr : {});
-      const svg = shapesSvg(drawing, { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme }, width, height, pad);
+      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme };
+      // SmartArt: the drawing Word saves beside the diagram's data (its data part's dsp:dataModelExt names it).
+      const ids = [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'relIds');
+      if (ids) {
+        const dm = relOf(ids.getAttributeNS(NS.r, 'dm'));
+        const data = dm && !dm.external && this.pkg.text(dm.target);
+        const ext = data && /<dsp:dataModelExt\b[^>]*\brelId="([^"]+)"/.exec(data)?.[1];
+        const part = ext && relOf(ext);
+        const xml = part && !part.external && this.pkg.text(part.target);
+        const svg = xml && diagramSvg(parseXml(xml).documentElement, sctx, width, height);
+        return svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      }
+      const svg = shapesSvg(drawing, sctx, width, height, pad);
       return svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     } catch {
       return null;
