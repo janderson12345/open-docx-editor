@@ -200,7 +200,9 @@ export const schema = new Schema({
       toDOM: (n) => {
         if (n.attrs.src && n.attrs.xml) shownImages.set(n.attrs.src, n.attrs);
         const link = n.attrs.href && safeHref(n.attrs.href);
-        return ['img', { src: n.attrs.src || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width}px;height:${n.attrs.height}px` : '', n.attrs.place].filter(Boolean).join(';') }];
+        // (A shape drawn with room around its box for its outline: reader.js readDrawing's --odx-pad.)
+        const pad = Number(/--odx-pad:([\d.]+)px/.exec(n.attrs.place || '')?.[1]) || 0;
+        return ['img', { src: n.attrs.src || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${n.attrs.height + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).

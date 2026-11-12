@@ -766,6 +766,24 @@ check(pv1 === 'Ada LOVELACE' && pv2 === 'Alan TURING' && /Record 2 of 2/.test(pv
   `mail merge: preview, next record, insert field, CSV recipients, merged document (${JSON.stringify({ pv1, pv2, pvStatus, pvOff, inserted, csvCount, file: download.suggestedFilename() })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
+// Insert > Shapes: a rectangle and an arrow, in line with the text, theme-styled as Word's (accent 1, darker outline),
+// drawn, and saved as Word writes them.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+await page.click('.odx-rtab:text-is("Insert")');
+await page.click('button[title^="Shapes"]');
+await page.click('.odx-pop button[title="Rectangle"]');
+await page.waitForTimeout(300);
+await page.click('button[title^="Shapes"]');
+await page.click('.odx-pop button[title="Arrow"]');
+await page.waitForTimeout(400);
+const shp = await page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => ({ w: i.width, h: i.height, svg: decodeURIComponent(i.src.split(',')[1] || '') })));
+const shpXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+check(shp.length === 2 && shp[0].w === 96 && /fill="#156082"/.test(shp[0].svg) && /<a:prstGeom prst="rect">/.test(shpXml) && /<a:fillRef idx="1"><a:schemeClr val="accent1"\/>/.test(shpXml)
+  && /<a:prstGeom prst="line">[\s\S]*?<a:tailEnd type="triangle"\/>/.test(shpXml) && /<path d="M[^"]*Z" fill="#/.test(shp[1].svg),
+  `Insert > Shapes: a rectangle and an arrow, drawn and saved as Word's (${shp.map((s) => `${s.w}x${s.h}`).join(', ')})`);
+await page.click('.odx-rtab:text-is("Home")');
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

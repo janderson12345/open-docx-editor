@@ -3,10 +3,15 @@
 // Display only; the drawing's XML is saved back untouched.
 import { esc, elementKids as els, childNamed as child } from './xml.js';
 import { lineFactor } from './props.js';
+import { geometryPaths, readGeometry, adjustOf } from './geometry.js';
+import { PRESETS } from './presets.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
 
-/** Office's default theme colours, for a drawing whose theme doesn't say. */
-export const OFFICE = { accent1: '4472C4', accent2: 'ED7D31', accent3: 'A5A5A5', accent4: 'FFC000', accent5: '5B9BD5', accent6: '70AD47', dk1: '000000', lt1: 'FFFFFF', dk2: '44546A', lt2: 'E7E6E6' };
+/**
+ * Office's default theme colours, for a document without a theme part: the current Office theme's, as Word 365 draws
+ * such a document's shapes and charts (checked: its accent 1 is 156082).
+ */
+export const OFFICE = { accent1: '156082', accent2: 'E97132', accent3: '196B24', accent4: '0F9ED5', accent5: 'A02B93', accent6: '4EA72E', dk1: '000000', lt1: 'FFFFFF', dk2: '0E2841', lt2: 'E8E8E8' };
 const px = (v) => emuToPx(v || 0);
 const desc = (el, name) => (el ? [...el.getElementsByTagName('*')].find((n) => n.localName === name) || null : null);
 
@@ -25,10 +30,36 @@ function color(el, colors) {
   for (const m of els(el)) {
     const v = Number(m.getAttribute('val')) / 100000;
     if (m.localName === 'alpha') alpha = v;
-    else if (m.localName === 'lumMod' || m.localName === 'shade') hex = mix(hex, v, '000000');
-    else if (m.localName === 'lumOff' || m.localName === 'tint') hex = mix(hex, m.localName === 'tint' ? v : 1 - v, 'FFFFFF');
+    else if (['shade', 'tint', 'lumMod', 'lumOff'].includes(m.localName)) hex = modify(hex, m.localName, v);
   }
   return { hex, alpha };
+}
+
+const toLin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const toSrgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+const hexOf = (rgb) => rgb.map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+/**
+ * A colour changed as DrawingML says: shade and tint in linear light (towards black, towards white: Word's accent 1
+ * #156082 at shade 15% is #042433), lumMod and lumOff on its HSL luminance ("Accent 1, Darker 25%" is lumMod 75%).
+ */
+function modify(hex, kind, v) {
+  const rgb = [16, 8, 0].map((s) => ((parseInt(hex, 16) >> s) & 255) / 255);
+  if (kind === 'shade' || kind === 'tint') return hexOf(rgb.map((c) => toSrgb(kind === 'shade' ? toLin(c) * v : toLin(c) * v + 1 - v)));
+  const [r, g, b] = rgb;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let l = (max + min) / 2;
+  const d = max - min;
+  const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  l = kind === 'lumMod' ? l * v : l + v;
+  l = Math.min(1, Math.max(0, l));
+  const c = (1 - Math.abs(2 * l - 1)) * sat;
+  const x = c * (1 - Math.abs((h % 2 + 2) % 2 - 1));
+  const m0 = l - c / 2;
+  const hi = ((Math.floor(h) % 6) + 6) % 6;
+  const [r1, g1, b1] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][hi];
+  return hexOf([r1 + m0, g1 + m0, b1 + m0]);
 }
 
 function mix(hex, keep, other) {
@@ -38,11 +69,14 @@ function mix(hex, keep, other) {
 }
 
 /** fill="..." stroke="..." attributes from spPr (and the shape's style references as a fallback). */
+/** A shape's fill and outline: { fill, stroke ({ hex, alpha } or null), width (px), ln (its a:ln) }. */
 function paints(spPr, style, colors) {
   const solid = (el) => el && color(els(el)[0], colors);
   let fill = null;
   let stroke = null;
-  let width = 0.75 * (4 / 3);
+  // (A theme line style's width by its index: Office's are 0.5pt, 1pt and 1.5pt.)
+  const lnIdx = Number(style && child(style, 'lnRef')?.getAttribute('idx')) || 0;
+  let width = lnIdx ? px([6350, 12700, 19050][lnIdx - 1] || 12700) : 0.75 * (4 / 3);
   const f = els(spPr).find((n) => /Fill$/.test(n.localName));
   if (f) fill = f.localName === 'solidFill' ? solid(f) : f.localName === 'gradFill' ? color(desc(f, 'gs') && els(desc(f, 'gs'))[0], colors) : null;
   else if (style && child(style, 'fillRef') && child(style, 'fillRef').getAttribute('idx') !== '0') fill = color(els(child(style, 'fillRef'))[0], colors);
@@ -50,44 +84,47 @@ function paints(spPr, style, colors) {
   if (ln) {
     if (ln.getAttribute('w')) width = px(ln.getAttribute('w'));
     stroke = child(ln, 'noFill') ? null : solid(child(ln, 'solidFill')) || (style && child(style, 'lnRef') ? color(els(child(style, 'lnRef'))[0], colors) : null);
-  } else if (style && child(style, 'lnRef') && child(style, 'lnRef').getAttribute('idx') !== '0') stroke = color(els(child(style, 'lnRef'))[0], colors);
-  const attrs = (kind, c) => (c ? `${kind}="#${c.hex}"${c.alpha < 1 ? ` ${kind}-opacity="${+c.alpha.toFixed(3)}"` : ''}` : `${kind}="none"`);
-  return `${attrs('fill', fill)} ${attrs('stroke', stroke)}${stroke ? ` stroke-width="${+width.toFixed(2)}"` : ''}`;
+  } else if (lnIdx) stroke = color(els(child(style, 'lnRef'))[0], colors);
+  return { fill, stroke, width, ln };
 }
 
-/** SVG path data for a shape's geometry, in a w x h box. */
+/** SVG paint attributes: `kind` (fill or stroke) in colour `c` (none without one). */
+const paint = (kind, c) => (c ? `${kind}="#${c.hex}"${c.alpha < 1 ? ` ${kind}-opacity="${+c.alpha.toFixed(3)}"` : ''}` : `${kind}="none"`);
+/** A path's fill as its fill mode makes it (a can's lighter top, a cube's darker side). */
+const FILL_MODE = { darken: [0.6, '000000'], darkenLess: [0.8, '000000'], lighten: [0.6, 'FFFFFF'], lightenLess: [0.8, 'FFFFFF'] };
+function modeFill(c, mode) {
+  if (!c || mode === 'none') return null;
+  const m = FILL_MODE[mode];
+  return m ? { ...c, hex: mix(c.hex, m[0], m[1]) } : c;
+}
+
+/** A shape's paths ([{ d, fill, stroke, ends }], geometry.js) in a w x h px box: its preset's or its own (a:custGeom). */
 function geometry(spPr, w, h) {
   const cust = child(spPr, 'custGeom');
-  if (cust) {
-    let d = '';
-    for (const path of els(child(cust, 'pathLst'))) {
-      const pw = Number(path.getAttribute('w')) || w * EMU_PER_PX;
-      const ph = Number(path.getAttribute('h')) || h * EMU_PER_PX;
-      const sx = w / pw;
-      const sy = h / ph;
-      const pt = (p) => `${(Number(p.getAttribute('x')) * sx).toFixed(2)} ${(Number(p.getAttribute('y')) * sy).toFixed(2)}`;
-      for (const c of els(path)) {
-        const ps = els(c).filter((n) => n.localName === 'pt');
-        if (c.localName === 'moveTo') d += `M${pt(ps[0])}`;
-        else if (c.localName === 'lnTo') d += `L${pt(ps[0])}`;
-        else if (c.localName === 'cubicBezTo') d += `C${ps.map(pt).join(' ')}`;
-        else if (c.localName === 'quadBezTo') d += `Q${ps.map(pt).join(' ')}`;
-        else if (c.localName === 'close') d += 'Z';
-      }
-    }
-    return d;
-  }
-  const prst = child(spPr, 'prstGeom')?.getAttribute('prst') || 'rect';
-  if (prst === 'ellipse') return `M0 ${h / 2}A${w / 2} ${h / 2} 0 1 0 ${w} ${h / 2}A${w / 2} ${h / 2} 0 1 0 0 ${h / 2}Z`;
-  if (prst === 'line' || /Connector/.test(prst)) return `M0 0L${w} ${h}`;
-  if (prst === 'roundRect') {
-    const r = Math.min(w, h) * 0.1667;
-    return `M${r} 0H${w - r}Q${w} 0 ${w} ${r}V${h - r}Q${w} ${h} ${w - r} ${h}H${r}Q0 ${h} 0 ${h - r}V${r}Q0 0 ${r} 0Z`;
-  }
-  if (prst === 'triangle') return `M${w / 2} 0L${w} ${h}L0 ${h}Z`;
-  if (prst === 'rtTriangle') return `M0 0L${w} ${h}L0 ${h}Z`;
-  if (prst === 'diamond') return `M${w / 2} 0L${w} ${h / 2}L${w / 2} ${h}L0 ${h / 2}Z`;
-  return `M0 0H${w}V${h}H0Z`;
+  const prst = child(spPr, 'prstGeom');
+  const def = cust ? readGeometry(cust) : PRESETS[prst?.getAttribute('prst')] || PRESETS.rect;
+  // (In EMU, as the definitions' numbers are, drawn in px.)
+  return geometryPaths(def, w * EMU_PER_PX, h * EMU_PER_PX, adjustOf(cust || prst), 1 / EMU_PER_PX);
+}
+
+/** A line end's arrowhead (a:headEnd / a:tailEnd) at [x, y] pointing along [dx, dy], for a line `width` px wide. */
+function arrowhead(end, at, width, c) {
+  const type = end?.getAttribute('type');
+  if (!type || type === 'none' || !at) return '';
+  const k = { sm: 2, med: 3, lg: 5 };
+  // (Sized as for a line at least 2pt wide: Word's medium arrowhead on a 1pt line is 6pt long, measured.)
+  const base = Math.max(width, 8 / 3);
+  const hw = (base * (k[end.getAttribute('w')] || 3)) / 2; // half its width
+  const len = base * (k[end.getAttribute('len')] || 3);
+  const [x, y, dx, dy] = at;
+  const nx = -dy, ny = dx; // across the line
+  const p = (a, b) => `${(x + dx * a + nx * b).toFixed(2)} ${(y + dy * a + ny * b).toFixed(2)}`;
+  const col = `#${c.hex}`;
+  if (type === 'oval') return `<ellipse cx="${(x - dx * len / 2).toFixed(2)}" cy="${(y - dy * len / 2).toFixed(2)}" rx="${(len / 2).toFixed(2)}" ry="${hw.toFixed(2)}" transform="rotate(${(Math.atan2(dy, dx) * 180 / Math.PI).toFixed(2)} ${(x - dx * len / 2).toFixed(2)} ${(y - dy * len / 2).toFixed(2)})" fill="${col}"/>`;
+  if (type === 'diamond') return `<path d="M${p(0, 0)}L${p(-len / 2, hw)}L${p(-len, 0)}L${p(-len / 2, -hw)}Z" fill="${col}"/>`;
+  if (type === 'arrow') return `<path d="M${p(-len, hw)}L${p(0, 0)}L${p(-len, -hw)}" fill="none" stroke="${col}" stroke-width="${width.toFixed(2)}" stroke-linejoin="miter"/>`;
+  if (type === 'stealth') return `<path d="M${p(0, 0)}L${p(-len, hw)}L${p(-len * 0.6, 0)}L${p(-len, -hw)}Z" fill="${col}"/>`;
+  return `<path d="M${p(0, 0)}L${p(-len, hw)}L${p(-len, -hw)}Z" fill="${col}"/>`; // triangle
 }
 
 // A w: attribute (w:val, w:left, ...).
@@ -156,7 +193,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       const rf = child(rPr, 'rFonts');
       const theme = wa(rf, 'asciiTheme');
       const font = wa(rf, 'ascii') || wa(rf, 'hAnsi') || (theme && ctx.theme?.[theme.startsWith('major') ? 'major' : 'minor']) || cs.font || st.font || font0;
-      const open = `<tspan font-family="${esc(font)}" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' ? c : '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      const open = `<tspan font-family="${esc(font)}" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
         if (n.localName === 'tab') {
@@ -243,11 +280,20 @@ function shapeSvg(el, ctx) {
   }
   if (name !== 'wsp') return '';
   const style = child(el, 'style');
-  const body = `<path d="${geometry(spPr, w, h)}" ${paints(spPr, style, ctx.colors)} vector-effect="non-scaling-stroke"/>`;
+  const pt = paints(spPr, style, ctx.colors);
+  const paths = geometry(spPr, w, h);
+  const strokeAttrs = pt.stroke ? ` stroke-width="${+pt.width.toFixed(2)}" stroke-miterlimit="8"` : '';
+  let body = paths.map((p) => `<path d="${p.d}" ${paint('fill', modeFill(pt.fill, p.fill))} ${p.stroke ? paint('stroke', pt.stroke) + strokeAttrs : 'stroke="none"'} vector-effect="non-scaling-stroke"/>`).join('');
+  // Arrowheads, where the outline has them (on a line, or any open path).
+  const open = paths.find((p) => p.ends && !/Z$/.test(p.d));
+  if (pt.stroke && open && pt.ln) body += arrowhead(child(pt.ln, 'headEnd'), open.ends[0], pt.width, pt.stroke) + arrowhead(child(pt.ln, 'tailEnd'), open.ends[1], pt.width, pt.stroke);
   const txbx = child(el, 'txbx');
   const ln = child(spPr, 'ln');
   const line = ln && !child(ln, 'noFill') && child(ln, 'solidFill') ? px(ln.getAttribute('w') || EMU_PER_PX) : 0;
-  return `<g transform="${t}">${body}${txbx ? textBox(txbx, child(el, 'bodyPr'), w, h, ctx, line) : ''}</g>`;
+  // (Text without a colour of its own takes the shape's font colour, wps:style's fontRef: white on Word's default shapes.)
+  const fontRef = style && child(style, 'fontRef');
+  const textColor = fontRef && els(fontRef)[0] ? color(els(fontRef)[0], ctx.colors)?.hex : null;
+  return `<g transform="${t}">${body}${txbx ? textBox(txbx, child(el, 'bodyPr'), w, h, textColor ? { ...ctx, textColor } : ctx, line) : ''}</g>`;
 }
 
 /**
@@ -255,11 +301,30 @@ function shapeSvg(el, ctx) {
  * @param {Element} drawing w:drawing
  * @param {{ image: (rId: string) => string|null, colors?: object, font?: string }} ctx image() returns a data: URL
  */
-export function shapesSvg(drawing, ctx, width, height) {
+export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   const data = desc(drawing, 'graphicData');
   const root = data && els(data).find((n) => n.localName === 'wgp' || n.localName === 'wsp');
   if (!root || !width || !height) return null;
   const inner = shapeSvg(root, { colors: {}, font: 'Calibri', ...ctx });
   if (!inner) return null;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" overflow="visible">${inner}</svg>`;
+  const W = width + 2 * pad, H = height + 2 * pad;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${-pad} ${-pad} ${W} ${H}" overflow="visible">${inner}</svg>`;
+}
+
+/**
+ * How far a drawing's lines are drawn past its box (px) for their arrowheads, which Word draws there (an image can't:
+ * the room is added around it, shapesSvg's pad). Only for arrowheads: room for every outline moved lines on the page
+ * by a fraction of a pixel (sample S129, 103 inline shapes: 118 lines 0.7px off), so outlines stay inside the box.
+ */
+export function shapesPad(drawing) {
+  let pad = 0;
+  for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
+    if (child(ln, 'noFill')) continue;
+    const w = ln.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33;
+    const ends = ['headEnd', 'tailEnd'].map((k) => child(ln, k)).filter((e) => e && e.getAttribute('type') && e.getAttribute('type') !== 'none');
+    if (!ends.length) continue;
+    const k = { sm: 2, med: 3, lg: 5 };
+    pad = Math.max(pad, w / 2 + Math.max(...ends.map((e) => Math.max(w, 8 / 3) * Math.max(k[e.getAttribute('w')] || 3, k[e.getAttribute('len')] || 3))));
+  }
+  return Math.ceil(pad);
 }

@@ -1,6 +1,7 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
+import { shapesPad } from './shapes.js';
 import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
@@ -13,14 +14,14 @@ const RPR_MODELLED = new Set(['rStyle', 'rFonts', 'b', 'i', 'strike', 'color', '
 // Paragraph-level markers with no visible content.
 export const ZERO_WIDTH = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'permStart', 'permEnd', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']);
 
-export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, resolveChunk = null, chunkList = null } = {}) {
+export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, resolveChunk = null, chunkList = null, padShapes = false } = {}) {
   sdtGroup = 0; // field keys are per document, so reading is repeatable
   chunkGroup = 0;
   const root = docXml.documentElement;
   const rootNs = nsDecls(root);
   const body = kid(root, 'body');
   if (!body) throw new Error('document.xml has no w:body');
-  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, resolveChunk, chunkList, xml: (el) => outerXml(el, rootNs) };
+  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, resolveChunk, chunkList, padShapes, xml: (el) => outerXml(el, rootNs) };
 
   let sectPr = null;
   const bodyKids = kids(body);
@@ -706,12 +707,16 @@ function readDrawing(drawing, ctx, rPrXml) {
   // (And its sides: an outline's 2px each side puts the picture 2px right of the line's start, doc 16's screenshots.)
   const side = (k) => (fx ? Math.round(Math.max(0, Number(fx.getAttribute(k)) || 0) / EMU_PER_PX * 100) / 100 : 0);
   const left = side('l'), right = side('r');
-  const effect = [below > 0 && `--odx-fx:${below}px`, above > 0 && `--odx-fxt:${above}px`, left > 0 && `--odx-fxl:${left}px`, right > 0 && `--odx-fxr:${right}px`].filter(Boolean).join(';');
+  let effect = [below > 0 && `--odx-fx:${below}px`, above > 0 && `--odx-fxt:${above}px`, left > 0 && `--odx-fxl:${left}px`, right > 0 && `--odx-fxr:${right}px`].filter(Boolean).join(';');
   let src = null;
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
   if (/wordprocessing(Group|Shape)$/.test(uri)) {
-    src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height) : null;
+    // An inline shape's outline and arrowheads, drawn past its box as Word draws them: its picture that much larger all
+    // round (schema.js: --odx-pad), its effect-extent margins that much smaller, so it takes the same room on its line.
+    const pad = ctx.padShapes && extent?.parentNode?.localName === 'inline' ? shapesPad(drawing) : 0;
+    src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height, pad) : null;
     if (!src) return null;
+    if (pad) effect = `--odx-fx:${below - pad}px;--odx-fxt:${above - pad}px;--odx-fxl:${left - pad}px;--odx-fxr:${right - pad}px;--odx-pad:${pad}px`;
   } else if (blip) {
     // An SVG picture (Word 2016+): the SVG itself (asvg:svgBlip in the blip's extensions), the PNG beside it a fallback.
     const svg = [...blip.getElementsByTagName('*')].find((e) => e.localName === 'svgBlip');

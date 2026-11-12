@@ -24,6 +24,8 @@ import { ZOOM_STEPS } from './zoom.js';
 import { esc } from '../ooxml/xml.js';
 import * as mm from './mailmerge.js';
 import * as aw from './aiwrite.js';
+import { PRESETS, SHAPE_GALLERY } from '../ooxml/presets.js';
+import { geometryPaths } from '../ooxml/geometry.js';
 import { mergeFieldNames } from '../merge.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
@@ -250,6 +252,43 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     if (at != null) setTimeout(() => tb.editTextBox(v, at), 50); // once the page shows it
   }
 
+  // Insert > Shapes: a shape in line with the text (1in by 0.75in, as Word's click-to-insert), in the theme's colours.
+  function insertShape(prst, name, arrow = false) {
+    const v = getView();
+    if (!v || v.odx?.isStory) return false;
+    const line = prst === 'line';
+    const width = line ? 144 : 96;
+    const height = line ? 1 : 72;
+    const { xml, src } = v.odx.session.addShape(prst, width, height, { arrow });
+    v.dispatch(v.state.tr.replaceSelectionWith(schema.nodes.image.create({ xml, src, width, height, alt: name })).scrollIntoView());
+    v.focus();
+    announce(`${name} inserted`);
+    return true;
+  }
+  /** A shape's small picture for the gallery, drawn from its definition. */
+  const shapeIcon = (prst, arrow) => {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '-2 -2 32 26');
+    svg.setAttribute('width', '32');
+    svg.setAttribute('height', '26');
+    svg.setAttribute('aria-hidden', 'true');
+    const line = prst === 'line';
+    for (const p of geometryPaths(PRESETS[prst], 28, line ? 22 : 22)) {
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', line ? 'M0 22L28 0' : p.d);
+      path.setAttribute('fill', line || p.fill === 'none' ? 'none' : 'currentColor');
+      path.setAttribute('fill-opacity', '0.25');
+      path.setAttribute('stroke', 'currentColor');
+      path.setAttribute('stroke-width', '1.2');
+      svg.append(path);
+    }
+    if (arrow) { const h = document.createElementNS(ns, 'path'); h.setAttribute('d', 'M28 0L20 2L25 7Z'); h.setAttribute('fill', 'currentColor'); svg.append(h); }
+    return svg;
+  };
+  const shapesGallery = () => [el('div', { class: 'odx-gallery odx-shapes' }, ...SHAPE_GALLERY.filter(([p]) => PRESETS[p]).map(([prst, name, arrow]) =>
+    el('button', { type: 'button', class: 'odx-gal odx-shape', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); insertShape(prst, name, arrow); } }, shapeIcon(prst, arrow))))];
+
   // --- Find and Replace bar ---
   const { findBar, openFind } = createFindBar(getView, withView);
 
@@ -472,7 +511,8 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       grp('Pages', btn('⤓', 'Page break (Ctrl+Enter)', cmd.insertBreak('page'), { label: 'Page Break', big: true })),
       grp('Tables', menu('▦', 'Insert table', () => [2, 3, 4, 5, 6].flatMap((r) => [2, 3, 4].map((c) => item(`${c} × ${r} table`, insertTable(r, c))).slice(r === 3 ? 0 : 1, r === 3 ? 3 : 2)), { label: 'Table', big: true })),
       grp('Illustrations', btn('🖼', 'Insert a picture from this device', () => picInput.click(), { label: 'Picture', big: true }), picInput),
-      grp('Text', btn('▭', 'Insert a text box', () => (insertTextBox(), true), { label: 'Text Box', big: true })),
+      grp('Text', btn('▭', 'Insert a text box', () => (insertTextBox(), true), { label: 'Text Box', big: true }),
+        menu('⬠', 'Shapes: insert a shape', shapesGallery, { label: 'Shapes', big: true })),
       grp('Table of Contents', btn('☰', 'Insert table of contents', withView(toc.insertToc), { label: 'Table of Contents', big: true })),
       grp('Bookmarks', menu('🔖', 'Bookmark', () => {
         const v = getView();
