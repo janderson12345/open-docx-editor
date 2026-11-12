@@ -155,6 +155,8 @@ function tableCells(table, pos, cache, session) {
  * style" (contextualSpacing). Recomputed in one pass after every change.
  */
 function paragraphPlugin(session) {
+  // A paragraph's space before or after in twips (none under HTML-style automatic spacing).
+  const spacing = (node, side) => ((node.attrs.view[`${side}Auto`] ?? session.styleProp(node.attrs.styleId, `${side}Auto`)) ? 0 : node.attrs.view[side] ?? session.styleProp(node.attrs.styleId, side) ?? session.styles.defaults.pPr[side] ?? 0);
   const tableCache = new Map();
   const styleCs = new Map();
   const contextual = (attrs) => {
@@ -211,15 +213,27 @@ function paragraphPlugin(session) {
     }
     const visit = (parent, offset) => {
       let prev = null;
+      let floatGap = null; // px: the space after the paragraph before a floating table, when this block follows that table
       parent.forEach((node, rel, index) => { // (index: a top-level block's, for sides and collapse; doc.childBefore made this quadratic)
         const pos = offset + rel;
         if (node.type !== schema.nodes.paragraph) {
           // A bookmark or other marker between two paragraphs shows nothing, so they still count as neighbours.
           if (node.type === schema.nodes.opaque_block && (ZERO_WIDTH.has(node.attrs.kind) || node.attrs.kind === 'proofErr')) return;
+          const before = prev;
           prev = null;
+          floatGap = null;
           if (node.type === schema.nodes.table) {
             const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml);
-            decos.push({ cell: true, pos, node, deco: place ? { style: place } : null });
+            // A floating table in the text between two paragraphs: Word keeps both their spaces, the one after the first
+            // and the one before the second (they don't overlap as they would side by side), and the table starts below
+            // the first's (editor.css: while the table floats; one the layout puts in the flow, longer than a page, has its
+            // margins as they are).
+            let style = place;
+            if (/(?:^|;)float:/.test(place || '') && before) {
+              floatGap = twipsToPx(spacing(before.node, 'after'));
+              if (floatGap) style += `;--odx-fgap:${+floatGap.toFixed(2)}px`;
+            }
+            decos.push({ cell: true, pos, node, deco: style ? { style } : null });
             tableCells(node, pos, tableCache, session).forEach((c) => decos.push(c));
           }
           if (!node.isLeaf) visit(node, pos + 1);
@@ -257,6 +271,8 @@ function paragraphPlugin(session) {
           style.push('float:left', 'margin:0', 'padding:0', 'min-height:0');
           attrs.class = [attrs.class, 'odx-dropcap'].filter(Boolean).join(' ');
         }
+        if (floatGap) style.push(`--odx-fgap:${+floatGap.toFixed(2)}px`, `--odx-fbefore:${+twipsToPx(spacing(node, 'before')).toFixed(2)}px`);
+        floatGap = null;
         const cs = contextual(node.attrs);
         // HTML-style automatic spacing: 14pt, shared with the paragraph beside it (the margins collapse), none above the
         // first paragraph of a cell, and none between two items of one list (Word's PDFs). Under Word 2003's rule

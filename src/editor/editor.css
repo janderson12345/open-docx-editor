@@ -135,6 +135,8 @@
 .odx-exporting .odx-content > * { content-visibility: visible !important; }
 .odx-content { tab-size: 0.5in; }
 .odx-content .odx-page-break { display: inline; }
+/* A page or column break in a table cell does nothing in Word: not even a new line (the text after it goes on in the line). */
+:where(.odx-content, .odx-repeat) td .odx-page-break > br { display: none; }
 .odx-content img { max-width: 100%; vertical-align: bottom; }
 /* A picture's line: Word adds only the extra space of "multiple" line spacing below the picture (no font descent). */
 .odx-content p > img:not(.ProseMirror-separator):not([style*="position"]) { margin-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 1em + var(--odx-fx, 0px)); margin-top: var(--odx-fxt, 0px); margin-left: var(--odx-fxl, 0px); margin-right: var(--odx-fxr, 0px); } /* --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr: room for the picture's effect extent */
@@ -284,7 +286,14 @@ td[data-odx-phantom] > * { display: none; }
 /* Restrict Editing: the parts this user may still edit, highlighted as Word highlights them (on screen only). */
 @media screen { .odx-perm { background: rgba(255, 230, 80, .38); box-shadow: 0 0 0 1px rgba(200, 160, 0, .45); } }
 .odx-forms .odx-ff { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: pointer; }
+/* A floating table between two paragraphs (editor.js): the space after the one before it and the space before the one
+   after it both kept, as in Word (the browser collapses the first into the second, across the float). Not once the
+   layout has put the table in the flow. */
+.odx-content > .tableWrapper[style*="--odx-fgap"]:not([style*="float:none"]):not([style*="float: none"]) + p { margin-top: calc(var(--odx-fgap) + var(--odx-fbefore, 0px)) !important; }
 .odx-content table.odx-autofit { table-layout: auto; }
+/* Word takes a paragraph's width on one line as at most 22in (31680tw, its widest page) when it shares out an autofit
+   table's width: columns of long paragraphs come out equal, as in Word, not in proportion to their lengths. */
+.odx-content table.odx-autofit > tbody > tr > td > p { max-width: 2112px; }
 /* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
    drawn again at the top of a page: sample S057's 864-twip bottom-aligned header, 6.7px short.) */
 .odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }

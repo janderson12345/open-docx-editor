@@ -426,7 +426,9 @@ function placementCss(info, tblPrXml, compatMode, parseXml) {
     }
     const right = attr(fp, 'tblpXSpec') === 'right' || jc === 'right';
     css.push('width:fit-content', `float:${right ? 'right' : 'left'}`, `position:relative;z-index:1`);
-    css.push(`margin-left:${right ? tw('leftFromText') : left + tw('tblpX')}px`, `margin-right:${tw('rightFromText')}px`, `margin-bottom:${tw('bottomFromText')}px`);
+    // At the right, its edge is on the margin and its distance from the text is on its left (rightFromText is the
+    // gap a table at the left keeps from the text after it), as in Word.
+    css.push(`margin-left:${right ? tw('leftFromText') : left + tw('tblpX')}px`, `margin-right:${right ? 0 : tw('rightFromText')}px`, `margin-bottom:${tw('bottomFromText')}px`);
     if (tw('tblpY') > 0 && attr(fp, 'vertAnchor') !== 'page') css.push(`top:${tw('tblpY')}px`);
     return css.join(';');
   }

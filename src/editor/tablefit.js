@@ -11,36 +11,53 @@ const memo = new WeakMap(); // table element -> { sig, min }
 export function fitAutofitColumns(view) {
   let changed = false;
   const host = view.dom.parentElement;
-  const todo = [];
+  const all = [];
   for (const table of view.dom.querySelectorAll(':scope > .tableWrapper > table, :scope table')) {
     if (table.hasAttribute('data-fixed') || table.classList.contains('odx-autofit') || table.closest('.odx-repeat')) continue;
     const cols = [...(table.querySelector(':scope > colgroup')?.children || [])];
     if (cols.length < 2) continue;
-    const cur = cols.map((c) => parseFloat(c.style.width) || 0);
-    if (cur.some((w) => !w)) continue;
-    // (The minimums depend on the cells' text alone, not the widths: the copy is laid out without them.)
-    const sig = `${table.rows.length}|${table.textContent}`;
-    const m = memo.get(table);
-    todo.push({ table, cols, cur, sig, min: m && m.sig === sig ? m.min : undefined });
+    let depth = 0;
+    for (let e = table.parentElement?.closest('td'); e; e = e.parentElement?.closest('td')) depth++;
+    all.push({ table, cols, depth });
   }
-  const fresh = todo.filter((t) => t.min === undefined);
-  if (fresh.length) {
-    const mins = minimums(fresh.map((t) => t.table), fresh.map((t) => t.cols.length), host, view.dom.className);
-    fresh.forEach((t, k) => { t.min = mins[k]; memo.set(t.table, { sig: t.sig, min: t.min }); });
-  }
-  for (const { cols, cur, min } of todo) {
-    if (!min) continue;
-    const over = min.map((m, i) => Math.max(0, m - cur[i]));
-    const need = over.reduce((a, b) => a + b, 0);
-    if (need < 0.5) continue;
-    const room = cur.map((w, i) => (over[i] ? 0 : Math.max(0, w - min[i])));
-    const spare = room.reduce((a, b) => a + b, 0);
-    if (spare < need) continue; // nothing to take it from: leave it as the grid says
-    cols.forEach((col, i) => {
-      const w = over[i] ? min[i] : cur[i] - (room[i] / spare) * need;
-      col.style.width = `${Math.round(w * 100) / 100}px`;
-    });
-    changed = true;
+  // Tables in cells first, the deepest first: a nested table widened for its longest words makes its cell's column
+  // need more, so the table round it is measured with it as it now is.
+  for (let depth = Math.max(0, ...all.map((t) => t.depth)); depth >= 0; depth--) {
+    const todo = [];
+    for (const { table, cols, depth: d } of all) {
+      if (d !== depth) continue;
+      const cur = cols.map((c) => parseFloat(c.style.width) || 0);
+      if (cur.some((w) => !w)) continue;
+      // (The minimums depend on the cells' text alone, not the widths: the copy is laid out without them. And on the
+      // widths of the tables in its cells.)
+      const nested = [...table.querySelectorAll('td table > colgroup > col')].map((c) => c.style.width).join(',');
+      const sig = `${table.rows.length}|${table.textContent}|${nested}`;
+      const m = memo.get(table);
+      todo.push({ table, cols, cur, sig, nest: depth > 0, min: m && m.sig === sig ? m.min : undefined });
+    }
+    const fresh = todo.filter((t) => t.min === undefined);
+    if (fresh.length) {
+      const mins = minimums(fresh.map((t) => t.table), fresh.map((t) => t.cols.length), host, view.dom.className);
+      fresh.forEach((t, k) => { t.min = mins[k]; memo.set(t.table, { sig: t.sig, min: t.min }); });
+    }
+    for (const { cols, cur, min, nest } of todo) {
+      if (!min) continue;
+      const over = min.map((m, i) => Math.max(0, m - cur[i]));
+      const need = over.reduce((a, b) => a + b, 0);
+      if (need < 0.5) continue;
+      const room = cur.map((w, i) => (over[i] ? 0 : Math.max(0, w - min[i])));
+      const spare = room.reduce((a, b) => a + b, 0);
+      // Nothing (or not enough) to take it from: a table in a cell grows, as in Word (its cell's column then makes room
+      // for it); one on the page is left as the grid says.
+      if (spare < need && !nest) continue;
+      const take = Math.min(spare, need);
+      cols.forEach((col, i) => {
+        const w = over[i] ? min[i] : cur[i] - (spare ? (room[i] / spare) * take : 0);
+        col.style.width = `${Math.round(w * 100) / 100}px`;
+      });
+      if (spare < need) cols[0].closest('table').style.width = `${Math.round(cols.reduce((a, c) => a + parseFloat(c.style.width), 0) * 100) / 100}px`;
+      changed = true;
+    }
   }
   return changed;
 }
