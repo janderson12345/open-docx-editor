@@ -184,8 +184,6 @@
 .odx-content .odx-fmt { background: rgba(181, 23, 158, .08); }
 /* Tracked changes: a change bar left of the paragraph (two shadows, so it never moves the text). */
 .odx-content p.odx-changed { box-shadow: -8px 0 0 -2px var(--odx-sheet), -10px 0 0 -2px #b5179e; }
-.odx-content .odx-opaque-inline[data-kind="footnoteReference"]::before,
-.odx-content .odx-opaque-inline[data-kind="endnoteReference"]::before { content: '*'; vertical-align: super; font-size: 75%; color: var(--odx-accent); }
 .odx-content .odx-opaque-inline[data-kind="oMath"]:not(.odx-math), .odx-content .odx-opaque-inline[data-kind="oMathPara"]:not(.odx-math) { font-family: 'Cambria Math', serif; font-style: italic; }
 /* Equations (MathML from ooxml/omml.js) in Word's equation font; a display equation (m:oMathPara) is a line of its own, centred. */
 .odx-math math { font-family: 'Cambria Math', 'STIX Two Math', math; font-size: 1em; }
