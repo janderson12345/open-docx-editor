@@ -62,6 +62,7 @@ export function sectionXmls(doc) {
   return out;
 }
 
+const BODY_LINE = 20; // px of body text a page keeps under the tallest header or footer (a line of 11pt text)
 export function sectionBreaks(doc, session, page, storyHeight) {
   const ends = [];
   doc.forEach((node, pos, i) => {
@@ -82,10 +83,14 @@ export function sectionBreaks(doc, session, page, storyHeight) {
     // ... in the section's number format (w:fmt: lowerRoman for a front matter's "Page i").
     m.numFmt = (/<w:pgNumType\b[^>]*w:fmt="(\w+)"/.exec(x) || [])[1] || null;
     // Word moves the body down when the header reaches past the top margin.
-    const fit = (type) => ({
-      top: Math.max(m.top, m.hf.headerDist + storyHeight(m.hf.header[type])),
-      bottom: Math.max(m.bottom, m.hf.footerDist + storyHeight(m.hf.footer[type])),
-    });
+    // (But the page keeps a line of body text however tall they are, as Word's does: a footer longer than the page leaves
+    // one line at its top, each page of the body one line.)
+    const fit = (type) => {
+      const H = m.height || page.height;
+      const top = Math.min(Math.max(m.top, m.hf.headerDist + storyHeight(m.hf.header[type])), Math.max(m.top, H - m.bottom - BODY_LINE));
+      const bottom = Math.min(Math.max(m.bottom, m.hf.footerDist + storyHeight(m.hf.footer[type])), Math.max(m.bottom, H - top - BODY_LINE));
+      return { top, bottom };
+    };
     if (m.hf.titlePg) m.first = fit('first');
     Object.assign(m, fit('default'));
     return prev && same(m, prev) ? prev : (prev = m);
