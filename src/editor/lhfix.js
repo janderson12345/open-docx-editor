@@ -112,7 +112,8 @@ export function applyLineFix(view) {
     const chain = [];
     for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
     const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
-    if (pitch && !length && parseFloat(cs.getPropertyValue('--odx-runmult')) !== 0) {
+    // (Not in a table: Word sets a cell's lines as without the grid.)
+    if (pitch && !length && parseFloat(cs.getPropertyValue('--odx-runmult')) !== 0 && !el.closest('td')) {
       const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
       const on = Math.max(pitch * mult, Math.ceil(want / pitch - 1e-3) * pitch);
       const value = `${on.toFixed(4)}px`;

@@ -321,6 +321,12 @@ function paragraphPlugin(session) {
           const f = frameStyle(fr, index > 0 && frameOf(doc.child(index - 1)) === fr, page);
           style.push(...f.style);
           Object.assign(attrs, f.attrs);
+          // Its indents are inside the frame's width, as in Word (the frame's own margins place it): as padding, the
+          // width less them (a Quote's 0.6in each side in a 3in frame).
+          const ind = (k) => Math.max(0, twipsToPx(node.attrs.view[k] ?? session.styleProp(node.attrs.styleId, k) ?? 0));
+          const il = ind('indLeft'), ir = ind('indRight');
+          const wi = f.style.findIndex((x) => /^width:/.test(x));
+          if ((il || ir) && wi >= 0 && /float:/.test(f.style.join(';'))) style.push(`width:calc(${f.style[wi].slice(6)} - ${+(il + ir).toFixed(2)}px)`, `padding-left:${+il.toFixed(2)}px`, `padding-right:${+ir.toFixed(2)}px`);
         }
         const sd = !fr && parent === doc && sides.get(index);
         if (sd) {
