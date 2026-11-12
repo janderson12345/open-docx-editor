@@ -57,6 +57,11 @@ function printOf(bytes) {
  *   [{ font, substitute, standIn }] (substitute: the font drawn instead, or null for a generic one; standIn: one of
  *   the editor's own fonts sized to its widths), when there are any. Lines
  *   in a substitute may break differently from Word's; 'open-docx-editor/fonts.css' supplies metric-compatible ones.
+ * - `ai`: your AI model, for Home > AI Writing: async ({ action, instruction, prompt, text, before, after, document,
+ *   signal }) => text. `action` is 'rewrite', 'shorter', 'longer', 'formal', 'casual' or 'proofread' (rewrite `text`,
+ *   the selection or the cursor's paragraph; `instruction` says how), 'summarize' (`text`, or `document` when nothing is
+ *   selected) or 'ask' (answer `prompt` about them). The editor sends nothing anywhere itself. A rewrite goes in as a
+ *   tracked change under `aiAuthor` ('AI'); an answer can be inserted below or put in place of the selection, tracked too.
  * - `drafts`: true, or { key, delayMs }, to keep unsaved changes in this browser (IndexedDB) a moment after each edit
  *   (delayMs, 3000) under `key` (the file's name if not given) and the file's fingerprint, cleared when the document is
  *   saved (`markSaved()`), forgotten after two weeks. Opening the same file again with a draft left
@@ -67,7 +72,7 @@ function printOf(bytes) {
  *   Restrict Editing (and Mark as Final, Always open read-only) for a host that enforces its own rights.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge, ai = null, aiAuthor = 'AI' } = {}) {
   const bar = document.createElement('div');
   const host = document.createElement('div');
   container.replaceChildren(bar, host);
@@ -435,7 +440,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       }
       announce(`Merged ${records.length} record${records.length === 1 ? '' : 's'}`);
     } catch (e) { fail(e); }
-  }, onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
+  }, ai, aiAuthor, onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
   function applyMode() {
     bar.style.display = readOnly || forms || !showToolbar ? 'none' : '';
     container.classList.toggle('odx-readonly', readOnly);

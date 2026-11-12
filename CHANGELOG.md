@@ -23,6 +23,12 @@
   continuous section breaks before and after it, as Word's menu does; "One/Two/Three, from here on" applies from the
   cursor on (More Columns' "This point forward"). A break at a paragraph's start or end splits nothing. The menu's tick
   now shows the cursor's section, not the last one.
+- **AI writing in the editor** (Home > AI Writing, with the host's model as the `ai` option): rewrite the selection
+  or the cursor's paragraph (shorter, longer, more formal or casual, spelling and grammar), summarize it or the
+  document, or ask about it. Rewrites go in as tracked changes under `aiAuthor` ('AI'), only the edited words marked;
+  an answer is shown to insert below or put in place of the selection (tracked) or copy. A request is cancelled when
+  another replaces it, not applied if the document changed meanwhile, and a model's error is said. The editor sends
+  nothing anywhere itself.
 - **Mail merge**, as Word's Mailings: a Mailings tab with Select Recipients (the host's records or a CSV file), Insert
   Merge Field, Preview Results (each record's values in place of the fields on screen, record by record) and Finish
   & Merge (one document, each record on a new page). Merge fields' switches as Word formats them (`\* Upper/Lower/Caps/

@@ -23,6 +23,7 @@ import { protectionOf } from './protect.js';
 import { ZOOM_STEPS } from './zoom.js';
 import { esc } from '../ooxml/xml.js';
 import * as mm from './mailmerge.js';
+import * as aw from './aiwrite.js';
 import { mergeFieldNames } from '../merge.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
@@ -51,7 +52,7 @@ const MARGINS = [['Normal', 1440, 1440, 1440, 1440], ['Narrow', 720, 720, 720, 7
  *   document after a page setup change (size, margins, orientation); protection: { get(), protect(opts),
  *   unprotect(password) } for Review > Restrict Editing (the editor API's)
  */
-export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, onMerge, protection = null } = {}) {
+export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, onMerge, ai = null, aiAuthor = 'AI', protection = null } = {}) {
   const kit = ribbonKit(container, getView);
   const { run, withView, btn, grp, col, line, pop, openMenu, closeMenu, item, menu, pick } = kit;
   const ruler = createRuler(() => { const v = getView(); return v; });
@@ -74,6 +75,65 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     i.addEventListener('keydown', (e) => { if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation(); });
     return i;
   };
+  // AI writing (aiwrite.js), with the host's model: rewrites of the selection (tracked, under the AI's name), a summary,
+  // or a question, the answer shown to insert below, put in place of the selection, or copy.
+  let aiAbort = null;
+  function aiPanel() {
+    const v = getView();
+    if (!v) return [];
+    const main = v.odx?.main || v;
+    const target = aw.aiTarget(main);
+    const short = (t) => (t.length > 70 ? `${t.slice(0, 67)}…` : t);
+    const status = el('div', { class: 'odx-cap', role: 'status' }, target.text ? `On: “${short(target.text.replace(/\n/g, ' '))}”` : 'Select text to rewrite it, or ask about the document.');
+    const answer = el('div', { class: 'odx-ai-out', hidden: true, tabindex: '0', 'aria-label': 'Answer' });
+    const acts = el('div', { class: 'odx-ai-acts', hidden: true });
+    const busy = (on) => { pop.querySelectorAll('.odx-ai-run').forEach((b) => { b.disabled = on; }); };
+    const run = async (request, done) => {
+      aiAbort?.abort();
+      const ctl = (aiAbort = new AbortController());
+      status.textContent = 'Working…';
+      announce('Asking the AI');
+      busy(true);
+      try {
+        const text = await aw.askAi(ai, { ...request, text: target.text, before: target.before, after: target.after, document: aw.documentText(main), signal: ctl.signal });
+        if (ctl.signal.aborted) return;
+        // (Not into a document changed meanwhile: the answer is for what was selected then.)
+        if (main.state.doc !== target.doc) { status.textContent = 'The document changed while the AI worked: try again.'; announce(status.textContent); return; }
+        done(text);
+      } catch (e) {
+        if (e?.name !== 'AbortError') { status.textContent = `The AI couldn't answer: ${e?.message || e}`; announce(status.textContent); }
+      } finally { busy(false); }
+    };
+    const show = (text) => {
+      answer.textContent = text;
+      answer.hidden = false;
+      acts.hidden = false;
+      status.textContent = 'Answer:';
+      announce(`Answer: ${text}`);
+      acts.replaceChildren(
+        btnAi('Insert below', () => { aw.insertBelowTracked(main, target.to, text, aiAuthor); closeMenu(); main.focus(); announce('Inserted as a tracked change'); }),
+        ...(target.text ? [btnAi('Replace selection', () => { aw.replaceTracked(main, target.from, target.to, text, aiAuthor); closeMenu(); main.focus(); announce('Replaced as a tracked change'); })] : []),
+        btnAi('Copy', () => { navigator.clipboard?.writeText(text).then(() => announce('Copied'), () => {}); }),
+      );
+    };
+    const btnAi = (label, fn, cls = '') => el('button', { type: 'button', class: `odx-item ${cls}`.trim(), onmousedown: (e) => { e.preventDefault(); fn(); }, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } } }, el('span', {}, label));
+    const rewrites = aw.AI_REWRITES.map(([action, label]) => btnAi(label, () => {
+      if (!target.text.trim()) { status.textContent = 'Select some text, or put the cursor in a paragraph, first.'; return; }
+      run({ action, instruction: label }, (text) => {
+        const changed = aw.replaceTracked(main, target.from, target.to, text, aiAuthor);
+        closeMenu();
+        main.focus();
+        announce(changed ? `${label}: done, as a tracked change` : `${label}: no change`);
+      });
+    }, 'odx-ai-run'));
+    const q = typed({ type: 'text', class: 'odx-ai-q', placeholder: 'Ask about the selection or document', 'aria-label': 'Ask the AI' });
+    const ask = () => q.value.trim() && run({ action: 'ask', prompt: q.value.trim() }, show);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } });
+    return [status, ...rewrites, el('hr'),
+      btnAi(target.text ? 'Summarize the selection' : 'Summarize the document', () => run({ action: 'summarize' }, show), 'odx-ai-run'),
+      el('div', { class: 'odx-ai-ask' }, q, btnAi('Ask', ask, 'odx-ai-run')), answer, acts];
+  }
+
   function restrictPanel() {
     const p = protection.get();
     if (!p) return [];
@@ -403,6 +463,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
               item(p.after ? 'Remove space after paragraph' : 'Add space after paragraph', cmd.setSpacing({ after: p.after ? 0 : 240 }))];
           })))),
       grp('Styles', styleGal),
+      ...(ai ? [grp('AI', menu('✨', 'AI writing: rewrite, summarize or ask, with your changes tracked', aiPanel, { label: 'AI Writing', big: true }))] : []),
       grp('Editing', col(btn('🔍', 'Find (Ctrl+F)', openFind(false), { label: 'Find' }), btn('⇄', 'Replace (Ctrl+H)', openFind(true), { label: 'Replace' }),
         btn('▣', 'Select all (Ctrl+A)', (s, d) => { d(s.tr.setSelection(new AllSelection(s.doc))); return true; }, { label: 'Select all' }))),
       tableTools,

@@ -43,6 +43,26 @@ export interface MountOptions {
   mergeData?: MergeRecord[] | { records: MergeRecord[]; fields?: string[] } | null;
   /** Finish & Merge's merged document (downloaded when not given). */
   onMerge?: (bytes: Uint8Array, fileName: string) => void;
+  /** Your AI model, for Home > AI Writing: rewrites of the selection (tracked under `aiAuthor`), a summary, or answers. */
+  ai?: (request: AiRequest) => Promise<string | { text: string }>;
+  /** The name AI Writing's tracked changes go under ('AI'). */
+  aiAuthor?: string;
+}
+
+/** What AI Writing asks your model: an action on `text` (the selection, or the cursor's paragraph). */
+export interface AiRequest {
+  action: 'rewrite' | 'shorter' | 'longer' | 'formal' | 'casual' | 'proofread' | 'summarize' | 'ask';
+  /** For a rewrite: what it is ("Make it shorter"). */
+  instruction?: string;
+  /** For 'ask': the question. */
+  prompt?: string;
+  text: string;
+  /** The paragraphs before and after it, and the whole document's text. */
+  before: string;
+  after: string;
+  document: string;
+  /** Aborted when another request replaces this one. */
+  signal: AbortSignal;
 }
 
 /** A document's Restrict Editing (Word's Review > Restrict Editing, Mark as Final, Always open read-only). */

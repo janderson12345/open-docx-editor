@@ -345,6 +345,23 @@ network requests. In Claude Desktop's configuration:
   "--root", "C:\\Users\\me\\Documents\\Contracts", "--author", "Claude"] } } }
 ```
 
+**AI writing in the editor.** Give the editor your model as `ai`, and Home gets **AI Writing**: rewrite the
+selection (or the paragraph the cursor is in) shorter, longer, more formal or casual, or with its spelling and grammar
+fixed; summarize it or the document; or ask anything about it. A rewrite goes in as a tracked change under `aiAuthor`
+('AI') for the person to accept or reject; an answer is shown, to insert below, put in place of the selection (both
+tracked) or copy. The editor sends nothing anywhere itself: it calls your function.
+
+```js
+mountDocxEditor(el, {
+  aiAuthor: 'Assistant',
+  ai: async ({ action, instruction, prompt, text, before, after, document, signal }) => {
+    // action: 'rewrite' | 'shorter' | 'longer' | 'formal' | 'casual' | 'proofread' | 'summarize' | 'ask'
+    const r = await fetch('/api/ai', { method: 'POST', body: JSON.stringify({ action, instruction, prompt, text }), signal });
+    return (await r.json()).text;                            // or { text }
+  },
+});
+```
+
 ## React, Vue and Angular
 
 Thin wrappers around `mountDocxEditor`, taking its main options as props or inputs (`fileName`, `author`, `readOnly`,
