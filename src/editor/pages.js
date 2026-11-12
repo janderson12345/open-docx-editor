@@ -1379,6 +1379,13 @@ export function createPages(view, session, { sheet, scope }) {
       acc += extra.get(b.i) || 0;
       const split = (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0);
       const r = { b, top: b.top + acc, bottom: b.bottom + acc + split, split: split !== 0, sect, after: parseFloat(getComputedStyle(b.el).marginBottom) || 0 };
+      // How low it reaches with what floats in it (a text box, a picture): Word centres those too.
+      r.reach = r.bottom;
+      const er = b.el.getBoundingClientRect();
+      for (const f of b.el.querySelectorAll('img')) {
+        if (getComputedStyle(f).position !== 'absolute' && getComputedStyle(f).float === 'none') continue;
+        r.reach = Math.max(r.reach, b.top + acc + (f.getBoundingClientRect().bottom - er.top));
+      }
       acc += split;
       r.p = pageOf(r.top);
       if (sectCache.ends.get(b.i)) { r.sectEnd = true; sect++; }
@@ -1396,7 +1403,8 @@ export function createPages(view, session, { sheet, scope }) {
       if (g.some((r) => r.split || r.bottom > contentBottom(p) + 1)) continue;
       // (Nor a page that another section goes on to share, after a continuous break: the room below is that one's.)
       if (at.some((r) => r.p === p && r.sect !== g[0].sect && r.top > end.top)) continue;
-      const slack = contentBottom(p) - (end.bottom + end.after);
+      // (The lowest of its last block, with its space after, and anything floating on the page: a frame, a text box.)
+      const slack = contentBottom(p) - Math.max(end.bottom + end.after, ...g.map((r) => r.reach + (outOfFlow(r.b.el) ? r.after : 0)));
       if (slack <= 0.5) continue; // (a full page: nothing to move)
       const moves = v === 'both' ? g.slice(1).map((r) => [r, slack / (g.length - 1)]) : [[g[0], v === 'center' ? (slack - (g[0].top - contentTop(p))) / 2 : slack]];
       let total = 0;
