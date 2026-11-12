@@ -1049,6 +1049,12 @@ export function createPages(view, session, { sheet, scope }) {
     return (tw / 20) * (4 / 3);
   };
   const isHeader = (row) => /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '');
+  // (In newspaper columns a page break goes on at the next page's first column, a column break at the next column.)
+  const breakKindOf = (node) => {
+    let kind = null;
+    if (node.type === schema.nodes.paragraph) node.forEach((c) => { if (c.type === schema.nodes.hard_break && c.attrs.type === 'page') kind = 'page'; else if (c.type === schema.nodes.hard_break && c.attrs.type === 'column' && !kind) kind = 'column'; });
+    return kind;
+  };
   const hasPageBreak = (node) => {
     let found = false;
     if (node.type === schema.nodes.paragraph) node.forEach((c) => { if (c.type === schema.nodes.hard_break && (c.attrs.type === 'page' || c.attrs.type === 'column')) found = true; });
@@ -1652,6 +1658,7 @@ export function createPages(view, session, { sheet, scope }) {
     let band = null; // { p, y0, y1 }: where such a table sits, which text after it goes above or below
     let shift = 0;
     let breakPending = false;
+    let breakKind = null;
     if (sectCache.doc !== doc) sectCache = { doc, ...sectionBreaks(doc, session, page, storyHeight) };
     const sectEnds = sectCache.ends;
     margins = [[0, sectCache.first, true]];
@@ -1774,7 +1781,7 @@ export function createPages(view, session, { sheet, scope }) {
       let forced = false;
       let sectStart = false;
       if (k > 0 && (breakPending || breakBefore(b.node) || (sect && sect.page)) && !firstOnPage) {
-        target = p + 1;
+        target = cols && !lineSplits && (breakPending ? breakKind === 'page' : true) ? p + cols.num - (p % cols.num) : p + 1;
         forced = !breakPending; // after a manual page break Word drops the space before, as at a natural break
         sectStart = forced && !!(sect && sect.page) && !breakBefore(b.node);
       }
@@ -1870,6 +1877,7 @@ export function createPages(view, session, { sheet, scope }) {
         }
       }
       breakPending = !lineSplits && hasPageBreak(b.node);
+      breakKind = breakKindOf(b.node);
       if (target == null) continue;
       // Keep with next: headings at the bottom of a page move with the block they introduce.
       let m = k;
@@ -1898,6 +1906,7 @@ export function createPages(view, session, { sheet, scope }) {
       }
       k = m; // re-check everything after the moved block
       breakPending = !lineSplits && hasPageBreak(moved.node);
+      breakKind = breakKindOf(moved.node);
       if (lineSplits && moved.node.type === schema.nodes.paragraph && (hasPageBreak(moved.node) || moved.bottom + shift > contentBottom(target) + 1)) {
         const split = splitParagraph(moved, shift, true, true);
         if (split && split.pushes.length) {
