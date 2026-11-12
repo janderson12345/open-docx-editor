@@ -727,6 +727,45 @@ await page.emulateMedia({ media: 'screen' });
 check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.includes('\u00ad') && /<w:suppressAutoHyphens\/>/.test(hySaved) && hyPrinted > 0,
   `automatic hyphenation: break points shown, not saved, printed with hyphens (${JSON.stringify({ ...hy, hyPrinted })})`);
 
+// Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
+// its fields), the next record, Insert Merge Field, a CSV file of recipients, and Finish & Merge's merged document.
+await open('mailmerge.docx');
+await page.evaluate(() => window.odx.setMergeData([{ FirstName: 'Ada', 'Last Name': 'Lovelace', City: 'London', Amount: '1234.5' }, { FirstName: 'Alan', 'Last Name': 'Turing', City: 'Wilmslow', Amount: '7' }]));
+await page.click('.odx-rtab:text-is("Mailings")');
+await page.click('button[title^="Preview results"]');
+await page.waitForTimeout(400);
+const firstText = () => page.evaluate(() => document.querySelector('.odx-content p').innerText.trim());
+const pv1 = await firstText();
+await page.click('button[title="Next record"]');
+await page.waitForTimeout(300);
+const pv2 = await firstText();
+const pvStatus = await page.evaluate(() => [...document.querySelectorAll('.odx-panel:not([hidden]) .odx-cap')].map((e) => e.textContent).join('|'));
+const pvSaved = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+await page.click('button[title^="Preview results"]');
+await page.waitForTimeout(300);
+const pvOff = await firstText();
+// Insert Merge Field at the end of the first paragraph.
+await page.click('.odx-content p >> nth=0');
+await page.keyboard.press('End');
+await page.keyboard.type(' ');
+await page.click('button[title="Insert merge field"]');
+await page.click('.odx-pop .odx-item:has-text("City")');
+await page.waitForTimeout(300);
+const inserted = await firstText();
+// A CSV file of recipients.
+await page.setInputFiles('input[accept=".csv,text/csv"]', { name: 'people.csv', mimeType: 'text/csv', buffer: Buffer.from('FirstName,Last Name,City\r\n"Grace","Hopper, Rear Adm.",Arlington\r\n') });
+await page.waitForTimeout(300);
+const csvCount = await page.evaluate(() => window.odx.view.odx.session.merge.records.length);
+const [download] = await Promise.all([
+  page.waitForEvent('download', { timeout: 5000 }),
+  (async () => { await page.click('button[title^="Finish & Merge"]'); await page.click('.odx-pop .odx-item:has-text("Edit individual documents")'); })(),
+]);
+const mmXml = strFromU8(unzipSync(new Uint8Array(fs.readFileSync(await download.path())))['word/document.xml']);
+check(pv1 === 'Ada LOVELACE' && pv2 === 'Alan TURING' && /Record 2 of 2/.test(pvStatus) && /MERGEFIELD FirstName/.test(pvSaved) && pvOff === '«FirstName» «Last Name»'
+  && inserted === '«FirstName» «Last Name» «City»' && csvCount === 1 && /Grace/.test(mmXml) && /HOPPER, REAR ADM\./.test(mmXml) && !/MERGEFIELD/.test(mmXml) && /download/.test(download.suggestedFilename() + 'download'),
+  `mail merge: preview, next record, insert field, CSV recipients, merged document (${JSON.stringify({ pv1, pv2, pvStatus, pvOff, inserted, csvCount, file: download.suggestedFilename() })})`);
+await page.click('.odx-rtab:text-is("Home")');
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

@@ -446,6 +446,34 @@ const values = readFieldValues(bytes);             // store in your database
 const { bytes: filled, missing } = fillFields(bytes, values); // merge values into a template
 ```
 
+## Mail merge
+
+Word's merge fields (Mailings > Insert Merge Field: `MERGEFIELD`, with its `\*`, `\#`, `\@`, `\b` and `\f` switches,
+and `MERGEREC`) filled from your records, as Word's Finish & Merge > Edit Individual Documents: one document with each
+record starting on a new page, or one document per record. The fields become plain text in their own formatting.
+
+```js
+const editor = mountDocxEditor(el, {
+  mergeData: [{ FirstName: 'Ada', 'Last Name': 'Lovelace', Amount: 1234.5 }, { FirstName: 'Alan', 'Last Name': 'Turing', Amount: 7 }],
+  onMerge: (bytes, fileName) => upload(bytes, fileName), // Finish & Merge's result (downloaded when not given)
+});
+editor.setMergeData(records);          // or later; also a CSV file from Mailings > Select Recipients
+editor.previewMerge(true, 0);          // Preview Results: record 1's values in place of the fields, on screen only
+const { bytes } = editor.mailMerge();  // the merged document ({ combine: false } gives { files }, one a record)
+```
+
+The Mailings tab offers the same: Select Recipients, Insert Merge Field, Preview Results with the record before and
+after, and Finish & Merge. Field names match ignoring case and spaces, as Word matches them. Without an editor:
+
+```js
+import { setXmlImpl, mailMerge, mergeFieldNames } from 'open-docx-editor';
+mergeFieldNames(template);                                  // ['FirstName', 'Last Name', 'Amount']
+const { bytes, missing } = mailMerge(template, records);    // missing: fields no record has a value for
+```
+
+`IF` fields around merge fields keep their saved result (not worked out per record yet); merge fields in headers and
+footers aren't filled yet.
+
 ## Accessibility (Section 508 / WCAG 2.1 AA)
 
 - Checked with axe-core (WCAG 2.0/2.1 A and AA rules) in light and dark mode, on every ribbon tab, with menus and Find open: no violations in the editor's own interface.

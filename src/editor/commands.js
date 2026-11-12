@@ -409,7 +409,7 @@ export const setShading = (fill) => updateParagraphs((a) => {
 });
 
 /** w:sectPr with its w:type set ('nextPage' | 'continuous' | 'evenPage' | 'oddPage'). */
-function withSectType(xml, kind) {
+export function withSectType(xml, kind) {
   let s = (xml || '<w:sectPr/>').replace(/<w:type\b[^>]*\/>/g, '');
   if (/^<w:sectPr\b[^>]*\/>$/.test(s)) s = s.replace(/\/>$/, '></w:sectPr>');
   const t = `<w:type w:val="${kind}"/>`;

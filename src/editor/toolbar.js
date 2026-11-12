@@ -22,6 +22,8 @@ import { createFindBar } from './findbar.js';
 import { protectionOf } from './protect.js';
 import { ZOOM_STEPS } from './zoom.js';
 import { esc } from '../ooxml/xml.js';
+import * as mm from './mailmerge.js';
+import { mergeFieldNames } from '../merge.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
 import { createContextMenu } from './ctxmenu.js';
@@ -49,7 +51,7 @@ const MARGINS = [['Normal', 1440, 1440, 1440, 1440], ['Narrow', 720, 720, 720, 7
  *   document after a page setup change (size, margins, orientation); protection: { get(), protect(opts),
  *   unprotect(password) } for Review > Restrict Editing (the editor API's)
  */
-export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, protection = null } = {}) {
+export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, onMerge, protection = null } = {}) {
   const kit = ribbonKit(container, getView);
   const { run, withView, btn, grp, col, line, pop, openMenu, closeMenu, item, menu, pick } = kit;
   const ruler = createRuler(() => { const v = getView(); return v; });
@@ -140,6 +142,17 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   const spAfter = twipField('Spacing after (pt)', 'pt', (t) => cmd.setSpacing({ after: t, afterAutospacing: null }));
 
   // --- Files ---
+  // Mailings: a CSV file of recipients, picked here (or the host's records, api.setMergeData).
+  const csvInput = el('input', { type: 'file', accept: '.csv,text/csv', hidden: true, onchange: async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const { records, fields } = mm.parseCsv(await f.text());
+    const v = getView();
+    if (v) { mm.setRecipients(v, records, fields); announce(`${records.length} recipient${records.length === 1 ? '' : 's'}`); }
+  } });
+  const mergeStatus = el('span', { class: 'odx-cap', 'aria-live': 'polite' }, 'No recipients');
+  const mergeNav = (step) => withView((v) => { const m = mm.mergeState(v); if (!m.records.length) return false; return mm.setPreview(v, true, m.index + step); });
   const fileInput = el('input', { type: 'file', accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document', hidden: true, onchange: (e) => e.target.files[0] && onOpen(e.target.files[0]) });
   const picInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/bmp', hidden: true, onchange: (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) insertPicture(f); } });
   async function insertPicture(file) {
@@ -364,7 +377,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       line(btn('−R', 'Delete row', deleteRow), btn('−C', 'Delete column', deleteColumn), btn('⊞', 'Merge cells', mergeCells), btn('⊟', 'Split cell', splitCell), btn('✕', 'Delete table', deleteTable))));
 
   const tabs = {
-    File: [fileInput],
+    File: [fileInput, csvInput],
     Home: [
       grp('Undo', col(btn('↶', 'Undo (Ctrl+Z)', (st, d, v) => (v?.odx?.undo || undo)(st, d, v)), btn('↷', 'Redo (Ctrl+Y)', (st, d, v) => (v?.odx?.redo || redo)(st, d, v)))),
       grp('Clipboard', btn('📋', 'Paste (Ctrl+V)', clip('paste'), { label: 'Paste', big: true }),
@@ -458,6 +471,26 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       grp('Footnotes', btn('ᵃᵇ¹', 'Insert footnote (Ctrl+Alt+F)', withView((v) => notes.insertNote(v.odx.main || v, 'footnote')), { label: 'Insert Footnote', big: true }),
         btn('ⁱ', 'Insert endnote (Ctrl+Alt+D)', withView((v) => notes.insertNote(v.odx.main || v, 'endnote')), { label: 'Insert Endnote', big: true }),
         menu('↧', 'Next footnote', () => [item('Next footnote', withView((v) => notes.nextNote(v.odx.main || v, 'footnote'))), item('Next endnote', withView((v) => notes.nextNote(v.odx.main || v, 'endnote')))], { label: 'Next Footnote', big: true })),
+    ],
+    Mailings: [
+      grp('Start Mail Merge', menu('👥', 'Select recipients', () => {
+        const m = getView() && mm.mergeState(getView());
+        return [item('Use a CSV file…', () => { csvInput.click(); return true; }, { hint: 'A header row of field names, then a row a recipient' }),
+          ...(m?.records.length ? [el('div', { class: 'odx-stats' }, `${m.records.length} recipient${m.records.length === 1 ? '' : 's'}: ${m.fields.join(', ')}`)] : [])];
+      }, { label: 'Select Recipients', big: true })),
+      grp('Write & Insert Fields', menu('«»', 'Insert merge field', () => {
+        const v = getView();
+        const m = v && mm.mergeState(v);
+        const names = [...new Set([...(m?.fields || []), ...(v ? mergeFieldNames((v.odx?.main || v).odx.session) : [])])];
+        if (!names.length) return [el('div', { class: 'odx-stats' }, 'Select recipients first, to insert their fields.')];
+        return names.map((n) => item(n, withView((x) => mm.insertMergeField(x, n))));
+      }, { label: 'Insert Merge Field', big: true })),
+      grp('Preview Results', btn('ab«»', 'Preview results: each recipient\'s values in place of the fields', withView((v) => mm.setPreview(v)), { label: 'Preview Results', big: true }),
+        col(line(btn('◀', 'Previous record', mergeNav(-1)), btn('▶', 'Next record', mergeNav(1))), mergeStatus)),
+      grp('Finish', menu('⇩', 'Finish & Merge: one document of every recipient', () => [
+        item('Edit individual documents', withView((v) => { const m = mm.mergeState(v); if (!m.records.length) { announce('Select recipients first'); return false; } onMerge?.(m.records); return true; }),
+          { hint: 'One document: each recipient on a new page' }),
+      ], { label: 'Finish & Merge', big: true })),
     ],
     Review: [
       grp('Proofing', wcBtn, menu('♿', 'Check accessibility', () => {
@@ -664,6 +697,10 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       fillNav();
     },
     update(view) {
+      {
+        const m = mm.mergeState(view);
+        mergeStatus.textContent = !m.records.length ? 'No recipients' : m.preview ? `Record ${m.index + 1} of ${m.records.length}` : `${m.records.length} recipient${m.records.length === 1 ? '' : 's'}`;
+      }
       const s = view.state;
       ruler.update(view);
       for (const k of ['bold', 'italic', 'underline', 'strike']) b[k].classList.toggle('on', cmd.markActive(s, k));

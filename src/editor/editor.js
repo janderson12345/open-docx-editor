@@ -34,6 +34,7 @@ const spoken = (name, label) => (state, dispatch, view) => {
 import { createPages, pagePushPlugin } from './pages.js';
 import { justifyPlugin } from './justify.js';
 import { hyphenatePlugin } from './hyphenate.js';
+import { mailMergePlugin } from './mailmerge.js';
 import { imageResizePlugin, shapeKeysPlugin } from './imgresize.js';
 import { textBoxPlugin, closeTextBox } from './txbxedit.js';
 import { chartPlugin } from './charts.js';
@@ -434,7 +435,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session)],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session), mailMergePlugin(session)],
   });
 
   mount.classList.add('odx-canvas');

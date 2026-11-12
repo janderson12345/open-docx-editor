@@ -85,6 +85,8 @@
 /* Automatic hyphenation (hyphenate.js): the browser's own where it has it, else soft hyphens shown only at a line's end. */
 .odx-content p.odx-hyph { hyphens: auto; }
 .odx-content .odx-shy { hyphens: manual; }
+/* Mail merge's Preview Results (mailmerge.js): a field's own content hidden, the record's value drawn in its place. */
+.odx-content .odx-mm-hide { display: none !important; }
 .odx-content p.odx-endbreak > br.ProseMirror-trailingBreak { display: none; }
 /* Word doesn't apply ligatures or kerning unless the document asks for them (w:kern). */
 .odx-content, .odx-hf td, .odx-notes, .odx-noteedit { font-variant-ligatures: none; font-kerning: none; } /* (Notes and header tables too: footnote text kerned came out 0.6% narrow, corpus 3, taking a word Word wraps; sample S109's header cells. Not header and footer paragraphs: their print shifts were fitted kerned.) */

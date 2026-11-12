@@ -9,6 +9,7 @@ export * as commands from './editor/commands.js';
 export * as track from './editor/track.js';
 export { listFields, fieldValues, setFieldValues, setForms } from './editor/fields.js';
 export { readFieldValues, fillFields } from './fieldsNode.js';
+export { mailMerge, mergeFieldNames, formatMergeValue } from './merge.js';
 
 /**
  * One-call setup: toolbar + editor in `container`.
@@ -26,6 +27,8 @@ import { updateFields } from './editor/refs.js';
 import { editorAgent } from './agent.js';
 import { setProtection } from './editor/protect.js';
 import { announce } from './editor/live.js';
+import * as mm from './editor/mailmerge.js';
+import { mailMerge as mergeDocx, mergeFieldNames } from './merge.js';
 
 const DRAFT_DAYS = 14;
 /** A fingerprint of a file's bytes (FNV-1a and the length): which file a draft was made from. */
@@ -64,7 +67,7 @@ function printOf(bytes) {
  *   Restrict Editing (and Mark as Final, Always open read-only) for a host that enforces its own rights.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [] } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge } = {}) {
   const bar = document.createElement('div');
   const host = document.createElement('div');
   container.replaceChildren(bar, host);
@@ -76,11 +79,41 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     urls.push(u);
     return u;
   };
+  // Mail merge's recipients (mergeData: records, or { records, fields }), kept across documents.
+  const merge = { records: null, fields: null };
+  const takeMerge = (data, fields) => {
+    const records = Array.isArray(data) ? data : data?.records;
+    merge.records = Array.isArray(records) ? records : null;
+    merge.fields = fields || (Array.isArray(data) ? null : data?.fields) || null;
+  };
+  takeMerge(mergeData);
   const api = {
     get view() { return view; },
+    /**
+     * Mail merge's recipients: `records` (objects, field name -> value), and the field names Insert Merge Field offers
+     * (`fields`, else the records' keys). The Mailings tab previews and merges them; null clears them.
+     */
+    setMergeData(records, fields = null) {
+      takeMerge(records, fields);
+      if (view) mm.setRecipients(view, merge.records || [], merge.fields);
+    },
+    /** The document's merge field names. */
+    get mergeFields() { return view ? mergeFieldNames(view.odx.session) : []; },
+    /** Preview Results: each recipient's values in place of the fields (on screen), at record `index`; false: off. */
+    previewMerge(on = true, index) { if (view) mm.setPreview(view.odx.main || view, on, index); },
+    /**
+     * Finish & Merge: the document merged with the recipients (or `records`): { bytes } (one document, each record
+     * on a new page) or, with { combine: false }, { files }; with `fields` and `missing` (names no record has).
+     */
+    mailMerge({ records = merge.records, combine = true } = {}) {
+      if (!records?.length) throw new Error('mailMerge: no recipients (api.setMergeData)');
+      return mergeDocx(api.save(), records, { combine });
+    },
     get fileName() { return name; },
     load(session) {
       if (view) view.odx.destroy();
+      // (The recipients stay with the editor from one document to the next, as a host gave them: api.setMergeData.)
+      if (merge.records) session.merge = { records: merge.records, fields: merge.fields, index: 0, preview: false };
       view = make(host, session, {
         author,
         collab,
@@ -388,7 +421,21 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
   }
   const dropView = () => { if (view) view.odx.destroy(); view = null; };
   const fail = (e) => (onError ? onError(e) : console.error(e));
-  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name, { reopen: true }), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
+  const toolbar = makeToolbar(bar, () => view?.odx?.hfView || view, { onOpen: (f) => api.open(f).catch(fail), onNew: () => api.newDocument(), onReopen: (bytes) => api.open(bytes, name, { reopen: true }), onSave: () => (onSave ? onSave(api.save(), name) : api.download()), onMerge: (records) => {
+    try {
+      const { bytes } = mergeDocx(api.save(), records);
+      const merged = name.replace(/\.docx$/i, '') + ' (merged).docx';
+      if (onMerge) onMerge(bytes, merged);
+      else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+        a.download = merged;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      }
+      announce(`Merged ${records.length} record${records.length === 1 ? '' : 's'}`);
+    } catch (e) { fail(e); }
+  }, onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
   function applyMode() {
     bar.style.display = readOnly || forms || !showToolbar ? 'none' : '';
     container.classList.toggle('odx-readonly', readOnly);

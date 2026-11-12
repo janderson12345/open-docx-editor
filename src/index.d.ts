@@ -39,6 +39,10 @@ export interface MountOptions {
    *  document's editable parts. `features.protection: false` ignores Restrict Editing, Mark as Final and Always open
    *  read-only (for a host that enforces its own rights). */
   editors?: string[];
+  /** Mail merge's recipients (records, or { records, fields }): the Mailings tab previews and merges them. */
+  mergeData?: MergeRecord[] | { records: MergeRecord[]; fields?: string[] } | null;
+  /** Finish & Merge's merged document (downloaded when not given). */
+  onMerge?: (bytes: Uint8Array, fileName: string) => void;
 }
 
 /** A document's Restrict Editing (Word's Review > Restrict Editing, Mark as Final, Always open read-only). */
@@ -108,6 +112,15 @@ export interface DocxEditorApi {
   getFields(): FieldInfo[];
   getFieldValues(): Record<string, string | boolean>;
   setFieldValues(values: Record<string, string | boolean>): unknown;
+  /** Mail merge's recipients, and the field names Insert Merge Field offers (else the records' keys); null clears them. */
+  setMergeData(records: MergeRecord[] | null, fields?: string[] | null): void;
+  /** The document's merge field names. */
+  readonly mergeFields: string[];
+  /** Preview Results: each recipient's values in place of the fields (on screen), at record `index`; false: off. */
+  previewMerge(on?: boolean, index?: number): void;
+  /** Finish & Merge: the document merged with the recipients (or `records`). */
+  mailMerge(options?: { records?: MergeRecord[]; combine?: true }): { bytes: Uint8Array; fields: string[]; missing: string[] };
+  mailMerge(options: { records?: MergeRecord[]; combine: false }): { files: Uint8Array[]; fields: string[]; missing: string[] };
   destroy(): void;
 }
 
@@ -123,6 +136,20 @@ export class DocxSession {
 export function blankDocxBytes(): Uint8Array;
 export function readFieldValues(bytes: Uint8Array): Record<string, string | boolean>;
 export function fillFields(bytes: Uint8Array, values: Record<string, string | boolean>): { bytes: Uint8Array; missing: string[] };
+
+/** A mail-merge record: merge field name -> value (matched ignoring case and spaces, as Word matches them). */
+export type MergeRecord = Record<string, string | number | Date | null | undefined>;
+/**
+ * Mail merge (Word's Finish & Merge > Edit Individual Documents): the records into the .docx's merge fields
+ * (MERGEFIELD with its \* \# \@ \b \f switches, MERGEREC, MERGESEQ), as plain text in the fields' formatting. With
+ * `combine` (the default) one .docx, each record starting on a new page; without, one .docx per record.
+ */
+export function mailMerge(bytes: Uint8Array, records: MergeRecord[], options?: { combine?: true }): { bytes: Uint8Array; fields: string[]; missing: string[] };
+export function mailMerge(bytes: Uint8Array, records: MergeRecord[], options: { combine: false }): { files: Uint8Array[]; fields: string[]; missing: string[] };
+/** The names of a .docx's merge fields, each once, in order. */
+export function mergeFieldNames(bytes: Uint8Array): string[];
+/** A merge field's value with the field's switches applied (\* Upper, \# "$#,##0.00", \@ "MMMM d, yyyy", \b, \f). */
+export function formatMergeValue(value: unknown, instr: string): string;
 
 export const schema: unknown;
 export const commands: Record<string, unknown>;
