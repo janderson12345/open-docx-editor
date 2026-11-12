@@ -49,7 +49,10 @@ export function createCommandSearch({ panels, showTab, reveal, getView, containe
   }
 
   function draw() {
-    list.replaceChildren(...found.map((c, i) => el('div', { role: 'option', id: `${listId}-${i}`, class: `odx-cmdopt${i === at ? ' on' : ''}`, 'aria-selected': String(i === at),
+    // (The active option is let go of before the options are made again: NVDA, following it into nodes being replaced,
+    // said "unknown" and the page's name on every key typed.)
+    input.removeAttribute('aria-activedescendant');
+    list.replaceChildren(...found.map((c, i) => el('div', { role: 'option', id: `${listId}-${i}`, class: `odx-cmdopt${i === (at >= 0 ? at : 0) ? ' on' : ''}`, 'aria-selected': String(i === at),
       onmousedown: (e) => { e.preventDefault(); run(i); } },
     el('span', {}, c.label), el('small', {}, [c.keys, c.tab].filter(Boolean).join(' · ')))));
     list.hidden = !found.length;
@@ -61,7 +64,8 @@ export function createCommandSearch({ panels, showTab, reveal, getView, containe
   let sayTimer = 0;
   input.addEventListener('input', () => {
     found = search(input.value);
-    at = found.length ? 0 : -1;
+    // (No option active while typing, as a combo box's list: Down goes into it; Enter runs the first match.)
+    at = -1;
     draw();
     clearTimeout(sayTimer);
     if (input.value.trim()) sayTimer = setTimeout(() => announce(found.length ? `${found.length} command${found.length === 1 ? '' : 's'}` : 'No commands'), 500);
@@ -98,7 +102,7 @@ export function createCommandSearch({ panels, showTab, reveal, getView, containe
       draw();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (at >= 0) run(at);
+      if (found.length) run(at >= 0 ? at : 0);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();

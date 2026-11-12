@@ -31,6 +31,10 @@
   Word mixes them (a shade or tint in linear light, "darker 25%" on HSL luminance), a document without a theme takes the
   current Office theme's colours, and text in a shape without a colour of its own takes the shape's font colour. An
   inline line's arrowheads are drawn past its box as in Word, without moving the text.
+- **Screen readers (checked with NVDA)**: command search no longer moves its active option as you type (NVDA said
+  "unknown" and the page's name on every key); Down goes into the list and Enter runs the first match. A menu item
+  with a hint reads with a pause between the two ("Edit individual documents, One document: ..."), where they ran
+  together. The Mailings tab, AI Writing and Insert > Shapes were read through as expected.
 - **All 187 preset shapes**, from the definitions in the Office Open XML standard (ECMA-376), generated into
   `src/ooxml/presets-data.js` by `tools/presets/build-presets.py`.
 - **SmartArt** is drawn, from the drawing Word saves with each diagram: its shapes, connectors and text (DrawingML

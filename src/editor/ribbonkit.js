@@ -122,7 +122,7 @@ export function ribbonKit(container, getView) {
     pop.style.top = `${r.bottom - host.top + 2}px`;
   }
   document.addEventListener('mousedown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !popOwner?.contains(e.target)) closeMenu(); });
-  const item = (label, command, { on = false, hint = '' } = {}) => el('button', { type: 'button', class: `odx-item${on ? ' on' : ''}`, onmousedown: run(command) }, el('span', {}, label), hint && el('small', {}, hint));
+  const item = (label, command, { on = false, hint = '' } = {}) => el('button', { type: 'button', class: `odx-item${on ? ' on' : ''}`, onmousedown: run(command) }, el('span', {}, label), hint && el('span', { class: 'odx-sr' }, ', '), hint && el('small', {}, hint)); // (the comma: a screen reader's pause between label and hint, read run together before)
   /** A button with a ▾ that opens `items()` (an array of elements). */
   const menu = (icon, title, items, opts = {}) => {
     const b = el('button', { type: 'button', title, 'aria-label': title, 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: `odx-menu ${opts.big ? 'odx-big' : ''}`, onmousedown: (e) => { e.preventDefault(); openMenu(b, items); } },

@@ -559,7 +559,7 @@ const csList = await page.evaluate(() => ({ expanded: document.querySelector('.o
 await page.keyboard.press('Enter');
 await page.waitForTimeout(300);
 const csBold = await page.evaluate(() => { const v = window.odx.view; const { from, to } = v.state.selection; let bold = false; v.state.doc.nodesBetween(from, to, (n) => { if (n.isText && n.marks.some((m) => m.type.name === 'bold')) bold = true; }); return { bold, sel: to - from, inDoc: !!document.activeElement?.closest('.odx-content') }; });
-check(csFocused && csList.expanded === 'true' && /^Bold.*Ctrl\+B.*Home/.test(csList.first || '') && csList.active && boldBefore.sel > 0 && csBold.bold !== boldBefore.b && csBold.inDoc,
+check(csFocused && csList.expanded === 'true' && /^Bold.*Ctrl\+B.*Home/.test(csList.first || '') && !csList.active && boldBefore.sel > 0 && csBold.bold !== boldBefore.b && csBold.inDoc,
   `Alt+Q finds Bold (with its shortcut and tab) and Enter runs it, back in the document (${JSON.stringify({ csFocused, ...csList, before: boldBefore, ...csBold })})`);
 await page.keyboard.press('Control+z');
 const pagesBefore = await page.evaluate(() => window.odx.view.state.doc.textContent.length);

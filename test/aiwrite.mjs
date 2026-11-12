@@ -87,6 +87,17 @@ const saved3 = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () =
 check(asked3.action === 'ask' && asked3.prompt === 'What should this say?' && asked3.text === 'Second' && /<w:ins [^>]*w:author="AI"[^>]*>[\s\S]*?The answer\./.test(saved3),
   `a question's answer replaces the selection, tracked (${JSON.stringify(asked3)})`);
 
+// Esc in the panel (from its Ask button, after an answer) closes it, back on AI Writing, collapsed.
+await openAi();
+await page.fill('.odx-pop .odx-ai-q', 'Anything?');
+await page.press('.odx-pop .odx-ai-q', 'Enter');
+await page.waitForTimeout(400);
+await page.focus('.odx-pop .odx-ai-ask .odx-item');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+const esc = await page.evaluate(() => ({ hidden: document.querySelector('.odx-pop').hidden, expanded: document.querySelector('button[title^="AI writing"]').getAttribute('aria-expanded'), focus: document.activeElement?.title?.slice(0, 10) }));
+check(esc.hidden && esc.expanded === 'false' && esc.focus === 'AI writing', `Esc closes the AI panel, back on its button (${JSON.stringify(esc)})`);
+
 // A model's error is said, and nothing changes.
 const before = await page.evaluate(() => window.odx.view.state.doc.textContent);
 await openAi();
