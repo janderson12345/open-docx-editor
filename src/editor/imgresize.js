@@ -119,7 +119,8 @@ export function imageResizePlugin() {
         const node = sel instanceof NodeSelection && sel.node.type.name === 'image' ? sel.node : null;
         const img = node && view.nodeDOM(sel.from);
         target = node && !view.odx?.readOnly && img && img.tagName === 'IMG' ? { pos: sel.from, node, img, info: isShape(node) ? shapeInfo(node.attrs.xml) : null } : null;
-        box.classList.toggle('odx-imgsize-move', !!target && floating(target.node));
+        // (Dragged by its body: a floating one to a new place on the page, one in line with the text to another place in it.)
+        box.classList.toggle('odx-imgsize-move', !!target);
         box.classList.toggle('odx-imgsize-line', !!target?.info?.line);
         // (Shapes and groups turn; a line turns by its ends, a picture or chart not at all here.)
         box.classList.toggle('odx-imgsize-turns', !!target && isShape(target.node) && !target.info?.line && /<a:xfrm\b/.test(target.node.attrs.xml || ''));
@@ -310,6 +311,46 @@ export function imageResizePlugin() {
           const r = session.rotateShape(node.attrs.xml, deg);
           if (!r) { place(); return; }
           commit(pos, node, r);
+        });
+      });
+      // A picture or shape in line with the text: dragged to another place in it, as in Word (Ctrl: a copy), a caret
+      // showing where it goes. A click without a drag leaves it selected.
+      box.addEventListener('pointerdown', (e) => {
+        if (e.target !== box || e.button !== 0 || !target || floating(target.node)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const { pos, node } = target;
+        const x0 = e.clientX, y0 = e.clientY;
+        let dragging = false;
+        let drop = null;
+        const caret = document.createElement('div');
+        caret.className = 'odx-dropcaret';
+        caret.setAttribute('aria-hidden', 'true');
+        // (Where it can go: in a paragraph's text, not inside itself.)
+        const fits = (p) => {
+          if (p > pos && p < pos + node.nodeSize) return false;
+          const $p = view.state.doc.resolve(p);
+          return $p.parent.inlineContent && $p.parent.canReplaceWith($p.index(), $p.index(), node.type);
+        };
+        drag(e, (ev) => {
+          if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+          if (!dragging) { dragging = true; box.classList.add('odx-imgsize-dragging'); document.body.append(caret); }
+          const at = view.posAtCoords({ left: ev.clientX, top: ev.clientY });
+          drop = at && fits(at.pos) ? at.pos : null;
+          if (drop == null) { caret.style.display = 'none'; return; }
+          const c = view.coordsAtPos(drop);
+          caret.style.cssText = `left:${c.left}px;top:${c.top}px;height:${Math.max(8, c.bottom - c.top)}px`;
+        }, (ev) => {
+          caret.remove();
+          box.classList.remove('odx-imgsize-dragging');
+          if (!dragging || drop == null || drop === pos || drop === pos + node.nodeSize) { place(); return; }
+          const copy = ev.ctrlKey || ev.metaKey;
+          const tr = view.state.tr;
+          if (!copy) tr.delete(pos, pos + node.nodeSize);
+          const at = copy ? drop : tr.mapping.map(drop);
+          tr.insert(at, node);
+          view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, at)).scrollIntoView());
+          view.focus();
         });
       });
       // A floating shape (a text box placed on the page) moves by dragging it.

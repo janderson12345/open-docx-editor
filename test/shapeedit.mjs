@@ -38,7 +38,8 @@ const shapes = () => page.evaluate(() => {
   return out;
 });
 const imgs = page.locator('.odx-content img[src^="data:image/svg"]');
-const select = async (i) => { await imgs.nth(i).click(); await page.waitForTimeout(250); };
+// (Esc first: a selected one's overlay, which drags it, lies over it.)
+const select = async (i) => { if (await page.locator('.odx-imgsize').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(100); } await imgs.nth(i).click(); await page.waitForTimeout(250); };
 const drag = async (sel, dx, dy, mod) => {
   const b = await page.locator(sel).boundingBox();
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
@@ -179,6 +180,38 @@ fs.mkdirSync('test/out', { recursive: true });
 fs.writeFileSync('test/out/shape-edit-edited.docx', Buffer.from(bytes));
 const saved = strFromU8(unzipSync(new Uint8Array(bytes))['word/document.xml']);
 check(saved.includes('<a:gd name="adj1" fmla="val 20833"/><a:gd name="adj2" fmla="val 104167"/><a:gd name="adj3" fmla="val 16667"/>') && saved.includes('flipH="1"'), 'saved with the callout\'s pointer and the flipped line');
+
+// 8. Dragging a shape in line with the text to another place in it (its body, not a handle): moved there, a caret
+// showing where while it goes; with Ctrl, a copy; undone in one step.
+const where = () => page.evaluate(() => { const out = []; window.odx.view.state.doc.forEach((p, off, i) => p.descendants((n) => { if (n.type.name === 'image' && /prstGeom/.test(n.attrs.xml)) out.push(i); })); return out.join(','); });
+const dragTo = async (i, target, mod) => {
+  await select(i);
+  const b = await page.locator('.odx-imgsize').boundingBox();
+  const t = await page.locator('.odx-content p', { hasText: target }).first().boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  if (mod) await page.keyboard.down(mod);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 20, b.y + b.height / 2 + 20, { steps: 4 });
+  await page.mouse.move(t.x + t.width - 2, t.y + t.height / 2, { steps: 8 });
+  const shown = await page.locator('.odx-dropcaret').count();
+  await page.mouse.up();
+  if (mod) await page.keyboard.up(mod);
+  await page.waitForTimeout(400);
+  return shown;
+};
+const w0 = await where();
+const caretShown = await dragTo(1, 'End.');
+const w1 = await where();
+check(caretShown === 1, 'a caret shows where a dragged shape will go');
+check(w1.split(',').length === w0.split(',').length && w1 !== w0 && w1.split(',').pop() === w1.split(',').reduce((a, v) => (Number(v) > Number(a) ? v : a)), `the callout dragged to the last paragraph moves there (paragraphs ${w0} -> ${w1})`);
+check(!(await page.locator('.odx-dropcaret').count()), 'and the caret goes');
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(300);
+check((await where()) === w0, 'undo puts it back');
+await dragTo(0, 'End.', 'Control');
+const w2 = await where();
+check(w2.split(',').length === w0.split(',').length + 1, `with Ctrl, a copy (${w0} -> ${w2})`);
+await page.keyboard.press('Control+z');
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();

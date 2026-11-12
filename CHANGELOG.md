@@ -15,6 +15,17 @@
   turned outline (which turning writes, as Word does) taken on the line, the shape drawn as far along as Word draws it;
   floating, turned about its centre, the text wrapping round the turned outline. Checked against shapes Word turned
   itself, printed by Word.
+- **Drag a picture or shape to another place in the text**, as in Word: a selected one in line with the text, dragged by
+  its body, goes where it's dropped, a caret showing where while it's dragged; with Ctrl, a copy. One undoable step.
+- **Text on both sides of a floating picture or shape**, as Word wraps it (square, tight or through, "both sides"): each
+  line beside it is filled from the margin up to it with as many whole words as fit, and goes on past it; a side too
+  narrow for a word stays empty. Text on its left only, its right only, or the larger side, as the document says (left
+  only had put the text on its right). A floating picture aligned to the column's centre is drawn there (it was at the
+  margin). Checked against Word's prints of shapes at several distances from the margin.
+- **A floating picture reaching past the page's foot** stays on its page, as in Word, drawn up to end at the page's edge
+  when it would go past it, the lines above it going round it; its paragraph had moved to the next page. (A text box
+  grown to fit its text still goes on to the next page, as Word does.)
+- **Printing: lines beside a float from the paragraph above** print beside it, as on screen; they printed under it.
 - **A shape drawn past its box**, as a callout's pointer below it, is now drawn whole in line with the text (it was cut
   off at the box); it takes the same room on its line as before.
 - **Fixed: a shape inserted with Insert > Shapes and given an arrowhead** had its arrowhead cut off at its box until

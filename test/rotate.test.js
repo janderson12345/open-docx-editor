@@ -31,10 +31,10 @@ test('rotateShape: its rot, and the room round its turned outline (none once tur
   assert.match(longer.xml, /<wp:effectExtent l="0" t="361950" r="0" b="361950"\/>/);
 });
 
-test('a turned floating shape wrapped round: the text keeps clear of its turned outline, the shape where its box is', () => {
+test('a turned floating shape wrapped round (text on its right): the text keeps clear of its turned outline, the shape where its box is', () => {
   const xml = shape(30)
     .replace(/<wp:inline distT="0" distB="0" distL="0" distR="0">/, '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>952500</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>95250</wp:posOffset></wp:positionV>')
-    .replace(/(<wp:effectExtent [^>]*\/>)/, '<wp:effectExtent l="0" t="190500" r="0" b="190500"/><wp:wrapSquare wrapText="bothSides"/>')
+    .replace(/(<wp:effectExtent [^>]*\/>)/, '<wp:effectExtent l="0" t="190500" r="0" b="190500"/><wp:wrapSquare wrapText="right"/>')
     .replace('</wp:inline>', '</wp:anchor>');
   const n = node(xml);
   // 96 x 72 at 30 degrees: 119.1 x 110.4, so 11.57px wider and 19.18px taller each side. Its top room isn't added to

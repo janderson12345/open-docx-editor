@@ -135,6 +135,15 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
     layer.append(copy);
     return { r: fr, side: cs.float, ml: parseFloat(cs.marginLeft) || 0 };
   });
+  // Every other float too (a picture wrapped square in a paragraph above, reaching down beside this one's lines): the
+  // lines it pushes over or cuts short on screen start and end where their text does in the copy as well.
+  for (const e of contentEl.querySelectorAll('img:not(.ProseMirror-separator)')) {
+    if (e.closest('.odx-lift')) continue;
+    const cs = getComputedStyle(e);
+    if (cs.float === 'none') continue;
+    const fr = e.getBoundingClientRect();
+    floats.push({ r: { left: fr.left - (parseFloat(cs.marginLeft) || 0), right: fr.right + (parseFloat(cs.marginRight) || 0), top: fr.top - Math.max(0, parseFloat(cs.marginTop) || 0), bottom: fr.bottom + (parseFloat(cs.marginBottom) || 0) }, side: cs.float, ml: 0 });
+  }
   // The editor owns its paragraphs' DOM (a class added to one is undone, and the element redrawn): read them all first,
   // and hide the originals by rules on their position instead.
   const paras = [...contentEl.children].filter((e) => e.tagName === 'P');
@@ -207,7 +216,9 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
       // A line pushed right by a float beside it (a drop cap) starts where its text does.
       const expected = left + (k === 0 ? parseFloat(cs.textIndent) || 0 : 0);
       const over = floats.filter((f) => ln.top < f.r.bottom && ln.bottom > f.r.top);
-      const beside = (floatBefore || over.some((f) => f.side === 'left')) && !el.classList.contains('odx-li') && lineLeft(ln) - origin.left > expected + 2 ? lineLeft(ln) - origin.left - expected : 0;
+      // (So does one beside a shape with text on both sides (wrapboth.js) whose first words went past it: its spacer, before
+      // the line's first text, isn't in the copy.)
+      const beside = (floatBefore || over.some((f) => f.side === 'left') || el.querySelector('.odx-wb')) && !el.classList.contains('odx-li') && lineLeft(ln) - origin.left > expected + 2 ? lineLeft(ln) - origin.left - expected : 0;
       const cutF = Math.max(0, ...over.filter((f) => f.side === 'right').map((f) => left + width - (f.r.left - f.ml - origin.left)));
       line.style.cssText += `;position:absolute;margin:0;padding:0;border:0;top:0;left:${left + beside}px;width:${width - beside - cutF}px;white-space:pre;` +
         `text-indent:${k === 0 ? cs.textIndent : '0px'};text-align-last:${justify && k < ls.length - 1 ? 'justify' : 'auto'};min-height:0;max-height:none;overflow:visible`;

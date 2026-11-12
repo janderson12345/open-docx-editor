@@ -537,6 +537,8 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-ruler-scale { position: relative; height: 18px; background: linear-gradient(to right, #d6d9de var(--ml), #fff var(--ml), #fff calc(100% - var(--mr)), #d6d9de calc(100% - var(--mr))); border: 1px solid #c4c8cf; box-sizing: border-box; font: 9px system-ui, sans-serif; color: #555; user-select: none; }
 .odx-fieldpick { position: fixed; z-index: 30; font: 13px system-ui, sans-serif; border: 1px solid #8aa; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.2); background: #fff; color: #222; }
 /* Picture resize handles (imgresize.js) */
+/* A line's jump over a shape with text on both sides (wrapboth.js). */
+.odx-wb { display: inline-block; height: 1px; vertical-align: baseline; }
 .odx-imgsize { position: absolute; z-index: 5; pointer-events: none; outline: 1px solid var(--odx-accent); }
 .odx-imgsize-h { position: absolute; width: 8px; height: 8px; margin: -5px 0 0 -5px; background: #fff; border: 1px solid var(--odx-accent); border-radius: 50%; pointer-events: auto; touch-action: none; }
 .odx-imgsize-nw { left: 0; top: 0; cursor: nwse-resize; }
@@ -549,6 +551,9 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-imgsize-w { left: 0; top: 50%; cursor: ew-resize; }
 /* A floating shape is moved by dragging it (imgresize.js). */
 .odx-imgsize.odx-imgsize-move { pointer-events: auto; cursor: move; touch-action: none; }
+/* While a picture in line with the text is dragged: the caret where it will go (imgresize.js). */
+.odx-imgsize.odx-imgsize-dragging, .odx-imgsize.odx-imgsize-dragging * { opacity: .5; pointer-events: none !important; } /* (the text under it found, not the overlay: it keeps the pointer, captured) */
+.odx-dropcaret { position: fixed; z-index: 1000; width: 2px; margin-left: -1px; background: #2b579a; pointer-events: none; }
 /* A line: a handle at each end, no box. A shape's adjust handles: yellow, as Word's. */
 .odx-imgsize.odx-imgsize-line { outline: none; }
 .odx-imgsize-line > .odx-imgsize-h { display: none; }

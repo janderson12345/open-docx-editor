@@ -162,7 +162,8 @@ fs.writeFileSync('out.docx', s.save());
   colours. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
   change it as Word's do (an arrow's head, a rounded rectangle's corners, a callout's pointer); a line has a handle at
   each end instead (Shift: at 15-degree steps). Turn one with its rotate handle (Shift: 15-degree steps) or Alt+Left
-  and Alt+Right. Saved in the shape's own drawing XML, one undoable step each.
+  and Alt+Right. Drag a picture or shape in line with the text by its body to move it to another place in the text
+  (Ctrl: a copy). Saved in the shape's own drawing XML, one undoable step each.
 - **Text boxes**: Insert > Text Box adds one in line with the text; double-click one to edit its text; click away (or Escape) to put it back. Both the shape
   and the copy Word keeps for older versions are updated. In a group of shapes, the box you double-click opens.
   Select one and drag a handle to resize it (its text wraps again), or drag a floating one to move it; from the

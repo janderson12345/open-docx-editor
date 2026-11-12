@@ -29,6 +29,7 @@ import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
+import { applyWrapBoth } from './wrapboth.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
@@ -332,16 +333,29 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
-  // Does a floating picture in the paragraph (not one placed on the page) reach past its page's text area? (Even one
-  // taller than a page: Word starts the next page with it, a grown text box running past its foot there.)
+  // A floating picture in the paragraph (not one placed on the page) reaching past its page's foot. Word keeps it on its
+  // paragraph's page, into the bottom margin as far as the page's edge, and moves it up from there so it ends at the
+  // edge (its PDFs: floats 80 to 300px tall 10px below a paragraph near the foot, none moved to the next page, those
+  // past the edge drawn up to it). One taller than the page's text area goes to the next page with its paragraph, as does
+  // a text box grown to fit its text past the foot (one grown to fit a long table: the page before holds the title only). Returns { past } for that, or { up },
+  // how far to draw the floats up (px), each by its index in the paragraph.
   const floatsPast = (b, shift, p) => {
     const er = b.el.getBoundingClientRect();
-    for (const img of b.el.querySelectorAll('img')) {
-      if (getComputedStyle(img).float === 'none') continue;
+    const up = new Map();
+    [...b.el.querySelectorAll('img')].forEach((img, n) => {
+      if (getComputedStyle(img).float === 'none') return;
       const r = img.getBoundingClientRect();
-      if (b.top + shift + (r.bottom - er.top) > contentBottom(p) + 1) return true;
-    }
-    return false;
+      // (Where it is laid out: less the drawing up a pass before gave it.)
+      const ty = parseFloat((img.style.translate || '').split(/\s+/)[1]) || 0;
+      const bottom = b.top + shift + (r.bottom - ty - er.top);
+      if (bottom <= contentBottom(p) + 1) return;
+      // (A text box grown to fit its text, past the foot at all: Word moves it on, where it keeps a shape of the
+      // size it's saved at; sample p-textbox__landscape of the generated documents, 20px past the foot.)
+      if (r.height > pageHeight(p) + 1 || /--odx-grown/.test(img.getAttribute('style') || '')) { up.set(-1, 0); return; }
+      const edge = pageTop(p) + pageH(p);
+      if (bottom > edge + 0.5) up.set(n, bottom - edge);
+    });
+    return up.has(-1) ? { past: true } : { up };
   };
   const HF_GAP = 60, HF_FAR = 0.3; // a header or footer too tall for the page: how near the middle Word cuts it; from how near the far edge
   function splitTable(b, shift, tableFirstOnPage) {
@@ -1024,6 +1038,8 @@ export function createPages(view, session, { sheet, scope }) {
   // Floating tables laid out in the flow, by node (an edit above one changes its index, not its node; a changed table is
   // a new node, measured again).
   const unfloated = new WeakSet();
+  const floatUp = new Map(); // block index -> { el, up: Map(picture's index in it -> px drawn up) }, this pass's (floatsPast)
+  let drawnUp = new Set(); // pictures drawn up now
   let applied = new Map(); // block index -> { extra px we added above it }
   const keep = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.keepNext ?? session.styleProp(node.attrs.styleId, 'keepNext'));
   const paraBreakBefore = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.pageBreakBefore ?? session.styleProp(node.attrs.styleId, 'pageBreakBefore'));
@@ -1629,6 +1645,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyLineFix(view)) return schedule(); // line heights changed: measure again once they're drawn
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
+    if (applyWrapBoth(view)) return schedule(); // a line split beside a shape with text on both sides: measure again
     if (applySqueeze(view, session)) return; // lines changed: measure again once they're drawn
     if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;
@@ -1682,6 +1699,7 @@ export function createPages(view, session, { sheet, scope }) {
     let balanceAgain = false;
     const rec = new Map(); // (columns sections) block k -> { top, bottom, carry } where it was last placed
     const frameDy = new Map(); // block index -> px a frame set down on its page is moved below where it comes
+    floatUp.clear();
     placed.clear();
     assignNotes(doc);
     for (let k = 0; k < blocks.length; k++) {
@@ -1793,9 +1811,13 @@ export function createPages(view, session, { sheet, scope }) {
         forced = true;
       }
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
-      else if (!firstOnPage && b.node.type === schema.nodes.paragraph && floatsPast(b, shift, p)) {
-        // A picture or text box floating from the paragraph (wrapped square) past the page's foot: Word moves the
-        // paragraph to the next page with it (a text box grown to fit a long table: the page before holds the title only).
+      else if (!firstOnPage && b.node.type === schema.nodes.paragraph && (() => {
+        // A picture or text box floating from the paragraph (wrapped square) past the page's foot (floatsPast): taller
+        // than the page, it goes to the next one with its paragraph; else drawn up to end at the page's edge.
+        const f = floatsPast(b, shift, p);
+        if (f.up?.size) floatUp.set(b.i, { el: b.el, up: f.up });
+        return f.past;
+      })()) {
         target = p + 1;
         overflow = true;
       }
@@ -1956,6 +1978,20 @@ export function createPages(view, session, { sheet, scope }) {
     if (cols || colRegs.length) dom.classList.remove('odx-measure');
     sheet.classList.remove('odx-bl-off');
     const frameCss = [...frameDy].map(([i, dy]) => `.${scope} > .odx-content > :nth-child(${i + 1}){--odx-fdy:${dy.toFixed(2)}px}`);
+    // Floats drawn up to end at their page's edge (floatsPast); those no longer drawn up, put back.
+    const upNow = new Map();
+    for (const [, { el, up }] of floatUp) {
+      const imgs = [...el.querySelectorAll('img')];
+      for (const [n, dy] of up) if (imgs[n]) upNow.set(imgs[n], dy);
+    }
+    // (Only when there's one: quiet() holds the editor's watch on its DOM, which would miss what's typed meanwhile.)
+    if (drawnUp.size || upNow.size) {
+      quiet(() => {
+        for (const img of drawnUp) if (!upNow.has(img)) img.style.translate = '';
+        for (const [img, dy] of upNow) if (img.style.translate !== `0 ${(-dy).toFixed(2)}px`) img.style.translate = `0 ${(-dy).toFixed(2)}px`;
+      });
+      drawnUp = new Set(upNow.keys());
+    }
     let text = css.concat(colCss, frameCss, baselineCss(blocks, scope, sheet)).join('\n');
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
