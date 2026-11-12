@@ -18,7 +18,7 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   CONTRIBUTING.md for running them.
 - **Generated documents:** `tools/doc-generator` makes about 7,500 documents from combinations of 121 features
   (each alone, every pair, random mixes), has Word print them, and reports which combinations differ, worst first.
-  On them, 87.8% of Word's lines are on the same page within 1px (78.2% before the rules below marked *generated*).
+  On them, 89.0% of Word's lines are on the same page within 1px (78.2% before the rules below marked *generated*).
 
 ## How layout works
 
@@ -143,6 +143,10 @@ document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcom
 - A picture with text above and below, placed within its paragraph's first line, has all of that paragraph's text
   under it.
 - Line numbers in a section of columns sit beside each column, 0.125in from its text when the distance is automatic.
+- A document grid of lines (w:docGrid type lines) sets each auto-spaced line to its pitch times the spacing, or the
+  whole pitches its text needs, with the text centred.
+- In newspaper columns a paragraph kept with the next goes on with it from the top of a column that isn't its page's
+  first, column by column.
 
 ## Tried and dropped
 
@@ -157,9 +161,9 @@ document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcom
 
 ## Open differences
 
-- Found with the generated documents, not yet matched: the document grid (w:docGrid lines: Word sets each line to the
-  grid's pitch, centred); keep-with-next at the top of a page's second column (Word moves the heading to the next
-  page); a frame taller than the room left on its page (Word moves it to the next); vertical centring of a page in
+- Found with the generated documents, not yet matched: the document grid together with columns; a line holding only a
+  run in a smaller font than its paragraph's (Word makes it that font's height; the space after it keeps ours the
+  paragraph font's); a frame taller than the room left on its page (Word moves it to the next); vertical centring of a page in
   columns; a header or footer taller than half the page; a tab whose next word doesn't fit (Word wraps the tab with
   it); very narrow unequal columns with paragraph formatting.
 
