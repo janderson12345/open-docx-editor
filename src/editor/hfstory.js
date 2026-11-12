@@ -90,6 +90,18 @@ export function storyDrawer(session) {
       if (run && run.font) { p.style.fontFamily = fontStack(run.font); p.style.setProperty('--odx-lh', lineFactor(run.font)); }
       return false;
     });
+    // "Don't add space between paragraphs of the same style" (contextualSpacing), as in the body (editor.js): each such
+    // paragraph loses its own space next to one of its style (Title paragraphs in a header 6px apart otherwise).
+    const top = [];
+    doc.forEach((node) => top.push(node));
+    const tps = [...el.children];
+    const csOf = (node) => node.attrs.view?.contextualSpacing ?? session.styleProp?.(node.attrs.styleId, 'contextualSpacing');
+    for (let i = 1; i < top.length && i < tps.length; i++) {
+      const a = top[i - 1], b = top[i];
+      if (a.type !== schema.nodes.paragraph || b.type !== schema.nodes.paragraph || a.attrs.styleId !== b.attrs.styleId || tps[i - 1].tagName !== 'P' || tps[i].tagName !== 'P') continue;
+      if (csOf(b)) tps[i].style.marginTop = '0';
+      if (csOf(a)) tps[i - 1].style.marginBottom = '0';
+    }
     // Paragraphs in a row with the same borders are one bordered group in Word: one bottom border, under the last.
     const sides = (p) => ['Top', 'Bottom', 'Left', 'Right'].map((s) => p.style[`border${s}`] + '|' + p.style[`padding${s}`]).join(';');
     const kids = [...el.children];
