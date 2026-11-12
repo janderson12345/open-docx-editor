@@ -129,7 +129,9 @@ export function shiftFor(el, host, anchored = false) {
   const natural = (parseFloat(ncs.getPropertyValue('--odx-lh')) || 1.17) * fs;
   const room = Math.max(0, parseFloat(lineHeightOf(pcs)) - natural);
   const atLeast = pcs.getPropertyValue('--odx-lhlen').trim() === '1';
-  const extra = atLeast ? room : 0;
+  // (A line on a document grid has its text centred, as the browser sets it: lhfix.js.)
+  const grid = el.dataset?.odxGrid === '1';
+  const extra = atLeast ? room : grid ? room / 2 : 0;
   // (Trebuchet's offset was fitted on body text; its small header labels, 7.5pt in the sample S108/sample S109, sit right
   // without it.)
   // (Segoe UI's only in list paragraphs, where it was fitted: corpus 2's plain 9pt Segoe UI sat right without it,
@@ -137,7 +139,7 @@ export function shiftFor(el, host, anchored = false) {
   const off = (family === 'trebuchet ms' && fs < 12) || (family === 'segoe ui' && !el.classList.contains('odx-li')) ? 0 : OFFSET[family] || 0;
   const d = Math.round((asc * fs + extra - browserOffset(pcs, rcs, host) + off) * 100) / 100;
   // (A shift far from the expected half of the extra means something else is going on: left alone.)
-  return Math.abs(d) < 0.05 || Math.abs(d - (atLeast ? room / 2 : -room / 2)) > 3 ? 0 : d;
+  return Math.abs(d) < 0.05 || (!grid && Math.abs(d - (atLeast ? room / 2 : -room / 2)) > 3) || (grid && Math.abs(d) > 3) ? 0 : d;
 }
 
 /**

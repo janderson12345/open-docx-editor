@@ -65,6 +65,7 @@ function bestHeight(box, el, chain, want, length) {
 }
 
 let last = '';
+let gridPitch = 0;
 // Results by paragraph node ({ value, want }, null for none), until fonts load: probing every paragraph again on each
 // layout pass was a long document's single largest cost after the table measuring.
 let memo = new WeakMap();
@@ -81,12 +82,19 @@ export function applyLineFix(view) {
   box.style.cssText = `position:absolute;left:-99999px;top:0;width:${view.dom.clientWidth}px;visibility:hidden;contain:layout`;
   view.dom.parentElement.append(box);
   if (memoFonts !== fontLoads) { memo = new WeakMap(); memoFonts = fontLoads; }
+  // A document grid of lines (w:docGrid type lines, linesAndChars): Word sets each line of a paragraph spaced "auto" on
+  // the grid, its pitch (w:linePitch) times the spacing, or the whole number of pitches its text needs, with the text
+  // centred in it (Word's PDFs of the generated documents, tools/doc-generator: 11pt at 1.08 lines on an 18pt grid
+  // 25.9px a line, 16pt headings 48px, double spacing 48px).
+  const g = /<w:docGrid\b[^>]*>/.exec(view.state.doc.attrs.sectPr || '')?.[0] || '';
+  const pitch = /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
+  if (pitch !== gridPitch) { memo = new WeakMap(); gridPitch = pitch; }
   view.state.doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
     // An unchanged paragraph keeps its result (ProseMirror keeps the node): no probing again.
     if (memo.has(node)) {
       const r = memo.get(node);
-      if (r) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want) }, { key: `lh:${r.value}` }));
+      if (r) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
       return false;
     }
     const el = view.nodeDOM(pos);
@@ -104,6 +112,14 @@ export function applyLineFix(view) {
     const chain = [];
     for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
     const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
+    if (pitch && !length && parseFloat(cs.getPropertyValue('--odx-runmult')) !== 0) {
+      const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
+      const on = Math.max(pitch * mult, Math.ceil(want / pitch - 1e-3) * pitch);
+      const value = `${on.toFixed(4)}px`;
+      memo.set(node, { value, want, grid: true });
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${value}`, 'data-odx-lh': String(want), 'data-odx-grid': '1' }, { key: `lh:${value}g` }));
+      return false;
+    }
     const best = bestHeight(box, el, chain, want, length);
     if (best == null) return false;
     const value = length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
