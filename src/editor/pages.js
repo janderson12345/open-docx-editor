@@ -329,6 +329,18 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
+  // Does a floating picture in the paragraph (not one placed on the page) reach past its page's text area? (Not one
+  // taller than a page: it can't fit anywhere.)
+  const floatsPast = (b, shift, p) => {
+    const er = b.el.getBoundingClientRect();
+    for (const img of b.el.querySelectorAll('img')) {
+      if (getComputedStyle(img).float === 'none') continue;
+      const r = img.getBoundingClientRect();
+      if (r.height > pageHeight(p + 1)) continue;
+      if (b.top + shift + (r.bottom - er.top) > contentBottom(p) + 1) return true;
+    }
+    return false;
+  };
   const HF_GAP = 60, HF_FAR = 0.3; // a header or footer too tall for the page: how near the middle Word cuts it; from how near the far edge
   function splitTable(b, shift, tableFirstOnPage) {
     const { rows, headerRows } = b;
@@ -1733,6 +1745,12 @@ export function createPages(view, session, { sheet, scope }) {
         forced = true;
       }
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
+      else if (!firstOnPage && b.node.type === schema.nodes.paragraph && floatsPast(b, shift, p)) {
+        // A picture or text box floating from the paragraph (wrapped square) past the page's foot: Word moves the
+        // paragraph to the next page with it (a text box grown to fit a long table: the page before holds the title only).
+        target = p + 1;
+        overflow = true;
+      }
       else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift > contentBottom(p) + lineSlack(b.el) - 1) {
         // In columns a paragraph goes on in the next column line by line, as in Word: it stays put, cut at the column's
         // bottom, and its lines from there are drawn again at the next column's top (drawHeads); what follows it moves
