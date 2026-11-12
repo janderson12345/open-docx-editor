@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.7 (2026-11-12)
 
 - **Command search (Alt+Q)**, as Word for the web's Search box: a box in the ribbon's tab row; type part of a command's
   name and pick it from the list of every ribbon command, each with its tab and keyboard shortcut. Up/Down and Enter

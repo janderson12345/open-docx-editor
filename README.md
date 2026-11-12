@@ -83,8 +83,10 @@ fs.writeFileSync('out.docx', s.save());
   indents, centred and floating tables (text wraps beside them), frames (paragraphs with `w:framePr`, placed and
   wrapped as Word places them), imported content (`w:altChunk` HTML or text, shown as the paragraphs Word makes of
   it, and saved back as it was until edited), and charts (column, bar, line,
-  area, scatter, pie and doughnut, drawn from the values cached in the file). Pictures and
-  shapes it can't draw yet keep their size, so the text around them sits where Word puts it.
+  area, scatter, pie and doughnut, drawn from the values cached in the file), shapes (all 187 of Word's preset shapes
+  and custom ones, with arrowheads and the theme's colours) and SmartArt (from the drawing Word saves with it).
+  Automatic hyphenation, where the document turns it on. Pictures it can't draw yet keep their size, so the text
+  around them sits where Word puts it.
 - **Tracked changes and markup**: Review > Markup view shows All Markup, Simple Markup, No Markup or Original (the
   document as it was before its changes, as Word shows it). Columns inserted in a table while tracking are recorded as
   cell insertions; revision times are kept as Word writes them.
@@ -156,6 +158,8 @@ fs.writeFileSync('out.docx', s.save());
   it (corners keep its proportions). Saved at the new size in its own drawing XML. Cropped pictures are shown cropped.
 - **Wrap Text** (Layout > Wrap Text, or a picture's context menu): In Line with Text, Square, Tight, Through, Top and
   Bottom, Behind Text and In Front of Text, for a picture or shape, saved as Word writes it.
+- **Shapes**: Insert > Shapes offers Word's shapes, a line and an arrow, each added in line with the text in the theme's
+  colours.
 - **Text boxes**: Insert > Text Box adds one in line with the text; double-click one to edit its text; click away (or Escape) to put it back. Both the shape
   and the copy Word keeps for older versions are updated. In a group of shapes, the box you double-click opens.
   Select one and drag a handle to resize it (its text wraps again), or drag a floating one to move it; from the
