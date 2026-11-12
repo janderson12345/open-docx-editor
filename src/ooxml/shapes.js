@@ -438,7 +438,7 @@ function dmlText(txBody, box, ctx) {
 /** A text run's (a:r, a:fld) text. */
 const textOfRun = (run) => els(run).filter((n) => n.localName === 't').map((n) => n.textContent).join('');
 
-function shapeSvg(el, ctx) {
+function shapeSvg(el, ctx, top = false) {
   const name = el.localName;
   if (name === 'wgp' || name === 'grpSp' || name === 'spTree') {
     const xfrm = child(child(el, 'grpSpPr'), 'xfrm');
@@ -461,7 +461,8 @@ function shapeSvg(el, ctx) {
   const y = px(off?.getAttribute('y'));
   const w = px(ext?.getAttribute('cx'));
   const h = px(ext?.getAttribute('cy'));
-  const rot = Number(xfrm.getAttribute('rot') || 0) / 60000;
+  // (The drawing's own shape turned by the page, not here: its picture is turned whole, shapeTurn.)
+  const rot = top ? 0 : Number(xfrm.getAttribute('rot') || 0) / 60000;
   const flip = `${xfrm.getAttribute('flipH') === '1' ? -1 : 1} 0 0 ${xfrm.getAttribute('flipV') === '1' ? -1 : 1}`;
   const t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${flip !== '1 0 0 1' ? ` matrix(${flip} ${xfrm.getAttribute('flipH') === '1' ? w : 0} ${xfrm.getAttribute('flipV') === '1' ? h : 0})` : ''}`;
   if (name === 'pic') {
@@ -512,7 +513,7 @@ export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   const root = data && els(data).find((n) => n.localName === 'wgp' || n.localName === 'wsp');
   if (!root || !width || !height) return null;
   const c = { colors: {}, font: 'Calibri', ...ctx };
-  const inner = shapeSvg(root, c);
+  const inner = shapeSvg(root, c, true);
   if (!inner) return null;
   // A single text box that grows to fit its text (shapeSvg) is that much taller; ctx.grown tells the caller.
   if (root.localName === 'wsp' && c.grown) { height = Math.round((height + c.grown) * 100) / 100; ctx.grownTo = height; }
@@ -561,6 +562,12 @@ export function shapesPad(drawing) {
       const ln = child(spPr, 'ln');
       pad = Math.max(pad, out + (ln?.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
     }
+    // A turned shape: room for its outline too, which would otherwise be cut off at its box and show, turned, as flat
+    // spots on its edge (an oval at 45 degrees).
+    if (shapeTurn(drawing)) {
+      const ln = child(spPr, 'ln');
+      pad = Math.max(pad, (ln?.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
+    }
   }
   return Math.ceil(pad);
 }
@@ -575,4 +582,16 @@ function overflow(d, w, h) {
     for (let i = 0; i + 1 < n.length; i += 2) see(n[i], n[i + 1]);
   }
   return out;
+}
+
+/**
+ * How far a drawing's shape (or group) is turned, in degrees clockwise (its a:xfrm rot): its picture is drawn unturned
+ * and turned whole about its centre on the page (reader.js), as Word turns it, so nothing of it is cut off at its box.
+ */
+export function shapeTurn(drawing) {
+  const data = desc(drawing, 'graphicData');
+  const root = data && [...data.childNodes].find((n) => n.localName === 'wsp' || n.localName === 'wgp');
+  const xfrm = root && child(child(root, root.localName === 'wsp' ? 'spPr' : 'grpSpPr'), 'xfrm');
+  const deg = Number(xfrm?.getAttribute('rot') || 0) / 60000;
+  return ((deg % 360) + 360) % 360;
 }

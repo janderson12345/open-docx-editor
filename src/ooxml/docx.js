@@ -736,7 +736,27 @@ export class DocxSession {
     const pt = (px) => +(px * 0.75).toFixed(2);
     xml = xml.replace(/(<v:(?:shape|group|rect|roundrect)\b[^>]*\bstyle="[^"]*?)width:([\d.]+)pt;height:([\d.]+)pt/, (m, a, w, h) => (group
       ? `${a}width:${+(Number(w) * kx).toFixed(2)}pt;height:${+(Number(h) * ky).toFixed(2)}pt` : `${a}width:${pt(width)}pt;height:${pt(height)}pt`));
-    return this._shapeNode(xml);
+    return this._shapeNode(turnRoom(xml));
+  }
+
+  /**
+   * A shape (or group) turned to `deg` degrees clockwise, as Word's rotate handle turns it: its a:xfrm rot (none at 0),
+   * the VML copy's rotation, and, in line with the text, the room round it (wp:effectExtent) its turned outline needs,
+   * as Word sets it, so the lines round it keep clear of it. Returns { xml, src, width, height, place }.
+   */
+  rotateShape(runXml, deg) {
+    const turn = Math.round((((deg % 360) + 360) % 360) * 60000) % 21600000;
+    let found = false;
+    let xml = runXml.replace(/(<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm)\b([^>]*?)(\/?>)/, (m, a, attrs, end) => {
+      found = true;
+      return `${a}${attrs.replace(/\s+rot="[^"]*"/, '')}${turn ? ` rot="${turn}"` : ''}${end}`;
+    });
+    if (!found) return null;
+    xml = xml.replace(/(<v:(?:shape|group|rect|roundrect)\b[^>]*\bstyle=")([^"]*)"/, (m, a, style) => {
+      const rest = style.replace(/;?\s*rotation:[^;]*/, '');
+      return `${a}${rest}${turn ? `;rotation:${+(turn / 60000).toFixed(2)}` : ''}"`;
+    });
+    return this._shapeNode(turnRoom(xml, true));
   }
 
   /**
@@ -775,13 +795,15 @@ export class DocxSession {
    * dragging one of a line's ends makes it; moved by (dx, dy) px too when it floats. Returns as resizeShape does.
    */
   lineShape(runXml, width, height, flipH, flipV, dx = 0, dy = 0) {
+    // (Its ends given where they are on the page: a turned line comes out unturned, its box their span.)
+    const turned = /<wps:spPr\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(?!0")/.test(runXml);
     const sized = this.resizeShape(runXml, width, height);
     if (!sized) return null;
     const flip = (xml) => xml.replace(/(<wps:spPr\b[^>]*>\s*<a:xfrm)\b([^>]*)>/, (m, a, attrs) => {
-      const rest = attrs.replace(/\s+flip[HV]="[^"]*"/g, '');
+      const rest = attrs.replace(/\s+(?:flip[HV]|rot)="[^"]*"/g, '');
       return `${a}${rest}${flipH ? ' flipH="1"' : ''}${flipV ? ' flipV="1"' : ''}>`;
     });
-    let out = this._shapeNode(flip(sized.xml));
+    let out = this._shapeNode(turned ? turnRoom(flip(sized.xml), true) : flip(sized.xml));
     if (out && (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5)) out = this.moveShape(out.xml, dx, dy) || out;
     return out;
   }
@@ -968,4 +990,30 @@ function base64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(s);
+}
+
+/**
+ * A shape's room round it (wp:effectExtent) for its turned outline, as Word sets it when it turns one: half of how much
+ * wider and taller the turned shape is than its box each side, and half its outline's width (px, whole). In line with
+ * the text it's the room the shape takes on its line; floating, Word writes it too (the shape still placed by its box).
+ * A shape not turned keeps its room as it was, unless `reset` (it was turned: none now).
+ */
+function turnRoom(xml, reset = false) {
+  if (!/<wp:(?:inline|anchor)\b/.test(xml)) return xml;
+  const deg = Number(/<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml)?.[1] || 0) / 60000;
+  const ext = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(xml);
+  if (!ext || (!(deg % 360) && !reset)) return xml;
+  const w = Number(ext[1]), h = Number(ext[2]);
+  const a = (deg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  // (The outline: its own width, or the theme's for the shape's style, Office's 0.5, 1 and 1.5pt.)
+  const ln = /<wps:spPr\b[\s\S]*?<\/wps:spPr>/.exec(xml)?.[0] || '';
+  const lnW = /<a:ln\b[^>]*\bw="(\d+)"/.exec(ln)?.[1];
+  const lnRef = /<a:lnRef\b[^>]*\bidx="(\d+)"/.exec(xml)?.[1];
+  const stroke = /<a:ln\b[^>]*>\s*<a:noFill\/>/.test(ln) ? 0 : Number(lnW || [0, 6350, 12700, 19050][Number(lnRef)] || 0);
+  const px = 9525;
+  const side = (grow) => (grow > 0.5 * px ? Math.round((grow + stroke / 2) / px) * px : 0);
+  const ex = side((w * c + h * s - w) / 2), ey = side((w * s + h * c - h) / 2);
+  const room = `<wp:effectExtent l="${ex}" t="${ey}" r="${ex}" b="${ey}"/>`;
+  return /<wp:effectExtent\b[^>]*\/>/.test(xml) ? xml.replace(/<wp:effectExtent\b[^>]*\/>/, room) : xml.replace(/(<wp:extent\b[^>]*\/>)/, `$1${room}`);
 }

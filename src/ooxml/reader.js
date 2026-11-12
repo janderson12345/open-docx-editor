@@ -1,7 +1,7 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
-import { shapesPad } from './shapes.js';
+import { shapesPad, shapeTurn } from './shapes.js';
 import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
@@ -550,7 +550,9 @@ function anchorCss(drawing, page) {
   // The offset places the box with its effect extent (room for a shadow or outline): the shape itself sits that much in
   // (sample S078's cover box, 1px lower in Word's PDF than its anchor paragraph's top).
   const fx = childNamed(anchor, 'effectExtent');
-  const fxT = emuToPx(fx?.getAttribute('t') || 0);
+  // (Not a turned shape's: Word sets that room round the turned outline and draws the shape where its box is, turned
+  // about its centre: a rectangle at 60 degrees with 40px of room above it, in Word's PDF, where it was at 30 with none.)
+  const fxT = shapeTurn(drawing) ? 0 : emuToPx(fx?.getAttribute('t') || 0);
   const y = ['paragraph', 'line'].includes(vRel) ? px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100 : 0;
   let wrap = [...anchor.childNodes].find((n) => n.localName && n.localName.startsWith('wrap'))?.localName || 'wrapNone';
   // Wrapped round, but as wide as the column: no text fits beside it, so it takes its own band, as top-and-bottom (and,
@@ -745,7 +747,7 @@ function readDrawing(drawing, ctx, rPrXml) {
       src,
       width,
       height,
-      place: anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect,
+      place: turned(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect, drawing, width, height),
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
       // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
       ...(() => {
@@ -755,6 +757,40 @@ function readDrawing(drawing, ctx, rPrXml) {
       })(),
     },
   };
+}
+
+/**
+ * A turned shape (a:xfrm rot) placed as Word places it: its picture (drawn unturned) turned about its centre by the page,
+ * taking the room its box takes (with its effect extent, which Word sets round a shape it turns in line with the text);
+ * wrapped round when floating (square, tight, through, top and bottom), the text keeps clear of the turned shape's whole
+ * outline, not its box: the float's margins that much wider, its picture moved back where it was.
+ */
+function turned(place, drawing, w, h) {
+  const deg = /wordprocessing(Group|Shape)$/.test([...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '') ? shapeTurn(drawing) : 0;
+  if (!deg || !w || !h) return place;
+  const a = (deg * Math.PI) / 180;
+  const ex = Math.max(0, (w * Math.abs(Math.cos(a)) + h * Math.abs(Math.sin(a)) - w) / 2);
+  const ey = Math.max(0, (w * Math.abs(Math.sin(a)) + h * Math.abs(Math.cos(a)) - h) / 2);
+  const r2 = (v) => +v.toFixed(2);
+  const turn = `rotate(${r2(deg)}deg)`;
+  const fl = /^float:(left|right);margin:(-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px (.+?)(;--odx-l.*)?$/.exec(place || '');
+  if (fl) {
+    // (Margins as anchorCss writes them: top, right, bottom, left; the left one a length or a calc().)
+    const [, side, t, r, b, l, rest = ''] = fl;
+    const left = /^-?[\d.]+px$/.test(l) ? `${r2(parseFloat(l) - (side === 'left' ? ex : -ex))}px` : `calc(${l} - ${r2(side === 'left' ? ex : -ex)}px)`;
+    const right = r2(Number(r) + (side === 'left' ? ex : -ex));
+    return `float:${side};margin:${r2(Number(t) - ey)}px ${right}px ${r2(Number(b) + ey)}px ${left}${rest};transform:translate(${r2(side === 'left' ? ex : -ex)}px, ${r2(ey)}px) ${turn}`;
+  }
+  if (/^display:block;margin-top:/.test(place || '')) {
+    const m = /^display:block;margin-top:(.+?);margin-left:(.+?);margin-bottom:(-?[\d.]+)px(.*)$/.exec(place);
+    if (m) return `display:block;margin-top:calc(${m[1]} - ${r2(ey)}px);margin-left:${m[2]};margin-bottom:${r2(Number(m[3]) + ey)}px${m[4]};transform:translate(0px, ${r2(ey)}px) ${turn}`;
+  }
+  // In line with the text: Word draws a turned shape its left and top room further along from its box (a 96 x 72 shape
+  // Word turned to 30.5 degrees, room 14, 22, 10, 20px: drawn 10.5pt right and 16.5pt down of the room's middle in its
+  // PDF; at 60, room 10, 26, 0, 24px: 7.5 and 19.5pt), over the text beside and below it as Word has it.
+  const fx = [...drawing.childNodes].find((n) => n.localName === 'inline') && [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'effectExtent' && n.parentNode?.localName === 'inline');
+  const fl2 = fx ? emuToPx(Math.max(0, Number(fx.getAttribute('l')) || 0)) : 0, ft = fx ? emuToPx(Math.max(0, Number(fx.getAttribute('t')) || 0)) : 0;
+  return `${place ? `${place};` : ''}transform:${fl2 || ft ? `translate(${r2(fl2)}px, ${r2(ft)}px) ` : ''}${turn}`;
 }
 
 // --- Tables ---------------------------------------------------------------

@@ -115,6 +115,64 @@ await drag('.odx-imgsize-adj', 20, 0);
 const r1 = (await shapes())[4];
 check(/adj=\d+/.test(avOf(r1.xml)) && Number(/adj=(\d+)/.exec(avOf(r1.xml))[1]) > 16667, `a rounded rectangle's handle rounds its corners more (${avOf(r0.xml) || 'default'} -> ${avOf(r1.xml)})`);
 
+// 6. Turning: the arrow's rotate handle dragged to the right of its centre turns it to 90 degrees; the picture turned
+// about its centre, the room round it on its line written (effectExtent) as Word writes it for a turned shape.
+const rotOf = (xml) => Number(/<wps:spPr><a:xfrm[^>]*\brot="(\d+)"/.exec(xml)?.[1] || 0) / 60000;
+const roomOf = (xml) => /<wp:effectExtent l="(\d+)" t="(\d+)" r="(\d+)" b="(\d+)"/.exec(xml).slice(1).map((v) => Math.round(v / 9525)).join(' ');
+await select(0);
+const t0 = (await shapes())[0];
+const centre = await imgs.nth(0).boundingBox();
+const rh = await page.locator('.odx-imgsize-rot').boundingBox();
+check(rh && rh.y + rh.height < centre.y, 'a shape has a rotate handle above it');
+await page.mouse.move(rh.x + rh.width / 2, rh.y + rh.height / 2);
+await page.mouse.down();
+await page.mouse.move(centre.x + centre.width / 2 + 150, centre.y + centre.height / 2 + 3, { steps: 8 });
+await page.mouse.up();
+await page.waitForTimeout(500);
+const t1 = (await shapes())[0];
+check(Math.abs(rotOf(t1.xml) - 90) <= 2, `dragged to its right, it turns to 90 degrees (${rotOf(t1.xml)})`);
+// (Drawn its left and top room along from its box, as Word draws a turned shape in line with the text.)
+check(/transform:translate\(0px, (\d+)px\) rotate\(\d+(\.\d+)?deg\)/.test(t1.place), `its picture turned by the page (${/transform:[^;]*/.exec(t1.place)?.[0]})`);
+// (A 96 x 72 shape at 90 degrees: taller than its box by 24px, so 12px (and half its outline) top and bottom, none at its sides.)
+const [rl1, tt1, rr1, b1] = roomOf(t1.xml).split(' ').map(Number);
+check(rl1 === 0 && rr1 === 0 && tt1 > 0 && tt1 === b1, `room round it for its turned outline, as Word writes it (${roomOf(t1.xml)}; was ${roomOf(t0.xml)})`);
+// Shift: 15-degree steps; the keyboard: Alt+Right 15 more, Ctrl+Alt+Left 1 back.
+const rh2 = await page.locator('.odx-imgsize-rot').boundingBox();
+const c2 = await page.locator('.odx-imgsize').boundingBox();
+await page.mouse.move(rh2.x + rh2.width / 2, rh2.y + rh2.height / 2);
+await page.keyboard.down('Shift');
+await page.mouse.down();
+await page.mouse.move(c2.x + c2.width / 2 + 100, c2.y + c2.height / 2 + 63, { steps: 8 }); // (about 122 degrees)
+await page.mouse.up();
+await page.keyboard.up('Shift');
+await page.waitForTimeout(400);
+const t2 = (await shapes())[0];
+check(rotOf(t2.xml) % 15 === 0 && Math.abs(rotOf(t2.xml) - 120) <= 15, `with Shift, a multiple of 15 degrees (${rotOf(t2.xml)})`);
+await page.keyboard.press('Alt+ArrowRight');
+await page.keyboard.press('Control+Alt+ArrowLeft');
+const t3 = (await shapes())[0];
+check(rotOf(t3.xml) === rotOf(t2.xml) + 14, `Alt+Right turns it 15 more, Ctrl+Alt+Left 1 back (${rotOf(t2.xml)} -> ${rotOf(t3.xml)})`);
+// A turned shape's handles turn with it: its side handle makes it longer along its own length.
+// (Undo, step by step, back to the first turn: two quick keys may be one step.)
+for (let k = 0; k < 4 && rotOf((await shapes())[0].xml) !== rotOf(t1.xml); k++) { await page.keyboard.press('Control+z'); await page.waitForTimeout(200); }
+const t4 = (await shapes())[0];
+check(rotOf(t4.xml) === rotOf(t1.xml) && roomOf(t4.xml) === roomOf(t1.xml), `undo takes the turns back (${rotOf(t4.xml)})`);
+await select(0);
+await drag('.odx-imgsize-e', 0, 50); // (its right side, turned to face down: dragged down)
+const t5 = (await shapes())[0];
+check(Math.abs(t5.w - t4.w - 50) <= 2 && t5.h === t4.h, `turned to 90 degrees, its side handle dragged down makes it longer (${t4.w}x${t4.h} -> ${t5.w}x${t5.h})`);
+const [, tt5] = roomOf(t5.xml).split(' ').map(Number);
+check(Math.abs(tt5 - tt1 - 25) <= 1, `and its room round it follows (${roomOf(t5.xml)})`);
+
+// 7. The floating rectangle turned: its offsets as they were (it turns about its centre), its picture turned.
+await select(4);
+const g0 = (await shapes())[4];
+await page.keyboard.press('Alt+ArrowRight');
+await page.keyboard.press('Alt+ArrowRight');
+const g1 = (await shapes())[4];
+check(rotOf(g1.xml) === 30 && off(g1.xml, 'H') === off(g0.xml, 'H') && off(g1.xml, 'V') === off(g0.xml, 'V'), `a floating shape turns about its centre, its place as it was (${rotOf(g1.xml)})`);
+check(/rotate\(30deg\)/.test(g1.place), 'its picture turned on the page');
+
 // The saved file: the shapes as changed.
 const bytes = await page.evaluate(async () => Array.from(await window.odx.save()));
 fs.mkdirSync('test/out', { recursive: true });
