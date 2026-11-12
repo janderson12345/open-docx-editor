@@ -45,13 +45,16 @@ node tools/doc-generator/run.mjs <work folder> [--steps word,ours,score,report] 
 - `word`: one Word, started for the run, prints every document to PDF (`word-pdf.ps1`): opened read-only and
   invisibly, closed without saving, no Word setting changed. A document that takes over two minutes is abandoned:
   the run ends the Word it started (never another) and carries on with a new one. Word's PDFs are kept: run it once.
-- `ours`: builds the demo page and prints every document through it (`tools/word-compare/print-ours.mjs`, in Edge).
+- `ours`: builds the demo page and prints every document through it, in Edge (`print-fast.mjs`: as
+  `tools/word-compare/print-ours.mjs` prints, but each browser page reused and each document printed as soon as the
+  editor has laid it out, 16 at a time: the full set in about 15 minutes).
 - `score`: extracts the lines of both (`tools/word-compare/lines.cjs`) and scores each document (`score.py`).
 - `report`: `report-<run>.md` (and `.json`): features worst first, the pairs worse together than either alone, the
   documents worst first with how to make each again, and anything Word or the editor couldn't print.
 
 Steps pick up where they stopped. `word` and `ours` can run at the same time (two commands with `--steps word` and
-`--steps ours`). Word prints about one document a second; the full set (about 7,500) takes a few hours.
+`--steps ours`). Word prints about five documents a second, the full set (about 7,500) in under half an hour.
+After a change to the editor only `ours`, `score` and `report` need running again: Word's PDFs and lines are kept.
 
 A score is the share of Word's lines the editor doesn't place on the same page within 1px, plus lines Word doesn't
 have, plus 20 per page of difference; 0 is the same as Word. Lines are matched as in `tools/word-compare`.

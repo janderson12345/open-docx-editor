@@ -1,5 +1,5 @@
 // Runs the generated documents (generate.mjs) against Word: Word prints each to PDF (word-pdf.ps1, once: its PDFs are
-// kept), the editor prints each (tools/word-compare/print-ours.mjs), the lines of both are extracted
+// kept), the editor prints each (print-fast.mjs), the lines of both are extracted
 // (tools/word-compare/lines.cjs) and compared (score.py), and report.mjs lists which feature combinations differ from
 // Word, worst first.
 // usage: node tools/doc-generator/run.mjs <outDir> [--steps word,ours,score,report] [--run name] [--timeout seconds]
@@ -94,13 +94,15 @@ async function ours() {
   log('ours: building the demo');
   await step(process.execPath, ['build.mjs'], { logName: 'build' });
   log('ours: printing');
-  await step(process.execPath, [path.join('tools', 'word-compare', 'print-ours.mjs'), docsDir, path.join(OUT, `ours-${runName}`)], { logName: `print-${runName}` });
+  await step(process.execPath, [path.join(here, 'print-fast.mjs'), docsDir, path.join(OUT, `ours-${runName}`)], { logName: `print-${runName}` });
   log(`ours: ${fs.readdirSync(path.join(OUT, `ours-${runName}`)).length} PDFs`);
 }
 
 async function score() {
   log('score: lines of Word\'s PDFs and ours');
-  await step(process.execPath, [path.join('tools', 'word-compare', 'lines.cjs'), path.join(OUT, 'word-pdf'), path.join(OUT, 'lines-word')], { logName: 'lines-word' });
+  // Word's lines once (its PDFs don't change); again only when there are PDFs they don't cover.
+  const count = (d, ext) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(ext)).length : 0);
+  if (count(path.join(OUT, 'lines-word'), '.json') < count(path.join(OUT, 'word-pdf'), '.pdf')) await step(process.execPath, [path.join('tools', 'word-compare', 'lines.cjs'), path.join(OUT, 'word-pdf'), path.join(OUT, 'lines-word')], { logName: 'lines-word' });
   await step(process.execPath, [path.join('tools', 'word-compare', 'lines.cjs'), path.join(OUT, `ours-${runName}`), path.join(OUT, `lines-${runName}`)], { logName: `lines-${runName}` });
   await step('python', [path.join(here, 'score.py'), path.join(OUT, 'lines-word'), path.join(OUT, `lines-${runName}`), path.join(OUT, `scores-${runName}.json`)], { logName: `score-${runName}` });
 }
