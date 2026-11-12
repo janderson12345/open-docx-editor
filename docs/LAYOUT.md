@@ -18,7 +18,7 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   CONTRIBUTING.md for running them.
 - **Generated documents:** `tools/doc-generator` makes about 7,500 documents from combinations of 121 features
   (each alone, every pair, random mixes), has Word print them, and reports which combinations differ, worst first.
-  On them, 89.0% of Word's lines are on the same page within 1px (78.2% before the rules below marked *generated*).
+  On them, 90.3% of Word's lines are on the same page within 1px (78.2% before the rules below marked *generated*).
 
 ## How layout works
 
@@ -147,6 +147,10 @@ document in Word 2003's mode, with the rule and without it: `test/fixtures/mkcom
   whole pitches its text needs, with the text centred.
 - In newspaper columns a paragraph kept with the next goes on with it from the top of a column that isn't its page's
   first, column by column.
+- Small caps are as wide as Word's: lowercase letters as capitals at 80% of the size, to half a point.
+- Raised and lowered text is two thirds of the size, down to the half point; raised about a third of the text's size,
+  lowered a fifteenth.
+- Headers and footers leave out the space between paragraphs of the same style that ask for it (contextual spacing).
 
 ## Tried and dropped
 
