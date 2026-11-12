@@ -285,6 +285,9 @@ td[data-odx-phantom] > * { display: none; }
 @media screen { .odx-perm { background: rgba(255, 230, 80, .38); box-shadow: 0 0 0 1px rgba(200, 160, 0, .45); } }
 .odx-forms .odx-ff { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: pointer; }
 .odx-content table.odx-autofit { table-layout: auto; }
+/* Word takes a paragraph's width on one line as at most 22in (31680tw, its widest page) when it shares out an autofit
+   table's width: columns of long paragraphs come out equal, as in Word, not in proportion to their lengths. */
+.odx-content table.odx-autofit > tbody > tr > td > p { max-width: 2112px; }
 /* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
    drawn again at the top of a page: sample S057's 864-twip bottom-aligned header, 6.7px short.) */
 .odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }
