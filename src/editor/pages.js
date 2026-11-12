@@ -1746,7 +1746,11 @@ export function createPages(view, session, { sheet, scope }) {
       // Keep with next: headings at the bottom of a page move with the block they introduce.
       let m = k;
       if (overflow) {
-        while (m > 0 && keep(blocks[m - 1].node) && !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1) m--;
+        // (In newspaper columns, also from the top of a column that isn't its page's first, moved there already: Word
+        // takes a paragraph on with the one it keeps with column by column, to the next page's first column at most.
+        // The generated documents' headings in two and three columns, tools/doc-generator.)
+        const midSheet = !!cols && p % cols.num !== 0;
+        while (m > 0 && keep(blocks[m - 1].node) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
       }
       const moved = blocks[m];
       // With "page break before" or a new section Word keeps the paragraph's space before.
