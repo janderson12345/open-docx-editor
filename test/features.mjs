@@ -669,6 +669,44 @@ check(merged.span === 3 && merged.paras === 3 && merged.bg === 'rgb(255, 230, 15
   && /<w:vMerge w:val="restart"\/><w:tcBorders><w:left w:val="single" w:sz="24"[^>]*\/><\/w:tcBorders><w:shd [^>]*w:fill="FFE699"\/><w:vAlign w:val="center"\/>/.test(mergedXml),
   `merged cells keep their formatting (${JSON.stringify(merged)})`);
 
+// Layout > Columns with a selection: for the selected text only (continuous section breaks before and after it, on the
+// paragraphs' own marks, none split), as Word's menu; "Two, from here on": from the cursor on.
+const colsDoc = async (sel) => {
+  await page.evaluate(() => window.odx.newDocument({ share: false }));
+  await page.click('.odx-content p');
+  for (const t of ['First paragraph, one column.', 'Second paragraph, in two columns.', 'Third paragraph, one column again.']) { await page.keyboard.type(t); await page.keyboard.press('Enter'); }
+  await page.keyboard.type('Fourth.');
+  await page.evaluate(sel);
+  await page.click('.odx-rtab:text-is("Layout")');
+  await page.click('button[title="Columns"]');
+};
+const colsSaved = async () => {
+  await page.waitForTimeout(1200);
+  const x = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+  return [...x.matchAll(/<w:p\b[\s\S]*?<\/w:p>|<w:sectPr\b[\s\S]*?<\/w:sectPr>(?=<\/w:body>)/g)].map((m) => {
+    const t = (m[0].match(/<w:t[^>]*>([^<]*)/g) || []).map((s) => s.replace(/<w:t[^>]*>/, '')).join('').slice(0, 6);
+    const s = /<w:sectPr\b[\s\S]*?<\/w:sectPr>/.exec(m[0])?.[0];
+    return s ? `${t}|${/<w:cols\b[^>]*w:num="(\d)"/.exec(s)?.[1] || 1}${/w:type w:val="continuous"/.test(s) ? 'c' : ''}` : t;
+  }).join(' / ');
+};
+await colsDoc(() => {
+  // (The second paragraph's text selected.)
+  const v = window.odx.view; let a = null, b = null;
+  v.state.doc.forEach((n, pos, i) => { if (i === 1) { a = pos + 1; b = pos + 1 + n.content.size; } });
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, a, b)));
+});
+await page.click('.odx-pop .odx-item:has-text("Two") >> nth=0');
+const colsSel = await colsSaved();
+await colsDoc(() => {
+  const v = window.odx.view; let a = null;
+  v.state.doc.forEach((n, pos, i) => { if (i === 2) a = pos + 1; });
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, a)));
+});
+await page.click('.odx-pop .odx-item:has-text("Two, from here on")');
+const colsFwd = await colsSaved();
+check(colsSel === 'First |1 / Second|2c / Third  / Fourth / |1c' && colsFwd === 'First  / Second|1 / Third  / Fourth / |2c',
+  `Columns for the selected text, and from here on (${colsSel} || ${colsFwd})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

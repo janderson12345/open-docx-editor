@@ -342,14 +342,16 @@ export function wordCount(doc) {
   return { words, characters: text.replace(/\n/g, '').length, charactersNoSpaces: text.replace(/\s/g, '').length, paragraphs };
 }
 
-/** A paragraph's outline level (0 = Heading 1), from its formatting, its style, or a built-in "heading N" style name; null for body text. */
+/**
+ * A paragraph's outline level (0 = Heading 1), from its formatting, its style, or a built-in "heading N" style name; null
+ * for body text (as a built-in heading used without being defined is in Word: Normal).
+ */
 export function outlineLevel(session, node) {
   const lvl = node.attrs.view?.outlineLvl ?? session.styleProp(node.attrs.styleId, 'outlineLvl');
   if (lvl != null) return lvl > 8 ? null : lvl;
   for (let id = node.attrs.styleId, n = 0; id && n < 10; n++) {
     const st = session.styles.styles.get(id);
-    // (A built-in heading used without being defined is one too: Heading1 to Heading9.)
-    const m = st ? /^heading\s*(\d)$/i.exec(st.name || '') : /^heading([1-9])$/i.exec(id);
+    const m = st && /^heading\s*(\d)$/i.exec(st.name || '');
     if (m) return Number(m[1]) - 1;
     id = st && st.basedOn;
   }
@@ -454,6 +456,47 @@ export const insertSectionBreak = (kind) => (state, dispatch) => {
   dispatch(tr.scrollIntoView());
   return true;
 };
+
+/**
+ * A continuous section break at `pos`, for Columns applied to "This point forward" or "Selected text" (Word's More
+ * Columns): the section `pos` is in ends there with its page setup, and one with the same setup starts. At a paragraph's
+ * start or end no paragraph is split: the break ends the paragraph before, or this one, as Word's section mark takes the
+ * place of a paragraph mark. `{ tr, start }` (start: the new section's first position in tr.doc), or null where no break
+ * is needed (the document's start or end, a section's) or none can go (in a table).
+ */
+export function sectionBreakAt(state, pos) {
+  const doc = state.doc;
+  const $p = doc.resolve(pos);
+  if ($p.depth !== 1 || $p.parent.type !== paragraph) return null;
+  const idx = $p.index(0);
+  const sectOf = (n) => n.type === paragraph && (n.attrs.extra || []).find((e) => e[0] === 'sectPr')?.[1];
+  const posOf = (d, i) => { let p = 0; for (let k = 0; k < i; k++) p += d.child(k).nodeSize; return p; };
+  if (pos !== $p.start() && pos !== $p.end()) {
+    // Mid-paragraph: split there (Insert > Break > Continuous at that point).
+    let out = null;
+    insertSectionBreak('continuous')(state.apply(state.tr.setSelection(TextSelection.create(doc, pos))), (tr) => { out = tr; });
+    if (!out) return null;
+    const tr = state.tr;
+    for (const s of out.steps) tr.step(s); // (on the same document: only the selection differed)
+    return { tr, start: posOf(tr.doc, idx + 1) + 1 };
+  }
+  const end = pos === $p.start() ? idx - 1 : idx; // the paragraph the break ends
+  if (end < 0 || end >= doc.childCount - 1 || sectOf(doc.child(end))) return null;
+  let followIdx = -1;
+  let follow = doc.attrs.sectPr || '<w:sectPr/>';
+  for (let i = end + 1; i < doc.childCount; i++) {
+    const x = sectOf(doc.child(i));
+    if (x) { followIdx = i; follow = x; break; }
+  }
+  const tr = state.tr;
+  const pb = doc.child(end);
+  tr.setNodeMarkup(posOf(doc, end), null, { ...pb.attrs, extra: [...(pb.attrs.extra || []), ['sectPr', follow]] });
+  if (followIdx >= 0) {
+    const n = tr.doc.child(followIdx);
+    tr.setNodeMarkup(posOf(tr.doc, followIdx), null, { ...n.attrs, extra: n.attrs.extra.map((e) => (e[0] === 'sectPr' ? ['sectPr', withSectType(e[1], 'continuous')] : e)) });
+  } else tr.setDocAttribute('sectPr', withSectType(follow, 'continuous'));
+  return { tr, start: posOf(tr.doc, end + 1) + 1 };
+}
 
 /** Page borders on the last section: 'none' | 'box' | 'double' | 'shadow' | 'thick'. */
 export const setPageBorders = (kind) => (state, dispatch) => {

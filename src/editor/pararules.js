@@ -4,6 +4,7 @@
 import { listLevel, resolveStyle } from '../ooxml/styles.js';
 import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
+import { outlineLevel } from './commands.js';
 
 // The paragraph mark's own font size (half-points), if it sets one.
 export function markSize(node) {
@@ -215,8 +216,8 @@ export function changeClasses(node) {
 export function headingRole(node, session, attrs) {
   // A heading (an outline level, its own or its style's) is one to screen readers: NVDA read "Quarterly Report", not
   // "heading level 1". (Not an empty one: nothing to read.)
-  // (Word's built-in Heading 1-9 have their level even where styles.xml doesn't say it.)
-  const builtin = /^heading([1-9])$/i.exec(node.attrs.styleId || '');
-  const outline = node.attrs.view?.outlineLvl ?? session.styleProp(node.attrs.styleId, 'outlineLvl') ?? (builtin ? Number(builtin[1]) - 1 : null);
+  // (Word's built-in Heading 1-9 have their level by name where styles.xml doesn't give it; one used without being
+  // defined is Normal in Word, no heading.)
+  const outline = outlineLevel(session, node);
   if (outline != null && outline >= 0 && outline < 9 && node.textContent.trim()) { attrs.role = 'heading'; attrs['aria-level'] = String(outline + 1); }
 }

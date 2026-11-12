@@ -98,19 +98,7 @@ export function stylesToCss(scope, info, theme) {
     const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(r.rPr, theme)].filter(Boolean).join(';');
     if (css) rules.push(`${sel}{${css}}`);
   }
-  // Built-in headings a document uses without defining them (python-docx's add_heading in a bare template): drawn as
-  // Word's own Heading 1 to 9 and Title, which Word applies to them.
-  const major = `font-family:var(--odx-font-major);--odx-lh:var(--odx-lh-major)`;
-  const BUILT_IN = {
-    Heading1: 'font-size:16pt;color:#2F5496;margin-top:12pt', Heading2: 'font-size:13pt;color:#2F5496;margin-top:2pt',
-    Heading3: 'font-size:12pt;color:#1F3763;margin-top:2pt', Heading4: 'font-style:italic;color:#2F5496;margin-top:2pt',
-    Heading5: 'color:#2F5496;margin-top:2pt', Heading6: 'color:#1F3763;margin-top:2pt', Heading7: 'font-style:italic;color:#1F3763;margin-top:2pt',
-    Heading8: 'font-size:10.5pt;color:#272727;margin-top:2pt', Heading9: 'font-size:10.5pt;font-style:italic;color:#272727;margin-top:2pt',
-    Title: 'font-size:28pt;letter-spacing:-0.5pt;margin-bottom:0',
-  };
-  for (const [id, css] of Object.entries(BUILT_IN)) {
-    if (!styles.has(id)) rules.push(`${scope} p[data-style="${id}"]{${major};${css};${id === 'Title' ? '' : 'margin-bottom:0'}}`);
-  }
+  // (A style the document uses without defining it, a built-in Heading 1 or Title too, is Normal in Word: drawn so.)
   return rules.join('\n');
 }
 

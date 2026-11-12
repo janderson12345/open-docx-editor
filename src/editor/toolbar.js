@@ -29,7 +29,7 @@ import { el, iconize, slug, ribbonKit } from './ribbonkit.js';
 import * as sp from '../ooxml/sectpr.js';
 import { WRAPS } from '../ooxml/wrap.js';
 import { setWrapText, currentWrap } from './wraptext.js';
-import { sectionsTr, pageSetupPanel } from './pagesetup.js';
+import { sectionsTr, sectionAt, pageSetupPanel } from './pagesetup.js';
 
 const SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 const FONTS = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana'];
@@ -252,7 +252,23 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   const pageSetup = (fn) => withView((v) => { applyPageSetup(v, fn); return true; });
   const setMargins = (t, r, bm, l) => pageSetup((x) => sp.setMargins(x, t, r, bm, l));
   const setOrientation = (landscape) => pageSetup((x) => sp.setOrientation(x, landscape));
-  const setColumns = (num) => pageSetup((x) => sp.setColumns(x, num));
+  // Columns as Word's: for the section the cursor is in; for the selected text, with continuous section breaks before and
+  // after it, as Word's Columns menu does with a selection; or with `forward`, from the cursor on (More Columns' "This
+  // point forward": a continuous section break there).
+  const setColumns = (num, forward = false) => withView((v) => {
+    const main = v.odx?.main || v;
+    const { from, to, empty, $from } = main.state.selection;
+    if (forward || !empty) {
+      if (!forward) { const b = cmd.sectionBreakAt(main.state, to); if (b) main.dispatch(b.tr); }
+      const a = cmd.sectionBreakAt(main.state, from);
+      if (a) main.dispatch(a.tr);
+      // (No break needed where a section already starts; one already ending at the cursor's paragraph end: the next.)
+      const start = a ? a.start : $from.depth === 1 && from === $from.end() && from + 2 < main.state.doc.content.size ? from + 2 : from;
+      main.dispatch(main.state.tr.setSelection(TextSelection.create(main.state.doc, start)));
+    }
+    applyPageSetup(main, (x) => sp.setColumns(x, num));
+    return true;
+  });
   const setSize = (w, h) => pageSetup((x) => sp.setPageSize(x, w, h));
 
   // --- Word count, shown in a small popup under the button ---
@@ -413,7 +429,15 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
         menu('▯', 'Margins', () => MARGINS.map(([n, t, r, bm, l]) => item(n, setMargins(t, r, bm, l), { hint: `Top ${t / 1440}" Bottom ${bm / 1440}" Left ${l / 1440}" Right ${r / 1440}"` })), { label: 'Margins', big: true }),
         menu('⟲', 'Orientation', () => [item('Portrait', setOrientation(false)), item('Landscape', setOrientation(true))], { label: 'Orientation', big: true }),
         menu('▤', 'Page size', () => PAGE_SIZES.map(([n, hint, w, h]) => item(n, setSize(w, h), { hint })), { label: 'Size', big: true }),
-        menu('▥', 'Columns', () => [['One', 1], ['Two', 2], ['Three', 3]].map(([n, k]) => item(n, setColumns(k), { on: !!getView() && sp.columnCount(getView().state.doc.attrs.sectPr) === k })), { label: 'Columns', big: true }),
+        menu('▥', 'Columns', () => {
+          const v = getView();
+          const now = v && sp.columnCount(sectionAt((v.odx?.main || v).state.doc, (v.odx?.main || v).state.selection.from).xml);
+          const sel = v && !(v.odx?.main || v).state.selection.empty;
+          const names = [['One', 1], ['Two', 2], ['Three', 3]];
+          return [...names.map(([n, k]) => item(n, setColumns(k), { on: now === k, hint: sel ? 'For the selected text' : '' })),
+            el('hr'),
+            ...names.map(([n, k]) => item(`${n}, from here on`, setColumns(k, true), { hint: 'This point forward: a continuous section break here' }))];
+        }, { label: 'Columns', big: true }),
         menu('⤓', 'Breaks', () => [item('Page break', cmd.insertBreak('page'), { hint: 'Ctrl+Enter' }), item('Column break', cmd.insertBreak('column')), item('Text wrapping break', cmd.insertBreak(null), { hint: 'Shift+Enter' }), el('hr'),
           item('Section break: next page', cmd.insertSectionBreak('nextPage'), { hint: 'New section on the next page' }), item('Section break: continuous', cmd.insertSectionBreak('continuous'), { hint: 'New section on the same page' })], { label: 'Breaks', big: true }),
         menu('⚙', 'Page Setup: margins, paper and orientation, for this section or the whole document', () => { const v = getView(); return v ? pageSetupPanel(v.odx?.main || v, PAGE_SIZES, typed, (fn, all) => applyPageSetup(v, fn, all), closeMenu) : []; }, { label: 'Page Setup', big: true })),

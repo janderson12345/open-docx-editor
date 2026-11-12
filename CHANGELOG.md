@@ -15,6 +15,14 @@
 - **Insert Table uses Word's Table Grid style**, adding it to the document if it lacks it. Its lines now show while
   editing (they were only in the saved file), and the cells' text has no space after, so rows are as tall as Word's.
   A pasted table without table properties is also drawn with the lines it is saved with.
+- **A built-in heading style a document uses without defining it** (no Heading 1 in its styles.xml) is now Normal, as
+  in Word: plain body text, not a heading in the navigation pane, table of contents or to screen readers. It was drawn
+  as Word's built-in Heading 1, which Word itself doesn't do (checked with and without latent styles, and with no
+  styles part).
+- **Columns for part of a document.** With text selected, Layout > Columns applies to the selected text only, with
+  continuous section breaks before and after it, as Word's menu does; "One/Two/Three, from here on" applies from the
+  cursor on (More Columns' "This point forward"). A break at a paragraph's start or end splits nothing. The menu's tick
+  now shows the cursor's section, not the last one.
 
 ## 0.7.6 (2026-11-11)
 
