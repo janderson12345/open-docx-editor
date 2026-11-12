@@ -286,6 +286,11 @@ td[data-odx-phantom] > * { display: none; }
 /* Restrict Editing: the parts this user may still edit, highlighted as Word highlights them (on screen only). */
 @media screen { .odx-perm { background: rgba(255, 230, 80, .38); box-shadow: 0 0 0 1px rgba(200, 160, 0, .45); } }
 .odx-forms .odx-ff { background: rgba(43,108,223,.10); outline: 1px solid rgba(43,108,223,.35); border-radius: 2px; cursor: pointer; }
+/* A floating table between two paragraphs (editor.js): the space after the one before it and the space before the one
+   after it both kept, as in Word, and the table below the first one's. (Not once the layout has put it in the flow.) */
+.odx-content > p:has(+ .tableWrapper[style*="--odx-fgap"]:not([style*="float:none"]):not([style*="float: none"])) { margin-bottom: 0 !important; }
+.odx-content > .tableWrapper[style*="--odx-fgap"]:not([style*="float:none"]):not([style*="float: none"]) { margin-top: var(--odx-fgap); }
+.odx-content > .tableWrapper[style*="--odx-fgap"]:not([style*="float:none"]):not([style*="float: none"]) + p { margin-top: calc(var(--odx-fgap) + var(--odx-fbefore, 0px)) !important; }
 .odx-content table.odx-autofit { table-layout: auto; }
 /* Word takes a paragraph's width on one line as at most 22in (31680tw, its widest page) when it shares out an autofit
    table's width: columns of long paragraphs come out equal, as in Word, not in proportion to their lengths. */
