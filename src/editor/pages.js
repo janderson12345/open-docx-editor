@@ -1154,8 +1154,10 @@ export function createPages(view, session, { sheet, scope }) {
       if (!el || el.nodeType !== 1 || !el.getClientRects().length) return;
       const r = el.getBoundingClientRect();
       const a = applied.get(i);
-      if (a) undo += a.extra;
-      const block = { i, node, el, top: r.top - base - undo, undo };
+      // (A floating block's margin moves only itself: what follows it in the flow is where it was.)
+      const float = a && a.extra && outOfFlow(el);
+      if (a && !float) undo += a.extra;
+      const block = { i, node, el, top: r.top - base - undo - (float ? a.extra : 0), undo: undo + (float ? a.extra : 0) };
       if (node.type === schema.nodes.table) {
         // Rows too, so a table can continue on the next page.
         const table = el.tagName === 'TABLE' ? el : el.querySelector('table');
@@ -1195,7 +1197,7 @@ export function createPages(view, session, { sheet, scope }) {
         }
       }
       if (a && a.inline) undo += a.inline;
-      block.bottom = r.bottom - base - undo;
+      block.bottom = r.bottom - base - undo - (float ? a.extra : 0);
       blocks.push(block);
     });
     return blocks;
@@ -1545,6 +1547,7 @@ export function createPages(view, session, { sheet, scope }) {
     // Walk the blocks and decide where pages start. `shift` is how far the
     // blocks already pushed have moved everything below them.
     const starts = new Map(); // block index -> extra px pushed (applied as margin-top)
+    const carried = new Set(); // blocks after a frame moved to the next page: their push is the frame's
     const tails = new Map(); // block index -> the height of the line before it that Word starts its page with
     const splits = new Map(); // table block index -> { rows: Map(row -> extra px), heads: [page top] }
     const paraSplits = new Map(); // paragraph block index -> { pushes: [{ pos, delta }], total }
@@ -1597,6 +1600,19 @@ export function createPages(view, session, { sheet, scope }) {
           const y = al === 'top' ? base : al === 'center' ? base + (room - h) / 2 : al === 'bottom' ? base + room - h : base + Number(b.el.dataset.fy || 0);
           frameDy.set(b.i, y - natural);
           if (Math.abs(y - natural - now) > 0.5) colsAgain = true; // (the text beside it moves: lay out again)
+        } else if (frame !== 'cont') { // (the frame's first paragraph; the rest are 'cont')
+          // A frame in the text that doesn't fit in what's left of its page goes to the next page whole, and the text
+          // after it with it, as in Word (four headings in a frame below a title: the page holds only the title).
+          let k2 = k;
+          let bottom = b.bottom + shift;
+          while (k2 + 1 < blocks.length && blocks[k2 + 1].el.dataset?.frame === 'cont') bottom = Math.max(bottom, blocks[++k2].bottom + shift);
+          if (bottom > contentBottom(p) + 1 && top > contentTop(p) + 1) { // (even one taller than a page: it starts the next)
+            const d = contentTop(p + 1) - top;
+            starts.set(b.i, (starts.get(b.i) || 0) + d);
+            const nb = blocks[k2 + 1];
+            if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + d); carried.add(nb.i); } // (the text after it: a float's margin doesn't move it)
+            shift += d;
+          }
         }
         continue;
       }
@@ -1755,7 +1771,7 @@ export function createPages(view, session, { sheet, scope }) {
       // a 6pt one, 3pt; varied in copies of it, a space before up to that space after leaves none).
       const kept = forced && sectStart && m === k && k > 0 ? Math.max(0, spaceBefore(moved.node) - spaceAfter(blocks[k - 1].node)) : spaceBefore(moved.node);
       const delta = contentTop(target) + (forced ? kept : tails.get(moved.i) || 0) - (moved.top + shift);
-      starts.set(moved.i, (cols ? starts.get(moved.i) || 0 : 0) + delta); // (in columns it may already carry a split's push)
+      starts.set(moved.i, (cols || carried.has(moved.i) ? starts.get(moved.i) || 0 : 0) + delta); // (in columns it may already carry a split's push; after a frame moved on, that push)
       shift += delta;
       if (rec.has(m)) rec.set(m, { top: moved.top + shift, bottom: moved.bottom + shift }); // (the walk goes on after it, not from it)
       for (let n = m; n <= k; n++) {
