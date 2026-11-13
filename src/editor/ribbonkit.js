@@ -47,7 +47,9 @@ export function el(tag, attrs = {}, ...children) {
       v({ preventDefault() {}, stopPropagation() {}, target: e, currentTarget: e, clientX: r.left, clientY: r.bottom, button: 0, detail: 1, viaKeyboard: true });
     });
     if (k === 'onmousedown' && v) e.addEventListener('mousedown', () => { e.odxDownAt = performance.now(); }, true);
-    else if (v != null && v !== false) e.setAttribute(k, v === true ? '' : v);
+    // (Handlers are listeners, above, never attributes too: an attribute's text is inline script, which a strict
+    // Content-Security-Policy refuses, and it did nothing besides.)
+    else if (!k.startsWith('on') && v != null && v !== false) e.setAttribute(k, v === true ? '' : v);
   }
   e.append(...children.filter((c) => c != null && c !== false));
   return e;

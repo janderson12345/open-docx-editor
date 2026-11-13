@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Self-contained hosting, documented and tested**: README "Self-contained hosting" shows how to serve the stand-in fonts
+  from your own site (no CDN) and the Content-Security-Policy the editor needs (only `'self'`, with `data:`/`blob:`
+  images and generated styles); a test runs the editor under that policy. Fixed on the way: the ribbon's drop-downs and
+  colour pickers also wrote their handlers into the page as inline-script attributes (inert, but refused under a strict
+  policy).
 - **Resizing shapes as in Word.** A shape's corner handles now resize it freely, as Word's do (Shift keeps its
   proportions, as does a shape locked to them; pictures keep theirs, as before). Its yellow handles change its adjust
   values (an arrow's head and shaft, a rounded rectangle's corners, a callout's pointer, a block arc's angles: each of

@@ -262,6 +262,55 @@ editor lays text out in the fonts installed on the computer, as Word does, and u
   const missing = await editor.missingFonts();
   ```
 
+## Self-contained hosting (no CDN, strict Content-Security-Policy)
+
+The editor runs entirely in the page and fetches nothing on its own except one thing: the stand-in fonts' stylesheet,
+which by default it links from jsDelivr. Serve the fonts from your own site and everything comes from your origin: no
+CDN, no third-party sites to allow, and a Content-Security-Policy that allows only `'self'`.
+
+1. **Copy the fonts into the files your site serves**, from the installed package (again after each upgrade, so they
+   match the editor's version; a build or `postinstall` script is a good place):
+
+   ```bash
+   mkdir -p public/docx-fonts && cp -R node_modules/open-docx-editor/src/fonts/. public/docx-fonts/
+   ```
+
+   ```powershell
+   robocopy node_modules\open-docx-editor\src\fonts public\docx-fonts /E
+   ```
+
+   That's `fonts.css` and its `files/` folder (about 1.7 MB of WOFF2; the browser downloads a font only when a document
+   uses it and the computer lacks it).
+2. **Point the editor at your copy**, by the URL your site serves the folder at:
+
+   ```js
+   mountDocxEditor(el, { fonts: { base: '/docx-fonts/' } });
+   ```
+
+   With a bundler you can instead import the stylesheet (the bundler copies the font files with your app) and turn the
+   link off:
+
+   ```js
+   import 'open-docx-editor/fonts.css';
+   mountDocxEditor(el, { fonts: { base: false } });
+   ```
+3. **Send a Content-Security-Policy** (an HTTP header on the page, or the equivalent in your web server or framework):
+
+   ```text
+   Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' data: blob:; object-src 'none'; base-uri 'self'
+   ```
+
+   - `img-src data: blob:`: pictures, shapes and charts in a document are drawn from images held in memory.
+   - `style-src 'unsafe-inline'`: the editor lays out its pages with styles it generates as it goes.
+   - `font-src 'self'`: your copy of the fonts. (Fonts embedded in a document load from memory and need nothing.)
+   - `connect-src data: blob:`: PDF export reads those in-memory pictures back.
+
+   Nothing else: no scripts from elsewhere, no `eval`, no workers, no frames. Add only what you plug in yourself: your
+   WOPI host or co-editing server (`connect-src https://… wss://…`) and whatever your `ai` function calls.
+
+The tests run the editor under exactly this policy (`test/csp.mjs`): documents with pictures, shapes, charts and text
+boxes, every ribbon tab, a PDF export and a save, with no violation and no request to any other site.
+
 ## PDF export
 
 `open-docx-editor/pdf` draws a PDF from the editor's own page layout with pdf-lib: real, selectable text where the
