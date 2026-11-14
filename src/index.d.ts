@@ -65,6 +65,8 @@ export const VERSION: string;
 export const FONTS_CDN: string;
 /** The jsDelivr address the open-metric-fonts packages load from by default (npm's @open-metric-fonts). */
 export const OMF_CDN: string;
+/** The open-metric-fonts release the editor's map of them was made from (the one to self-host). */
+export const OMF_VERSION: string;
 
 /** What AI Writing asks your model: an action on `text` (the selection, or the cursor's paragraph). */
 export interface AiRequest {
