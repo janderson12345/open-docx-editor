@@ -2,6 +2,7 @@
 // shared by direct formatting and style definitions. Units stay OOXML-native
 // (half-points for size, twips for spacing/indent) until CSS is generated.
 import { kid, kids, attr, onOff } from './xml.js';
+import { OMF } from '../fonts/omf.js';
 
 export function readRPr(rPr) {
   const p = {};
@@ -201,10 +202,25 @@ export function setFontAlts(map) { for (const [k, v] of map || []) ALTS.set(k, v
 const HOST = new Map();
 export function setFontSubstitutes(map) { for (const [k, v] of map || []) HOST.set(k, v); }
 
+// The open-metric-fonts stand-ins (src/fonts/omf.js: Grandview, Bahnschrift, Sitka, Aptos's weights...), where the host
+// loads them (fontload.js): font name -> the family it registered for it, drawn where the font is missing, after the
+// font itself and the editor's own stand-in (Aptos keeps odx-aptos, fitted to Word's prints: Morrow Sans draws the
+// letters it lacks). Null when they're off (fonts.omf false) or outside a browser.
+let omfFamily = null;
+export function setOmf(fn) { omfFamily = fn; }
+const OMF_KEY = new Map(Object.keys(OMF).map((k) => [k.toLowerCase(), k]));
+const OMF_LINE = new Map(Object.entries(OMF).map(([k, v]) => [k.toLowerCase(), v[1]]));
+
 export function fontStack(name) {
   const host = HOST.get(name);
-  if (host && host !== name) return [quoted(name), quoted(host), ...baseStack(name).split(', ').slice(1)].join(', ');
-  return baseStack(name);
+  const stack = host && host !== name ? [quoted(name), quoted(host), ...baseStack(name).split(', ').slice(1)].join(', ') : baseStack(name);
+  const key = omfFamily && OMF_KEY.get(String(name || '').toLowerCase());
+  const omf = key && omfFamily(key);
+  if (!omf) return stack;
+  // (Before the generic family at the end.)
+  const parts = stack.split(', ');
+  parts.splice(parts.length - 1, 0, quoted(omf));
+  return parts.join(', ');
 }
 
 function baseStack(name) {
@@ -252,14 +268,17 @@ function measure(key) {
   return f;
 }
 // A face named as a font ("Times New Roman Bold", sample S078's headings): its family's metrics.
-const face = (name) => { const m = /^(.+?) (bold|italic|bold italic)$/i.exec(name || ''); return m && LINE[m[1].toLowerCase()] ? m[1] : null; };
+const face = (name) => { const m = /^(.+?) (bold|italic|bold italic)$/i.exec(name || ''); return m && (LINE[m[1].toLowerCase()] || OMF_LINE.has(m[1].toLowerCase())) ? m[1] : null; };
 export const lineFactor = (name) => {
   // (A font missing here, drawn in the host's substitute: that font's line, unless the editor knows the missing one's.)
   if (HOST.has(name) && !LINE[(name || '').toLowerCase()] && !(typeof document !== 'undefined' && measure((name || '').toLowerCase()))) return lineFactor(HOST.get(name));
   if (twin(name)) return lineFactor(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return lineFactor(face(name));
   const key = listed(name) ? 'segoe ui' : (name || '').toLowerCase();
-  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || LINE[(SUBST[name] || '').toLowerCase()] || (ALTS.get(name) && ALTS.get(name) !== name ? lineFactor(ALTS.get(name)) : 0) || 1.17;
+  // (A font open-metric-fonts stands in for, missing from the computer: its line as Word sets it, from the stand-in's
+  // metrics, which are the original's. An installed one is measured as before: run 419 put Book Antiqua and Century
+  // Gothic forms 6 lines off with the computed value ahead of the measure.)
+  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || OMF_LINE.get(key) || LINE[(SUBST[name] || '').toLowerCase()] || (ALTS.get(name) && ALTS.get(name) !== name ? lineFactor(ALTS.get(name)) : 0) || 1.17;
 };
 /** CSS for a font: the family stack plus the custom property paragraph line heights scale. */
 export const fontCss = (name) => `font-family:${fontStack(name)};--odx-lh:${lineFactor(name)}`;

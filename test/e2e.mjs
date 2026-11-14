@@ -29,6 +29,13 @@ page.on('pageerror', (e) => errors.push(e.message));
 // The demo looks for a sample document beside the page, which only the published demo has.)
 page.on('console', (m) => m.type() === 'error' && !/^Failed to load resource/.test(m.text()) && errors.push(m.text()));
 page.on('response', (r) => r.status() >= 400 && !r.url().endsWith('/sample.docx') && errors.push(`${r.status()} ${r.url()}`));
+// The open-metric-fonts stand-ins (omf-fonts.docx's Grandview, Seaford...) answered with a small font of the editor's
+// own: the test needs no network. (Their addresses are checked in csp.mjs.)
+const omfAsked = [];
+await page.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/@open-metric-fonts\/[a-z0-9-]+@[\d.]+\/files\/[a-z0-9-]+\.woff2$/, (route) => {
+  omfAsked.push(route.request().url());
+  return route.fulfill({ body: fs.readFileSync('src/fonts/files/odx-aptos-400-normal.woff2'), contentType: 'font/woff2', headers: { 'access-control-allow-origin': '*' } });
+});
 await page.goto(url);
 let failed = 0;
 const fixtures = fs.readdirSync('test/fixtures').filter((f) => f.endsWith('.docx'));
@@ -120,6 +127,10 @@ await page.keyboard.press('Escape');
 const ctxClosed = await page.isHidden('.odx-ctx');
 console.log(`${ctxOk && ctxClosed ? 'ok  ' : 'FAIL'} context menu opens on right-click, Esc closes it`);
 if (!(ctxOk && ctxClosed)) failed++;
+// By default the open-metric-fonts stand-ins come from npm's packages on jsDelivr, pinned, one file per alphabet.
+const omfOk = omfAsked.some((u) => /\/@open-metric-fonts\/overlook@\d+\.\d+\.\d+\/files\/overlook-regular-latin\.woff2$/.test(u));
+console.log(`${omfOk ? 'ok  ' : 'FAIL'} open-metric-fonts stand-ins from jsDelivr by default (${omfAsked.length} files)`);
+if (!omfOk) failed++;
 if (errors.length) { failed++; console.log('page errors:', errors); }
 await browser.close();
 server.close();

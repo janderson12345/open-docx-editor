@@ -239,6 +239,13 @@ editor lays text out in the fonts installed on the computer, as Word does, and u
   (Cambria), Arimo, Tinos and Cousine (Arial, Times New Roman, Courier New; named Liberation Sans, Serif and Mono, the
   names documents use for them), and for Aptos and Aptos Display, Source Sans 3's letters fitted to Aptos's widths and
   x-height. Open-licensed (SIL Open Font License, Apache License 2.0; Latin and Latin Extended).
+- **The rest of the Microsoft fonts**, from [open-metric-fonts](https://github.com/open-metric-fonts/open-metric-fonts):
+  open fonts (SIL Open Font License) with the widths and line spacing of 151 Microsoft font families the stand-ins
+  above don't cover: Grandview, Seaford, Tenorite, Skeena, Bierstadt, Avenir Next LT Pro, Aptos's other weights,
+  Aptos Narrow, Serif and Mono, Bahnschrift, Sitka, Century Gothic, Garamond, Franklin Gothic, the Lucida family and
+  more. The editor draws a font in its open-metric-fonts stand-in where the computer lacks it, and lays its lines out
+  at the original's line height. Each loads from npm's `@open-metric-fonts/<package>` on jsDelivr (pinned to a release),
+  only when a document uses that font, one file per alphabet the text needs; or from your own copy (`fonts.omf`, below).
 - **Loaded only when needed**: the editor links their stylesheet from jsDelivr (this release's files on npm), and the
   browser downloads a font only when a document uses it and the computer lacks it. To serve them yourself (no outside
   CDN), copy the package's `src/fonts` folder (`fonts.css` and `files/`) to your server and point the editor at it; or
@@ -247,6 +254,8 @@ editor lays text out in the fonts installed on the computer, as Word does, and u
   ```js
   mountDocxEditor(el, { fonts: { base: '/static/docx-fonts/' } });   // your copy of src/fonts
   import 'open-docx-editor/fonts.css'; mountDocxEditor(el, { fonts: { base: false } }); // or bundled
+  mountDocxEditor(el, { fonts: { omf: '/static/omf/' } });           // your copy of the open-metric-fonts packages
+  mountDocxEditor(el, { fonts: { omf: false } });                    // or not those at all
   ```
 - **Your own choice for a missing font**: `fonts.substitutes` names the font to draw instead (one the browser has, or
   one loaded from a URL you give). It isn't fitted to the missing font's widths, so lines may break differently:
@@ -264,9 +273,10 @@ editor lays text out in the fonts installed on the computer, as Word does, and u
 
 ## Self-contained hosting (no CDN, strict Content-Security-Policy)
 
-The editor runs entirely in the page and fetches nothing on its own except one thing: the stand-in fonts' stylesheet,
-which by default it links from jsDelivr. Serve the fonts from your own site and everything comes from your origin: no
-CDN, no third-party sites to allow, and a Content-Security-Policy that allows only `'self'`.
+The editor runs entirely in the page and fetches nothing on its own except fonts: its stand-in fonts' stylesheet and
+the open-metric-fonts packages, which by default it loads from jsDelivr. Serve the fonts from your own site and
+everything comes from your origin: no CDN, no third-party sites to allow, and a Content-Security-Policy that allows
+only `'self'`.
 
 1. **Copy the fonts into the files your site serves**, from the installed package (again after each upgrade, so they
    match the editor's version; a build or `postinstall` script is a good place):
@@ -281,11 +291,29 @@ CDN, no third-party sites to allow, and a Content-Security-Policy that allows on
 
    That's `fonts.css` and its `files/` folder (about 1.7 MB of WOFF2; the browser downloads a font only when a document
    uses it and the computer lacks it).
-2. **Point the editor at your copy**, by the URL your site serves the folder at:
+
+   And the open-metric-fonts packages, each in a folder of its own name holding its `files/` (as npm installs them, or
+   as each family's release zip has them in `web/`). All 58 from npm:
+
+   ```bash
+   npm install @open-metric-fonts/morrow-sans @open-metric-fonts/overlook   # ... the packages you want, or all of them
+   mkdir -p public/docx-fonts/omf && cp -R node_modules/@open-metric-fonts/. public/docx-fonts/omf/
+   ```
+
+   ```powershell
+   robocopy node_modules\@open-metric-fonts public\docx-fonts\omf /E
+   ```
+
+   (Or from a release zip, https://github.com/open-metric-fonts/open-metric-fonts/releases: each family's `web/` folder
+   as `public/docx-fonts/omf/<package>/`.) A package you don't copy is simply not used: its Microsoft font falls back to
+   the browser's default, as with no stand-in at all.
+2. **Point the editor at your copies**, by the URLs your site serves the folders at:
 
    ```js
-   mountDocxEditor(el, { fonts: { base: '/docx-fonts/' } });
+   mountDocxEditor(el, { fonts: { base: '/docx-fonts/', omf: '/docx-fonts/omf/' } });
    ```
+
+   (`omf: false` instead if you'd rather not use the open-metric-fonts stand-ins: then there's nothing to copy for them.)
 
    With a bundler you can instead import the stylesheet (the bundler copies the font files with your app) and turn the
    link off:
@@ -308,8 +336,9 @@ CDN, no third-party sites to allow, and a Content-Security-Policy that allows on
    Nothing else: no scripts from elsewhere, no `eval`, no workers, no frames. Add only what you plug in yourself: your
    WOPI host or co-editing server (`connect-src https://… wss://…`) and whatever your `ai` function calls.
 
-The tests run the editor under exactly this policy (`test/csp.mjs`): documents with pictures, shapes, charts and text
-boxes, every ribbon tab, a PDF export and a save, with no violation and no request to any other site.
+The tests run the editor under exactly this policy (`test/csp.mjs`): documents with pictures, shapes, charts, text
+boxes and fonts drawn in open-metric-fonts stand-ins, every ribbon tab, a PDF export and a save, with no violation and
+no request to any other site.
 
 ## PDF export
 
