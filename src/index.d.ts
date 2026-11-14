@@ -51,12 +51,20 @@ export interface MountOptions {
    * The stand-in fonts: `base`, where they load from (a folder with the package's src/fonts contents; default this
    * release's on jsDelivr; false: the host loads them itself), and `substitutes` for fonts a computer lacks.
    */
-  fonts?: { base?: string | false; substitutes?: Record<string, string | { family: string; url?: string }> };
+  /**
+   * The stand-in fonts. base: where the editor's own stand-ins load from (default FONTS_CDN; a folder holding a copy of
+   * src/fonts; false: the host loads them). substitutes: the host's own choice for a missing font. omf: where the
+   * open-metric-fonts packages load from, for the Microsoft fonts they stand in for (default OMF_CDN; a folder holding
+   * the packages as npm has them, <folder>/<package>/files/; false: not used).
+   */
+  fonts?: { base?: string | false; substitutes?: Record<string, string | { family: string; url?: string }>; omf?: string | false };
 }
 
 /** This release's version, and the jsDelivr address its stand-in fonts load from by default. */
 export const VERSION: string;
 export const FONTS_CDN: string;
+/** The jsDelivr address the open-metric-fonts packages load from by default (npm's @open-metric-fonts). */
+export const OMF_CDN: string;
 
 /** What AI Writing asks your model: an action on `text` (the selection, or the cursor's paragraph). */
 export interface AiRequest {

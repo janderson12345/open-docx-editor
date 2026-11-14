@@ -10,7 +10,7 @@ export * as track from './editor/track.js';
 export { listFields, fieldValues, setFieldValues, setForms } from './editor/fields.js';
 export { readFieldValues, fillFields } from './fieldsNode.js';
 export { mailMerge, mergeFieldNames, formatMergeValue } from './merge.js';
-export { FONTS_CDN } from './editor/fontload.js';
+export { FONTS_CDN, OMF_CDN } from './editor/fontload.js';
 export { VERSION } from './version.js';
 
 /**
@@ -60,11 +60,15 @@ function printOf(bytes) {
  *   [{ font, substitute, standIn }] (substitute: the font drawn instead, or null for a generic one; standIn: one of
  *   the editor's own fonts sized to its widths), when there are any. Lines
  *   in a substitute may break differently from Word's; 'open-docx-editor/fonts.css' supplies metric-compatible ones.
- * - `fonts`: { base, substitutes }. `base`: where the stand-in fonts load from (a folder holding the package's
+ * - `fonts`: { base, substitutes, omf }. `base`: where the stand-in fonts load from (a folder holding the package's
  *   src/fonts: fonts.css and files/), by default this release's on jsDelivr; false if the host loads them itself. A
  *   browser downloads one only when a document uses that font and the computer lacks it. `substitutes`:
  *   { 'Font Name': 'Family' | { family, url } }, drawn where that font is missing (url: a font file to load for it);
- *   they aren't fitted to the missing font's widths, so lines may break differently from Word.
+ *   they aren't fitted to the missing font's widths, so lines may break differently from Word. `omf`: where the
+ *   open-metric-fonts packages load from (OFL fonts with the widths and line spacing of 151 Microsoft fonts the editor
+ *   has no stand-in of its own for: Grandview, Seaford, Bahnschrift, Sitka, Century Gothic, Aptos's weights...): by
+ *   default npm's @open-metric-fonts on jsDelivr (OMF_CDN), or a folder of the host's own copy holding each package as
+ *   npm has it (<folder>/<package>/files/); false not to use them.
  * - `ai`: your AI model, for Home > AI Writing: async ({ action, instruction, prompt, text, before, after, document,
  *   signal }) => text. `action` is 'rewrite', 'shorter', 'longer', 'formal', 'casual' or 'proofread' (rewrite `text`,
  *   the selection or the cursor's paragraph; `instruction` says how), 'summarize' (`text`, or `document` when nothing is

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Stand-ins for 151 more Microsoft fonts**, from open-metric-fonts (open fonts with the originals' character widths
+  and line spacing): Grandview, Seaford, Tenorite, Skeena, Bierstadt, Avenir Next LT Pro, Aptos's other weights, Aptos
+  Narrow, Serif and Mono, Bahnschrift, Sitka, Century Gothic, Garamond, Franklin Gothic, the Lucida family and the
+  rest of the Office and Windows set. Where the computer lacks one, the editor draws it in its stand-in and lays its
+  lines out at the original's line height, so they break where Word breaks them. Loaded only for fonts a document uses,
+  one file per alphabet its text needs, from npm's `@open-metric-fonts` packages on jsDelivr, or from your own copy
+  (`fonts.omf`; README "Self-contained hosting"), or not at all (`fonts.omf: false`).
 - **Self-contained hosting, documented and tested**: README "Self-contained hosting" shows how to serve the stand-in fonts
   from your own site (no CDN) and the Content-Security-Policy the editor needs (only `'self'`, with `data:`/`blob:`
   images and generated styles); a test runs the editor under that policy. Fixed on the way: the ribbon's drop-downs and
