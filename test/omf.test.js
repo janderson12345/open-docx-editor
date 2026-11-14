@@ -2,11 +2,12 @@ import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OMF, OMF_RANGES, OMF_VERSION } from '../src/fonts/omf.js';
-import { OMF_CDN } from '../src/index.js';
+import { OMF_CDN, OMF_VERSION as EXPORTED } from '../src/index.js';
 import { fontStack, lineFactor, setOmf } from '../src/ooxml/props.js';
 
 test('open-metric-fonts: every Microsoft family it stands in for, with its faces and their alphabets', () => {
   assert.match(OMF_VERSION, /^\d+\.\d+\.\d+$/);
+  assert.equal(EXPORTED, OMF_VERSION);
   assert.equal(OMF_CDN, 'https://cdn.jsdelivr.net/npm/@open-metric-fonts/');
   for (const name of ['Aptos', 'Aptos SemiBold', 'Aptos Narrow', 'Aptos Serif', 'Aptos Mono', 'Grandview', 'Seaford', 'Tenorite', 'Bahnschrift', 'Sitka Text', 'Century Gothic', 'Garamond', 'Franklin Gothic Book', 'Verdana Pro', 'Walbaum']) {
     assert.ok(OMF[name], name);

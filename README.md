@@ -292,11 +292,26 @@ only `'self'`.
    That's `fonts.css` and its `files/` folder (about 1.7 MB of WOFF2; the browser downloads a font only when a document
    uses it and the computer lacks it).
 
-   And the open-metric-fonts packages, each in a folder of its own name holding its `files/` (as npm installs them, or
-   as each family's release zip has them in `web/`). All 58 from npm:
+   And the open-metric-fonts fonts. The simplest is the release's web bundle, every family in one zip: its folder
+   holds each package as `<package>/files/`, as the editor looks for them. Use the version the editor was made with
+   (`OMF_VERSION`, exported by the package; 1.0.1 for this release):
 
    ```bash
-   npm install @open-metric-fonts/morrow-sans @open-metric-fonts/overlook   # ... the packages you want, or all of them
+   curl -LO https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.0.1/open-metric-fonts-web-1.0.1.zip
+   unzip -q open-metric-fonts-web-1.0.1.zip && mkdir -p public/docx-fonts/omf && cp -R open-metric-fonts-web-1.0.1/. public/docx-fonts/omf/
+   ```
+
+   ```powershell
+   Invoke-WebRequest https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.0.1/open-metric-fonts-web-1.0.1.zip -OutFile omf-web.zip
+   Expand-Archive omf-web.zip -DestinationPath . ; robocopy open-metric-fonts-web-1.0.1 public\docx-fonts\omf /E
+   ```
+
+   (About 70 MB on disk, every family and alphabet; a browser still downloads only the files a document needs. Check
+   the zip against the release's `SHA256SUMS.txt` first.) Or only the families you want, from npm, each package as
+   npm installs it:
+
+   ```bash
+   npm install @open-metric-fonts/overlook@1.0.1 @open-metric-fonts/morrow-sans@1.0.1   # ... the packages you want
    mkdir -p public/docx-fonts/omf && cp -R node_modules/@open-metric-fonts/. public/docx-fonts/omf/
    ```
 
@@ -304,9 +319,8 @@ only `'self'`.
    robocopy node_modules\@open-metric-fonts public\docx-fonts\omf /E
    ```
 
-   (Or from a release zip, https://github.com/open-metric-fonts/open-metric-fonts/releases: each family's `web/` folder
-   as `public/docx-fonts/omf/<package>/`.) A package you don't copy is simply not used: its Microsoft font falls back to
-   the browser's default, as with no stand-in at all.
+   A family you don't copy is simply not used: its Microsoft font falls back to the browser's default, as with no
+   stand-in at all.
 2. **Point the editor at your copies**, by the URLs your site serves the folders at:
 
    ```js
