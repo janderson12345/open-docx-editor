@@ -39,9 +39,11 @@ function ascent(cs) {
 /**
  * Draws the numbers into `layer` (a child of the page element). `pageOf(y)` is the page at a height in the flow,
  * measured from the top of `view.dom`. `carriedOf(el)` is a paragraph's part carried to the next column, as drawn there
- * ({ copy, cut, rewrap }: its lines are numbered there, where they're seen, not where they're clipped off).
+ * ({ copy, cut, rewrap, col }: its lines are numbered there, where they're seen, not where they're clipped off).
+ * `columnOf(el)` is a paragraph's column in a section of columns ({ x: from the text's left edge, w }): the numbers go
+ * by the column's text edges (a paragraph's own box there can be narrowed on either side).
  */
-export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null) {
+export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null, columnOf = () => null) {
   const doc = view.state.doc;
   const rules = sectionXmls(doc).map(lineNumbering);
   if (!rules.some(Boolean)) { layer.replaceChildren(); return; }
@@ -64,27 +66,29 @@ export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null) {
     const suppressed = (node.attrs.extra || []).some((e) => e[0] === 'suppressLineNumbers' && !/w:val="(?:0|false|off)"/.test(e[1]));
     // (Nor the empty paragraph that only ends a section: Word doesn't count it.)
     if (rule && node.type.name === 'paragraph' && el && el.nodeType === 1 && !suppressed && !(ends && !node.childCount) && !el.classList.contains('odx-all-del')) {
-      // The column's text edge: the paragraph's box less its start indent (on the right in a right-to-left section).
+      // The column's text edge (on the right in a right-to-left section): its column's, or the paragraph's box less its
+      // start indent.
       const pr = el.getBoundingClientRect();
       const ecs = getComputedStyle(el);
       const indent = parseFloat(rule.rtl ? ecs.marginRight : ecs.marginLeft) || 0;
       const lines = [];
       const carry = carriedOf(el);
-      const own = lineBaselines(el, range);
-      for (const [baseline, x, top] of own) {
+      const colEdge = (c) => (c ? (rule.rtl ? left + c.x + c.w : left + c.x) : null);
+      // (A hanging indent's first line starts left of the box: the column's edge is still the box's less its indent.)
+      const edge = colEdge(columnOf(el)) ?? (rule.rtl ? pr.right + indent : pr.left - indent);
+      for (const [baseline, , top] of lineBaselines(el, range)) {
         if (carry && top >= pr.top + carry.cut - 1) continue; // clipped off: numbered on the copy below
-        const edge = rule.rtl ? pr.right + indent : x < pr.left - 1 || x > pr.right + 1 ? x - indent : pr.left - indent;
         lines.push([baseline, edge]);
       }
       if (carry) {
         // The carried lines, at the next column's top: a clipped copy of the whole paragraph (its lines from the cut
         // down) or the text from the cut laid out again at that column's width (all of it).
+        // (Either copy sits where the paragraph's box would in that column, its indents those of the paragraph.)
         const cr = carry.copy.getBoundingClientRect();
-        const ccs = getComputedStyle(carry.copy);
-        const cIndent = carry.rewrap ? parseFloat(rule.rtl ? ccs.marginRight : ccs.marginLeft) || 0 : indent;
+        const cEdge = colEdge(carry.col) ?? (rule.rtl ? cr.right + indent : cr.left - indent);
         for (const [baseline, , top] of lineBaselines(carry.copy, range)) {
           if (!carry.rewrap && top < cr.top + carry.cut - 1) continue;
-          lines.push([baseline, rule.rtl ? cr.right + cIndent : cr.left - cIndent]);
+          lines.push([baseline, cEdge]);
         }
       }
       for (const [baseline, edge] of lines) {
@@ -118,6 +122,7 @@ export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null) {
 function lineBaselines(p, range) {
   const out = [];
   let lineBottom = -Infinity;
+  const boxes = []; // [rect, style]
   const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, {
     acceptNode: (t) => (t.parentElement.closest('[contenteditable="false"]') && t.parentElement.closest('[contenteditable="false"]') !== p ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
@@ -125,12 +130,18 @@ function lineBaselines(p, range) {
     if (!t.data.length) continue;
     range.selectNodeContents(t);
     const cs = getComputedStyle(t.parentElement);
-    for (const r of range.getClientRects()) {
-      if (!r.height) continue;
-      // (A box starting at or below the line's foot, 2px allowed for runs in other sizes, starts a new line.)
-      if (r.top >= lineBottom - 2) { out.push([r.top + ascent(cs), r.left, r.top]); lineBottom = r.bottom; }
-      else lineBottom = Math.max(lineBottom, r.bottom);
-    }
+    for (const r of range.getClientRects()) if (r.height) boxes.push([r, cs]);
+  }
+  // (A line holding only a break, such as a column break at the paragraph's start, is a line too, as Word counts it.)
+  for (const br of p.querySelectorAll('br:not(.ProseMirror-trailingBreak)')) {
+    const r = br.getClientRects()[0];
+    if (r && r.height) boxes.push([r, getComputedStyle(br.parentElement)]);
+  }
+  boxes.sort((a, b) => a[0].top - b[0].top);
+  for (const [r, cs] of boxes) {
+    // (A box starting at or below the line's foot, 2px allowed for runs in other sizes, starts a new line.)
+    if (r.top >= lineBottom - 2) { out.push([r.top + ascent(cs), r.left, r.top]); lineBottom = r.bottom; }
+    else lineBottom = Math.max(lineBottom, r.bottom);
   }
   // An empty paragraph is a line too.
   if (!out.length) {
