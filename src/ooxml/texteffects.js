@@ -71,9 +71,10 @@ export function textEffectsCss(items) {
   if (sh) {
     const c = w14Color(sh);
     const dist = num(sh, 'dist') || 0, dir = (num(sh, 'dir') || 0) / 60000, blur = num(sh, 'blurRad') || 0;
-    // (A perspective shadow, scaled flat by sx/sy, Word draws as its own shape: drawn as the plain one here.)
+    // (A perspective shadow, scaled flat by sx/sy, Word draws as its own shape: drawn as the plain one here. One scaled to
+    // nothing Word draws inside the letters, which CSS can't: not drawn.)
     const a = (dir * Math.PI) / 180;
-    if (c) shadows.push(`${pt(dist * Math.cos(a))}pt ${pt(dist * Math.sin(a))}pt ${pt(blur)}pt ${c}`);
+    if (c && !(num(sh, 'sx') === 0 && num(sh, 'sy') === 0)) shadows.push(`${pt(dist * Math.cos(a))}pt ${pt(dist * Math.sin(a))}pt ${pt(blur)}pt ${c}`);
   }
   const glow = w14('glow');
   if (glow) {
@@ -172,7 +173,13 @@ export function svgTextEffects(rPr, n, serialize) {
   if (sh) {
     const c = w14Color(sh);
     const dist = num(sh, 'dist') || 0, a = (((num(sh, 'dir') || 0) / 60000) * Math.PI) / 180, blur = num(sh, 'blurRad') || 0;
-    if (c) fx.push(`<feDropShadow dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" stdDeviation="${px(blur / 2)}" flood-color=${solid(c)}flood-opacity="${opacity(c)}"/>`);
+    // (Scaled to nothing, sx and sy 0, Word draws it inside the letters: an inner shadow, the letters looking pressed in.)
+    const inner = num(sh, 'sx') === 0 && num(sh, 'sy') === 0;
+    if (c && inner) {
+      fx.push(`<feComponentTransfer in="SourceAlpha" result="i0"><feFuncA type="table" tableValues="1 0"/></feComponentTransfer><feOffset in="i0" dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" result="i1"/>`
+        + `<feGaussianBlur in="i1" stdDeviation="${px(blur / 2)}" result="i2"/><feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="i2" operator="in" result="i3"/>`
+        + '<feComposite in="i3" in2="SourceAlpha" operator="in" result="i4"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="i4"/></feMerge>');
+    } else if (c) fx.push(`<feDropShadow dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" stdDeviation="${px(blur / 2)}" flood-color=${solid(c)}flood-opacity="${opacity(c)}"/>`);
   }
   const glow = get('glow');
   if (glow) {

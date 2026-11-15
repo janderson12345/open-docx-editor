@@ -163,8 +163,8 @@ fs.writeFileSync('out.docx', s.save());
   and drag on the page to draw it, as in Word (Shift: a square, a circle, a line at 15-degree steps; Ctrl: from its
   centre; a click: its usual size; Esc stops): it floats in front of the text where you drew it. Picked from the
   keyboard, it goes in line with the text at the caret.
-- **WordArt**: Insert > WordArt offers fifteen styles in the theme's colours (fills, outlines, shadows, glows,
-  reflections, gradients). The selected text, or "Your text here", goes in a text box floating in front of the text,
+- **WordArt**: Insert > WordArt offers Word's fifteen gallery styles, in the document's theme colours (fills,
+  outlines, shadows, glows, reflections, gradients). The selected text, or "Your text here", goes in a text box floating in front of the text,
   open for typing; the box widens to fit what's typed, as Word's. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
   change it as Word's do (an arrow's head, a rounded rectangle's corners, a callout's pointer); a line has a handle at
   each end instead (Shift: at 15-degree steps). Turn one with its rotate handle (Shift: 15-degree steps) or Alt+Left

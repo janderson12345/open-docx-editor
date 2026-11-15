@@ -898,8 +898,10 @@ export class DocxSession {
     const ext = `<wp:extent cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`;
     // (w14 declared on each run's properties: a text box's text is read on its own.)
     const rPr = wordArtRPr(style, size, this.theme?.colors);
-    const runs = String(text).split(/\r?\n/).map((t) => `<w:p><w:r>${rPr}<w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`).join('');
-    const xml = `<w:r><w:drawing ${ns}><wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="${251659264 + id * 1024}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">`
+    // (Centred, its paragraph mark in the style too, as Word's.)
+    const mark = rPr;
+    const runs = String(text).split(/\r?\n/).map((t) => `<w:p><w:pPr><w:jc w:val="center"/>${mark}</w:pPr><w:r>${rPr}<w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`).join('');
+    const xml = `<w:r><w:drawing ${ns}><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="${251659264 + id * 1024}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">`
       + `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${pxToEmu(x)}</wp:posOffset></wp:positionH>`
       + `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${pxToEmu(y)}</wp:posOffset></wp:positionV>${ext}<wp:wrapNone/>`
       + `<wp:docPr id="${id}" name="Text Box ${id}"/><wp:cNvGraphicFramePr/>`
