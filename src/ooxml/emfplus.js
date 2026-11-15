@@ -12,7 +12,6 @@ const hex = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.t
 const alpha = (v) => ((v >>> 24) & 255) / 255;
 const mul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
   A[4] * B[0] + A[5] * B[2] + B[4], A[4] * B[1] + A[5] * B[3] + B[5]];
-const apply = (M, x, y) => [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]];
 const ID = [1, 0, 0, 1, 0, 0];
 
 /** True when the EMF in `dv` holds EMF+ records (its first comment is an EMF+ header). */
@@ -44,7 +43,11 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const objects = [];
   let pending = null; // an object split over several records: { id, total, parts, got }
   let world = ID.slice(), pageUnit = 2, pageScale = 1;
-  let clip = null; // clipPath id
+  // A container's own coordinates: its transforms are set relative to `base` (the world as it began), and its clip
+  // limits everything inside it (`cClip`), as GDI+ plays containers.
+  let base = ID.slice();
+  let clip = null; // { id (clipPath), d, M (device matrix), parent }
+  let cClip = null;
   let interp = 0;
   const saved = new Map();
   let gdiFrom = -1;
@@ -55,7 +58,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const mat = (M) => `matrix(${M.map((v) => +v.toPrecision(7)).join(' ')})`; // (significant digits: EMU-scaled worlds are tiny)
   const tf = () => ` transform="${mat(toDevice())}"`;
   let at = 0;
-  const emit = (s) => items.push({ at, s: clip ? `<g clip-path="url(#${clip})">${s}</g>` : s });
+  const emit = (s) => items.push({ at, s: clip ? `<g clip-path="url(#${clip.id})">${s}</g>` : s });
 
   // ----- reading -----
   const rd = (o) => ({
@@ -141,7 +144,13 @@ export function emfPlusToSvg(input, { bx, by }, h) {
           let c;
           if (bpp === 32) { c = dv.getUint32(row + x * 4, true); if (format === 0x00022009) c |= 0xff000000; }
           else if (bpp === 24) c = 0xff000000 | (bytes[row + x * 3 + 2] << 16) | (bytes[row + x * 3 + 1] << 8) | bytes[row + x * 3];
-          else if (bpp === 16 && format === 0x00021005) { const v = dv.getUint16(row + x * 2, true); c = 0xff000000 | (((v >> 11) * 255 / 31) << 16) | ((((v >> 5) & 63) * 255 / 63) << 8) | ((v & 31) * 255 / 31); }
+          else if (bpp === 16) {
+            const v = dv.getUint16(row + x * 2, true), f5 = (q) => Math.round((q * 255) / 31);
+            if (format === 0x00021006) c = 0xff000000 | (f5(v >> 11) << 16) | (Math.round((((v >> 5) & 63) * 255) / 63) << 8) | f5(v & 31); // RGB565
+            else if (format === 0x00021005 || format === 0x00061007) c = ((format === 0x00061007 && !(v & 0x8000) ? 0 : 255) << 24 | (f5((v >> 10) & 31) << 16) | (f5((v >> 5) & 31) << 8) | f5(v & 31)) >>> 0; // RGB555, ARGB1555
+            else if (format === 0x00101004) { const g = v >> 8; c = (0xff000000 | (g << 16) | (g << 8) | g) >>> 0; } // 16-bit grey
+            else return null;
+          }
           else if (palette && (bpp === 8 || bpp === 4 || bpp === 1)) {
             const bit = x * bpp, byte = bytes[row + (bit >> 3)];
             const idx = bpp === 8 ? byte : (byte >> (8 - bpp - (bit & 7))) & ((1 << bpp) - 1);
@@ -176,7 +185,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       return img ? { kind: 'brush', type: 'texture', img, m } : { kind: 'brush', type: 'solid', color: 0x80808080 };
     }
     if (type === 4) { // linear gradient
-      const flags = r.u32(); r.u32();
+      const flags = r.u32(), wrap = r.u32();
       const rect = [r.f32(), r.f32(), r.f32(), r.f32()];
       const c1 = r.u32(), c2 = r.u32();
       r.u32(); r.u32();
@@ -190,7 +199,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const fac = []; for (let i = 0; i < cnt; i++) fac.push(r.f32());
         stops = pos.map((p, i) => [p, lerp(c1, c2, fac[i])]);
       }
-      return { kind: 'brush', type: 'linear', rect, m, stops };
+      return { kind: 'brush', type: 'linear', rect, m, stops, wrap };
     }
     if (type === 3) { // path gradient: drawn as a radial one from the centre colour to the first surrounding colour
       const flags = r.u32(); r.u32();
@@ -211,7 +220,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const readPen = (r, end) => {
     r.u32(); r.u32(); // version, type
     const flags = r.u32(), unit = r.u32(), width = r.f32();
-    const pen = { kind: 'pen', unit, width, style: 0, cap: 0, join: 0, miter: 10, dashes: null };
+    const pen = { kind: 'pen', unit, width, style: 0, cap: 0, join: 0, miter: 10, dashes: null, dashOffset: 0 };
     if (flags & 0x01) pen.m = r.m();
     if (flags & 0x02) pen.cap = r.i32();
     if (flags & 0x04) r.i32();
@@ -219,8 +228,9 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (flags & 0x10) pen.miter = r.f32();
     if (flags & 0x20) pen.style = r.i32();
     if (flags & 0x40) r.i32();
-    if (flags & 0x80) r.f32();
+    if (flags & 0x80) pen.dashOffset = r.f32();
     if (flags & 0x100) { const c = r.u32(); pen.dashes = []; for (let i = 0; i < c; i++) pen.dashes.push(r.f32()); }
+    if (pen.dashes && !(flags & 0x20)) pen.style = 5; // (GDI+ writes a custom pattern with no line style)
     if (flags & 0x200) r.i32();
     if (flags & 0x400) { const c = r.u32(); r.o += c * 4; }
     if (flags & 0x800) { const s = r.u32(); r.o += s; }
@@ -240,7 +250,9 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const readFormat = (r) => {
     r.u32();
     const flags = r.u32(); r.u32();
-    return { kind: 'format', flags, align: r.u32(), lineAlign: r.u32() };
+    const align = r.u32(), lineAlign = r.u32();
+    r.u32(); r.u32(); r.f32(); r.i32(); // digit substitution and language, first tab offset, hotkey prefix
+    return { kind: 'format', flags, align, lineAlign, lead: r.f32(), trail: r.f32() };
   };
   const readRegion = (r) => {
     r.u32(); r.u32(); // version, node count
@@ -287,10 +299,11 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (brush.type === 'linear') {
       const g = id('g');
       const [x, y, w, hh] = brush.rect;
-      let p1 = [x, y + hh / 2], p2 = [x + w, y + hh / 2];
-      if (brush.m) { p1 = apply(brush.m, ...p1); p2 = apply(brush.m, ...p2); }
+      // (Across its rectangle, through the brush's matrix; repeated past it as GDI+ tiles by default, mirrored, or
+      // padded only when clamped.)
+      const spread = brush.wrap === 4 ? '' : ` spreadMethod="${brush.wrap === 0 ? 'repeat' : 'reflect'}"`;
       const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
-      defs.push(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(p1[0])}" y1="${n(p1[1])}" x2="${n(p2[0])}" y2="${n(p2[1])}">${stops}</linearGradient>`);
+      defs.push(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(x)}" y1="${n(y + hh / 2)}" x2="${n(x + w)}" y2="${n(y + hh / 2)}"${spread}${brush.m ? ` gradientTransform="${mat(brush.m)}"` : ''}>${stops}</linearGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'radial') {
@@ -311,17 +324,23 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const dash = pen.style === 5 && pen.dashes ? pen.dashes : { 1: [3, 1], 2: [1, 1], 3: [3, 1, 1, 1], 4: [3, 1, 1, 1, 1, 1] }[pen.style];
     const dw = thin ? 1 : w;
     return `fill="none" stroke="${p}"${o < 1 ? ` stroke-opacity="${n(o)}"` : ''} stroke-width="${n(dw)}"${thin ? ' vector-effect="non-scaling-stroke"' : ''}`
-      + `${dash ? ` stroke-dasharray="${dash.map((v) => n(v * dw)).join(' ')}"` : ''}`
+      + `${dash ? ` stroke-dasharray="${dash.map((v) => n(v * dw)).join(' ')}"${pen.dashOffset ? ` stroke-dashoffset="${n(pen.dashOffset * dw)}"` : ''}` : ''}`
       + ` stroke-linecap="${['butt', 'square', 'round'][pen.cap] || 'butt'}" stroke-linejoin="${['miter', 'bevel', 'round', 'miter'][pen.join] || 'miter'}" stroke-miterlimit="${n(Math.max(1, pen.miter))}"`;
   };
   const rectD = ([x, y, w, hh]) => `M${n(x)} ${n(y)}h${n(w)}v${n(hh)}h${n(-w)}Z`;
   const ellipseD = ([x, y, w, hh]) => `M${n(x)} ${n(y + hh / 2)}a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(w)} 0a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(-w)} 0Z`;
   const arcD = ([x, y, w, hh], start, sweep, pie) => {
     const cx = x + w / 2, cy = y + hh / 2, rx = w / 2, ry = hh / 2;
-    const at2 = (deg) => { const t = (deg * Math.PI) / 180; return [cx + rx * Math.cos(t), cy + ry * Math.sin(t)]; };
     if (Math.abs(sweep) >= 360) return ellipseD([x, y, w, hh]);
-    const [x1, y1] = at2(start), [x2, y2] = at2(start + sweep);
-    const arc = `A${n(rx)} ${n(ry)} 0 ${Math.abs(sweep) > 180 ? 1 : 0} ${sweep > 0 ? 1 : 0} ${n(x2)} ${n(y2)}`;
+    // (GDI+ takes the angles along rays from the centre, not as the ellipse's parameter: its 45 degrees on a 2:1
+    // ellipse is where the 45-degree ray meets it.)
+    const param = (deg) => { const a = (deg * Math.PI) / 180; return Math.atan2(rx * Math.sin(a), ry * Math.cos(a)); };
+    const t1 = param(start);
+    let t2 = param(start + sweep);
+    if (sweep > 0) while (t2 <= t1) t2 += 2 * Math.PI;
+    else while (t2 >= t1) t2 -= 2 * Math.PI;
+    const [x1, y1] = [cx + rx * Math.cos(t1), cy + ry * Math.sin(t1)], [x2, y2] = [cx + rx * Math.cos(t2), cy + ry * Math.sin(t2)];
+    const arc = `A${n(rx)} ${n(ry)} 0 ${Math.abs(t2 - t1) > Math.PI ? 1 : 0} ${sweep > 0 ? 1 : 0} ${n(x2)} ${n(y2)}`;
     return pie ? `M${n(cx)} ${n(cy)}L${n(x1)} ${n(y1)}${arc}Z` : `M${n(x1)} ${n(y1)}${arc}`;
   };
   const polyD = (pts, close) => (pts.length ? `M${pts.map(([x, y]) => `${n(x)} ${n(y)}`).join('L')}${close ? 'Z' : ''}` : '');
@@ -339,20 +358,45 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const shape = (d, attrs) => { if (d) emit(`<path d="${d}" ${attrs}${tf()}/>`); };
 
   // Clipping: a clip path in device units (its shape carries the transform it was set under), chained to the clip
-  // before it for an intersection.
-  const setClip = (d, mode, infinite) => {
-    if (mode === 0 && infinite) { clip = null; return; }
-    if (mode !== 0 && mode !== 1) return; // union, xor, exclude, complement: the clip is left as it was
-    const c = id('p');
-    const chain = mode === 1 && clip ? ` clip-path="url(#${clip})"` : '';
-    defs.push(`<clipPath id="${c}"${chain}><path d="${d}" clip-rule="nonzero"${tf()}/></clipPath>`);
-    clip = c;
+  // before it for an intersection. Inside a container a new clip still lies within the container's.
+  const clipPath = (d, M, parent) => {
+    const c = { id: id('p'), d, M, parent };
+    defs.push(`<clipPath id="${c.id}"${parent ? ` clip-path="url(#${parent.id})"` : ''}><path d="${d}" clip-rule="nonzero" transform="${mat(M)}"/></clipPath>`);
+    return c;
   };
-  const regionD = (node) => { // a region as one path: unions joined; for an intersection or exclusion, the first part
-    if (!node) return '';
-    if (node.d !== undefined) return node.d;
-    if (node.op === 2) return `${regionD(node.a)} ${regionD(node.b)}`;
-    return regionD(node.a);
+  // A region as clip paths: a shape, shapes joined (union), or one inside another (intersection). (Exclusion, xor and
+  // complement keep their first part.)
+  const regionClip = (node, parent) => {
+    if (!node || node.infinite) return parent;
+    if (node.d !== undefined) return clipPath(node.d || 'M0 0Z', toDevice(), parent);
+    if (node.op === 1) return regionClip(node.a, regionClip(node.b, parent));
+    if (node.op === 2 && node.a.d !== undefined && node.b.d !== undefined) {
+      if (node.a.infinite || node.b.infinite) return parent;
+      return clipPath(`${node.a.d} ${node.b.d}`, toDevice(), parent);
+    }
+    return regionClip(node.a, parent);
+  };
+  const setClip = (d, mode, infinite) => {
+    if (mode !== 0 && mode !== 1) return; // union, xor, exclude, complement: the clip is left as it was
+    const parent = mode === 1 ? clip : cClip;
+    clip = infinite ? parent : clipPath(d, toDevice(), parent);
+  };
+  const setClipRegion = (node, mode) => {
+    if (mode !== 0 && mode !== 1) return;
+    clip = regionClip(node, mode === 1 ? clip : cClip);
+  };
+  const fillRegion = (node, attrs) => { // a region filled: its shapes, an intersection drawn clipped to its other part
+    if (!node) return;
+    if (node.d !== undefined) { shape(node.d, attrs); return; }
+    if (node.op === 2) { fillRegion(node.a, attrs); fillRegion(node.b, attrs); return; }
+    if (node.op === 1) {
+      const was = clip;
+      clip = regionClip(node.b, clip);
+      fillRegion(node.a, attrs);
+      clip = was;
+      return;
+    }
+    fillRegion(node.a, attrs);
   };
 
   const image = (img, src, dest) => { // dest: the image's top left, top right and bottom left
@@ -372,16 +416,16 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const em = font.unit === 0 || font.unit === pageUnit ? font.em : (font.em * unitPx(font.unit)) / k();
     const [asc, desc] = h.win(font.face);
     const [x, y, w, hh] = layout;
-    const typographic = fmt && fmt.flags & 0x4000;
-    const pad = typographic ? 0 : em / 6;
+    // (The format's margins: 1/6 em before and after the text by default, none in GenericTypographic's.)
+    const lead = (fmt ? fmt.lead : 1 / 6) * em, trail = (fmt ? fmt.trail : 1 / 6) * em;
     const align = fmt ? fmt.align : 0, valign = fmt ? fmt.lineAlign : 0;
     const lines = str.replace(/\r\n?/g, '\n').split('\n');
     const lh = (asc + desc) * em;
-    let top = y;
-    if (hh > 0 && valign === 1) top = y + (hh - lh * lines.length) / 2;
-    else if (hh > 0 && valign === 2) top = y + hh - lh * lines.length;
-    const anchor = w > 0 && align === 1 ? 'middle' : w > 0 && align === 2 ? 'end' : 'start';
-    const tx = anchor === 'middle' ? x + w / 2 : anchor === 'end' ? x + w - pad : x + pad;
+    // (Drawn at a point, a layout of no size: centred or ended on the point.)
+    const span = hh > 0 ? hh : 0;
+    const top = valign === 1 ? y + (span - lh * lines.length) / 2 : valign === 2 ? y + span - lh * lines.length : y;
+    const anchor = align === 1 ? 'middle' : align === 2 ? 'end' : 'start';
+    const tx = anchor === 'middle' ? x + w / 2 : anchor === 'end' ? x + w - trail : x + lead;
     const [p, o] = paint(brush);
     const deco = [font.underline && 'underline', font.strike && 'line-through'].filter(Boolean).join(' ');
     const spans = lines.map((s, i) => `<tspan x="${n(tx)}" y="${n(top + asc * em + i * lh)}">${h.esc(s)}</tspan>`).join('');
@@ -427,7 +471,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       case 0x400f: shape(ellipseD(rects(r, 1, flags & 0x4000)[0]), strokeAttr(objects[lo])); break; // DrawEllipse
       case 0x4010: { const b = r.u32(), s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, true), fillAttr(brushOf(flags, b))); break; } // FillPie
       case 0x4011: case 0x4012: { const s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, type === 0x4011), strokeAttr(objects[lo])); break; } // DrawPie, DrawArc
-      case 0x4013: { const b = r.u32(); const reg = objects[lo]; if (reg && reg.kind === 'region') shape(regionD(reg.node), fillAttr(brushOf(flags, b), 'nonzero')); break; } // FillRegion
+      case 0x4013: { const b = r.u32(); const reg = objects[lo]; if (reg && reg.kind === 'region') fillRegion(reg.node, fillAttr(brushOf(flags, b), 'nonzero')); break; } // FillRegion
       case 0x4014: { const b = r.u32(); const p = objects[lo]; if (p && p.kind === 'path') shape(p.d, fillAttr(brushOf(flags, b))); break; } // FillPath
       case 0x4015: { const pen = objects[r.u32() & 255]; const p = objects[lo]; if (p && p.kind === 'path') shape(p.d, strokeAttr(pen)); break; } // DrawPath
       case 0x4016: { const b = r.u32(), t = r.f32(), c = r.u32(); shape(curveD(points(r, c, flags), t, true), fillAttr(brushOf(flags, b), flags & 0x2000 ? 'nonzero' : 'evenodd')); break; } // FillClosedCurve
@@ -473,45 +517,58 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         break;
       }
       case 0x4036: { // DrawDriverString: drawn only when its glyphs are characters
-        const b = r.u32(), opts = r.u32(); r.u32();
+        const b = r.u32(), opts = r.u32(), hasMatrix = r.u32();
         const c = r.u32();
         if (!(opts & 1)) { unsupported = true; break; }
         let s = ''; for (let i = 0; i < c; i++) s += String.fromCharCode(r.u16());
         const pts = []; for (let i = 0; i < c; i++) pts.push([r.f32(), r.f32()]);
+        const m = hasMatrix ? r.m() : null; // (turned or skewed text: charts' labels)
         const font = objects[lo];
         if (!font || font.kind !== 'font' || !c) break;
         const em = font.unit === 0 || font.unit === pageUnit ? font.em : (font.em * unitPx(font.unit)) / k();
         const [p, o] = paint(brushOf(flags, b));
-        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${pts.map(([x]) => n(x)).join(' ')}" y="${pts.map(([, y]) => n(y)).join(' ')}"${tf()}>${h.esc(s)}</text>`);
+        // (With realized advances only the first position counts: the font's own advances place the rest.)
+        const xy = opts & 4 ? [pts[0]] : pts;
+        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${xy.map(([x]) => n(x)).join(' ')}" y="${xy.map(([, y]) => n(y)).join(' ')}" transform="${mat(m ? mul(m, toDevice()) : toDevice())}">${h.esc(s)}</text>`);
         break;
       }
       case 0x4021: interp = lo; break; // SetInterpolationMode
       case 0x401d: case 0x401e: case 0x401f: case 0x4020: case 0x4022: case 0x4023: case 0x4024: break; // rendering hints
-      case 0x4025: case 0x4028: saved.set(r.u32(), { world: world.slice(), pageUnit, pageScale, clip }); break; // Save, BeginContainerNoParams
-      case 0x4027: { // BeginContainer: dest and source rectangles set a transform for the container
-        const dst = [r.f32(), r.f32(), r.f32(), r.f32()], src = [r.f32(), r.f32(), r.f32(), r.f32()];
-        saved.set(r.u32(), { world: world.slice(), pageUnit, pageScale, clip });
-        const u = unitPx(lo) / k();
-        const sx = src[2] ? (dst[2] * u) / src[2] : 1, sy = src[3] ? (dst[3] * u) / src[3] : 1;
-        world = mul([sx, 0, 0, sy, dst[0] * u - src[0] * sx, dst[1] * u - src[1] * sy], world);
+      case 0x4025: saved.set(r.u32(), { world: world.slice(), base, pageUnit, pageScale, clip, cClip }); break; // Save
+      case 0x4028: // BeginContainerNoParams: a container in the same coordinates
+        saved.set(r.u32(), { world: world.slice(), base, pageUnit, pageScale, clip, cClip });
+        base = world.slice(); cClip = clip;
+        break;
+      case 0x4027: { // BeginContainer: its source rectangle (in the record's unit) mapped onto the destination (world units)
+        const dst = [r.f32(), r.f32(), r.f32(), r.f32()], src = [r.f32(), r.f32(), r.f32(), r.f32()].map((v) => (v * unitPx(lo)) / k());
+        saved.set(r.u32(), { world: world.slice(), base, pageUnit, pageScale, clip, cClip });
+        const sx = src[2] ? dst[2] / src[2] : 1, sy = src[3] ? dst[3] / src[3] : 1;
+        world = mul([sx, 0, 0, sy, dst[0] - src[0] * sx, dst[1] - src[1] * sy], world);
+        base = world.slice(); cClip = clip;
         break;
       }
-      case 0x4026: case 0x4029: { const s = saved.get(r.u32()); if (s) ({ world, pageUnit, pageScale, clip } = { ...s, world: s.world.slice() }); break; } // Restore, EndContainer
-      case 0x402a: world = r.m(); break;
-      case 0x402b: world = ID.slice(); break;
+      case 0x4026: case 0x4029: { const s = saved.get(r.u32()); if (s) ({ world, base, pageUnit, pageScale, clip, cClip } = { ...s, world: s.world.slice() }); break; } // Restore, EndContainer
+      case 0x402a: world = mul(r.m(), base); break; // (relative to the container)
+      case 0x402b: world = base.slice(); break;
       case 0x402c: { const m = r.m(); world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
       case 0x402d: { const m = [1, 0, 0, 1, r.f32(), r.f32()]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
       case 0x402e: { const sx = r.f32(), sy = r.f32(); const m = [sx, 0, 0, sy, 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
       case 0x402f: { const a = (r.f32() * Math.PI) / 180; const m = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
       case 0x4030: pageUnit = lo; pageScale = r.f32() || 1; break; // SetPageTransform
-      case 0x4031: clip = null; break; // ResetClip
+      case 0x4031: clip = cClip; break; // ResetClip (to the container's clip)
       case 0x4032: setClip(rectD([r.f32(), r.f32(), r.f32(), r.f32()]), (flags >> 8) & 15); break; // SetClipRect
       case 0x4033: { const p = objects[lo]; if (p && p.kind === 'path') setClip(p.d, (flags >> 8) & 15); break; } // SetClipPath
-      case 0x4034: { const reg = objects[lo]; if (reg && reg.kind === 'region') setClip(regionD(reg.node), (flags >> 8) & 15, reg.node.infinite); break; } // SetClipRegion
-      case 0x4035: break; // OffsetClip (rare)
-      case 0x4038: { // StrokeFillPath
-        const p = objects[lo]; if (p && p.kind === 'path') shape(p.d, fillAttr(null)); break;
+      case 0x4034: { const reg = objects[lo]; if (reg && reg.kind === 'region') setClipRegion(reg.node, (flags >> 8) & 15); break; } // SetClipRegion
+      case 0x4035: { // OffsetClip: the clip moved by (dx, dy) world units
+        const dx = r.f32(), dy = r.f32();
+        if (clip && clip !== cClip) {
+          const D = toDevice(); // (the move in device units, through the current world)
+          const [a, b, c, d, e, f] = clip.M;
+          clip = clipPath(clip.d, [a, b, c, d, e + D[0] * dx + D[2] * dy, f + D[1] * dx + D[3] * dy], clip.parent);
+        }
+        break;
       }
+      case 0x4037: case 0x4038: case 0x4039: case 0x403a: break; // StrokeFillPath (GDI's current pen and brush), image effects, terminal-server records
       default: if (type >= 0x4009 && type <= 0x4040) unsupported = true;
     }
   };
