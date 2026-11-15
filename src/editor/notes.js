@@ -144,7 +144,10 @@ export function noteClicks(main) {
     if (open && open.wrap.contains(e.target)) return;
     const hit = [...sheet.querySelectorAll('.odx-note')].find((n) => {
       const r = n.getBoundingClientRect();
-      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      // (A note in a column of a band of notes shows only its column's part: a click elsewhere on it is on the body.)
+      const col = n.closest('.odx-note-band > div')?.getBoundingClientRect();
+      const top = col ? Math.max(r.top, col.top) : r.top, bottom = col ? Math.min(r.bottom, col.bottom) : r.bottom;
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= top && e.clientY <= bottom;
     });
     if (hit) {
       e.preventDefault();
