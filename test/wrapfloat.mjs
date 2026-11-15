@@ -78,30 +78,43 @@ const foot = await page.evaluate(() => {
 });
 check(foot.paraTop < foot.edge && Math.abs(foot.bottom - foot.edge) < 1.5 && /-/.test(foot.translate), `near the foot, kept on its page and drawn up to its edge (${(foot.bottom - foot.edge).toFixed(1)}px past; ${foot.translate})`);
 
-// A rectangle in the footer, 400pt above its paragraph, wrapped square (Word-made, pagefloat-word pf-footer): the body's
-// lines beside it on the first page split round it, words on both sides and none in its room, as in Word's print.
-await page.setInputFiles('input[type=file]', 'test/fixtures/footer-wrap.docx');
-await page.waitForFunction(() => window.odx?.fileName === 'footer-wrap.docx');
-await page.waitForTimeout(2500);
-const hf = await page.evaluate(() => {
-  const img = document.querySelector('.odx-footer img');
-  const r = img.getBoundingClientRect();
-  const out = { left: 0, right: 0, inside: [] };
-  const range = document.createRange();
-  const walker = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
-  for (let t = walker.nextNode(); t; t = walker.nextNode()) {
-    for (const m of t.data.matchAll(/\S+/g)) {
-      range.setStart(t, m.index); range.setEnd(t, m.index + m[0].length);
-      const w = range.getBoundingClientRect();
-      if (w.bottom <= r.top || w.top >= r.bottom) continue;
-      if (w.right <= r.left - 11.5) out.left++;
-      else if (w.left >= r.right + 11.5) out.right++;
-      else out.inside.push(m[0]);
+// Rectangles in a footer or header the body's text wraps round, Word-made (pagefloat-word pf-footer, footwrap-word
+// fw-right and fw-header): the body's lines beside each on the first page go on the sides Word's print has them, none
+// in its room. The header's, 250pt below its paragraph, leaves the header's own text and the body's start where they
+// are without it.
+const hfBeside = async (file, sel) => {
+  await page.setInputFiles('input[type=file]', `test/fixtures/${file}`);
+  await page.waitForFunction((f) => window.odx?.fileName === f, file);
+  await page.waitForTimeout(2500);
+  return page.evaluate((s) => {
+    const img = document.querySelector(s);
+    const r = img.getBoundingClientRect();
+    const out = { left: 0, right: 0, inside: [], hfText: null, bodyTop: document.querySelector('.odx-content > p').getBoundingClientRect().top - document.querySelector('.odx-sheet').getBoundingClientRect().top };
+    const hp = img.closest('.odx-hf').querySelector('p');
+    const hr = document.createRange();
+    hr.selectNodeContents(hp);
+    out.hfText = hr.getBoundingClientRect().left - img.closest('.odx-hf').getBoundingClientRect().left;
+    const range = document.createRange();
+    const walker = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      for (const m of t.data.matchAll(/\S+/g)) {
+        range.setStart(t, m.index); range.setEnd(t, m.index + m[0].length);
+        const w = range.getBoundingClientRect();
+        if (w.bottom <= r.top || w.top >= r.bottom) continue;
+        if (w.right <= r.left - 11.5) out.left++;
+        else if (w.left >= r.right + 11.5) out.right++;
+        else out.inside.push(m[0]);
+      }
     }
-  }
-  return out;
-});
-check(hf.left > 8 && hf.right > 4 && !hf.inside.length, `a footer's square-wrapped shape: the body's text both sides of it (${hf.left} words left, ${hf.right} right, in its room: ${hf.inside.join(' ') || 'none'})`);
+    return out;
+  }, sel);
+};
+const hfBoth = await hfBeside('footer-wrap.docx', '.odx-footer img');
+check(hfBoth.left > 8 && hfBoth.right > 4 && !hfBoth.inside.length, `a footer's square-wrapped shape: the body's text both sides of it (${hfBoth.left} words left, ${hfBoth.right} right, in its room: ${hfBoth.inside.join(' ') || 'none'})`);
+const onRight = await hfBeside('footer-wrap-right.docx', '.odx-footer img');
+check(!onRight.left && onRight.right > 4 && !onRight.inside.length, `one wrapped "right": the body's text on its right only (${onRight.left} left, ${onRight.right} right, in its room: ${onRight.inside.join(' ') || 'none'})`);
+const head = await hfBeside('header-wrap.docx', '.odx-header img');
+check(head.left > 8 && !head.right && !head.inside.length && head.hfText < 1 && Math.abs(head.bodyTop - 96) < 2, `a header's tight-wrapped shape below its paragraph: the body's text on its left, the header's text and the body's start as without it (${head.left} left, ${head.right} right; header text at ${head.hfText.toFixed(1)}px, body at ${head.bodyTop.toFixed(1)}px)`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();
