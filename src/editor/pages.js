@@ -1455,14 +1455,31 @@ export function createPages(view, session, { sheet, scope }) {
     const q = rg.getClientRects()[0];
     return q ? Math.max(top, q.top) : top;
   };
+  // The page each float placed against the page went on, for this document (its image node -> flow page): never an
+  // earlier one again, and its paragraph starts there. Word's way out of the loop where the float, lifted onto its
+  // paragraph's page, wraps the text above so far that the paragraph moves to the next page: the float goes on with it,
+  // the page before keeping its room (pagefloat-word pf-early: Text 7 starts page 2 under its picture, page 1 ends
+  // short). Reset when the document changes.
+  let liftMemo = new WeakMap();
+  let liftMemoDoc = null;
+  /** The latest page a float placed against the page in this paragraph went on (liftMemo), or -1. */
+  const liftedPage = (node) => {
+    if (liftMemoDoc !== view.state.doc) return -1;
+    let out = -1;
+    node.forEach((c) => { if (c.type === schema.nodes.image && /--odx-lrel/.test(c.attrs.place || '')) out = Math.max(out, liftMemo.get(c) ?? -1); });
+    return out;
+  };
   const liftFloats = (base) => {
+    if (liftMemoDoc !== view.state.doc) { liftMemo = new WeakMap(); liftMemoDoc = view.state.doc; }
     const out = [];
     view.state.doc.descendants((node, pos) => {
       if (node.type !== schema.nodes.image || !/--odx-lrel/.test(node.attrs.place || '')) return true;
       const img = view.nodeDOM(pos);
       const host = img && img.nodeType === 1 ? img.closest('.odx-content > *') : null;
       if (!host || host.parentElement !== view.dom) return false;
-      const pg = pageOf(firstLineTop(host) - base);
+      const prevPg = liftMemo.get(node);
+      const pg = Math.max(pageOf(firstLineTop(host) - base), prevPg ?? -1);
+      liftMemo.set(node, pg);
       const place = node.attrs.place;
       const rel = /--odx-lrel:\s*(\w+)/.exec(place)[1];
       const off = parseFloat((/--odx-ly:\s*(-?[\d.]+)px/.exec(place) || [])[1]) || 0;
@@ -2212,6 +2229,7 @@ export function createPages(view, session, { sheet, scope }) {
         target = p;
         forced = true;
       }
+      else if (k > 0 && !firstOnPage && b.node.type === schema.nodes.paragraph && liftedPage(b.node) > p) target = liftedPage(b.node); // (its float's page: liftFloats)
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
       else if (!firstOnPage && b.node.type === schema.nodes.paragraph && (() => {
         // A picture or text box floating from the paragraph (wrapped square) past the page's foot (floatsPast): taller
