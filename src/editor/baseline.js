@@ -128,8 +128,11 @@ export function shiftFor(el, host, anchored = false) {
   // A picture in the first line taller than its text: the line's top is the picture's, its baseline the picture's foot,
   // in the browser as in Word, with no extra spacing above the text to move (a 0.33in picture in a double-spaced line
   // printed 8px high: the generated documents, tools/doc-generator).
-  const tr = text.parentElement.getBoundingClientRect();
-  for (const img of el.querySelectorAll('img')) {
+  // (Measured only where there's a picture: reading a paragraph's text box lays it out, and a long document skips laying
+  // out paragraphs far off screen, content-visibility: 6000 tracked changes' paragraphs took 8s to open.)
+  const imgs = el.querySelectorAll('img');
+  const tr = imgs.length ? text.parentElement.getBoundingClientRect() : null;
+  for (const img of imgs) {
     if (/position:\s*absolute|float:/.test(img.getAttribute('style') || '')) continue;
     const r = img.getBoundingClientRect();
     if (r.height > tr.height + 1 && r.bottom > tr.top && r.top < tr.bottom) return 0;
