@@ -37,6 +37,12 @@
   and container transforms. An EMF+ only file (no GDI copy to fall back on) was blank; a dual file now shows what its
   GDI copy lacks, such as transparency and Visio's colours. Checked against Word's print of pictures drawn by Windows'
   own GDI+. A dual file whose EMF+ records need something not read yet is drawn from its GDI copy, as before.
+- **Line numbers in columns, as Word numbers them.** A paragraph's lines carried to the next column are numbered there,
+  in reading order (they were numbered where they're cut off, in the bottom margin, and the next column's count was
+  off from there); a right-to-left section's numbers go right of each column, as in Word; and a section that restarts
+  its numbers each page goes on counting down the page it starts on after a continuous break (it started again at 1).
+  Checked against Word's prints of two and three columns, unequal columns, a table, a right-to-left section and a
+  section change on the page.
 - **Resizing shapes as in Word.** A shape's corner handles now resize it freely, as Word's do (Shift keeps its
   proportions, as does a shape locked to them; pictures keep theirs, as before). Its yellow handles change its adjust
   values (an arrow's head and shaft, a rounded rectangle's corners, a callout's pointer, a block arc's angles: each of

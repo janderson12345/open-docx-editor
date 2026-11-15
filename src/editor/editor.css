@@ -59,6 +59,7 @@
 .odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .odx-lnnums { position: absolute; inset: 0; pointer-events: none; color: #000; user-select: none; }
 .odx-lnnum { position: absolute; transform: translateX(-100%); white-space: nowrap; line-height: normal; }
+.odx-lnnum-rtl { transform: none; } /* right of a right-to-left column's text, from its left edge */
 .odx-gaps > div { position: absolute; left: -2px; right: -2px; background: var(--odx-canvas); }
 .odx-repeat table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .odx-repeat td { vertical-align: top; box-sizing: border-box; padding: 0 7px; }

@@ -54,6 +54,30 @@ check(nums.slice(0, 5).join(',') === '1,2,3,4,5' && nums.length === 54 && nums.s
 const lnBox = await page.evaluate(() => { const s = document.querySelector('.odx-lnnum').getBoundingClientRect(); const c = document.querySelector('.odx-content').getBoundingClientRect(); return [s.right, c.left + parseFloat(getComputedStyle(document.querySelector('.odx-content')).paddingLeft)]; });
 check(Math.abs(lnBox[1] - lnBox[0] - 24) < 1, `a line number ends 0.25in left of the text (${(lnBox[1] - lnBox[0]).toFixed(1)}px)`);
 
+// Line numbers in columns (Word's prints of these, odx-test/mklinenumcols.ps1): each column's lines numbered left of
+// it, a paragraph's lines carried to the next column numbered there; right of each column in a right-to-left section;
+// a restart-each-page section after a continuous break going on down its page.
+const lnAt = (n) => page.evaluate((t) => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  return [...document.querySelectorAll('.odx-lnnum')].filter((s) => s.textContent === t).map((s) => {
+    const r = s.getBoundingClientRect();
+    const k = sheets.findIndex((q) => r.top >= q.top && r.top < q.bottom);
+    return { sheet: k, left: r.left - sheets[k].left, right: r.right - sheets[k].left, top: r.top - sheets[k].top };
+  });
+}, String(n));
+await open('line-numbers-columns.docx');
+const colNums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].map((s) => s.textContent));
+const n35 = await lnAt(35);
+// (Word: 1-68 on pages 1 and 2, 1-3 on page 3; 35 is column 2's first line, its right edge at 315.1pt, 420px.)
+check(colNums.length === 139 && n35.length === 2 && n35.every((p) => Math.abs(p.right - 420) < 1.5 && p.top < 120), `line numbers in columns: ${colNums.length} drawn, 35 atop column 2 (${n35.map((p) => `${p.right.toFixed(1)},${p.top.toFixed(0)}`).join(' ')})`);
+await open('line-numbers-rtl.docx');
+const r1 = (await lnAt(1))[0], r35 = (await lnAt(35))[0];
+// (Word: left edges at 549.2pt and 297.2pt, 9pt right of each column.)
+check(r1 && r35 && Math.abs(r1.left - 732.3) < 1.5 && Math.abs(r35.left - 396.2) < 1.5, `right-to-left columns: numbers right of each column (${r1?.left.toFixed(1)}, ${r35?.left.toFixed(1)})`);
+await open('line-numbers-mixed.docx');
+const mixNums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].slice(0, 11).map((s) => s.textContent));
+check(mixNums.join(',') === '1,2,3,4,5,6,7,8,9,10,11', `a new section restarting each page goes on down the page it starts on (${mixNums.join(',')})`);
+
 await open('watermark-text.docx');
 const wm = await page.evaluate(() => [...document.querySelectorAll('.odx-sheet > img')].map((i) => ({ t: getComputedStyle(i).transform, w: i.width })));
 // (550px: the shape's 412.4pt width.)
