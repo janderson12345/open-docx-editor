@@ -10,7 +10,7 @@ import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineF
 import { TWIPS_PER_PX } from '../ooxml/units.js';
 import { textEffectsCss, hasTextEffects } from '../ooxml/texteffects.js';
 import { wordDate } from './util.js';
-import { shownSrc } from './svgfonts.js';
+import { shownSrc, redrawOf, drawnSrc } from './svgfonts.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
  * would run in the page when clicked in read-only mode). The document keeps its address as it was. */
@@ -208,7 +208,9 @@ export const schema = new Schema({
         // (A shape's picture with the stand-in fonts its text needs embedded, svgfonts.js: copy and paste find the node by it too.)
         const shown = shownSrc(n.attrs.src, (copy, src) => { if (shownImages.has(src)) shownImages.set(copy, shownImages.get(src)); });
         if (shown !== n.attrs.src && n.attrs.xml) shownImages.set(shown, n.attrs);
-        return ['img', { src: shown || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${n.attrs.height + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
+        // (Drawn again once its fonts loaded, a text box grown to fit its text may be taller or shorter: svgfonts.js.)
+        const h = redrawOf(n.attrs.src)?.height ?? n.attrs.height;
+        return ['img', { src: shown || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${h + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).
@@ -217,6 +219,7 @@ export const schema = new Schema({
         getAttrs: (d) => {
           const src = d.getAttribute('src') || '';
           if (shownImages.has(src)) return { ...shownImages.get(src) };
+          if (shownImages.has(drawnSrc(src))) return { ...shownImages.get(drawnSrc(src)) };
           if (!/^data:image\/(png|jpeg|gif|bmp|svg\+xml)[;,]/i.test(src)) return false;
           const size = (k) => Number(d.getAttribute(k)) || parseFloat(d.style?.[k]) || null;
           return { src, xml: '', width: size('width'), height: size('height'), alt: d.getAttribute('alt') || '' };

@@ -103,6 +103,48 @@ fs.mkdirSync('test/out', { recursive: true });
 fs.writeFileSync('test/out/textbox-moved.docx', Buffer.from(bytes));
 const xml = strFromU8(unzipSync(new Uint8Array(bytes))['word/document.xml']);
 check(xml.includes(`<wp:posOffset>${off(float3.xml, 'H')}</wp:posOffset>`) && xml.includes(`cx="${Math.round(float3.w * 9525)}"`), 'the saved file has the new place and size');
+
+// 5. Text measured before its stand-in font loaded: smartart.docx (Aptos, a web stand-in here) read in a fresh page,
+// where the boxes' words are measured in the fallback. Once the faces load, each is drawn again on the page, as a
+// reload with the fonts in draws it (lines wrapped at the stand-in's widths), and that's not an edit.
+const fresh = await browser.newPage({ viewport: { width: 1300, height: 950 } });
+fresh.on('pageerror', (e) => errors.push(e.message));
+await fresh.goto(`http://localhost:${server.address().port}/`);
+await fresh.waitForSelector('.odx-content p');
+// Each shape's picture with text: as the node has it, and as the page shows it (its embedded fonts left out).
+const pictures = () => fresh.evaluate(() => {
+  const svg = (s) => decodeURIComponent(s.slice(s.indexOf(',') + 1)).replace(/<style>[\s\S]*?<\/style>/, '');
+  const v = window.odx.view, out = [];
+  v.state.doc.descendants((n, pos) => {
+    if (n.type.name !== 'image' || !/^data:image\/svg\+xml/.test(n.attrs.src || '') || !/%3Ctspan/.test(n.attrs.src)) return;
+    out.push({ node: svg(n.attrs.src), shown: svg(v.nodeDOM(pos)?.getAttribute?.('src') || '') });
+  });
+  return out;
+});
+const openIn = async (file) => {
+  await fresh.setInputFiles('input[type=file]', []);
+  await fresh.setInputFiles('input[type=file]', file);
+  await fresh.waitForFunction(() => window.odx?.fileName === 'smartart.docx' && window.odx.view.state.doc.textContent.length > 0);
+  await fresh.evaluate(() => { window.__opened = window.odx.view.state.doc; });
+  await fresh.waitForTimeout(3000);
+};
+await openIn('test/fixtures/smartart.docx');
+const first = await pictures();
+const quiet = await fresh.evaluate(() => {
+  const st = window.odx.view.state;
+  const history = st.plugins.map((p) => p.getState?.(st)).find((s) => s && s.done && s.undone);
+  return { same: st.doc === window.__opened, dirty: window.odx.dirty, undo: history ? history.done.eventCount : 0 };
+});
+await fresh.evaluate(() => window.odx.newDocument());
+await fresh.waitForTimeout(300);
+await openIn('test/fixtures/smartart.docx');
+const again = await pictures();
+check(first.length > 0 && first.length === again.length, `smartart.docx: ${first.length} boxes with text`);
+check(first.some((p) => p.shown !== p.node), `boxes measured before the font loaded are drawn again (${first.filter((p) => p.shown !== p.node).length} of ${first.length})`);
+check(first.every((p, i) => p.shown === again[i]?.node), 'each as a reload with the fonts loaded draws it');
+check(again.every((p) => p.shown === p.node), 'and not again after that reload (measured right the first time)');
+check(quiet.same && !quiet.dirty && quiet.undo === 0, `the redraw is no edit: the document unchanged, not dirty, no undo step (${JSON.stringify(quiet)})`);
+await fresh.close();
 check(errors.length === 0, `no page errors ${errors.join('; ')}`);
 
 await browser.close();
