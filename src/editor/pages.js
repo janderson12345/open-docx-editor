@@ -15,7 +15,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
-import { storyDrawer, hfNodes, styleStoryTables } from './hfstory.js';
+import { storyDrawer, hfNodes, styleStoryTables, settleStoryShapes } from './hfstory.js';
 import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
@@ -1425,6 +1425,7 @@ export function createPages(view, session, { sheet, scope }) {
       const el = story(doc, 'odx-header', 1, 1);
       el.style.cssText = `visibility:hidden;top:0;left:${page.left}px;right:${page.right}px`;
       sheet.append(el);
+      settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
       heights.set(doc, el.getBoundingClientRect().height);
@@ -2583,6 +2584,7 @@ export function createPages(view, session, { sheet, scope }) {
       frag.append(s);
     }
     layer.replaceChildren(frag);
+    for (const hf of layer.querySelectorAll('.odx-hf')) settleStoryShapes(hf); // (drawn now, so they can be measured)
     clipExactRows(layer); // (drawn now, so they can be measured)
     fitRowspans(layer);
     // Header and footer tabs to their stops (center, right...), as the body's: they had stayed plain tab characters,

@@ -53,6 +53,28 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
 }
 
 /**
+ * A drawn header's or footer's shapes that the body's text wraps round (reader.js anchorCss, --odx-hfwrap), placed below
+ * their own paragraph: out of the story's flow, where they're drawn. As floats their room reached from the paragraph's
+ * top down to them, pushing the header's own text aside and the header's foot (and the body under it) down past them,
+ * where Word keeps both as without the shape (footwrap-word fw-header, a rectangle 250pt below its header paragraph).
+ * `el` must be in the document, to be measured.
+ */
+export function settleStoryShapes(el) {
+  const below = [];
+  for (const img of el.querySelectorAll('img[style*="--odx-hfwrap"]')) {
+    const p = img.closest('p');
+    const cs = getComputedStyle(img);
+    if (!p || cs.float === 'none' || (parseFloat(cs.marginTop) || 0) < p.getBoundingClientRect().height) continue;
+    below.push({ img, at: img.getBoundingClientRect() });
+  }
+  for (const b of below) { b.img.style.float = 'none'; b.img.style.position = 'absolute'; }
+  for (const { img, at } of below) {
+    const now = img.getBoundingClientRect();
+    img.style.translate = `${(at.left - now.left).toFixed(2)}px ${(at.top - now.top).toFixed(2)}px`;
+  }
+}
+
+/**
  * A function drawing one story of `session`: `(doc, cls, pageNo, pages)` -> its element, classed `odx-hf <cls>`, its
  * PAGE fields showing `pageNo` (a number, or { n, fmt }) and NUMPAGES `pages`.
  */
