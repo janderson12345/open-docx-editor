@@ -6,7 +6,7 @@ import { mountDocxEditor } from '../index.js';
 
 /**
  * Props: `src` (bytes, File, Blob or Response to open; a new value opens it), `fileName`, `author`, `readOnly`,
- * `features`, `toolbar`, `forms`, `onSave` (a function: replaces the download).
+ * `features`, `toolbar`, `ribbon` ('simple' or 'classic'), `forms`, `onSave` (a function: replaces the download).
  * Events: `change(view)`, `opened(timings, fileName)`, `error(error)`, `ready(api)`.
  * The component's public instance (a template ref) has `api`, the editor's API (mountDocxEditor's): `api.save()`...
  */
@@ -19,6 +19,7 @@ export const DocxEditor = defineComponent({
     readOnly: { type: Boolean, default: false },
     features: { type: Object, default: null },
     toolbar: { type: Boolean, default: true },
+    ribbon: { type: String, default: null },
     forms: { type: Boolean, default: false },
     onSave: { type: Function, default: null },
   },
@@ -29,7 +30,7 @@ export const DocxEditor = defineComponent({
     const fail = (e) => emit('error', e);
     onMounted(() => {
       api = mountDocxEditor(host.value, {
-        fileName: props.fileName, author: props.author, readOnly: props.readOnly, features: props.features || {}, toolbar: props.toolbar, forms: props.forms,
+        fileName: props.fileName, author: props.author, readOnly: props.readOnly, features: props.features || {}, toolbar: props.toolbar, ribbon: props.ribbon, forms: props.forms,
         onChange: (view) => emit('change', view),
         onSave: props.onSave ? (bytes, name) => props.onSave(bytes, name) : undefined,
         onOpened: (timings, name) => emit('opened', timings, name),
@@ -43,6 +44,7 @@ export const DocxEditor = defineComponent({
     watch(() => props.src, (src) => { if (api && src != null) api.open(src, props.fileName).catch(fail); });
     watch(() => props.readOnly, (on) => api?.setReadOnly(on));
     watch(() => props.forms, (on) => api?.setForms(on));
+    watch(() => props.ribbon, (mode) => { if (mode) api?.setRibbon(mode); });
     watch(() => props.features, (f) => { if (f) api?.setFeatures(f); }, { deep: true });
     expose({ get api() { return api; } });
     return () => h('div', { ref: host });

@@ -50,6 +50,9 @@ function printOf(bytes) {
  *   (groups by their label on any tab; `comments: false` also hides comments in the margin), `{ autocorrect: false }`
  *   (AutoCorrect as you type), `{ newDocument: false, openFile: false }` (File > New and Open).
  * - `toolbar`: false to hide the ribbon entirely.
+ * - `ribbon`: 'simple' starts with the one-line simplified ribbon, 'classic' with the full one (without it, the one
+ *   the user last chose in this browser); the user can still switch with the ribbon's own button. `setRibbon()`
+ *   changes it later.
  * - `forms`: fill-in mode: no ribbon, only content controls (form fields) can be changed.
  * - `pdf`: the PDF exporter, `exportPdf` from 'open-docx-editor/pdf' (kept out of the main bundle): with it, File > Export
  *   downloads a PDF drawn from the page layout and `api.exportPdf()` returns one; without it, Export prints.
@@ -85,7 +88,7 @@ function printOf(bytes) {
  *   Restrict Editing (and Mark as Final, Always open read-only) for a host that enforces its own rights.
  * Change them later with `api.setReadOnly(on)` and `api.setFeatures({...})`.
  */
-export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge, ai = null, aiAuthor = 'AI', fonts = {} } = {}) {
+export function mountDocxEditor(container, { onChange, onSave, onOpened, onError, fileName = 'document.docx', author = 'Author', readOnly = false, features = {}, toolbar: showToolbar = true, forms = false, pdf = null, onSavePdf, collab = null, onMissingFonts, drafts = false, onDraft, editors = [], mergeData = null, onMerge, ai = null, aiAuthor = 'AI', fonts = {}, ribbon = null } = {}) {
   // The stand-in fonts (this release's on jsDelivr, or the host's copy at fonts.base) and the host's substitutes.
   useFonts(fonts || {});
   const bar = document.createElement('div');
@@ -176,6 +179,9 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
     setFieldValues(values) { return setFV(view, values); },
     /** Turn features on/off: ribbon tabs and groups, AutoCorrect, File > New and Open (see mountDocxEditor's `features`). */
     setFeatures(f) { features = { ...features, ...f }; toolbar.setFeatures(f); applyMode(); },
+    /** The ribbon's layout: 'simple' (one line) or 'classic'. */
+    setRibbon(mode) { toolbar.setMode(mode); },
+    get ribbon() { return toolbar.mode; },
     /** True once the document has been edited since it was opened or last saved with markSaved(). */
     dirty: false,
     markSaved() {
@@ -455,7 +461,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       }
       announce(`Merged ${records.length} record${records.length === 1 ? '' : 's'}`);
     } catch (e) { fail(e); }
-  }, ai, aiAuthor, onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) } });
+  }, ai, aiAuthor, onExportPdf: pdf ? () => (onSavePdf ? api.exportPdf().then((b) => onSavePdf(b, name.replace(/\.docx$/i, '') + '.pdf')) : api.downloadPdf()).catch(fail) : null, protection: { get: () => api.protection, protect: (o) => api.protect(o).catch(fail), unprotect: (pw) => api.unprotect(pw) }, ribbon });
   function applyMode() {
     bar.style.display = readOnly || forms || !showToolbar ? 'none' : '';
     container.classList.toggle('odx-readonly', readOnly);

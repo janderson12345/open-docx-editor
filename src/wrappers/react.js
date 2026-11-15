@@ -1,17 +1,17 @@
 // React wrapper: <DocxEditor src={file} onChange={...} ref={apiRef} />. Plain JavaScript (no JSX), React 17+.
 // The editor is mounted once into its own div and kept: props that change after mounting are applied through the
-// editor's API (readOnly, features, forms), a new `src` opens that document, and unmounting destroys the editor.
+// editor's API (readOnly, features, forms, ribbon), a new `src` opens that document, and unmounting destroys the editor.
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { mountDocxEditor } from '../index.js';
 
 /**
  * Props: `src` (bytes, File, Blob or Response to open; a new value opens it), `fileName`, `author`, `readOnly`,
- * `features`, `toolbar`, `forms`, and the callbacks `onChange(view)`, `onSave(bytes, fileName)`,
+ * `features`, `toolbar`, `ribbon` ('simple' or 'classic'), `forms`, and the callbacks `onChange(view)`, `onSave(bytes, fileName)`,
  * `onOpened(timings, fileName)`, `onError(error)`, `onReady(api)`; `className` and `style` for the container.
  * The ref is the editor's API (mountDocxEditor's): `save()`, `download()`, `getFieldValues()`, `view`...
  */
 export const DocxEditor = forwardRef(function DocxEditor(props, ref) {
-  const { src, fileName, author, readOnly = false, features, toolbar = true, forms = false, className, style } = props;
+  const { src, fileName, author, readOnly = false, features, toolbar = true, ribbon, forms = false, className, style } = props;
   const host = useRef(null);
   const api = useRef(null);
   // The latest callbacks, so the editor (created once) always calls the current ones.
@@ -20,7 +20,7 @@ export const DocxEditor = forwardRef(function DocxEditor(props, ref) {
 
   useEffect(() => {
     const editor = mountDocxEditor(host.current, {
-      fileName, author, readOnly, features, toolbar, forms,
+      fileName, author, readOnly, features, toolbar, ribbon, forms,
       onChange: (view) => cb.current.onChange?.(view),
       onSave: cb.current.onSave ? (bytes, name) => cb.current.onSave(bytes, name) : undefined,
       onOpened: (timings, name) => cb.current.onOpened?.(timings, name),
@@ -38,6 +38,7 @@ export const DocxEditor = forwardRef(function DocxEditor(props, ref) {
   }, [src]); // (dependencies deliberately partial)
   useEffect(() => { api.current?.setReadOnly(readOnly); }, [readOnly]);
   useEffect(() => { api.current?.setForms(forms); }, [forms]);
+  useEffect(() => { if (ribbon) api.current?.setRibbon(ribbon); }, [ribbon]);
   useEffect(() => { if (features) api.current?.setFeatures(features); }, [JSON.stringify(features || {})]); // (dependencies deliberately partial)
 
   // The ref is set before effects run, so it forwards to the editor once there is one.

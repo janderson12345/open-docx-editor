@@ -58,7 +58,7 @@ const MARGINS = [['Normal', 1440, 1440, 1440, 1440], ['Narrow', 720, 720, 720, 7
  *   document after a page setup change (size, margins, orientation); protection: { get(), protect(opts),
  *   unprotect(password) } for Review > Restrict Editing (the editor API's)
  */
-export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, onMerge, ai = null, aiAuthor = 'AI', protection = null } = {}) {
+export function createToolbar(container, getView, { onOpen, onNew, onSave, onReopen, onExportPdf, onMerge, ai = null, aiAuthor = 'AI', protection = null, ribbon: ribbonMode = null } = {}) {
   const kit = ribbonKit(container, getView);
   const { run, withView, btn, grp, col, line, pop, openMenu, closeMenu, item, menu, pick } = kit;
   const ruler = createRuler(() => { const v = getView(); return v; });
@@ -762,9 +762,11 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   }
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && container.classList.contains('odx-reading')) setReading(false); });
 
-  // Simplified ribbon (one line, as Word for the web's default) or the classic one; remembered per browser.
+  // Simplified ribbon (one line, as Word for the web's default) or the classic one; remembered per browser, unless the
+  // page gave one (`ribbon`), which starts it so (the ribbon's own button still switches).
   let simple = false;
   try { simple = localStorage.getItem('odx-ribbon') === 'simple'; } catch { /* storage blocked */ }
+  if (ribbonMode === 'simple' || ribbonMode === 'classic') simple = ribbonMode === 'simple';
   const layoutBtn = el('button', { type: 'button', class: 'odx-ribbon-mode', onmousedown: (e) => { e.preventDefault(); setSimple(!simple); } });
   function setSimple(on) {
     simple = on;
@@ -832,6 +834,9 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
 
   return {
     setFeatures(f) { features = { ...features, ...f }; applyFeatures(); },
+    /** The ribbon's layout: 'simple' (one line) or 'classic'. */
+    setMode(mode) { setSimple(mode === 'simple'); },
+    get mode() { return simple ? 'simple' : 'classic'; },
     get features() { return { ...features }; },
     /** Refresh the styles list after a document is loaded. */
     setDocument(session) {

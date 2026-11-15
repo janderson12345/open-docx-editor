@@ -19,6 +19,9 @@ export interface MountOptions {
   /** Turn tabs or groups off by name, e.g. { review: false, comments: false }. */
   features?: Record<string, boolean>;
   toolbar?: boolean;
+  /** Start with the one-line simplified ribbon ('simple') or the full one ('classic'); without it, the user's last
+   *  choice in this browser. The ribbon's own button still switches. */
+  ribbon?: 'simple' | 'classic';
   /** Fill-in mode: only content controls (form fields) can be changed. */
   forms?: boolean;
   /** The PDF exporter (exportPdf from 'open-docx-editor/pdf'): File > Export then downloads a PDF of the pages. */
@@ -148,6 +151,10 @@ export interface DocxEditorApi {
   setReadOnly(on: boolean): void;
   setForms(on: boolean): void;
   setFeatures(features: Record<string, boolean>): void;
+  /** Switch the ribbon to the one-line simplified layout ('simple') or the full one ('classic'). */
+  setRibbon(mode: 'simple' | 'classic'): void;
+  /** The ribbon's layout now. */
+  readonly ribbon: 'simple' | 'classic';
   getFields(): FieldInfo[];
   getFieldValues(): Record<string, string | boolean>;
   setFieldValues(values: Record<string, string | boolean>): unknown;
