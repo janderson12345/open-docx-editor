@@ -1,7 +1,7 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
-import { shapesPad, shapeTurn } from './shapes.js';
+import { shapesPad, shapeTurn, pictureFlip } from './shapes.js';
 import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
@@ -798,13 +798,17 @@ function readDrawing(drawing, ctx, rPrXml) {
  * outline, not its box: the float's margins that much wider, its picture moved back where it was.
  */
 function turned(place, drawing, w, h) {
-  const deg = /wordprocessing(Group|Shape)$/.test([...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '') ? shapeTurn(drawing) : 0;
-  if (!deg || !w || !h) return place;
+  const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
+  // (A picture too: pic:spPr's rot, and its flips, drawn mirrored.)
+  const picture = /\/picture$/.test(uri);
+  const deg = /wordprocessing(Group|Shape)$/.test(uri) || picture ? shapeTurn(drawing) : 0;
+  const flip = picture ? pictureFlip(drawing) : { h: false, v: false };
+  if ((!deg && !flip.h && !flip.v) || !w || !h) return place;
   const a = (deg * Math.PI) / 180;
   const ex = Math.max(0, (w * Math.abs(Math.cos(a)) + h * Math.abs(Math.sin(a)) - w) / 2);
   const ey = Math.max(0, (w * Math.abs(Math.sin(a)) + h * Math.abs(Math.cos(a)) - h) / 2);
   const r2 = (v) => +v.toFixed(2);
-  const turn = `rotate(${r2(deg)}deg)`;
+  const turn = [deg && `rotate(${r2(deg)}deg)`, flip.h && 'scaleX(-1)', flip.v && 'scaleY(-1)'].filter(Boolean).join(' ');
   const fl = /^float:(left|right);margin:(-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px (.+?)(;--odx-l.*)?$/.exec(place || '');
   if (fl) {
     // (Margins as anchorCss writes them: top, right, bottom, left; the left one a length or a calc().)
@@ -821,7 +825,18 @@ function turned(place, drawing, w, h) {
   // Word turned to 30.5 degrees, room 14, 22, 10, 20px: drawn 10.5pt right and 16.5pt down of the room's middle in its
   // PDF; at 60, room 10, 26, 0, 24px: 7.5 and 19.5pt), over the text beside and below it as Word has it.
   const fx = [...drawing.childNodes].find((n) => n.localName === 'inline') && [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'effectExtent' && n.parentNode?.localName === 'inline');
-  const fl2 = fx ? emuToPx(Math.max(0, Number(fx.getAttribute('l')) || 0)) : 0, ft = fx ? emuToPx(Math.max(0, Number(fx.getAttribute('t')) || 0)) : 0;
+  // (Not a picture's: Word draws a turned picture in the middle of its room, rotpic-word's at 30 and 200 degrees.)
+  const fl2 = fx && !picture ? emuToPx(Math.max(0, Number(fx.getAttribute('l')) || 0)) : 0, ft = fx && !picture ? emuToPx(Math.max(0, Number(fx.getAttribute('t')) || 0)) : 0;
+  // A picture turned a quarter (45 to 135 degrees, or 225 to 315) takes its turned box's room in the line, as Word lays it
+  // out (rotpic-word: one 96 x 72pt at 90 makes its line 96pt tall and 72pt wide, its effect extent none), drawn in the
+  // middle of it.
+  const q = deg % 180;
+  if (picture && fx && q >= 45 && q < 135) {
+    const v = (k) => Number(new RegExp(`--odx-${k}:(-?[0-9.]+)px`).exec(place || '')?.[1]) || 0;
+    const side = (h - w) / 2;
+    const swap = `--odx-fxt:${r2(v('fxt') + w - h)}px;--odx-fxl:${r2(v('fxl') + side)}px;--odx-fxr:${r2(v('fxr') + side)}px`;
+    return `${place ? `${place};` : ''}${swap};transform:translate(0px, ${r2((h - w) / 2)}px) ${turn}`;
+  }
   return `${place ? `${place};` : ''}transform:${fl2 || ft ? `translate(${r2(fl2)}px, ${r2(ft)}px) ` : ''}${turn}`;
 }
 

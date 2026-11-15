@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Text in shapes, text boxes, WordArt and SmartArt in the stand-in fonts.** These are drawn as pictures, which can't
+  use the page's web fonts, so where the computer lacked the document's font their text fell back to an installed one
+  (Aptos's text in Calibri). The editor now shows each with the stand-in faces its text needs embedded (fetched once
+  from where the page loads them; the document itself is unchanged), and measures their lines in the same font: WordArt
+  in Aptos is now as wide as in Word's print.
+- **Turned and flipped pictures.** A picture's turn and flips (Word's Rotate and Flip) are drawn as Word draws them, in
+  line with the text or floating, a quarter-turned one taking its turned box's room in the line; the rotate handle and
+  Alt+Left/Right turn pictures as they turn shapes, the turn and the room round it written as Word writes them (checked
+  against Word's print of pictures turned by Word and by the editor).
 - **Stand-ins for 151 more Microsoft fonts**, from open-metric-fonts (open fonts with the originals' character widths
   and line spacing): Grandview, Seaford, Tenorite, Skeena, Bierstadt, Avenir Next LT Pro, Aptos's other weights, Aptos
   Narrow, Serif and Mono, Bahnschrift, Sitka, Century Gothic, Garamond, Franklin Gothic, the Lucida family and the

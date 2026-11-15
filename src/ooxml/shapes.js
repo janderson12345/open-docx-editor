@@ -3,7 +3,7 @@
 // Display only; the drawing's XML is saved back untouched.
 import { esc, elementKids as els, childNamed as child, serializeXml } from './xml.js';
 import { svgTextEffects } from './texteffects.js';
-import { lineFactor } from './props.js';
+import { lineFactor, fontStack } from './props.js';
 import { geometryPaths, readGeometry, adjustOf } from './geometry.js';
 import { PRESETS } from './presets.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
@@ -145,7 +145,9 @@ function textWidth(text, sizePx, bold, font) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
   if (!canvas) return text.length * sizePx * 0.5;
   canvas.fontKerning = 'none';
-  canvas.font = `${bold ? 'bold ' : ''}${sizePx}px "${font}", sans-serif`;
+  canvas.font = `${bold ? 'bold ' : ''}${sizePx}px ${fontStack(font)}`;
+  // (A stand-in not loaded yet is asked for, for the next drawing: this one measures in what the page has.)
+  try { if (document.fonts && !document.fonts.check(canvas.font, text)) document.fonts.load(canvas.font, text).catch(() => {}); } catch { /* not a font */ }
   return canvas.measureText(text).width;
 }
 
@@ -216,7 +218,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       // (An outline or shadow alone keeps the run's own colour: Word draws the letters in w:color.)
       const own = `fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"`;
       const paint = fx?.paint ? (/\bfill=/.test(fx.paint) ? fx.paint : `${own} ${fx.paint}`) : own;
-      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
       if (fx?.defs) out.push(`<defs>${fx.defs}</defs>`);
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
@@ -402,7 +404,7 @@ function dmlText(txBody, box, ctx) {
     if (bu && runs.length) {
       const buFont = child(pPr, 'buFont')?.getAttribute('typeface') || ctx.font;
       const sizePx = (size0 * 4) / 3;
-      cur.pieces.push({ x: cur.x, text: bu.getAttribute('char') || '\u2022', open: `<tspan font-family="${esc(buFont)}, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${ctx.textColor || '000000'}">`, ink: cur.x + sizePx * 0.5 });
+      cur.pieces.push({ x: cur.x, text: bu.getAttribute('char') || '\u2022', open: `<tspan font-family="${esc(fontStack(buFont))}" font-size="${sizePx.toFixed(2)}" fill="#${ctx.textColor || '000000'}">`, ink: cur.x + sizePx * 0.5 });
       cur.x = left0 + marL;
       cur.max = sizePx;
     }
@@ -418,7 +420,7 @@ function dmlText(txBody, box, ctx) {
       const italic = rPr?.getAttribute('i') === '1';
       const latin = child(rPr, 'latin')?.getAttribute('typeface');
       const font = !latin || latin.startsWith('+mn') ? ctx.font : latin.startsWith('+mj') ? ctx.theme?.major || ctx.font : latin;
-      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${c || ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}>`;
+      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" fill="#${c || ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}>`;
       const text = textOfRun(run);
       cur.lf = Math.max(cur.lf, lineFactor(font));
       for (const word of text.match(/\S*\s*/g).filter(Boolean)) {
@@ -613,9 +615,21 @@ function overflow(d, w, h) {
  * and turned whole about its centre on the page (reader.js), as Word turns it, so nothing of it is cut off at its box.
  */
 export function shapeTurn(drawing) {
-  const data = desc(drawing, 'graphicData');
-  const root = data && [...data.childNodes].find((n) => n.localName === 'wsp' || n.localName === 'wgp');
-  const xfrm = root && child(child(root, root.localName === 'wsp' ? 'spPr' : 'grpSpPr'), 'xfrm');
-  const deg = Number(xfrm?.getAttribute('rot') || 0) / 60000;
+  const deg = Number(ownXfrm(drawing)?.getAttribute('rot') || 0) / 60000;
   return ((deg % 360) + 360) % 360;
+}
+
+/** A picture's flips (its pic:spPr a:xfrm flipH, flipV): drawn mirrored by the page, as Word draws it. */
+export function pictureFlip(drawing) {
+  const xfrm = ownXfrm(drawing);
+  if (!xfrm || xfrm.parentNode?.parentNode?.localName !== 'pic') return { h: false, v: false };
+  const on = (k) => /^(1|true)$/.test(xfrm.getAttribute(k) || '');
+  return { h: on('flipH'), v: on('flipV') };
+}
+
+/** The a:xfrm of a drawing's own shape, group or picture (wps:spPr, wpg:grpSpPr, pic:spPr). */
+function ownXfrm(drawing) {
+  const data = desc(drawing, 'graphicData');
+  const root = data && [...data.childNodes].find((n) => n.localName === 'wsp' || n.localName === 'wgp' || n.localName === 'pic');
+  return root && child(child(root, root.localName === 'wgp' ? 'grpSpPr' : 'spPr'), 'xfrm');
 }

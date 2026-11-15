@@ -10,6 +10,7 @@ import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineF
 import { TWIPS_PER_PX } from '../ooxml/units.js';
 import { textEffectsCss, hasTextEffects } from '../ooxml/texteffects.js';
 import { wordDate } from './util.js';
+import { shownSrc } from './svgfonts.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
  * would run in the page when clicked in read-only mode). The document keeps its address as it was. */
@@ -204,7 +205,10 @@ export const schema = new Schema({
         const link = n.attrs.href && safeHref(n.attrs.href);
         // (A shape drawn with room around its box for its outline: reader.js readDrawing's --odx-pad.)
         const pad = Number(/--odx-pad:([\d.]+)px/.exec(n.attrs.place || '')?.[1]) || 0;
-        return ['img', { src: n.attrs.src || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${n.attrs.height + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
+        // (A shape's picture with the stand-in fonts its text needs embedded, svgfonts.js: copy and paste find the node by it too.)
+        const shown = shownSrc(n.attrs.src, (copy, src) => { if (shownImages.has(src)) shownImages.set(copy, shownImages.get(src)); });
+        if (shown !== n.attrs.src && n.attrs.xml) shownImages.set(shown, n.attrs);
+        return ['img', { src: shown || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${n.attrs.height + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).
