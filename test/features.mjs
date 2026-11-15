@@ -81,6 +81,15 @@ check(r1 && r35 && Math.abs(r1.left - 732.3) < 1.5 && Math.abs(r35.left - 396.2)
 await open('line-numbers-mixed.docx');
 const mixNums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].slice(0, 11).map((s) => s.textContent));
 check(mixNums.join(',') === '1,2,3,4,5,6,7,8,9,10,11', `a new section restarting each page goes on down the page it starts on (${mixNums.join(',')})`);
+// A paragraph longer than a column goes on over the columns after it, cut at each one's foot (Word: page 1's two
+// columns and page 2's first). None of its lines or numbers below a column's foot (960px), where they had run on.
+await open('columns-long-paragraph.docx');
+const longCols = await page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const low = (els) => Math.max(...els.map((e) => { const r = e.getBoundingClientRect(); const q = sheets.find((x) => r.top >= x.top && r.top < x.bottom); return q ? r.top - q.top : 9999; }));
+  return { sheets: sheets.length, num: low([...document.querySelectorAll('.odx-lnnum')]), parts: document.querySelectorAll('.odx-repeat').length };
+});
+check(longCols.sheets === 3 && longCols.num < 950 && longCols.parts >= 2, `a paragraph over three columns: ${longCols.parts} carried parts, 3 pages, the lowest number at ${longCols.num.toFixed(0)}px`);
 
 // Footnotes in columns (Word's prints of these, odx-test/mkrtlfootnotes.ps1): one band across each page's foot, in the
 // section's columns (the first on the right in a right-to-left section), each note on the page of its reference; one

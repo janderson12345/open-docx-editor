@@ -49,6 +49,10 @@
 - **`ribbon: 'simple'`**: a page can start the editor with the one-line simplified ribbon (`'classic'`: the full one)
   instead of the user's last choice in the browser; the ribbon's own button still switches, and `editor.setRibbon()`
   and `editor.ribbon` change and read it. Also on the React, Vue and Angular components, and the demo's `?ribbon=`.
+- **A paragraph longer than a column** goes on over as many columns as it takes, cut at each one's foot with two
+  lines kept on each side, as in Word (it was carried once, its rest running down through the margin onto the next
+  page); its line numbers and footnotes follow it into each column. Endnotes in a document of columns are balanced in
+  its columns as Word balances them, after the text's last columns, the first taking the odd line.
 - **Columns hold Word's lines.** A paragraph going on in the next column was measured a little too tall at the
   column's foot, so a column could hold a line fewer than Word's, and its lines in the next column sat about 2pt high;
   both now as Word lays them out (two and three columns, tables, right to left, unequal widths).

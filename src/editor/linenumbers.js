@@ -38,8 +38,9 @@ function ascent(cs) {
 
 /**
  * Draws the numbers into `layer` (a child of the page element). `pageOf(y)` is the page at a height in the flow,
- * measured from the top of `view.dom`. `carriedOf(el)` is a paragraph's part carried to the next column, as drawn there
- * ({ copy, cut, rewrap, col }: its lines are numbered there, where they're seen, not where they're clipped off).
+ * measured from the top of `view.dom`. `carriedOf(el)` is a paragraph's parts carried on to the next columns, as drawn
+ * there ([{ copy, cut, stop, rewrap, col }]: their lines are numbered there, where they're seen, not where they're
+ * clipped off).
  * `columnOf(el)` is a paragraph's column in a section of columns ({ x: from the text's left edge, w }): the numbers go
  * by the column's text edges (a paragraph's own box there can be narrowed on either side).
  */
@@ -72,7 +73,8 @@ export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null, col
       const ecs = getComputedStyle(el);
       const indent = parseFloat(rule.rtl ? ecs.marginRight : ecs.marginLeft) || 0;
       const lines = [];
-      const carry = carriedOf(el);
+      const parts = carriedOf(el) || [];
+      const carry = parts[0];
       const colEdge = (c) => (c ? (rule.rtl ? left + c.x + c.w : left + c.x) : null);
       // (A hanging indent's first line starts left of the box: the column's edge is still the box's less its indent.)
       const edge = colEdge(columnOf(el)) ?? (rule.rtl ? pr.right + indent : pr.left - indent);
@@ -80,14 +82,14 @@ export function drawLineNumbers(view, layer, pageOf, carriedOf = () => null, col
         if (carry && top >= pr.top + carry.cut - 1) continue; // clipped off: numbered on the copy below
         lines.push([baseline, edge]);
       }
-      if (carry) {
-        // The carried lines, at the next column's top: a clipped copy of the whole paragraph (its lines from the cut
-        // down) or the text from the cut laid out again at that column's width (all of it).
+      for (const part of parts) {
+        // The carried lines, at each next column's top: a clipped copy of the whole paragraph (its lines from the cut
+        // down to the next part's) or the text from the cut laid out again at that column's width (all of it).
         // (Either copy sits where the paragraph's box would in that column, its indents those of the paragraph.)
-        const cr = carry.copy.getBoundingClientRect();
-        const cEdge = colEdge(carry.col) ?? (rule.rtl ? cr.right + indent : cr.left - indent);
-        for (const [baseline, , top] of lineBaselines(carry.copy, range)) {
-          if (!carry.rewrap && top < cr.top + carry.cut - 1) continue;
+        const cr = part.copy.getBoundingClientRect();
+        const cEdge = colEdge(part.col) ?? (rule.rtl ? cr.right + indent : cr.left - indent);
+        for (const [baseline, , top] of lineBaselines(part.copy, range)) {
+          if (!part.rewrap && (top < cr.top + part.cut - 1 || (part.stop != null && top >= cr.top + part.stop - 1))) continue;
           lines.push([baseline, cEdge]);
         }
       }

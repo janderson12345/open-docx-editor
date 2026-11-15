@@ -332,7 +332,10 @@ export function createPages(view, session, { sheet, scope }) {
       const total = items.reduce((t, r) => t + r.h, 0) - skip;
       let room = Math.max(40, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
       // In columns of its own: the band's balanced height. (Too tall for the page, it's laid out as one, below.)
-      const bc = !skip && items.every((r) => r.note && r.kind === 'footnote') && bandCols(p, items[0]);
+      // (Endnotes in a one-section document of columns are in its columns too, balanced the same way.)
+      const allEnd = items.every((r) => r.note && r.kind === 'endnote');
+      const bc = !skip && (items.every((r) => r.note && r.kind === 'footnote') ? bandCols(p, items[0])
+        : allEnd && cols && !cols.unequal && cols.num > 1 ? { m: cols.num, gap: cols.space, rtl: !!cols.rtl } : null);
       const lay = bc && bandLayout(items, bc);
       if (bc && lay.h <= room) { noteFlow.set(p, { items, skip: 0, h: lay.h, cols: bc, lay }); notesH.set(p, lay.h + NOTE_SEP); carry = []; continue; }
       if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
@@ -408,14 +411,21 @@ export function createPages(view, session, { sheet, scope }) {
     const list = blockNotes.get(b.i);
     if (!list) return false;
     const top = b.el.getBoundingClientRect().top;
-    const to = bandOf(p + (cs.to || 1));
+    const parts = carriedOf(cs);
     let moved = false;
     for (const r of list) {
-      // (A footnote by its reference's line; endnotes, after the text, with its last lines.)
+      // (A footnote by its reference's line, in the column of the part that holds it; endnotes, after the text, with
+      // its last lines.)
+      let to;
       if (r.kind === 'footnote') {
         const el = view.nodeDOM(r.pos);
-        if (!el || el.nodeType !== 1 || el.getBoundingClientRect().top - top < cs.cut - 1) continue;
-      } else if (r.kind !== 'endnote') continue;
+        if (!el || el.nodeType !== 1) continue;
+        const y = el.getBoundingClientRect().top - top;
+        const part = parts.filter((q) => y >= q.cut - 1).pop();
+        if (!part) continue;
+        to = bandOf(p + part.off);
+      } else if (r.kind === 'endnote') to = bandOf(p + parts[parts.length - 1].off);
+      else continue;
       const key = r.kind + r.id;
       const from = placed.get(key);
       if (from == null || from === to) continue;
@@ -937,11 +947,32 @@ export function createPages(view, session, { sheet, scope }) {
     }
     if (at <= 0) return null;
     const cut = lines[at].top - b.top;
+    // A paragraph longer than the next column too goes on in the one after, and so on: cut again at each column's
+    // foot, two lines kept on each side (one-section documents of equal columns).
+    const parts = [cut];
+    let from = at;
+    for (let c = 1; cols && !cols.unequal && c < 64; c++) {
+      const room = contentBottom(p + c) - contentTop(p + c) + slack;
+      const top = lines[from].top - lead;
+      let j = lines.findIndex((l, i) => i > from && l.bottom - (i < lines.length - 1 ? inset : 0) - top + (i === lines.length - 1 ? bandAfter(p + c, b.node) : 0) > room);
+      if (j < 0) break;
+      if (widowControl(b.node)) {
+        if (lines.length - j < 2) j = lines.length - 2;
+        if (j - from < 2) j = from + 2;
+      }
+      if (j <= from || j >= lines.length) break;
+      parts.push(lines[j].top - b.top);
+      from = j;
+    }
     // (A line carried to the next column sits as the paragraph's first line does: a text box taller than its line, a
     // Title's 28pt in Aptos Display, starts above it, as in Word: the first line in column 2 3.4px low without it.)
     const above = !lead && lead0 < 0 && lead0 >= -6 ? lead0 : 0;
-    return { cut, lift: lead, height: b.bottom - b.top, delta: contentTop(p + 1) + lead + above - (lines[at].top + shift) };
+    return { cut, parts: parts.length > 1 ? parts : undefined, lift: lead, height: b.bottom - b.top, delta: contentTop(p + parts.length) + lead + above - (lines[from].top + shift) };
   }
+  // A split block's carried parts: [{ off (columns on), cut, stop (px from its top, null: its foot), h }].
+  const carriedOf = (cs) => (cs.parts
+    ? cs.parts.map((cut, i) => { const stop = cs.parts[i + 1] ?? null; return { off: i + 1, cut, stop, h: (stop ?? cs.height) - cut + (cs.lift || 0) }; })
+    : [{ off: cs.to || 1, cut: cs.cut, stop: null, h: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut) + (cs.head || 0) }]);
 
   // Columns of their own widths: a paragraph going on in a column of another width is laid out again at that width, as
   // Word does, so its lines there aren't the first column's. The text from its cut is copied out (`cs.rewrap`: the copy,
@@ -1160,14 +1191,14 @@ export function createPages(view, session, { sheet, scope }) {
   let idSeq = 0;
   function drawHeads(list) {
     // (Unchanged repeats are left as they are: redrawing a long document's every pass took a third of its layout time.)
-    const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.end ?? ''}:${h.rewrap ? `${h.rewrap.width.toFixed(1)}/${h.rewrap.h.toFixed(1)}` : ''}`; }).join(',');
+    const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.stop ?? ''}:${h.end ?? ''}:${h.rewrap ? `${h.rewrap.width.toFixed(1)}/${h.rewrap.h.toFixed(1)}` : ''}`; }).join(',');
     if (!list.length && !headKey) return;
     if (key === headKey && repeats.childElementCount) return;
     headKey = key;
     carriedParts = new WeakMap();
     const origin = layer.getBoundingClientRect();
     const frag = document.createDocumentFragment();
-    for (const { b, top, rule, cont, cut, end, dx, dy, rewrap, col } of list) {
+    for (const { b, top, rule, cont, cut, stop, end, dx, dy, rewrap, col } of list) {
       if (rewrap) {
         // Its lines laid out again at the next column's width (rewrapCarry): from the top of that copy.
         const r = b.el.getBoundingClientRect();
@@ -1179,7 +1210,7 @@ export function createPages(view, session, { sheet, scope }) {
         const copy = rewrap.el.cloneNode(true);
         host.append(copy);
         wrap.append(host);
-        carriedParts.set(b.el, { copy, cut, rewrap: true, col });
+        carriedParts.set(b.el, [{ copy, cut, stop: null, rewrap: true, col }]);
         frag.append(wrap);
         continue;
       }
@@ -1195,10 +1226,11 @@ export function createPages(view, session, { sheet, scope }) {
         copy.removeAttribute('contenteditable');
         copy.style.removeProperty('margin-top'); // (its page push, set as !important: margin 0 alone wouldn't take)
         copy.style.margin = '0';
-        copy.style.clipPath = `inset(${cut.toFixed(2)}px -200px ${end != null ? (r.height - end).toFixed(2) : -20}px -200px)`; // (end: only down to there, a table's header rows)
+        const to = stop ?? end; // (only down to there: the next part's cut, or a table's header rows)
+        copy.style.clipPath = `inset(${cut.toFixed(2)}px -200px ${to != null ? (r.height - to).toFixed(2) : -20}px -200px)`;
         copy.querySelectorAll('.ProseMirror-trailingBreak, .odx-push').forEach((e) => e.remove());
         host.append(copy);
-        if (end == null) carriedParts.set(b.el, { copy, cut, rewrap: false, col });
+        if (end == null) carriedParts.set(b.el, [...(carriedParts.get(b.el) || []), { copy, cut, stop, rewrap: false, col }]);
         wrap.append(host);
         frag.append(wrap);
         continue;
@@ -1577,12 +1609,14 @@ export function createPages(view, session, { sheet, scope }) {
         const cs = colSplits.get(b.i);
         if (cs) {
           colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){clip-path:inset(-20px -200px ${(cs.height - cs.cut).toFixed(2)}px -200px)}`);
-          const v2 = v + (cs.to || 1), q = place(k, v2), up2 = v2 - q.s;
-          lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
           const head = cs.head || 0;
-          const va = colVa.get(v2) || 0; // (centred on the page: verticalAlignCols)
-          contHeads.push({ b, cont: true, cut: cs.cut, rewrap: cs.rewrap, col: q.cw ? { x: q.x, w: q.cw } : null, dx: q.x - x, dy: (contentTop(v2) + va + head + (cs.rewrap ? 0 : cs.lift || 0) - up2 * pitch) - (b.top + sh + cs.cut - up * pitch) });
-          if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) + va - up2 * pitch) - (b.top + sh - up * pitch) });
+          for (const part of carriedOf(cs)) {
+            const v2 = v + part.off, q = place(k, v2), up2 = v2 - q.s;
+            lastS = Math.max(lastS, q.s); // (the lines it carries over count for the page count)
+            const va = colVa.get(v2) || 0; // (centred on the page: verticalAlignCols)
+            contHeads.push({ b, cont: true, cut: part.cut, stop: part.stop, rewrap: cs.rewrap, col: q.cw ? { x: q.x, w: q.cw } : null, dx: q.x - x, dy: (contentTop(v2) + va + head + (cs.rewrap ? 0 : cs.lift || 0) - up2 * pitch) - (b.top + sh + part.cut - up * pitch) });
+            if (head) contHeads.push({ b, cont: true, cut: 0, end: head, dx: q.x - x, dy: (contentTop(v2) + va - up2 * pitch) - (b.top + sh - up * pitch) });
+          }
         }
         if (!cols) sh += (paraSplits.get(b.i)?.total || 0) + (splits.get(b.i)?.total || 0); // (what a block split over pages pushes below it)
       }
@@ -1681,12 +1715,12 @@ export function createPages(view, session, { sheet, scope }) {
       acc += starts.get(b.i) || 0;
       const cs = colSplits.get(b.i);
       const top = b.top + acc;
-      return { b, top, end: cs ? top + cs.cut : b.bottom + acc + (parseFloat(getComputedStyle(b.el).marginBottom) || 0), carry: cs ? cs.height - cs.cut + (cs.head || 0) : 0, v: pageOf(top) };
+      return { b, top, end: cs ? top + cs.cut : b.bottom + acc + (parseFloat(getComputedStyle(b.el).marginBottom) || 0), parts: cs ? carriedOf(cs) : [], v: pageOf(top) };
     });
     const ends = new Map(); // flow page -> how low its column's content reaches
     for (const r of at) {
       ends.set(r.v, Math.max(ends.get(r.v) ?? -Infinity, r.end));
-      if (r.carry) ends.set(r.v + 1, Math.max(ends.get(r.v + 1) ?? -Infinity, contentTop(r.v + 1) + r.carry));
+      for (const q of r.parts) ends.set(r.v + q.off, Math.max(ends.get(r.v + q.off) ?? -Infinity, contentTop(r.v + q.off) + q.h));
     }
     const sheets = new Set([...ends.keys()].map((q) => Math.floor(q / num)));
     for (const sh of sheets) {
@@ -1720,7 +1754,7 @@ export function createPages(view, session, { sheet, scope }) {
       const top = b.top + acc;
       const v = pageOf(top);
       ends.set(v, Math.max(ends.get(v) ?? -Infinity, cs ? top + cs.cut : b.bottom + acc));
-      if (cs) ends.set(v + 1, Math.max(ends.get(v + 1) ?? -Infinity, contentTop(v + 1) + cs.height - cs.cut + (cs.head || 0)));
+      if (cs) for (const q of carriedOf(cs)) ends.set(v + q.off, Math.max(ends.get(v + q.off) ?? -Infinity, contentTop(v + q.off) + q.h));
     }
     if (!ends.size) return;
     const lastV = Math.max(...ends.keys());
@@ -1728,7 +1762,7 @@ export function createPages(view, session, { sheet, scope }) {
     let total = 0, low = 0;
     for (let q = sheet * num; q < (sheet + 1) * num; q++) if (ends.has(q)) { total += ends.get(q) - contentTop(q); low = Math.max(low, ends.get(q) - contentTop(q)); }
     // (An even share, and half a line more so the first column takes the odd one, as for a balanced section.)
-    const h = Math.min(total / num + 9, contentBottom(sheet * num) - contentTop(sheet * num));
+    const h = Math.min(total / num + 12, contentBottom(sheet * num) - contentTop(sheet * num));
     const was = colsBal;
     if (!was || was.sheet !== sheet || Math.abs(was.h - h) > 1) { colsBal = { sheet, h, bottom: low }; colsAgain = true; }
     else colsBal.bottom = low;
@@ -2368,7 +2402,7 @@ export function createPages(view, session, { sheet, scope }) {
         box.style.cssText = `top:${top}px;left:${page.left}px;right:${page.right}px`;
         // (Endnotes in a document of newspaper columns are in the columns too, balanced, the separator at the top of the
         // first, as Word lays them out.)
-        const inCols = cols && !cols.unequal && cols.num > 1 && !flow.skip && flow.items.every((r) => r.kind === 'endnote');
+        const inCols = !flow.cols && cols && !cols.unequal && cols.num > 1 && !flow.skip && flow.items.every((r) => r.kind === 'endnote');
         const sep = document.createElement('div');
         sep.className = noteSepRtl() ? 'odx-note-sep odx-note-sep-rtl' : 'odx-note-sep';
         // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)
