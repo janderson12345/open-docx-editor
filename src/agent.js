@@ -95,7 +95,7 @@ export class AgentDocument {
       if (!rows) return;
       const width = Math.max(...rows.map((r) => r.length));
       rows.forEach((r, i) => {
-        lines.push(`| ${Array.from({ length: width }, (_, k) => (r[k] || '').replace(/\|/g, '\\|')).join(' | ')} |`);
+        lines.push(`| ${Array.from({ length: width }, (_, k) => (r[k] || '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|')).join(' | ')} |`);
         if (i === 0) lines.push(`|${' --- |'.repeat(width)}`);
       });
       lines.push('');

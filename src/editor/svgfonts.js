@@ -47,7 +47,7 @@ export async function withFonts(src) {
   if (!stacks.size) return null;
   const bold = /font-weight(?:=["']|\s*:\s*)(bold|[6-9]00)/.test(svg);
   const italic = /font-style(?:=["']|\s*:\s*)(italic|oblique)/.test(svg);
-  const text = unescape(svg.replace(/<[^>]*>/g, ''));
+  const text = unescape([...svg.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(''));
   const rules = faceRules();
   const want = new Set();
   for (const stack of stacks) {

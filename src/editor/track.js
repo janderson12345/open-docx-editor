@@ -211,7 +211,7 @@ function trackDelete(out, a, b, attrsFor, own) {
     if (node.type === schema.nodes.table_row && pos >= a && pos + node.nodeSize <= b && rowRev(node) !== 'del') {
       // The author's own inserted row goes outright, as their own inserted text does.
       const by = rowRev(node) === 'ins' && /<w:ins\b[^>]*\bw:author="([^"]*)"/.exec(node.attrs.trPr);
-      if (by && own({ attrs: { author: by[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>') } })) { remove.push([pos, pos + node.nodeSize]); return false; }
+      if (by && own({ attrs: { author: by[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') } })) { remove.push([pos, pos + node.nodeSize]); return false; }
       rows.push(pos);
     }
     if (node.isInline) {
@@ -264,7 +264,7 @@ function trackDelete(out, a, b, attrsFor, own) {
 function insOfMark(attrs) {
   const r = extraItem(attrs, 'rPr');
   const m = r && /<w:ins\b[^>]*\bw:author="([^"]*)"/.exec(r[1]);
-  return m ? { attrs: { author: m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>') } } : null;
+  return m ? { attrs: { author: m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') } } : null;
 }
 
 /** Insert `slice` at `at`, marked inserted; returns the position after it. */

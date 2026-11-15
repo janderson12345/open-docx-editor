@@ -257,26 +257,26 @@ export class DocxSession {
   /** Page geometry in px (96 dpi) from the final section. */
   page() {
     const s = this.doc.attrs.sectPr || '';
-    const num = (re, d) => {
-      const m = re.exec(s);
-      return m ? twipsToPx(m[1]) : d;
+    const num = (tag, name, d) => {
+      const v = tagAttr(s, tag, name);
+      return v != null && /^-?\d+$/.test(v) ? twipsToPx(v) : d;
     };
     const g = this.gutter(s);
     return {
-      width: num(/<w:pgSz[^>]*\sw:w="(\d+)"/, 816),
-      height: num(/<w:pgSz[^>]*\sw:h="(\d+)"/, 1056),
-      top: num(/<w:pgMar[^>]*\sw:top="(-?\d+)"/, 96) + g.top,
-      right: num(/<w:pgMar[^>]*\sw:right="(\d+)"/, 96),
-      bottom: num(/<w:pgMar[^>]*\sw:bottom="(-?\d+)"/, 96),
-      left: num(/<w:pgMar[^>]*\sw:left="(\d+)"/, 96) + g.left,
+      width: num('pgSz', 'w', 816),
+      height: num('pgSz', 'h', 1056),
+      top: num('pgMar', 'top', 96) + g.top,
+      right: num('pgMar', 'right', 96),
+      bottom: num('pgMar', 'bottom', 96),
+      left: num('pgMar', 'left', 96) + g.left,
       firstTop: this.firstSectionTop(),
     };
   }
 
   /** A section's gutter (px): added to the left margin, or to the top one when settings say gutterAtTop. */
   gutter(sectPr) {
-    const m = /<w:pgMar[^>]*\sw:gutter="(\d+)"/.exec(sectPr || '');
-    const px = m ? twipsToPx(m[1]) : 0;
+    const v = tagAttr(sectPr || '', 'pgMar', 'gutter');
+    const px = v != null && /^\d+$/.test(v) ? twipsToPx(v) : 0;
     if (!px) return { top: 0, left: 0 };
     this._gutterTop ??= !!this.settingsPath && /<w:gutterAtTop(?![^>]*w:val="(?:0|false|off)")/.test(this.pkg.text(this.settingsPath) || '');
     return this._gutterTop ? { top: px, left: 0 } : { top: 0, left: px };
@@ -289,8 +289,8 @@ export class DocxSession {
       if (xml == null) xml = (node.attrs.extra || []).find((e) => e[0] === 'sectPr')?.[1] ?? null;
     });
     const sect = xml ?? this.doc.attrs.sectPr ?? '';
-    const m = /<w:pgMar[^>]*\sw:top="(-?\d+)"/.exec(sect);
-    return m ? Math.abs(Number(m[1])) / TWIPS_PER_PX + this.gutter(sect).top : null;
+    const v = tagAttr(sect, 'pgMar', 'top');
+    return v != null && /^-?\d+$/.test(v) ? Math.abs(Number(v)) / TWIPS_PER_PX + this.gutter(sect).top : null;
   }
 
   /** A header or footer part as an editor doc (display only for now); targets resolve against the part's own rels. */
@@ -1024,6 +1024,12 @@ function croppedUrl(bytes, mime, { l, t, r, b }) {
   const n = (v) => +v.toFixed(4);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" overflow="hidden"><image href="data:${mime};base64,${base64(bytes)}" x="${n(-l / w * 100)}" y="${n(-t / h * 100)}" width="${n(100 / w)}" height="${n(100 / h)}" preserveAspectRatio="none"/></svg>`;
   return 'data:image/svg+xml;base64,' + base64(new TextEncoder().encode(svg));
+}
+
+/** A w: element's attribute in a piece of XML (its first such element), or null: the tag found first, then the attribute in it. */
+function tagAttr(xml, tag, name) {
+  const t = new RegExp(`<w:${tag}\\b[^>]*>`).exec(xml);
+  return t ? new RegExp(`\\sw:${name}="([^"]*)"`).exec(t[0])?.[1] ?? null : null;
 }
 
 function base64(bytes) {
