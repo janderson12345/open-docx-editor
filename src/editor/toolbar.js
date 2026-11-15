@@ -13,11 +13,11 @@ import * as tb from './txbxedit.js';
 import { toggleMarks, marksOn } from './marks.js';
 import * as cm from './comments.js';
 import { undo, redo, closeHistory } from 'prosemirror-history';
-import { addColumnAfter, addColumnBefore, deleteRow, deleteColumn, mergeCells, splitCell, deleteTable, isInTable } from 'prosemirror-tables';
+import { addColumnAfter, addColumnBefore, deleteRow, deleteColumn, mergeCells, splitCell, deleteTable, isInTable, CellSelection, selectionCell } from 'prosemirror-tables';
 import { TextSelection, AllSelection, NodeSelection } from 'prosemirror-state';
 import { schema } from './schema.js';
 import * as cmd from './commands.js';
-import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './track.js';
+import { setTracking, tracking, resolveChange, resolveAll, gotoChange, deleteCells } from './track.js';
 import { createFindBar } from './findbar.js';
 import { protectionOf } from './protect.js';
 import { ZOOM_STEPS } from './zoom.js';
@@ -523,9 +523,22 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   let wcBtn;
   wcBtn = btn('¹²³', 'Word Count', wordCount(() => wcBtn), { label: 'Word Count', big: true });
 
+  // Delete Column with changes tracked: each of its cells recorded as deleted, as Word records it (deleteCells).
+  const deleteColumnTracked = (state, dispatch) => {
+    if (!tracking(state).on) return deleteColumn(state, dispatch);
+    let $cell;
+    try { $cell = selectionCell(state); } catch { return false; }
+    const col = CellSelection.colSelection($cell);
+    return deleteCells(state.apply(state.tr.setSelection(col)), dispatch && ((tr) => {
+      // (Made against the column's selection: its steps applied to the editor's state as it is.)
+      const out = state.tr;
+      for (const step of tr.steps) out.step(step);
+      dispatch(out.scrollIntoView());
+    }));
+  };
   const tableTools = grp('Table',
     col(line(btn('⤒', 'Insert row above', cmd.addRow(false)), btn('⤓', 'Insert row below', cmd.addRow(true)), btn('⇤', 'Insert column left', addColumnBefore), btn('⇥', 'Insert column right', addColumnAfter)),
-      line(btn('−R', 'Delete row', deleteRow), btn('−C', 'Delete column', deleteColumn), btn('⊞', 'Merge cells', mergeCells), btn('⊟', 'Split cell', splitCell), btn('✕', 'Delete table', deleteTable))));
+      line(btn('−R', 'Delete row', deleteRow), btn('−C', 'Delete column', deleteColumnTracked), btn('−▭', 'Delete cells (shift cells left)', deleteCells), btn('⊞', 'Merge cells', mergeCells), btn('⊟', 'Split cell', splitCell), btn('✕', 'Delete table', deleteTable))));
 
   const tabs = {
     File: [fileInput, csvInput],

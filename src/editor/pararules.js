@@ -110,15 +110,19 @@ export function pictureLine(node, page, attrs) {
   let img = false;
   let text = false;
   let both = false;
+  let after = false; // (text after the last picture in line)
   node.forEach((c) => {
     if (c.type.name === 'hard_break') { img = text = false; return; }
     // (Nor one too wide to share a line, which goes to one of its own: sample S115's 665px screenshot after its title.)
     const col = page.width - page.left - page.right;
-    if (c.type.name === 'image' && !/float:|position:|display:block/.test(c.attrs.place || '') && !(Number(c.attrs.width) >= col * 0.8)) img = true;
-    else if (c.isText && c.text.trim()) text = true;
+    if (c.type.name === 'image' && !/float:|position:|display:block/.test(c.attrs.place || '') && !(Number(c.attrs.width) >= col * 0.8)) { img = true; after = false; }
+    else if (c.isText && c.text.trim()) { text = true; after = true; }
     if (img && text) both = true;
   });
   if (both) attrs.class = [attrs.class, 'odx-pictext'].filter(Boolean).join(' ');
+  // Its picture's line the paragraph's last (nothing after the picture): the rest of the "multiple" extra under it, which
+  // Word puts there (editor.css odx-pictext-end; picline-word: at 1.5 and double spacing the next line 3 and 7pt high).
+  if (both && !after) attrs.class = `${attrs.class} odx-pictext-end`;
 }
 
 /**

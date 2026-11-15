@@ -680,3 +680,34 @@ export const trackedDelete = (dir) => (state, dispatch) => {
   }
   return true;
 };
+
+/**
+ * Word's Delete Cells, "shift cells left": the selected cells (a cell selection's, else the cursor's cell) go from their
+ * rows, the cells after them moving left and the grid column left over a w:gridAfter at the row's end. With changes
+ * tracked, each is recorded as a deleted cell (w:cellDel) instead, as Word records it, and goes when the change is
+ * accepted. (Not a whole table: that's Delete Table.)
+ */
+export const deleteCells = (state, dispatch) => {
+  const sel = state.selection;
+  const cells = [];
+  if (sel.$anchorCell && typeof sel.forEachCell === 'function') sel.forEachCell((node, pos) => cells.push(pos));
+  else {
+    const $from = sel.$from;
+    for (let d = $from.depth; d > 0; d--) if (isCell($from.node(d))) { cells.push($from.before(d)); break; }
+  }
+  if (!cells.length) return false;
+  if (!dispatch) return true;
+  const { on, author } = tracking(state);
+  const tr = state.tr;
+  const attrs = { id: nextId(state.doc), author, date: now() };
+  for (const pos of cells) {
+    const node = tr.doc.nodeAt(pos);
+    if (!node || cellRev(node) === 'del') continue;
+    tr.setNodeMarkup(pos, null, { ...node.attrs, tcPr: [...(node.attrs.tcPr || []).filter((t) => t[0] !== 'cellIns'), ['cellDel', revXml('cellDel', attrs)]] });
+    attrs.id += 1;
+  }
+  // Not tracked: recorded, then accepted at once, which takes the cells out as Word does.
+  if (!on) for (const pos of [...cells].sort((a, b) => b - a)) { const node = tr.doc.nodeAt(pos); if (node) resolveChanges(tr, pos, pos + node.nodeSize, true); }
+  dispatch(tr.scrollIntoView());
+  return true;
+};

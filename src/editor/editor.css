@@ -133,6 +133,9 @@
    such line 0.7px low in Word terms once the print layer drew it exactly); the text's
    descent and its share of the extra (the browser centres the leading) come under it, the print shift takes the half back. */
 .odx-content p.odx-pictext > img:not(.ProseMirror-separator):not([style*="position"]) { vertical-align: baseline; margin-bottom: var(--odx-fx, 0px); }
+/* Its picture's line the paragraph's last (pararules.js pictureLine): Word puts all of "multiple" spacing's extra under it, the
+   browser half (the other half above the text, which the print shift takes back): the rest under the paragraph. */
+.odx-content p.odx-pictext-end { padding-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 0.5em); }
 .odx-hf img, .odx-content img[style*="position: absolute"] { max-width: none; }
 /* A horizontal rule sits on its line's baseline; the zero-width text gives that line its height (a line of only a picture gets no height from its paragraph: textspans.js). */
 .odx-content p:has(> img[style*="vertical-align: baseline"]) { white-space: nowrap; }
@@ -223,6 +226,8 @@
 .odx-content { counter-reset: odx-fn odx-en; }
 .odx-content [data-kind="footnoteReference"]::after { counter-increment: odx-fn; content: counter(odx-fn); }
 .odx-content [data-kind="endnoteReference"]::after { counter-increment: odx-en; content: counter(odx-en, lower-roman); }
+/* (Their printed copies, numbered by the print layer: engine/printlines.js.) */
+.odx-pl-host [data-kind$="Reference"][data-n]::after { counter-increment: none; content: attr(data-n); }
 .odx-content [data-kind="footnoteReference"], .odx-content [data-kind="endnoteReference"],
 [data-kind="footnoteRef"], [data-kind="endnoteRef"] { vertical-align: super; font-size: .66em; line-height: 0; }
 .odx-notes { position: absolute; }

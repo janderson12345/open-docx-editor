@@ -964,6 +964,46 @@ const pic90 = await picTurn(4);
 check(pic30.rot === '1800000' && pic30.fx === '66675,247650' && pic30.turned === '30' && pic30.handle && pic90.rot === '5400000' && pic90.fx === '0,0' && pic90.turned === '90' && pic90.tall > pic90.wide,
   `a picture turned with Alt+Right: written and drawn as Word does (${JSON.stringify({ pic30, pic90 })})`);
 
+// Long footnotes (made in Word: four notes of about twelve lines each): a paragraph whose note won't fit below it keeps
+// its lines above the reference on the page, the reference's line going on with its note, as Word lays it out.
+await open('footnotes-long.docx');
+const fnLong = await page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheet')].map((s) => s.getBoundingClientRect());
+  const sheetOf = (y) => sheets.findIndex((r) => y >= r.top && y < r.bottom);
+  const p4 = [...document.querySelectorAll('.odx-content > p')].find((p) => p.textContent.startsWith('Text 4.'));
+  const rg = document.createRange();
+  rg.selectNodeContents(p4);
+  const rects = [...rg.getClientRects()].filter((r) => r.height > 0);
+  const ref = p4.querySelector('[data-kind="footnoteReference"]').getBoundingClientRect();
+  return { first: sheetOf(rects[0].top), ref: sheetOf((ref.top + ref.bottom) / 2), pages: sheets.length };
+});
+check(fnLong.first === 0 && fnLong.ref === 1, `a long note's paragraph split above its reference, as Word (${JSON.stringify(fnLong)})`);
+
+// Delete Cells ("shift cells left") with Track Changes on: the cell recorded as deleted (w:cellDel), still shown; with it
+// off, the cell goes and the row ends in a grid column of its own (w:gridAfter), as Word's dialog does.
+await open('rich.docx');
+const cellDelOf = async (tracked) => {
+  await page.evaluate((on) => { const s = document.querySelector('.odx-tracksel'); s.value = on ? 'on' : 'off'; s.dispatchEvent(new Event('change', { bubbles: true })); }, tracked);
+  const td = await page.$('.odx-content td:nth-child(2) p');
+  await td.click();
+  await page.click('button[title^="Delete cells"]');
+  await page.waitForTimeout(300);
+  return page.evaluate(async () => {
+    let cells = 0, del = 0;
+    window.odx.view.state.doc.descendants((n) => { if (n.type.name === 'table_cell' && !n.attrs.phantom) { cells++; if ((n.attrs.tcPr || []).some((t) => t[0] === 'cellDel')) del++; } });
+    return { cells, del };
+  });
+};
+const cellsBefore = await page.evaluate(() => { let c = 0; window.odx.view.state.doc.descendants((n) => { if (n.type.name === 'table_cell' && !n.attrs.phantom) c++; }); return c; });
+const cdTracked = await cellDelOf(true);
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(200);
+const cdPlain = await cellDelOf(false);
+const cdBytes = await page.evaluate(async () => Array.from(await window.odx.save()));
+const cdXml = strFromU8(unzipSync(new Uint8Array(cdBytes))['word/document.xml']);
+check(cdTracked.cells === cellsBefore && cdTracked.del === 1 && cdPlain.cells === cellsBefore - 1 && cdPlain.del === 0 && /<w:gridAfter w:val="\d+"\/>/.test(cdXml), // (the first row's second cell spans two columns: gridAfter 2)
+  `Delete Cells: tracked, the cell recorded as deleted; not tracked, it goes and its row ends in a gridAfter (${JSON.stringify({ cellsBefore, cdTracked, cdPlain })})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');

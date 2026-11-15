@@ -606,6 +606,11 @@ function anchorCss(drawing, page) {
     if (wrapText === 'left') side = 'left';
     else if (wrapText === 'largest') side = gapL > gapR ? 'left' : 'right';
     else if (wrapText === 'bothSides') side = gapL < MIN_GAP ? 'right' : gapR < MIN_GAP ? 'left' : 'both';
+  } else if (xCol != null && /^wrap(Square|Tight|Through)$/.test(wrap)) {
+    // Placed against the page (lifted to its page's first paragraph, pages.js liftFloats): the side it leaves room on,
+    // both sides as the larger (a picture near the right margin had its text squeezed into the few px right of it, one
+    // letter a line, where Word sets it on the left: pagefloat-word pf-later).
+    side = wrapText === 'left' ? 'left' : wrapText === 'right' ? 'right' : gapL > gapR ? 'left' : 'right';
   }
   if (side === 'both') {
     // (Set where it is, as one not wrapped; the room kept clear round it in --odx-both: top, right, bottom and left.)
