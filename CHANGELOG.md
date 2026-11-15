@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Body text wraps round shapes in headers and footers**: a square-, tight- or through-wrapped shape anchored in a
+  header or footer pushes the body text aside on every page showing it, as Word lays it out (it was drawn over the
+  text). Checked against Word's print of seven test documents; on the way, a header shape placed below its paragraph
+  no longer pushes the header's own text aside or moves the body down.
+- **Reflections drawn**: a run with Word 2010's reflection text effect is drawn on the page, in print and in PDF
+  export, each word mirrored below its baseline with the gap and fade of Word's print (in PDF export when an installed
+  or embedded font is used; with only the standard PDF fonts none is drawn).
+- **Co-editing shares styles and numbering** added after opening (a new style, a new list's numbering, a table of
+  contents' styles): the other editors in the room, and anyone who joins later, draw the text as its author does, and
+  their saved files hold them. They had arrived only when the file was reopened.
+- **Text boxes measured before their font arrived are drawn again**: text in shapes, text boxes and WordArt wrapped at
+  a fallback font's widths when the document was read before the stand-in font loaded; once it has, those shapes are
+  laid out again (on the page only: no undo step, no change to the document).
+- **Accept All and Reject All on thousands of changes are faster** (6,000 changes: 3.5 to 2.2 seconds, the relayout
+  included), one undo step as before.
 - **Long documents with many tracked changes open fast**: 6,000 tracked changes over 177 pages opened in 24 seconds,
   now 1.5; a 118-page document in 0.45 seconds rather than 3.2. The margin's balloons and the print layout read
   positions inside paragraphs the browser skips laying out off screen, which laid each out on the spot; those far off

@@ -263,7 +263,12 @@ export class DocxSession {
       const root = doc.documentElement;
       const idAttr = { style: 'styleId', abstractNum: 'abstractNumId', num: 'numId' };
       for (const d of list) {
-        const el = doc.importNode(kids(parseXml(`<x xmlns:w="${NS.w}">${d.xml}</x>`).documentElement)[0], true);
+        // (From another editor in the room: only the element its key names, with that id, and well-formed; anything
+        // else is skipped, so a broken or stray definition can't go into the parts or stop the rest.)
+        let src = null;
+        try { src = kids(parseXml(`<x xmlns:w="${NS.w}">${d.xml}</x>`).documentElement)[0]; } catch { continue; }
+        if (!src || src.namespaceURI !== NS.w || src.localName !== d.kind || src.getAttributeNS(NS.w, idAttr[d.kind]) !== String(d.id)) continue;
+        const el = doc.importNode(src, true);
         const have = kids(root, d.kind).find((e) => e.getAttributeNS(NS.w, idAttr[d.kind]) === d.id);
         if (have) root.replaceChild(el, have);
         else root.insertBefore(el, (before && kids(root, before)[0]) || null);
