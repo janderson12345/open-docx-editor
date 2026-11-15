@@ -72,7 +72,16 @@ export function drawBalloons(view, session, sheet, height) {
   let col = sheet.querySelector(':scope > .odx-markup');
   const items = [...collect(view, session), ...commentItems(view)];
   const top0 = sheet.getBoundingClientRect().top;
-  for (const it of items) it.y = it.el.getBoundingClientRect().top - top0;
+  // Each change's height on the page: where it is in its paragraph while that's near the screen, its paragraph's top when
+  // far off it (a long document skips laying out those paragraphs, content-visibility, and reading where something is
+  // inside one lays it out: 6000 tracked changes took 9s to open). Drawn again where they are when that paragraph comes
+  // on screen (pages.js onShown lays the pages out again).
+  const far = 3 * (window.innerHeight || 1000);
+  for (const it of items) {
+    const block = it.el.closest?.('.odx-content > *');
+    const br = block ? block.getBoundingClientRect() : null;
+    it.y = (br && (br.bottom < -far || br.top > far) ? br.top : it.el.getBoundingClientRect().top) - top0;
+  }
   items.sort((a, b) => a.y - b.y);
   sheet.classList.toggle('odx-has-markup', items.length > 0);
   if (!items.length) { col?.remove(); return; }

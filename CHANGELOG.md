@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Long documents with many tracked changes open fast**: 6,000 tracked changes over 177 pages opened in 24 seconds,
+  now 1.5; a 118-page document in 0.45 seconds rather than 3.2. The margin's balloons and the print layout read
+  positions inside paragraphs the browser skips laying out off screen, which laid each out on the spot; those far off
+  screen now go by their paragraph (the balloons settle on their lines as the paragraph comes on screen). Measured on
+  stress documents: typing 33-65ms a keystroke, Find's 20,000 matches in 60ms, Accept All on 6,000 changes 3 seconds.
 - **PDF export of Hebrew, Arabic, Greek and Cyrillic without the real font** (Firefox, Safari, or a font the computer
   lacks): the characters a run's font lacks are set in the Noto font for their alphabet, fetched when first needed
   (`fallbackFonts`: npm's `@fontsource` packages on jsDelivr by default, your own copy, or `false`), the run's other
