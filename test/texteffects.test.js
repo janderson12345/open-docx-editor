@@ -33,6 +33,12 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   assert.match(glow, /--odx-grow-up:0.1278em;--odx-grow-down:0.1722em/);
   const refl = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>')).join(';');
   assert.match(refl, /--odx-grow-down:0.257em/);
+  // Its mirrored copy (editor.css): 55% opaque at the baseline, 0.3% at 45.5% of the ascent down; no gap.
+  assert.match(refl, /--odx-rf-a:0.55;--odx-rf-b:0.003;--odx-rf-pos:45.5%;--odx-rf-gap:0pt/);
+  // (A 2.36pt distance with a 0.5pt blur: 4.22pt below the baseline, as Word's Reflection 4 starts; a start opacity
+  // over 100% (Word's Reflection 8 writes 600%) is fully opaque.)
+  const far = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="600000" w14:endA="900" w14:endPos="60000" w14:dist="29997" w14:algn="bl"/>')).join(';');
+  assert.match(far, /--odx-rf-a:1;--odx-rf-b:0.009;--odx-rf-pos:60%;--odx-rf-gap:4.22pt/);
   assert.equal(textEffectsCss(items('<w14:textFill><w14:noFill/></w14:textFill>')).join(';'), '-webkit-text-fill-color:transparent');
 });
 
