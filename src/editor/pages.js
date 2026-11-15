@@ -161,12 +161,24 @@ export function createPages(view, session, { sheet, scope }) {
     if (odd === (parity === 'oddPage')) return v;
     return cols ? v + cols.num - (v % cols.num) : v + 1;
   };
-  const bandOf = (v) => { const g = colGeo(v); return g ? g.P + Math.floor((v - g.P) / g.num) * g.num : v; };
+  // (Word 2010 and before, compatibility mode under 15: each column has a note area of its own, under it, its column
+  // alone cut at it: Word's print of a compat-14 document of two columns.)
+  const perCol = () => !(session.compatMode >= 15);
+  const bandOf = (v) => { const g = !perCol() && colGeo(v); return g ? g.P + Math.floor((v - g.P) / g.num) * g.num : v; };
+  // A flow page's column in its section of columns: { c, x (from the text's left), w }, or null.
+  const colAt = (v) => {
+    const g = colGeo(v);
+    if (!g) return null;
+    const c = (((v - g.P) % g.num) + g.num) % g.num;
+    const inner = page.width - page.left - page.right;
+    return { c, x: g.rtl ? inner - g.xs[c] - g.widths[c] : g.xs[c], w: g.widths[c] };
+  };
   const nextBand = (b) => { let q = b + 1; while (bandOf(q) !== q && q < b + 64) q++; return q; };
   // The band's own columns: the section's, or as many as w15:footnoteColumns says (1: one band the text's width), equal
   // widths, in the section's direction; null for one.
   const bandCols = (b, first) => {
     if (first && first.inCols === false) return null; // (its first note's reference is above a continuous break into columns)
+    if (perCol()) { const at = colAt(b); return at ? { m: 1, gap: 0, w: at.w, rtl: false } : null; } // (its column's own)
     const g = colGeo(b); const m = g ? g.fnCols ?? g.num : 1;
     return m > 1 ? { m, gap: g.fnGap ?? g.space, rtl: !!g.rtl } : null;
   };
@@ -232,9 +244,9 @@ export function createPages(view, session, { sheet, scope }) {
   const bandLays = new Map(); // key -> layout
   const noteDocIds = new WeakMap();
   let noteDocSeq = 0;
-  const bandWidth = (bc) => (page.width - page.left - page.right - bc.gap * (bc.m - 1)) / bc.m;
+  const bandWidth = (bc) => bc.w ?? (page.width - page.left - page.right - bc.gap * (bc.m - 1)) / bc.m;
   const bandLayout = (items, bc) => {
-    const key = `${bc.m}/${bc.gap}/${page.width - page.left - page.right}:${items.map((r) => { if (!noteDocIds.has(r.note.doc)) noteDocIds.set(r.note.doc, ++noteDocSeq); return `${noteDocIds.get(r.note.doc)}.${r.n}`; }).join(',')}`;
+    const key = `${bc.m}/${bc.gap}/${bc.w ?? ''}/${page.width - page.left - page.right}:${items.map((r) => { if (!noteDocIds.has(r.note.doc)) noteDocIds.set(r.note.doc, ++noteDocSeq); return `${noteDocIds.get(r.note.doc)}.${r.n}`; }).join(',')}`;
     if (bandLays.has(key)) return bandLays.get(key);
     const w = bandWidth(bc);
     const box = document.createElement('div');
@@ -2403,10 +2415,16 @@ export function createPages(view, session, { sheet, scope }) {
           s.append(f);
         }
       }
-      // (In columns, the sheet's band: kept by the flow page of its first column.)
-      const nk = sheetBand ? sheetBand.get(p) ?? p : p;
+      // (In columns, the sheet's band: kept by the flow page of its first column; in the per-column model, each column's
+      // own, under it.)
+      const nk0 = sheetBand ? sheetBand.get(p) ?? p : p;
+      const g0 = perCol() && colGeo(nk0);
+      const areas = g0 ? Array.from({ length: g0.num }, (_, c) => nk0 + c) : [nk0];
+      for (const nk of areas) {
       const flow = noteFlow.get(nk);
-      if (flow) {
+      if (!flow) continue;
+      const at = g0 ? colAt(nk) : null;
+      {
         const box = document.createElement('div');
         box.className = 'odx-notes';
         let top = pageH(p) - marginsAt(p).bottom - (notesH.get(nk) ?? flow.h + NOTE_SEP);
@@ -2418,7 +2436,7 @@ export function createPages(view, session, { sheet, scope }) {
           const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
           if (y > 0 && y < top) top = y;
         }
-        box.style.cssText = `top:${top}px;left:${page.left}px;right:${page.right}px`;
+        box.style.cssText = at ? `top:${top}px;left:${page.left + at.x}px;width:${at.w}px` : `top:${top}px;left:${page.left}px;right:${page.right}px`;
         // (Endnotes in a document of newspaper columns are in the columns too, balanced, the separator at the top of the
         // first, as Word lays them out.)
         const inCols = !flow.cols && cols && !cols.unequal && cols.num > 1 && !flow.skip && flow.items.every((r) => r.kind === 'endnote');
@@ -2443,6 +2461,7 @@ export function createPages(view, session, { sheet, scope }) {
           box.append(sep, clip);
         } else box.append(sep, clip);
         s.append(box);
+      }
       }
       frag.append(s);
     }
