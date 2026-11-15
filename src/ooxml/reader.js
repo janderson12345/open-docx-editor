@@ -756,15 +756,18 @@ function readDrawing(drawing, ctx, rPrXml) {
   let effect = [below > 0 && `--odx-fx:${below}px`, above > 0 && `--odx-fxt:${above}px`, left > 0 && `--odx-fxl:${left}px`, right > 0 && `--odx-fxr:${right}px`].filter(Boolean).join(';');
   let src = null;
   let grown = false;
+  let floatPad = 0;
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
   if (/wordprocessing(Group|Shape)$|\/diagram$/.test(uri)) {
     // An inline shape's outline and arrowheads, drawn past its box as Word draws them: its picture that much larger all
     // round (schema.js: --odx-pad), its effect-extent margins that much smaller, so it takes the same room on its line.
-    const pad = ctx.padShapes && extent?.parentNode?.localName === 'inline' ? shapesPad(drawing) : 0;
+    // (Floating ones too: drawn that much larger, their margins that much in, so they wrap the text as before.)
+    const pad = ctx.padShapes ? shapesPad(drawing, { outline: extent?.parentNode?.localName !== 'inline' }) : 0;
     src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height, pad) : null;
     if (src && typeof src === 'object') { ({ src, height } = src); grown = true; } // (a text box grown to fit its text)
     if (!src) return null;
-    if (pad) effect = `--odx-fx:${below - pad}px;--odx-fxt:${above - pad}px;--odx-fxl:${left - pad}px;--odx-fxr:${right - pad}px;--odx-pad:${pad}px`;
+    if (pad && extent?.parentNode?.localName === 'inline') effect = `--odx-fx:${below - pad}px;--odx-fxt:${above - pad}px;--odx-fxl:${left - pad}px;--odx-fxr:${right - pad}px;--odx-pad:${pad}px`;
+    else floatPad = pad;
   } else if (blip) {
     // An SVG picture (Word 2016+): the SVG itself (asvg:svgBlip in the blip's extensions), the PNG beside it a fallback.
     const svg = [...blip.getElementsByTagName('*')].find((e) => e.localName === 'svgBlip');
@@ -784,7 +787,7 @@ function readDrawing(drawing, ctx, rPrXml) {
       height,
       // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
       // keeps other floats on theirs: pages.js floatsPast.)
-      place: ((a) => (grown && /^float:/.test(a) ? `${a};--odx-grown:1` : a))(turned(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]) || effect, drawing, width, height)),
+      place: ((a) => (grown && /^float:/.test(a) ? `${a};--odx-grown:1` : a))(padded(turned(padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]), floatPad) || effect, drawing, width, height), floatPad)),
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
       // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
       ...(() => {
@@ -795,6 +798,23 @@ function readDrawing(drawing, ctx, rPrXml) {
     },
   };
 }
+
+/**
+ * A floating shape's place with room drawn round it for its outline and arrowheads (`pad` px each side, its picture that
+ * much larger): its margins that much in, so it sits and wraps the text as before. (Not one with text on both sides,
+ * wrapboth.js, whose room is its box.)
+ */
+function padPlace(place, pad) {
+  if (!pad || !place || /--odx-both/.test(place)) return place;
+  const minus = (v) => (/^-?[\d.]+px$/.test(v) ? `${+(parseFloat(v) - pad).toFixed(2)}px` : `calc(${v} - ${pad}px)`);
+  const fl = /^(float:(?:left|right);margin:)(\S+) (\S+) (\S+) (.+?)((?:;--odx-l.*)?)$/.exec(place);
+  if (fl) return `${fl[1]}${minus(fl[2])} ${minus(fl[3])} ${minus(fl[4])} ${minus(fl[5])}${fl[6]}`;
+  const bl = /^(display:block;margin-top:)(.+?)(;margin-left:)(.+?)(;margin-bottom:)(-?[\d.]+px)(.*)$/.exec(place);
+  if (bl) return `${bl[1]}${minus(bl[2])}${bl[3]}${minus(bl[4])}${bl[5]}${minus(bl[6])}${bl[7]}`;
+  if (/^position:absolute;/.test(place)) return place.replace(/margin-top:(-?[\d.]+px)/, (m, v) => `margin-top:${minus(v)};margin-left:${-pad}px`);
+  return place;
+}
+const padded = (place, pad) => (pad && place && !/--odx-both/.test(place) ? `${place};--odx-pad:${pad}px` : place);
 
 /**
  * A turned shape (a:xfrm rot) placed as Word places it: its picture (drawn unturned) turned about its centre by the page,

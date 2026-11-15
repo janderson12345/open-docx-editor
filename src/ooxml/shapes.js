@@ -565,8 +565,16 @@ export function diagramSvg(drawingPart, ctx, width, height) {
  * the room is added around it, shapesSvg's pad). Only for arrowheads: room for every outline moved lines on the page
  * by a fraction of a pixel (sample S129, 103 inline shapes: 118 lines 0.7px off), so outlines stay inside the box.
  */
-export function shapesPad(drawing) {
+export function shapesPad(drawing, { outline = false } = {}) {
   let pad = 0;
+  // (A floating shape's own outline too: Word draws it centred on the box's edge, half outside. Not an inline one's, whose
+  // room in its line would grow: padding those moved sample S129's lines 0.7px.)
+  if (outline) {
+    for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
+      if (child(ln, 'noFill')) continue;
+      pad = Math.max(pad, (ln.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
+    }
+  }
   for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
     if (child(ln, 'noFill')) continue;
     const w = ln.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33;

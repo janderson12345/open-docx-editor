@@ -352,6 +352,9 @@ only `'self'`.
    - `style-src 'unsafe-inline'`: the editor lays out its pages with styles it generates as it goes.
    - `font-src 'self'`: your copy of the fonts. (Fonts embedded in a document load from memory and need nothing.)
    - `connect-src data: blob:`: PDF export reads those in-memory pictures back.
+   - PDF export's fallback fonts (Hebrew, Arabic, Greek, Cyrillic a run's font lacks) load from jsDelivr unless you pass
+     `exportPdf(editor, { fallbackFonts: '/docx-pdf-fonts/' })` (the `@fontsource/noto-sans`, `-hebrew` and `-arabic`
+     packages' folders copied there) or `false`; under this policy, without one of those, they come out as "?".
 
    Nothing else: no scripts from elsewhere, no `eval`, no workers, no frames. Add only what you plug in yourself: your
    WOPI host or co-editing server (`connect-src https://… wss://…`) and whatever your `ai` function calls.
@@ -366,7 +369,10 @@ no request to any other site.
 layout put each line, pictures, borders, shading and list labels, a PDF page per page. Text is set in the real fonts,
 embedded as subsets: the document's own embedded fonts, else the computer's installed ones (Chromium browsers' Local
 Font Access, which asks the user once; `exportPdf(editor, { localFonts: false })` doesn't ask), else the PDF standard
-fonts. Kept out of the main bundle; pass it in and File > Export downloads the PDF.
+fonts. Characters the chosen font lacks (Hebrew, Arabic, Greek, Cyrillic in a standard font) are set in the Noto font
+for their alphabet, fetched when first needed from npm's `@fontsource` packages on jsDelivr; `fallbackFonts` points
+that at your own copy (a folder holding the packages as npm has them) or turns it off (`false`: those characters come
+out as "?"). Kept out of the main bundle; pass it in and File > Export downloads the PDF.
 
 ```js
 import { exportPdf } from 'open-docx-editor/pdf';
