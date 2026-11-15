@@ -10,13 +10,67 @@ const pending = new Set();
 const files = new Map(); // font file URL -> Promise of its data: URL (null if it can't be had)
 const installed = new Map();
 const KEEP = 300;
+const redrawn = new Map(); // a picture drawn before its stand-in faces loaded -> { src, height } drawn again after
+const waiting = new Set();
+const origin = new Map(); // a picture shown in place of one as drawn -> that one
+
+/**
+ * A shape's picture `src`, whose text was measured in fallbacks for `fonts` (shapes.js unmeasured: canvas font -> text)
+ * because the page hadn't loaded those stand-in faces yet, so its lines wrap at the fallback's widths: once they've
+ * loaded, `again()` draws it again ({ src, height }) and that's shown instead. Only what's shown changes, as with the
+ * fonts embedded below: the node keeps the picture as drawn, so the redraw isn't an edit (no undo step, the document
+ * isn't changed, nothing goes to a shared document's room). `height`: the picture's as drawn (a text box grown to fit
+ * its text may grow less or more).
+ */
+export function redrawLater(src, fonts, height, again) {
+  if (typeof document === 'undefined' || !document.fonts || typeof src !== 'string' || redrawn.has(src) || waiting.has(src)) return;
+  waiting.add(src);
+  const list = [...fonts];
+  const ready = () => list.every(([font, text]) => { try { return document.fonts.check(font, text); } catch { return true; } });
+  // Asked for again until they're in: a face asked for while the document is read can be dropped before it loads (the
+  // open-metric-fonts rules a document's first fonts add: word-wordart-styles.docx's bold Aptos stayed unloaded, as no
+  // text on the page asks for it). (A face that won't load, its file missing, isn't waited for past the last try: the
+  // picture would measure in the fallback again.)
+  const loaded = (tries) => Promise.all(list.map(([font, text]) => document.fonts.load(font, text).catch(() => null)))
+    .then(() => (ready() ? true : tries > 1 ? new Promise((r) => setTimeout(r, 300)).then(() => loaded(tries - 1)) : false));
+  loaded(5)
+    .then((ok) => {
+      if (!ok) return;
+      const next = again();
+      if (!next?.src || next.src === src) return;
+      redrawn.set(src, next);
+      origin.set(next.src, src);
+      while (redrawn.size > KEEP) redrawn.delete(redrawn.keys().next().value);
+      const was = done.get(src);
+      for (const img of document.querySelectorAll('img')) {
+        const at = img.getAttribute('src');
+        if (at !== src && (!was || at !== was)) continue;
+        if (next.height != null && next.height !== height && img.style.height) img.style.height = `${parseFloat(img.style.height) - height + next.height}px`;
+        img.setAttribute('src', shownSrc(src));
+      }
+    }, () => {})
+    .finally(() => waiting.delete(src));
+}
+
+/** The picture drawn again for `src` once its fonts loaded ({ src, height }), if it was. */
+export const redrawOf = (src) => redrawn.get(src);
+
+/** The picture as drawn that `shown` is shown for (itself if none). */
+export function drawnSrc(shown) {
+  let src = shown;
+  for (let i = 0; i < 3 && origin.has(src); i++) src = origin.get(src);
+  return src;
+}
 
 /**
  * The picture to show for `src`: its copy with fonts embedded when that's ready, else `src` itself (the copy then
- * replaces it on the page when done; `seen(copy, src)` is told of each copy made).
+ * replaces it on the page when done; `seen(copy, src)` is told of each copy made). A picture drawn again once its fonts
+ * loaded (redrawLater) shows as that.
  */
 export function shownSrc(src, seen) {
   if (typeof document === 'undefined' || typeof src !== 'string' || !src.startsWith('data:image/svg+xml')) return src;
+  const re = redrawn.get(src);
+  if (re) return shownSrc(re.src, seen && ((copy) => seen(copy, src)));
   const got = done.get(src);
   if (got) return got;
   if (!pending.has(src)) {
@@ -24,6 +78,7 @@ export function shownSrc(src, seen) {
     withFonts(src).then((out) => {
       remember(src, out || src);
       if (out && out !== src) {
+        origin.set(out, src);
         seen?.(out, src);
         for (const img of document.querySelectorAll('img')) if (img.getAttribute('src') === src) img.setAttribute('src', out);
       }
@@ -34,6 +89,7 @@ export function shownSrc(src, seen) {
 
 function remember(src, out) {
   done.set(src, out);
+  while (origin.size > 2 * KEEP) origin.delete(origin.keys().next().value);
   // (Resizing a shape draws it again at each step: only the latest are kept.)
   while (done.size > KEEP) done.delete(done.keys().next().value);
 }
