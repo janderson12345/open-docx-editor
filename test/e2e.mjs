@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import mammoth from 'mammoth';
 import { unzipSync, strFromU8 } from 'fflate';
+import { launchOptions } from './browser.mjs';
 
 const root = path.resolve('demo');
 const outDir = process.argv[2] || 'test/out';
@@ -21,7 +22,7 @@ const url = `http://localhost:${server.address().port}/`;
 
 // BROWSER=firefox or webkit runs it in those engines instead (Playwright's own builds).
 const engine = { firefox, webkit }[process.env.BROWSER];
-const browser = engine ? await engine.launch() : await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
+const browser = engine ? await engine.launch() : await chromium.launch(launchOptions());
 const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));

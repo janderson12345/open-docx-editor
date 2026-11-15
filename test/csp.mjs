@@ -8,6 +8,7 @@ import { chromium, firefox, webkit } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { launchOptions } from './browser.mjs';
 
 const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'";
 const root = path.resolve('demo');
@@ -28,7 +29,7 @@ const server = http.createServer((req, res) => {
 const origin = `http://localhost:${server.address().port}`;
 // (BROWSER=firefox or webkit: in those engines, Playwright's own builds.)
 const engine = { firefox, webkit }[process.env.BROWSER];
-const browser = engine ? await engine.launch() : await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
+const browser = engine ? await engine.launch() : await chromium.launch(launchOptions());
 const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
 const outside = new Set();
 const errors = [];

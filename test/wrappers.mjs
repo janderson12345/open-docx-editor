@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { launchOptions } from './browser.mjs';
 
 const out = path.resolve('test/out/wrappers');
 fs.mkdirSync(out, { recursive: true });
@@ -27,7 +28,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 }).listen(0);
 const base = `http://localhost:${server.address().port}/`;
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 const fixture = [...fs.readFileSync('test/fixtures/form.docx')];
 let failed = 0;

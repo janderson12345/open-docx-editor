@@ -2,18 +2,12 @@
 // exported with src/pdf.js gives a PDF with a page per sheet, each the sheet's size.
 import { chromium } from 'playwright';
 import { PDFDocument } from 'pdf-lib';
-import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const { server } = serveDemo();
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 const outDir = 'test/out';
 fs.mkdirSync(outDir, { recursive: true });

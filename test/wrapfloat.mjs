@@ -3,20 +3,12 @@
 // before it, none in its room), still so after typing; text on the left only of one wrapped "left"; one aligned to the
 // column's centre set there; and one near the page's foot reaching past its edge kept on its page, drawn up to the edge.
 import { chromium, firefox, webkit } from 'playwright';
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
+const { server } = serveDemo();
 // (BROWSER=firefox or webkit: in those engines, Playwright's own builds.)
 const engine = { firefox, webkit }[process.env.BROWSER];
-const browser = engine ? await engine.launch() : await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
+const browser = engine ? await engine.launch() : await chromium.launch(launchOptions());
 const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
