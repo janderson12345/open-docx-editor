@@ -959,6 +959,9 @@ export function createPages(view, session, { sheet, scope }) {
   }
 
   let headKey = '';
+  // A paragraph's part carried to the next column, as drawn there: block element -> { copy, cut, rewrap } (for its
+  // line numbers, which go beside the lines where they're seen).
+  let carriedParts = new WeakMap();
   const nodeIds = new WeakMap(); // block node -> a number (a block whose content changed is a new node)
   let idSeq = 0;
   function drawHeads(list) {
@@ -967,6 +970,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (!list.length && !headKey) return;
     if (key === headKey && repeats.childElementCount) return;
     headKey = key;
+    carriedParts = new WeakMap();
     const origin = layer.getBoundingClientRect();
     const frag = document.createDocumentFragment();
     for (const { b, top, rule, cont, cut, end, dx, dy, rewrap } of list) {
@@ -978,8 +982,10 @@ export function createPages(view, session, { sheet, scope }) {
         wrap.style.cssText = `top:${(r.top - origin.top + dy + cut).toFixed(2)}px;left:${(r.left - origin.left + dx).toFixed(2)}px;width:${rewrap.width}px`;
         const host = document.createElement('div');
         host.className = 'odx-content';
-        host.append(rewrap.el.cloneNode(true));
+        const copy = rewrap.el.cloneNode(true);
+        host.append(copy);
         wrap.append(host);
+        carriedParts.set(b.el, { copy, cut, rewrap: true });
         frag.append(wrap);
         continue;
       }
@@ -998,6 +1004,7 @@ export function createPages(view, session, { sheet, scope }) {
         copy.style.clipPath = `inset(${cut.toFixed(2)}px -200px ${end != null ? (r.height - end).toFixed(2) : -20}px -200px)`; // (end: only down to there, a table's header rows)
         copy.querySelectorAll('.ProseMirror-trailingBreak, .odx-push').forEach((e) => e.remove());
         host.append(copy);
+        if (end == null) carriedParts.set(b.el, { copy, cut, rewrap: false });
         wrap.append(host);
         frag.append(wrap);
         continue;
@@ -1997,7 +2004,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
     drawHeads(heads.concat(contHeads));
-    drawLineNumbers(view, lineNums, pageOf);
+    drawLineNumbers(view, lineNums, pageOf, (el) => carriedParts.get(el));
     drawBalloons(view, session, sheet, pageTop(pages) - gap);
     lastMs = performance.now() - t0;
     passes++;
