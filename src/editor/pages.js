@@ -2029,7 +2029,8 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyLineFix(view)) return schedule(); // line heights changed: measure again once they're drawn
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
-    if (applyWrapBoth(view)) return schedule(); // a line split beside a shape with text on both sides: measure again
+    // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
+    if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
     if (applySqueeze(view, session)) return; // lines changed: measure again once they're drawn
     if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;
@@ -2420,13 +2421,16 @@ export function createPages(view, session, { sheet, scope }) {
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
+    // (Headers and footers drawn afresh with a shape the body's text wraps round: their lines split beside it, again.)
+    const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && applyWrapBoth(view, layer);
     drawHeads(heads.concat(contHeads));
     drawLineNumbers(view, lineNums, pageOf, (el) => carriedParts.get(el), (el) => blockCols.get(el));
     drawBalloons(view, session, sheet, pageTop(pages) - gap);
     lastMs = performance.now() - t0;
     passes++;
     // A balanced columns section's cut changed: lay out again with it (a few times at most, should it not settle).
-    if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
+    if (hfWrapAgain) schedule();
+    else if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
     // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
     colsAgain = false;
