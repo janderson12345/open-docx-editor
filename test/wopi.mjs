@@ -3,19 +3,12 @@
 // closing and when the page goes; a read-only user and a file someone else has locked open read-only; a refused token
 // and a lost lock are reported, and nothing is overwritten.
 import { chromium } from 'playwright';
-import http from 'node:http';
 import fs from 'node:fs';
-import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
 import { startWopiHost } from './wopi-host.mjs';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
+const { server } = serveDemo();
 const sample = fs.readFileSync('test/fixtures/rich.docx');
 const host = await startWopiHost({
   a: { name: 'Report.docx', bytes: sample, token: 'tok-a', user: 'Ann Editor' },
@@ -25,7 +18,7 @@ const host = await startWopiHost({
   e: { name: 'Keys.docx', bytes: sample, token: 'tok-e' },
 });
 host.setLock('c', 'someone-elses-lock');
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 let failed = 0;
 const check = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };

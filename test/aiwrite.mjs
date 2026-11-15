@@ -2,19 +2,11 @@
 // the selection goes in as a tracked change under the AI's name; a summary is shown, then inserted below as a tracked
 // insertion; a question's answer replaces the selection; what the model is asked; a model's error is said.
 import { chromium } from 'playwright';
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const { server } = serveDemo();
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
 const errors = [];

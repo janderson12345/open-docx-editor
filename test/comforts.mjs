@@ -2,18 +2,10 @@
 // off), Find with patterns (a regular expression, $1 in its replacement, an invalid one reported), and drafts (unsaved
 // changes kept in the browser, offered back on opening the file again: Restore and Discard).
 import { chromium } from 'playwright';
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const { server } = serveDemo();
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 const context = await browser.newContext({ viewport: { width: 1300, height: 950 } });
 const page = await context.newPage();

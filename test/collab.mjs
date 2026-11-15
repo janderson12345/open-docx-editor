@@ -9,6 +9,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { launchOptions } from './browser.mjs';
 
 const require = createRequire(import.meta.url);
 const { setupWSConnection } = require('y-websocket/bin/utils');
@@ -28,7 +29,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on('connection', (conn, req) => setupWSConnection(conn, req));
 const port = server.address().port;
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.log('FAIL', msg); } else console.log('ok  ', msg); };

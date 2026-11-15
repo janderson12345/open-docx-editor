@@ -6,9 +6,8 @@
 // Exceptions are listed by name, with the reason.
 /* global __a11yScan */ // (test/a11y-scan.js, added to the page)
 import { chromium } from 'playwright';
-import http from 'node:http';
 import fs from 'node:fs';
-import path from 'node:path';
+import { serveDemo, launchOptions } from './browser.mjs';
 
 const EXCEPT = {
   // The document's own content is the author's (Review > Check Accessibility reports it), not the editor's UI.
@@ -16,17 +15,11 @@ const EXCEPT = {
 };
 const FLOORS = { controls: 45, tabs: 6, menuItems: 5, contextItems: 6 };
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
+const { server } = serveDemo();
 const url = `http://localhost:${server.address().port}/`;
 const axe = fs.readFileSync('node_modules/axe-core/axe.min.js', 'utf8');
 const scan = fs.readFileSync('test/a11y-scan.js', 'utf8');
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
+const browser = await chromium.launch(launchOptions());
 let failed = 0;
 const fail = (msg) => { failed++; console.log('FAIL', msg); };
 
