@@ -3,8 +3,8 @@
 The font files in files/ are distributed under the SIL Open Font License 1.1, except Caladea, under the Apache License
 2.0; each license is reproduced below. They are unmodified copies of the files published in the @fontsource packages
 named, and Caladea's of its 2013 release, except the odx-aptos-*.woff2 files (the Aptos stand-ins): modified versions of
-Source Sans 3 (each letter narrowed or widened to a width, the font scaled to a height; named "odx Standin Sans" and
-"odx Standin Display", not with its Reserved Font Name), under its SIL Open Font License 1.1, reproduced below.
+Morrow Sans and Morrow Sans Display from open-metric-fonts (each letter narrowed or widened to a width, the font scaled to
+a height; named "odx Standin Sans" and "odx Standin Display"), under their SIL Open Font License 1.1, reproduced below.
 
 ## Carlito (from Carlito, @fontsource/carlito 5.3.0)
 
@@ -450,10 +450,11 @@ If the Work includes a "NOTICE" text file as part of its distribution, then any 
 
 END OF TERMS AND CONDITIONS
 
-## odx Standin Sans and odx Standin Display (the Aptos stand-ins, odx-aptos-*.woff2: modified from Source Sans 3 3.052R)
+## odx Standin Sans and odx Standin Display (the Aptos stand-ins, odx-aptos-*.woff2: modified from Morrow Sans and Morrow Sans Display, @open-metric-fonts/morrow-sans 1.0.1)
 
-Copyright 2023 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. Source is a
-trademark of Adobe in the United States and/or other countries. Modified (letter widths and size) by open-docx-editor.
+Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans); Copyright 2022 The Noto Project
+Authors (https://github.com/notofonts/latin-greek-cyrillic); Copyright 2026 The Open Metric Fonts Authors.
+Modified (letter widths and size) by open-docx-editor.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

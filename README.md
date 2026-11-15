@@ -158,8 +158,10 @@ fs.writeFileSync('out.docx', s.save());
   it (corners keep its proportions). Saved at the new size in its own drawing XML. Cropped pictures are shown cropped.
 - **Wrap Text** (Layout > Wrap Text, or a picture's context menu): In Line with Text, Square, Tight, Through, Top and
   Bottom, Behind Text and In Front of Text, for a picture or shape, saved as Word writes it.
-- **Shapes**: Insert > Shapes offers Word's shapes, a line and an arrow, each added in line with the text in the theme's
-  colours. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
+- **Shapes**: Insert > Shapes offers Word's shapes, a line and an arrow, in the theme's colours. Pick one with the mouse
+  and drag on the page to draw it, as in Word (Shift: a square, a circle, a line at 15-degree steps; Ctrl: from its
+  centre; a click: its usual size; Esc stops): it floats in front of the text where you drew it. Picked from the
+  keyboard, it goes in line with the text at the caret. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
   change it as Word's do (an arrow's head, a rounded rectangle's corners, a callout's pointer); a line has a handle at
   each end instead (Shift: at 15-degree steps). Turn one with its rotate handle (Shift: 15-degree steps) or Alt+Left
   and Alt+Right. Drag a picture or shape in line with the text by its body to move it to another place in the text
@@ -237,8 +239,8 @@ editor lays text out in the fonts installed on the computer, as Word does, and u
 
 - **Stand-ins with the same character widths**, so lines break where Word breaks them: Carlito (Calibri), Caladea
   (Cambria), Arimo, Tinos and Cousine (Arial, Times New Roman, Courier New; named Liberation Sans, Serif and Mono, the
-  names documents use for them), and for Aptos and Aptos Display, Source Sans 3's letters fitted to Aptos's widths and
-  x-height. Open-licensed (SIL Open Font License, Apache License 2.0; Latin and Latin Extended).
+  names documents use for them), and for Aptos and Aptos Display, Morrow Sans's letters (open-metric-fonts' Aptos) fitted
+  to the widths Word's prints give Aptos. Open-licensed (SIL Open Font License, Apache License 2.0; Latin and Latin Extended).
 - **The rest of the Microsoft fonts**, from [open-metric-fonts](https://github.com/open-metric-fonts/open-metric-fonts):
   open fonts (SIL Open Font License) with the widths and line spacing of 151 Microsoft font families the stand-ins
   above don't cover: Grandview, Seaford, Tenorite, Skeena, Bierstadt, Avenir Next LT Pro, Aptos's other weights,

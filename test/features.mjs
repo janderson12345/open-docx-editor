@@ -778,26 +778,59 @@ check(pv1 === 'Ada LOVELACE' && pv2 === 'Alan TURING' && /Record 2 of 2/.test(pv
   `mail merge: preview, next record, insert field, CSV recipients, merged document (${JSON.stringify({ pv1, pv2, pvStatus, pvOff, inserted, csvCount, file: download.suggestedFilename() })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
-// Insert > Shapes: a rectangle and an arrow, in line with the text, theme-styled as Word's (accent 1, darker outline),
-// drawn, and saved as Word writes them.
+// Insert > Shapes: picked from the keyboard, a rectangle in line with the text; with the mouse, drawn on the page by
+// dragging, as in Word: an arrow dragged up and to the right (its end where the drag ended), an oval floating in front
+// of the text where it was dragged out, one Undo taking it away; Esc stops drawing. Theme-styled as Word's (accent 1,
+// darker outline), and saved as Word writes them.
 await page.evaluate(() => window.odx.newDocument({ share: false }));
 await page.click('.odx-content p');
+await page.keyboard.type('A paragraph for the shapes to be drawn over.');
 await page.click('.odx-rtab:text-is("Insert")');
 await page.click('button[title^="Shapes"]');
-await page.click('.odx-pop button[title="Rectangle"]');
+await page.focus('.odx-pop button[title="Rectangle"]');
+await page.keyboard.press('Enter');
 await page.waitForTimeout(300);
-await page.click('button[title^="Shapes"]');
-await page.click('.odx-pop button[title="Arrow"]');
-await page.waitForTimeout(400);
-const shp = await page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => ({ w: i.width, h: i.height, svg: decodeURIComponent(i.src.split(',')[1] || '') })));
+const imgs = () => page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => { const r = i.getBoundingClientRect(); return { w: i.width, h: i.height, x: r.left, y: r.top, svg: decodeURIComponent(i.src.split(',')[1] || '') }; }));
+const p0 = await page.evaluate(() => { const r = document.querySelector('.odx-content p').getBoundingClientRect(); return { x: r.left, y: r.bottom }; });
+const drawOn = async (title, x0, y0, x1, y1) => {
+  await page.click('button[title^="Shapes"]');
+  await page.click(`.odx-pop button[title="${title}"]`);
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move((x0 + x1) / 2, (y0 + y1) / 2);
+  await page.mouse.move(x1, y1);
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+};
+await drawOn('Arrow', p0.x + 40, p0.y + 120, p0.x + 190, p0.y + 60);
+await drawOn('Oval', p0.x + 250, p0.y + 140, p0.x + 370, p0.y + 220);
+const shp = await imgs();
+// (Each drawn one goes in at the start of its paragraph, before the rectangle: found by size.)
+const oval = shp.find((x) => x.w === 120) || {};
+const rect = shp.find((x) => x.w === 96) || {};
+const arrowImg = shp.find((x) => x.w === 150) || { svg: '' };
 const shpXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
-check(shp.length === 2 && shp[0].w === 96 && /fill="#156082"/.test(shp[0].svg) && /<a:prstGeom prst="rect">/.test(shpXml) && /<a:fillRef idx="1"><a:schemeClr val="accent1"\/>/.test(shpXml)
-  && /<a:prstGeom prst="line">[\s\S]*?<a:tailEnd type="triangle"\/>/.test(shpXml) && /<path d="M[^"]*Z" fill="#/.test(shp[1].svg),
-  `Insert > Shapes: a rectangle and an arrow, drawn and saved as Word's (${shp.map((s) => `${s.w}x${s.h}`).join(', ')})`);
+const anchors = [...shpXml.matchAll(/<wp:anchor\b[\s\S]*?<\/wp:anchor>/g)].map((m) => m[0]);
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(300);
+const afterUndo = (await imgs()).length;
+await page.click('button[title^="Shapes"]');
+await page.click('.odx-pop button[title="Rectangle"]');
+const drawingOn = await page.evaluate(() => !!document.querySelector('.odx-draw'));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(100);
+const drawingOff = await page.evaluate(() => !document.querySelector('.odx-draw'));
+check(shp.length === 3 && /fill="#156082"/.test(rect.svg || '') && /<a:prstGeom prst="rect">/.test(shpXml) && /<a:fillRef idx="1"><a:schemeClr val="accent1"\/>/.test(shpXml)
+  && /<a:prstGeom prst="line">[\s\S]*?<a:tailEnd type="triangle"\/>/.test(shpXml) && /<path d="M[^"]*Z" fill="#/.test(arrowImg.svg)
+  && anchors.length === 2 && anchors.every((x) => /<wp:wrapNone\/>/.test(x) && /behindDoc="0"/.test(x) && /<wp:positionH relativeFrom="column"><wp:posOffset>-?\d+</.test(x) && /<wp:positionV relativeFrom="paragraph"><wp:posOffset>-?\d+</.test(x))
+  && anchors.some((x) => /<a:xfrm flipV="1">[\s\S]*?prst="line"/.test(x) && /<wp:extent cx="1428750" cy="571500"\/>/.test(x))
+  && anchors.some((x) => /prst="ellipse"/.test(x)) && Math.abs(arrowImg.x - (p0.x + 40)) <= 1 && Math.abs(arrowImg.y - (p0.y + 60)) <= 1 && Math.abs(oval.x - (p0.x + 250)) <= 1 && Math.abs(oval.y - (p0.y + 140)) <= 1 && oval.w === 120 && oval.h === 80
+  && afterUndo === 2 && drawingOn && drawingOff,
+  `Insert > Shapes: a rectangle from the keyboard, an arrow and an oval drawn by dragging, saved as Word's (${JSON.stringify({ shp: shp.map((s) => [s.w, s.h, Math.round(s.x - p0.x), Math.round(s.y - p0.y)]), anchors: anchors.length, afterUndo, drawingOn, drawingOff })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
-// The stand-in fonts: their stylesheet linked from fonts.base (here the demo's own copy), and the Aptos stand-in (Source
-// Sans 3's letters at Aptos's widths) loaded from its file when asked for.
+// The stand-in fonts: their stylesheet linked from fonts.base (here the demo's own copy), and the Aptos stand-in (Morrow
+// Sans's letters at Aptos's fitted widths) loaded from its file when asked for.
 const fontsLoad = await page.evaluate(async () => {
   const link = document.querySelector('link[data-odx-fonts]');
   await document.fonts.load('16px odx-aptos', 'Image Test');

@@ -1,5 +1,5 @@
-"""Builds the Aptos stand-in fonts from a source font (Source Sans 3; SIL Open Font License 1.1, src/fonts/LICENSE.md:
-the fonts made are modified versions of it, under the same license and with names of their own, not its reserved one).
+"""Builds the Aptos stand-in fonts from a source font (Morrow Sans; SIL Open Font License 1.1, src/fonts/LICENSE.md:
+the fonts made are modified versions of it, under the same license and with names of their own).
 
   python aptos_standin.py cmap <font>                   -> prints {code point: advance in em}, as JSON
   python aptos_standin.py xheight <font>                -> prints its x-height in em (OS/2 sxHeight)
@@ -22,6 +22,9 @@ from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
+
+
+LOOKALIKE = {0x2BB: 0x2018, 0x2BC: 0x2019, 0x2009: 0x20, 0x200B: 0x20, 0xFEFF: 0x20}
 
 
 def cmap(path):
@@ -54,9 +57,11 @@ def build_face(face):
     advances['.notdef'] = (hmtx['.notdef'][0] if '.notdef' in glyphs else upm // 2, 0)
     for key, width in sorted(face['widths'].items(), key=lambda kv: int(kv[0])):
         cp = int(key)
-        if cp not in best:
+        # (A letter the source lacks, drawn as its look-alike: the modifier apostrophes as quotes, the thin and
+        # zero-width spaces as a space at their own width.)
+        gname = best.get(cp) or best.get(LOOKALIKE.get(cp))
+        if gname is None:
             continue
-        gname = best[cp]
         old = hmtx[gname][0]
         new = round(width / scale * upm)
         xscale = new / old if old > 0 and new > 0 else 1

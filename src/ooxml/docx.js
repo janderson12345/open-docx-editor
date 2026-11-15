@@ -848,9 +848,12 @@ export class DocxSession {
   /**
    * A new shape in line with the text, as Word 2013+'s Insert > Shapes makes one: preset geometry `prst`, in the
    * theme's colours (accent 1 fill, its darker shade as a 1pt outline; a line 1pt in accent 1, with an arrowhead at its
-   * end for `arrow`). Returns { xml, src }.
+   * end for `arrow`). Returns { xml, src, width, height, place }.
+   *
+   * With `float` ({ x, y } px), as Word draws one dragged out on the page: floating in front of the text, placed `x`
+   * from the column's left and `y` below its paragraph's top; `flipH`/`flipV` turn a line drawn up or to the left.
    */
-  addShape(prst, width, height, { arrow = false } = {}) {
+  addShape(prst, width, height, { arrow = false, float = null, flipH = false, flipV = false } = {}) {
     this._picId = (this._picId || 1000) + 1;
     const id = this._picId;
     const line = prst === 'line';
@@ -860,16 +863,22 @@ export class DocxSession {
       ? '<wps:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style>'
       : '<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style>';
     const ln = line ? `<a:ln w="12700">${arrow ? '<a:tailEnd type="triangle"/>' : ''}</a:ln>` : '';
-    const xml = `<w:r><w:drawing ${ns}><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`
+    const ext = `<wp:extent cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`;
+    // (Floating: Word's anchor for a drawn shape, in front of the text, each one above the last: its relativeHeight.)
+    const open = float
+      ? `<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="${251659264 + id * 1024}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">`
+        + `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${pxToEmu(float.x)}</wp:posOffset></wp:positionH>`
+        + `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${pxToEmu(float.y)}</wp:posOffset></wp:positionV>${ext}<wp:wrapNone/>`
+      : `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}`;
+    const flips = `${flipH ? ' flipH="1"' : ''}${flipV ? ' flipV="1"' : ''}`;
+    const xml = `<w:r><w:drawing ${ns}>${open}`
       + `<wp:docPr id="${id}" name="${line ? 'Straight Connector' : 'Shape'} ${id}"/><wp:cNvGraphicFramePr/>`
       + '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/>'
-      + `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/></a:xfrm><a:prstGeom prst="${esc(prst)}"><a:avLst/></a:prstGeom>${ln}</wps:spPr>`
+      + `<wps:spPr><a:xfrm${flips}><a:off x="0" y="0"/><a:ext cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/></a:xfrm><a:prstGeom prst="${esc(prst)}"><a:avLst/></a:prstGeom>${ln}</wps:spPr>`
       + style
       + '<wps:bodyPr rot="0" spcFirstLastPara="0" vertOverflow="overflow" horzOverflow="overflow" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" numCol="1" spcCol="0" rtlCol="0" fromWordArt="0" anchor="ctr" anchorCtr="0" forceAA="0" compatLnSpc="1"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp><a:noAutofit/></wps:bodyPr>'
-      + '</wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
-    let src = null;
-    this._fragment(`<w:p>${xml}</w:p>`).descendants((n) => { if (src == null && n.type.name === 'image') src = n.attrs.src; });
-    return { xml, src };
+      + `</wps:wsp></a:graphicData></a:graphic></wp:${float ? 'anchor' : 'inline'}></w:drawing></w:r>`;
+    return this._shapeNode(xml);
   }
 
   /** Serialize `doc` (default: the loaded one) to .docx bytes. */
