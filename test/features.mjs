@@ -78,6 +78,32 @@ await open('line-numbers-mixed.docx');
 const mixNums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].slice(0, 11).map((s) => s.textContent));
 check(mixNums.join(',') === '1,2,3,4,5,6,7,8,9,10,11', `a new section restarting each page goes on down the page it starts on (${mixNums.join(',')})`);
 
+// Footnotes in columns (Word's prints of these, odx-test/mkrtlfootnotes.ps1): one band across each page's foot, in the
+// section's columns (the first on the right in a right-to-left section), each note on the page of its reference; one
+// band the text's width with w15:footnoteColumns 1; the separator at the right when its paragraph is right to left.
+const bands = () => page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => {
+  const sr = s.getBoundingClientRect();
+  const box = s.querySelector('.odx-notes');
+  if (!box) return null;
+  const sep = box.querySelector('.odx-note-sep').getBoundingClientRect();
+  const cols = [...box.querySelectorAll('.odx-note-band > div')];
+  const seen = (r, c) => r.top >= c.top - 1 && r.top < c.bottom - 1;
+  const parts = cols.length ? cols.map((c) => { const cr = c.getBoundingClientRect(); return { x: Math.round(cr.left - sr.left), ids: [...c.querySelectorAll('.odx-note')].filter((n) => seen(n.getBoundingClientRect(), cr)).map((n) => n.dataset.id) }; })
+    : [{ x: Math.round(box.getBoundingClientRect().left - sr.left), ids: [...box.querySelectorAll('.odx-note')].map((n) => n.dataset.id) }];
+  return { sep: [Math.round(sep.left - sr.left), Math.round(sep.right - sr.left)], parts };
+}));
+await open('footnotes-columns-rtl.docx');
+const fnr = await bands();
+// (Word: page 1 notes 1 and 2 in the right column (x 324pt, 432px), note 3 in the left (x 72pt); page 2 notes 4 | 5.)
+check(fnr[0] && fnr[0].parts.length === 2 && fnr[0].parts[0].x === 432 && fnr[0].parts[0].ids.join() === '1,2' && fnr[0].parts[1].x === 96 && fnr[0].parts[1].ids.join() === '3' && fnr[1]?.parts.map((q) => q.ids.join()).join('|') === '4|5', `footnotes in right-to-left columns: ${JSON.stringify(fnr.map((b) => b && b.parts))}`);
+check(fnr[0] && fnr[0].sep[0] === 96 && fnr[0].sep[1] === 288, `the separator 2in long at the left (${fnr[0]?.sep})`);
+await open('footnotes-columns-one-band.docx');
+const f1 = await bands();
+check(f1[0] && f1[0].parts.length === 1 && f1[0].parts[0].ids.join() === '1,2,3', `w15:footnoteColumns 1: one band, notes 1-3 on page 1 (${JSON.stringify(f1.map((b) => b && b.parts))})`);
+await open('footnotes-separator-rtl.docx');
+const fs2 = await bands();
+check(fs2[0] && fs2[0].sep[0] === 528 && fs2[0].sep[1] === 720, `a right-to-left separator at the right (${fs2[0]?.sep})`);
+
 await open('watermark-text.docx');
 const wm = await page.evaluate(() => [...document.querySelectorAll('.odx-sheet > img')].map((i) => ({ t: getComputedStyle(i).transform, w: i.width })));
 // (550px: the shape's 412.4pt width.)

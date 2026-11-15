@@ -18,13 +18,17 @@ export const marginsIn = (xml, page, gutter) => {
 
 /**
  * A section's newspaper columns (w:cols) on `page`, in px, or null for a single column: { num, space, width, rtl, sep,
- * widths, xs }. Columns of their own widths (w:equalWidth="0", each w:col its width and the gap after it) give each
+ * widths, xs, fnCols (w15:footnoteColumns, when set) }. Columns of their own widths (w:equalWidth="0", each w:col its width and the gap after it) give each
  * one's width and its left edge from the text's (`xs`); `width` is then the widest, and `unequal` is set.
  */
 export const columnsIn = (xml, page) => {
   const m = /<w:cols\b[^>]*>/.exec(xml || '');
   const rtl = /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(xml || '');
   const sep = m ? /\sw:sep="(?:1|true|on)"/.test(m[0]) : false; // a line between the columns
+  // (w15:footnoteColumns: the footnotes' own columns at the page's foot, when it says.)
+  const fn = /<w15:footnoteColumns\b[^>]*w:val="(\d+)"/.exec(xml || '');
+  // (Their gap: w:cols' own w:space, as Word spaces them, also when the section's columns have widths of their own.)
+  const fnCols = fn ? { fnCols: Number(fn[1]), fnGap: Number((m && /\sw:space="(\d+)"/.exec(m[0])?.[1]) ?? 720) / TWIPS_PER_PX } : {};
   if (m && /\sw:equalWidth="(?:0|false|off)"/.test(m[0])) {
     const own = [...(/<w:cols\b[^>]*>([\s\S]*?)<\/w:cols>/.exec(xml)?.[1] || '').matchAll(/<w:col\b[^>]*>/g)]
       .map((c) => ({ w: Number(/w:w="(\d+)"/.exec(c[0])?.[1] || 0) / TWIPS_PER_PX, s: Number(/w:space="(\d+)"/.exec(c[0])?.[1] || 0) / TWIPS_PER_PX }));
@@ -33,7 +37,7 @@ export const columnsIn = (xml, page) => {
       let x = 0;
       for (const c of own) { xs.push(x); x += c.w + c.s; }
       const widths = own.map((c) => c.w);
-      return { num: own.length, space: own[0].s, width: Math.max(...widths), rtl, sep, widths, xs, spaces: own.map((c) => c.s), unequal: true };
+      return { num: own.length, space: own[0].s, width: Math.max(...widths), rtl, sep, widths, xs, spaces: own.map((c) => c.s), unequal: true, ...fnCols };
     }
   }
   const num = m ? Number((/w:num="(\d+)"/.exec(m[0]) || [])[1] || 1) : 1;
@@ -41,7 +45,7 @@ export const columnsIn = (xml, page) => {
   const space = Number((/w:space="(\d+)"/.exec(m[0]) || [])[1] ?? 720) / TWIPS_PER_PX;
   const width = (page.width - page.left - page.right - space * (num - 1)) / num;
   const widths = Array(num).fill(width);
-  return { num, space, width, rtl, sep, widths, xs: widths.map((_, c) => c * (width + space)), spaces: widths.map(() => space) };
+  return { num, space, width, rtl, sep, widths, xs: widths.map((_, c) => c * (width + space)), spaces: widths.map(() => space), ...fnCols };
 };
 
 /**

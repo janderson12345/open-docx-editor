@@ -37,6 +37,13 @@
   and container transforms. An EMF+ only file (no GDI copy to fall back on) was blank; a dual file now shows what its
   GDI copy lacks, such as transparency and Visio's colours. Checked against Word's print of pictures drawn by Windows'
   own GDI+. A dual file whose EMF+ records need something not read yet is drawn from its GDI copy, as before.
+- **Footnotes in newspaper columns, as Word lays them out.** A page's footnotes are one band across its foot, every
+  column on the page cut at its top, the notes in the section's columns, balanced as Word balances them (the first
+  column taking more, a note split between columns only where each part keeps two lines), right to left in a
+  right-to-left section; `w15:footnoteColumns` gives them a number of columns of their own (1: one band the text's
+  width). Each note is on the page of its reference, also when the reference is in lines carried to the next column
+  (they went on the wrong page, or were lost, in any section of columns). The separator is 2in long, as Word's, at
+  the right when its paragraph is right to left. Checked against Word's prints of 13 documents.
 - **Line numbers in columns, as Word numbers them.** A paragraph's lines carried to the next column are numbered there,
   in reading order (they were numbered where they're cut off, in the bottom margin, and the next column's count was
   off from there); a right-to-left section's numbers go right of each column, as in Word; and a section that restarts

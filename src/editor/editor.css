@@ -226,7 +226,9 @@
 .odx-content [data-kind="footnoteReference"], .odx-content [data-kind="endnoteReference"],
 [data-kind="footnoteRef"], [data-kind="endnoteRef"] { vertical-align: super; font-size: .66em; line-height: 0; }
 .odx-notes { position: absolute; }
-.odx-note-sep { width: 33%; border-top: 1px solid currentColor; opacity: .6; margin: 6px 0 7px; }
+.odx-note-sep { width: 192px; border-top: 1px solid currentColor; opacity: .6; margin: 6px 0 7px; } /* Word's: 2in, whatever the text's width */
+.odx-note-sep-rtl { margin-left: auto; } /* at the right, its paragraph right to left */
+.odx-note-cols-rtl { direction: rtl; } .odx-note-cols-rtl > * { direction: ltr; } /* endnotes in right-to-left columns: the first column on the right, each note in its own direction */
 .odx-note p, .odx-note-content p { margin: 0; }
 /* The note's reference mark is raised text of its paragraph's size: Word's first line is as tall as that size's line (c3-01:
    11pt marks over 10pt text, 18px lines, not 16). The mark itself has no line height here, and a paragraph
