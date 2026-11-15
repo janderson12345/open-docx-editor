@@ -49,6 +49,10 @@
 - **`ribbon: 'simple'`**: a page can start the editor with the one-line simplified ribbon (`'classic'`: the full one)
   instead of the user's last choice in the browser; the ribbon's own button still switches, and `editor.setRibbon()`
   and `editor.ribbon` change and read it. Also on the React, Vue and Angular components, and the demo's `?ribbon=`.
+- **Column breaks in a section of columns** among other sections are acted on (they were ignored there): the text
+  after one goes on in the next column, a page break in such a section on the next page, and a column break before a
+  next-page section break keeps its own column. A section of columns ending at a continuous break with a column break
+  of its own isn't balanced, as in Word, and what follows starts under its lowest column.
 - **A paragraph longer than a column** goes on over as many columns as it takes, cut at each one's foot with two
   lines kept on each side, as in Word (it was carried once, its rest running down through the margin onto the next
   page); its line numbers and footnotes follow it into each column. Endnotes in a document of columns are balanced in
