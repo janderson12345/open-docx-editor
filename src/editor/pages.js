@@ -482,7 +482,12 @@ export function createPages(view, session, { sheet, scope }) {
       const c = columnsIn(xml, page);
       if (!c) return;
       const next = all[n + 1];
-      out.push({ lo: n ? all[n - 1][0] + 1 : 0, hi, ...c, balance: !!next && /<w:type\b[^>]*w:val="continuous"/.test(next[1]) });
+      const lo = n ? all[n - 1][0] + 1 : 0;
+      // (Not balanced when it holds a column break of its own: Word leaves its columns as the break puts them.)
+      let colBreak = false;
+      doc.forEach((node, _, i) => { if (i >= lo && i <= hi && !colBreak && breakKindOf(node) === 'column') colBreak = true; });
+      const cont = !!next && /<w:type\b[^>]*w:val="continuous"/.test(next[1]);
+      out.push({ lo, hi, ...c, cont, balance: cont && !colBreak });
     });
     return out;
   };
@@ -1530,7 +1535,8 @@ export function createPages(view, session, { sheet, scope }) {
     re.vEnd = vEnd;
     re.offAfter = vEnd - (re.S0 + sheet);
     for (const v of [...colTops.keys()]) if (v > vEnd) colTops.delete(v);
-    if (re.balance) {
+    // (What follows on the same page starts under the lowest column; balanced, the columns are also cut even.)
+    if (re.balance || re.cont) {
       const first = re.P + sheet * re.num;
       let total = 0, low = 0;
       const base = (v) => (v === re.P ? re.y0 : contentTop(v)); // (the first column starts where the section does)
@@ -1545,6 +1551,7 @@ export function createPages(view, session, { sheet, scope }) {
       const d = base(vEnd) + low + Math.max(0, spaceBefore(b.node) - spaceAfter(blocks[k - 1].node)) - top;
       starts.set(b.i, (starts.get(b.i) || 0) + d);
       moved = d;
+      if (!re.balance) return { moved, again };
       // The height to cut its columns to: an even share, and half a line more so the first column takes the odd one.
       const line = parseFloat(lineHeightOf(getComputedStyle(blocks[re.k0].el))) || 18;
       const want = { sheet, h: total / re.num + line / 2 };
@@ -2042,7 +2049,8 @@ export function createPages(view, session, { sheet, scope }) {
       // Nor after a manual page break: the page break and the section break then make one new page, not two.
       // (Less the space after the paragraph above: Word drops it at the page's foot, so a page filled exactly keeps its
       // section's empty last paragraph.)
-      if (!firstOnPage && !b.node.childCount && sectEnds.get(b.i) && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
+      // (Not after a column break: that paragraph goes to the next column, and a next-page section starts the page after.)
+      if (!firstOnPage && !b.node.childCount && sectEnds.get(b.i) && !(breakPending && breakKind === 'column') && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
       // (In columns of their own widths, a paragraph's bottom at the width of the column it's in: atColumnWidth.)
       const wide = inCols ? atColumnWidth(b, cols || inReg, p, shift, top <= contentTop(p) + 1) : null;
       const bottom = wide ? wide.bottom : b.bottom;
@@ -2051,7 +2059,8 @@ export function createPages(view, session, { sheet, scope }) {
       let forced = false;
       let sectStart = false;
       if (k > 0 && (breakPending || breakBefore(b.node) || (sect && sect.page)) && !firstOnPage) {
-        target = cols && !lineSplits && (breakPending ? breakKind === 'page' : true) ? p + cols.num - (p % cols.num) : p + 1;
+        const g = cols ? { P: 0, num: cols.num } : inReg;
+        target = g && (breakPending ? breakKind === 'page' : !!cols && !lineSplits) ? p + g.num - ((p - (g.P ?? 0)) % g.num) : p + 1;
         if (sect && sect.parity) target = parityPage(target, sect.parity);
         forced = !breakPending; // after a manual page break Word drops the space before, as at a natural break
         sectStart = forced && !!(sect && sect.page) && !breakBefore(b.node);
@@ -2079,17 +2088,19 @@ export function createPages(view, session, { sheet, scope }) {
         target = p + 1;
         overflow = true;
       }
-      else if (cols && !lineSplits && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && (() => {
+      else if (((cols && !lineSplits) || inReg) && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && (() => {
         // A page or column break inside a paragraph in newspaper columns: its lines from the break go on at the top of the
         // next page's first column, or of the next column, as in Word (its text after a page break had stayed in the
         // column, and what followed went on in the next column of the same page).
         const lines = paragraphLines(b);
         const at = lines ? lines.findIndex((l, n) => n > 0 && l.forced) : -1;
         if (at <= 0) return false;
-        const to = breakKindOf(b.node) === 'page' ? cols.num - (p % cols.num) : 1;
+        const g = cols ? { P: 0, num: cols.num } : inReg;
+        const to = breakKindOf(b.node) === 'page' ? g.num - ((p - (g.P ?? 0)) % g.num) : 1;
         const cs = { cut: lines[at].top - b.top, height: b.bottom - b.top, delta: contentTop(p + to) - (lines[at].top + shift), to };
         colSplits.set(b.i, cs);
         notesByCol(b, p, cs);
+        if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut });
         const nb = blocks[k + 1];
         if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
         breakPending = false;
@@ -2181,7 +2192,7 @@ export function createPages(view, session, { sheet, scope }) {
           overflow = true;
         }
       }
-      breakPending = !lineSplits && hasPageBreak(b.node);
+      breakPending = (!lineSplits || !!inReg) && hasPageBreak(b.node);
       breakKind = breakKindOf(b.node);
       if (target == null) continue;
       // Keep with next: headings at the bottom of a page move with the block they introduce.
@@ -2210,7 +2221,7 @@ export function createPages(view, session, { sheet, scope }) {
         colSplits.delete(blocks[n].i);
       }
       k = m; // re-check everything after the moved block
-      breakPending = !lineSplits && hasPageBreak(moved.node);
+      breakPending = (!lineSplits || regs.some((r) => m >= r.k0 && m < r.k1)) && hasPageBreak(moved.node);
       breakKind = breakKindOf(moved.node);
       if (lineSplits && moved.node.type === schema.nodes.paragraph && (hasPageBreak(moved.node) || moved.bottom + shift > contentBottom(target) + 1)) {
         const split = splitParagraph(moved, shift, true, true);
