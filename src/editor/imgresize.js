@@ -14,9 +14,9 @@ const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN = 8; // px
 const LINES = /^(?:line|straightConnector1)$/;
 
-/** How far a drawing's shape or group is turned (its a:xfrm rot), in degrees clockwise: 0 for a picture or chart. */
+/** How far a drawing's shape, group or picture is turned (its a:xfrm rot), in degrees clockwise: 0 for a chart. */
 export function turnOf(xml) {
-  const rot = Number(/<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml || '')?.[1] || 0) / 60000;
+  const rot = Number(/<(?:wps:spPr|wpg:grpSpPr|pic:spPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml || '')?.[1] || 0) / 60000;
   return ((rot % 360) + 360) % 360;
 }
 
@@ -49,7 +49,7 @@ export function imageResizePlugin() {
         d.dataset.h = h;
         box.append(d);
       }
-      // The rotate handle, above the top edge's middle (a shape's, not a line's or a picture's), as Word's.
+      // The rotate handle, above the top edge's middle (a shape's or a picture's, not a line's), as Word's.
       const rotH = document.createElement('div');
       rotH.className = 'odx-imgsize-rot';
       rotH.dataset.kind = 'rot';
@@ -123,7 +123,7 @@ export function imageResizePlugin() {
         box.classList.toggle('odx-imgsize-move', !!target);
         box.classList.toggle('odx-imgsize-line', !!target?.info?.line);
         // (Shapes and groups turn; a line turns by its ends, a picture or chart not at all here.)
-        box.classList.toggle('odx-imgsize-turns', !!target && isShape(target.node) && !target.info?.line && /<a:xfrm\b/.test(target.node.attrs.xml || ''));
+        box.classList.toggle('odx-imgsize-turns', !!target && turnable(target.node) && !target.info?.line);
         if (target) target.img.classList.add('odx-sized');
         place();
         if (target) setTimeout(place, 300); // again once pagination has moved things
@@ -303,7 +303,7 @@ export function imageResizePlugin() {
           deg = ((deg % 360) + 360) % 360;
           // (Its own turn replaced in its transform, a float's move back kept.)
           const m = turnedNow && turnedNow !== 'none' ? new DOMMatrix(turnedNow) : null;
-          img.style.transform = `${m ? `translate(${m.e}px, ${m.f}px) ` : ''}rotate(${deg}deg)`;
+          img.style.transform = `${m ? `translate(${m.e}px, ${m.f}px) ` : ''}rotate(${deg}deg)${flips(node.attrs.xml)}`;
           place(target.info, null, deg);
         }, () => {
           img.style.transform = base;
@@ -403,6 +403,10 @@ export function imageResizePlugin() {
 // A shape (a text box, a drawing): its own frame and text are resized too, the text wrapped again (docx.js
 // resizeShape), not the picture of it stretched. A picture just takes the new size.
 const isShape = (node) => /<(?:wps|wpg):|txbxContent/.test(node.attrs.xml || '');
+// A shape (not a line) or a picture with a frame of its own to turn (pic:spPr's a:xfrm), as Word's rotate handle.
+const turnable = (node) => (isShape(node) || /<pic:pic\b/.test(node.attrs.xml || '')) && /<a:xfrm\b/.test(node.attrs.xml || '') && !node.attrs.chart;
+// A picture's flips, kept in its transform while it's turned by hand.
+const flips = (xml) => { const x = /<pic:spPr\b[^>]*>\s*<a:xfrm\b([^>]*)>/.exec(xml || '')?.[1] || ''; return `${/flipH="(1|true)"/.test(x) ? ' scaleX(-1)' : ''}${/flipV="(1|true)"/.test(x) ? ' scaleY(-1)' : ''}`; };
 function sized(view, node, width, height) {
   const r = isShape(node) && view.odx?.session?.resizeShape(node.attrs.xml, width, height);
   return r ? { ...node.attrs, ...r } : { ...node.attrs, width, height };
@@ -427,7 +431,9 @@ export function shapeKeysPlugin() {
     props: {
       handleKeyDown(view, e) {
         const sel = view.state.selection;
-        if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image' || !isShape(sel.node) || view.odx?.readOnly) return false;
+        if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image' || view.odx?.readOnly) return false;
+        // (A picture: only turned, with Alt+Left/Right; the rest is a shape's.)
+        if (!isShape(sel.node) && !(turnable(sel.node) && e.altKey && /^Arrow(Left|Right)$/.test(e.key))) return false;
         if (e.key === 'Escape') { view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, sel.to))); return true; }
         const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
         if (!dir) return false;

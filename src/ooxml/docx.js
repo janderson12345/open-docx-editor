@@ -750,7 +750,7 @@ export class DocxSession {
   rotateShape(runXml, deg) {
     const turn = Math.round((((deg % 360) + 360) % 360) * 60000) % 21600000;
     let found = false;
-    let xml = runXml.replace(/(<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm)\b([^>]*?)(\/?>)/, (m, a, attrs, end) => {
+    let xml = runXml.replace(/(<(?:wps:spPr|wpg:grpSpPr|pic:spPr)\b[^>]*>\s*<a:xfrm)\b([^>]*?)(\/?>)/, (m, a, attrs, end) => {
       found = true;
       return `${a}${attrs.replace(/\s+rot="[^"]*"/, '')}${turn ? ` rot="${turn}"` : ''}${end}`;
     });
@@ -1041,10 +1041,14 @@ function base64(bytes) {
  */
 function turnRoom(xml, reset = false) {
   if (!/<wp:(?:inline|anchor)\b/.test(xml)) return xml;
-  const deg = Number(/<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml)?.[1] || 0) / 60000;
+  let deg = Number(/<(?:wps:spPr|wpg:grpSpPr|pic:spPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml)?.[1] || 0) / 60000;
   const ext = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(xml);
   if (!ext || (!(deg % 360) && !reset)) return xml;
-  const w = Number(ext[1]), h = Number(ext[2]);
+  let w = Number(ext[1]), h = Number(ext[2]);
+  // A picture turned a quarter (45 to 135 degrees, or 225 to 315) takes its turned box's room (reader.js turned): the room
+  // round that, as Word sets it (none at 90).
+  const q = ((deg % 180) + 180) % 180;
+  if (/<pic:spPr\b/.test(xml) && !/<wps:spPr\b/.test(xml) && q >= 45 && q < 135) { [w, h] = [h, w]; deg -= 90; }
   const a = (deg * Math.PI) / 180;
   const c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
   // (The outline: its own width, or the theme's for the shape's style, Office's 0.5, 1 and 1.5pt.)

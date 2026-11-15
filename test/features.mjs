@@ -936,6 +936,34 @@ const fontsLoad = await page.evaluate(async () => {
 });
 check(fontsLoad.href === '/dist/fonts/fonts.css' && fontsLoad.rules > 20 && fontsLoad.loaded >= 1, `stand-in fonts linked from fonts.base and loaded when used (${JSON.stringify(fontsLoad)})`);
 
+// Shapes' text in the stand-in fonts: the SmartArt (theme font Aptos, missing here and on CI) shown with the Aptos
+// stand-in embedded in its picture, the node keeping the picture as drawn.
+await open('smartart.docx');
+await page.waitForFunction(() => [...document.querySelectorAll('.odx-content img')].some((i) => (i.getAttribute('src') || '').includes('%40font-face')), null, { timeout: 8000 }).catch(() => {});
+const svgFonts = await page.evaluate(() => {
+  const img = [...document.querySelectorAll('.odx-content img')].find((i) => (i.getAttribute('src') || '').startsWith('data:image/svg+xml'));
+  const shown = decodeURIComponent(img?.getAttribute('src').split(',')[1] || '');
+  let nodeSrc = '';
+  window.odx.view.state.doc.descendants((n) => { if (!nodeSrc && n.type.name === 'image') nodeSrc = n.attrs.src || ''; });
+  return { embedded: /@font-face\{font-family:"odx-aptos"[^}]*src:url\(data:/.test(shown), named: /odx-aptos/.test(shown), nodeClean: !!nodeSrc && !nodeSrc.includes('font-face') };
+});
+check(svgFonts.embedded && svgFonts.named && svgFonts.nodeClean, `a shape's text drawn in the stand-in font embedded in its picture, the document unchanged (${JSON.stringify(svgFonts)})`);
+
+// A picture turned with Alt+Right (15 degrees each), as Word's: its pic:spPr a:xfrm rot and the room round it written
+// as Word writes them, drawn turned; at 90 degrees it takes its turned box's room (taller than wide, no effect extent).
+await open('rich.docx');
+const picAt = await page.evaluate(() => { let at = -1; window.odx.view.state.doc.descendants((n, pos) => { if (at < 0 && n.type.name === 'image' && /<pic:pic\b/.test(n.attrs.xml)) at = pos; }); const r = window.odx.view.nodeDOM(at).getBoundingClientRect(); return { at, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await page.mouse.click(picAt.x, picAt.y);
+await page.waitForTimeout(300);
+const picTurn = async (n) => {
+  for (let i = 0; i < n; i++) { await page.keyboard.press('Alt+ArrowRight'); await page.waitForTimeout(120); }
+  return page.evaluate((at) => { const n = window.odx.view.state.doc.nodeAt(at); const img = window.odx.view.nodeDOM(at); const r = img.getBoundingClientRect(); return { rot: /<pic:spPr\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(\d+)"/.exec(n.attrs.xml)?.[1], fx: /<wp:effectExtent\b[^>]*\bl="(\d+)"[^>]*\bt="(\d+)"/.exec(n.attrs.xml)?.slice(1).join(','), turned: /rotate\((\d+)deg\)/.exec(img.style.transform)?.[1], handle: !!document.querySelector('.odx-imgsize-turns'), wide: Math.round(r.width), tall: Math.round(r.height) }; }, picAt.at);
+};
+const pic30 = await picTurn(2);
+const pic90 = await picTurn(4);
+check(pic30.rot === '1800000' && pic30.fx === '66675,247650' && pic30.turned === '30' && pic30.handle && pic90.rot === '5400000' && pic90.fx === '0,0' && pic90.turned === '90' && pic90.tall > pic90.wide,
+  `a picture turned with Alt+Right: written and drawn as Word does (${JSON.stringify({ pic30, pic90 })})`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
