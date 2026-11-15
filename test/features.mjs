@@ -116,6 +116,15 @@ check(f1[0] && f1[0].parts.length === 1 && f1[0].parts[0].ids.join() === '1,2,3'
 await open('footnotes-separator-rtl.docx');
 const fs2 = await bands();
 check(fs2[0] && fs2[0].sep[0] === 528 && fs2[0].sep[1] === 720, `a right-to-left separator at the right (${fs2[0]?.sep})`);
+// Compatibility mode 14 (Word 2010): each column its own note area and separator, under the column of the references
+// (Word: page 1's right column notes 1 and 2, its separator at x 324pt; the left column note 3, at x 72pt).
+await open('footnotes-columns-compat14.docx');
+const c14 = await page.evaluate(() => {
+  const s = document.querySelector('.odx-sheets > .odx-sheet');
+  const sr = s.getBoundingClientRect();
+  return [...s.querySelectorAll('.odx-notes')].map((b) => ({ x: Math.round(b.getBoundingClientRect().left - sr.left), sep: Math.round(b.querySelector('.odx-note-sep').getBoundingClientRect().left - sr.left), ids: [...b.querySelectorAll('.odx-note')].map((n) => n.dataset.id).join() })).sort((a, b) => b.x - a.x);
+});
+check(c14.length === 2 && c14[0].x === 432 && c14[0].ids === '1,2' && c14[1].x === 96 && c14[1].ids === '3', `compat 14: a note area under each column (${JSON.stringify(c14)})`);
 
 await open('watermark-text.docx');
 const wm = await page.evaluate(() => [...document.querySelectorAll('.odx-sheet > img')].map((i) => ({ t: getComputedStyle(i).transform, w: i.width })));

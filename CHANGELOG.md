@@ -49,6 +49,9 @@
 - **`ribbon: 'simple'`**: a page can start the editor with the one-line simplified ribbon (`'classic'`: the full one)
   instead of the user's last choice in the browser; the ribbon's own button still switches, and `editor.setRibbon()`
   and `editor.ribbon` change and read it. Also on the React, Vue and Angular components, and the demo's `?ribbon=`.
+- **Footnotes in columns of older documents** (compatibility mode under 15, Word 2010 and before): each column has
+  its own note area and separator under it, holding the notes referenced in it, and only that column is cut at it,
+  as Word lays them out for those documents (checked against Word's print of a compat-14 document).
 - **Balanced columns as Word balances them**: a section of columns before a continuous break is cut no lower than it
   must be for its last column to fit, as Word does (a paragraph keeping two lines a side had moved whole to the last
   column and overfilled it), and what follows starts a line under the lowest column's last line, not half a leading
