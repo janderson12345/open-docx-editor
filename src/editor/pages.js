@@ -965,10 +965,11 @@ export function createPages(view, session, { sheet, scope }) {
     if (at <= 0) return null;
     const cut = lines[at].top - b.top;
     // A paragraph longer than the next column too goes on in the one after, and so on: cut again at each column's
-    // foot, two lines kept on each side (one-section documents of equal columns).
+    // foot, two lines kept on each side (columns of equal widths).
     const parts = [cut];
     let from = at;
-    for (let c = 1; cols && !cols.unequal && c < 64; c++) {
+    const cg = cols || colGeo(p); // (in a section of columns among others too)
+    for (let c = 1; cg && !cg.unequal && c < 64; c++) {
       const room = contentBottom(p + c) - contentTop(p + c) + slack;
       const top = lines[from].top - lead;
       let j = lines.findIndex((l, i) => i > from && l.bottom - (i < lines.length - 1 ? inset : 0) - top + (i === lines.length - 1 ? bandAfter(p + c, b.node) : 0) > room);
@@ -988,7 +989,7 @@ export function createPages(view, session, { sheet, scope }) {
   }
   // A split block's carried parts: [{ off (columns on), cut, stop (px from its top, null: its foot), h }].
   const carriedOf = (cs) => (cs.parts
-    ? cs.parts.map((cut, i) => { const stop = cs.parts[i + 1] ?? null; return { off: i + 1, cut, stop, h: (stop ?? cs.height) - cut + (cs.lift || 0) }; })
+    ? cs.parts.map((cut, i) => { const stop = cs.parts[i + 1] ?? null; return { off: i + 1, cut, stop, h: (stop ?? cs.height) - cut + (cs.lift || 0) + (cs.head || 0) }; })
     : [{ off: cs.to || 1, cut: cs.cut, stop: null, h: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut) + (cs.head || 0) }]);
 
   // Columns of their own widths: a paragraph going on in a column of another width is laid out again at that width, as
@@ -1125,7 +1126,21 @@ export function createPages(view, session, { sheet, scope }) {
     while (h < b.node.childCount && isHeader(b.node.child(h))) h++;
     const hb = h && h < trs.length ? trs[h].getBoundingClientRect().top - top0 : 0;
     const head = hb && cut >= hb - 0.5 ? hb : 0; // (the header rows drawn again above what goes on, once the cut is past them)
-    return { cut, head, height: b.bottom - b.top, delta: contentTop(p + 1) + head - (b.top + shift + cut) };
+    // A table longer than the next column too goes on in the one after, and so on: cut again at a row's top at each
+    // column's foot (columns of equal widths), its header rows again above each part.
+    const parts = [cut];
+    const cg = cols || colGeo(p);
+    for (let c = 1; cg && !cg.unequal && c < 64; c++) {
+      const from = parts[parts.length - 1];
+      const fit = contentBottom(p + c) - contentTop(p + c) - head + 1;
+      const j = trs.findIndex((tr) => tr.getBoundingClientRect().bottom - top0 - from > fit);
+      if (j < 0) break;
+      const next = trs[j].getBoundingClientRect().top - top0;
+      if (next <= from + 0.5) break; // (a row taller than a column: it stays whole)
+      parts.push(next);
+    }
+    const lastCut = parts[parts.length - 1];
+    return { cut, head, parts: parts.length > 1 ? parts : undefined, height: b.bottom - b.top, delta: contentTop(p + parts.length) + head - (b.top + shift + lastCut) };
   }
 
   function splitParagraph(b, shift, blockFirstOnPage, moved = false) {
@@ -1536,11 +1551,13 @@ export function createPages(view, session, { sheet, scope }) {
       bottoms.set(v, Math.max(bottoms.get(v) ?? -Infinity, x.bottom));
       ends.set(v, Math.max(ends.get(v) ?? -Infinity, x.bottom + (x.carry ? 0 : spaceAfter(blocks[j].node)))); // (a paragraph cut there has none)
       vEnd = Math.max(vEnd, v);
-      if (x.carry) {
-        const y = contentTop(v + 1) + x.carry;
-        bottoms.set(v + 1, Math.max(bottoms.get(v + 1) ?? -Infinity, y));
-        ends.set(v + 1, Math.max(ends.get(v + 1) ?? -Infinity, y + spaceAfter(blocks[j].node)));
-        vEnd = Math.max(vEnd, v + 1);
+      // (Its parts carried on, each at a column's top: the last ends with its space after.)
+      const parts = x.parts || (x.carry ? [{ off: 1, h: x.carry, stop: null }] : []);
+      for (const q of parts) {
+        const y = contentTop(v + q.off) + q.h;
+        bottoms.set(v + q.off, Math.max(bottoms.get(v + q.off) ?? -Infinity, y));
+        ends.set(v + q.off, Math.max(ends.get(v + q.off) ?? -Infinity, y + (q.stop == null ? spaceAfter(blocks[j].node) : 0)));
+        vEnd = Math.max(vEnd, v + q.off);
       }
     }
     const sheet = Math.floor((vEnd - re.P) / re.num);
@@ -2152,7 +2169,7 @@ export function createPages(view, session, { sheet, scope }) {
           }
           colSplits.set(b.i, cs);
           notesByCol(b, p, cs);
-          if (inReg) rec.set(k, { top, bottom: top + cs.cut - (cs.lift || 0), carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut + (cs.lift || 0)) + (cs.head || 0) });
+          if (inReg) rec.set(k, { top, bottom: top + cs.cut - (cs.lift || 0), carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut + (cs.lift || 0)) + (cs.head || 0), parts: cs.parts ? carriedOf(cs) : null });
           const nb = blocks[k + 1];
           if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
           continue;
@@ -2167,7 +2184,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (cs) {
           colSplits.set(b.i, cs);
           notesByCol(b, p, cs);
-          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0) });
+          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0), parts: cs.parts ? carriedOf(cs) : null });
           const nb = blocks[k + 1];
           if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
           continue;

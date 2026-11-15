@@ -2,19 +2,12 @@
 // out as Word's own PDF of it showed: picture bullets, line numbers, watermarks, a section's vertical alignment,
 // emphasis marks and run borders making their lines taller, right-to-left paragraphs, a Strict document.
 import { chromium } from 'playwright';
-import http from 'node:http';
 import fs from 'node:fs';
-import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
+import { serveDemo, launchOptions } from './browser.mjs';
 
-const root = path.resolve('demo');
-const server = http.createServer((req, res) => {
-  const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
-  if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(p)] || 'application/octet-stream' });
-  fs.createReadStream(p).pipe(res);
-}).listen(0);
-const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {};
+const { server } = serveDemo();
+const launch = launchOptions();
 const browser = await chromium.launch(launch);
 const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
 const errors = [];
@@ -90,6 +83,17 @@ const longCols = await page.evaluate(() => {
   return { sheets: sheets.length, num: low([...document.querySelectorAll('.odx-lnnum')]), parts: document.querySelectorAll('.odx-repeat').length };
 });
 check(longCols.sheets === 3 && longCols.num < 950 && longCols.parts >= 2, `a paragraph over three columns: ${longCols.parts} carried parts, 3 pages, the lowest number at ${longCols.num.toFixed(0)}px`);
+// The same in a section of columns after a one-column section, and a table longer than a column (Word: rows 1-24,
+// 25-49 on page 1, 50-74, 75-90 on page 2).
+await open('columns-long-paragraph-section.docx');
+const longSect = await page.evaluate(() => ({ sheets: document.querySelectorAll('.odx-sheets > .odx-sheet').length, parts: document.querySelectorAll('.odx-repeat').length }));
+check(longSect.sheets === 3 && longSect.parts >= 2, `a long paragraph in a section of columns among others: ${longSect.parts} carried parts, ${longSect.sheets} pages`);
+await open('columns-long-table.docx');
+const longTable = await page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  return { sheets: sheets.length, parts: document.querySelectorAll('.odx-repeat').length };
+});
+check(longTable.sheets === 2 && longTable.parts === 3, `a table over four columns: ${longTable.parts} carried parts, ${longTable.sheets} pages`);
 
 // Footnotes in columns (Word's prints of these, odx-test/mkrtlfootnotes.ps1): one band across each page's foot, in the
 // section's columns (the first on the right in a right-to-left section), each note on the page of its reference; one
