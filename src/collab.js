@@ -5,8 +5,8 @@
 //
 // What's shared: the body, including tracked changes; the comments (bindComments); headers, footers and notes as each
 // is closed after editing, header and footer parts and pictures one editor adds (bindStories), and the document's own
-// section settings (bindDoc). Styles and numbering definitions added after opening aren't: they're part of the .docx
-// each editor opened.
+// section settings (bindDoc); and the style and numbering definitions an editor adds or changes after opening (a TOC's
+// styles, a new list's w:abstractNum and w:num: bindDefinitions), which the .docx each editor opened doesn't have.
 import * as Y from 'yjs';
 import { ySyncPlugin, ySyncPluginKey, yCursorPlugin, yUndoPlugin, undo, redo, prosemirrorToYXmlFragment } from 'y-prosemirror';
 
@@ -25,6 +25,7 @@ export function collaboration(ydoc, { awareness = null, user: who = { name: 'Aut
   const comments = ydoc.getMap('odx-comments'); // comment id -> { author, date, text, parentId, done... }
   const stories = ydoc.getMap('odx-stories'); // "story:<rId>" or "note:<kind>:<id>" -> its document's JSON
   const docAttrs = ydoc.getMap('odx-doc'); // the document node's attributes: sectPr
+  const defs = ydoc.getMap('odx-defs'); // "style:<styleId>", "abstractNum:<id>" or "num:<numId>" -> its element's XML
   if (awareness) awareness.setLocalStateField('user', user);
   return {
     ydoc,
@@ -40,6 +41,7 @@ export function collaboration(ydoc, { awareness = null, user: who = { name: 'Aut
         fragment.delete(0, fragment.length);
         comments.clear(); // (the new document's own come with its editor: bindComments)
         stories.clear(); // (and its headers, footers and notes are the file's)
+        defs.clear(); // (and its styles and lists)
         docAttrs.set('sectPr', doc.attrs.sectPr ?? null);
         prosemirrorToYXmlFragment(doc, fragment);
         files.set('docx', bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
@@ -145,6 +147,26 @@ export function collaboration(ydoc, { awareness = null, user: who = { name: 'Aut
         push(attrs) { if (docAttrs.get('sectPr') !== attrs.sectPr) docAttrs.set('sectPr', attrs.sectPr); },
         stop() { docAttrs.unobserve(watch); },
       };
+    },
+    /**
+     * Shares the style and numbering definitions editors add or change after opening (session.onAddDefinitions): the
+     * room's are applied to `session` now (those added before this editor joined) and as they arrive, and `onRemote()`
+     * runs after each, to draw the text in them again. Returns { stop() }.
+     */
+    bindDefinitions(session, onRemote) {
+      const apply = (keys) => {
+        const list = [...keys].filter((k) => defs.has(k)).map((k) => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), xml: defs.get(k) }; });
+        if (!list.length) return;
+        session.addSharedDefinitions(list);
+        onRemote();
+      };
+      apply(defs.keys());
+      const watch = (e, tr) => { if (!tr.local) apply(e.keysChanged); };
+      defs.observe(watch);
+      session.onAddDefinitions = (list) => ydoc.transact(() => {
+        for (const d of list) if (defs.get(`${d.kind}:${d.id}`) !== d.xml) defs.set(`${d.kind}:${d.id}`, d.xml);
+      }, 'odx-defs');
+      return { stop() { defs.unobserve(watch); session.onAddDefinitions = null; } };
     },
     /** Calls `fn(bytes)` when someone else opens a document in the room; returns a function to stop. */
     onDocument(fn) {
