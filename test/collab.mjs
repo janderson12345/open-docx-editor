@@ -116,6 +116,56 @@ const bPics = unzipSync(new Uint8Array(Buffer.from(await b.evaluate(() => [...wi
 const media = Object.keys(bPics).filter((n) => /^word\/media\//.test(n) && bPics[n].length === PNG.length);
 const rels = strFromU8(bPics['word/_rels/document.xml.rels']);
 check(media.length === 1 && rels.includes(media[0].replace('word/', '')), `B's saved file has the picture (${media.join(', ')})`);
+// Styles and lists A adds: a new list (I., II., which form.docx has no numbering for) on the first paragraph, and a
+// table of contents (its TOC Heading and TOC 1-3 styles, which form.docx lacks). B draws them as A does without
+// reopening, and B's saved styles.xml and numbering.xml have them; so does an editor joining after.
+await a.evaluate(() => {
+  const v = window.odx.view;
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1)));
+  window.lists.setList(v.odx.session, window.lists.LIST_LIBRARY.numbering.find((d) => d.label === 'I.').levels)(v.state, v.dispatch);
+});
+const numId = await a.evaluate(() => window.odx.view.state.doc.firstChild.attrs.numId);
+const label = (page) => page.evaluate(() => { const v = window.odx.view; return v.nodeDOM(0)?.getAttribute('data-label') ?? null; });
+const labelA = await label(a);
+check(labelA === 'I.', `A's new list numbers its paragraph (${labelA})`);
+check(await until(b, (id) => window.odx.view.state.doc.firstChild.attrs.numId === id && window.odx.view.nodeDOM(0)?.getAttribute('data-label') === 'I.', numId), `B numbers the paragraph in A's new list (${await label(b)})`);
+await a.evaluate(() => { const v = window.odx.view; v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1))); window.toc.insertToc(v); });
+// The TOC Heading paragraph as drawn: its style's font size, colour and weight.
+const heading = (page) => page.evaluate(() => {
+  const v = window.odx.view;
+  let pos = -1;
+  v.state.doc.forEach((n, p) => { if (pos < 0 && n.attrs.styleId === 'TOCHeading') pos = p; });
+  const el = pos >= 0 && v.nodeDOM(pos);
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  return [cs.fontSize, cs.color, cs.fontWeight, cs.marginTop].join(' ');
+});
+// (And the document's last paragraph, in its Normal style, to tell them apart.)
+const normal = await a.evaluate(() => { const d = window.odx.view.state.doc; const cs = getComputedStyle(window.odx.view.nodeDOM(d.content.size - d.lastChild.nodeSize)); return [cs.fontSize, cs.color, cs.fontWeight, cs.marginTop].join(' '); });
+const headA = await heading(a);
+check(!!headA && headA !== normal, `A draws its TOC Heading in its style (${headA} | Normal ${normal})`);
+check(await until(b, (h) => {
+  const v = window.odx.view;
+  let pos = -1;
+  v.state.doc.forEach((n, p) => { if (pos < 0 && n.attrs.styleId === 'TOCHeading') pos = p; });
+  const el = pos >= 0 && v.nodeDOM(pos);
+  if (!el) return false;
+  const cs = getComputedStyle(el);
+  return [cs.fontSize, cs.color, cs.fontWeight, cs.marginTop].join(' ') === h;
+}, headA), `B draws the TOC Heading as A does (${await heading(b)})`);
+const defsSaved = (files) => {
+  const styles = strFromU8(files['word/styles.xml']);
+  const numbering = strFromU8(files['word/numbering.xml']);
+  const num = new RegExp(`<w:num w:numId="${numId}"[^>]*>\\s*<w:abstractNumId w:val="(\\d+)"`).exec(numbering);
+  return ['TOCHeading', 'TOC1', 'TOC2', 'TOC3'].every((id) => styles.includes(`w:styleId="${id}"`)) && !!num &&
+    new RegExp(`<w:abstractNum [^>]*w:abstractNumId="${num[1]}"[\\s\\S]*?<w:numFmt w:val="upperRoman"`).test(numbering);
+};
+const bDefs = unzipSync(new Uint8Array(Buffer.from(await b.evaluate(() => [...window.odx.save()]))));
+check(defsSaved(bDefs), "B's saved styles.xml and numbering.xml have A's TOC styles and new list");
+const c = await open('C');
+check(await until(c, (id) => { const v = window.odx.view; let pos = -1; v.state.doc.forEach((n, p) => { if (pos < 0 && n.attrs.numId === id) pos = p; }); return pos >= 0 && v.nodeDOM(pos)?.getAttribute('data-label') === 'I.'; }, numId), 'an editor joining after numbers the paragraph in the new list');
+check(await heading(c) === headA, `... and draws the TOC Heading as A does (${await heading(c)})`);
+check(defsSaved(unzipSync(new Uint8Array(Buffer.from(await c.evaluate(() => [...window.odx.save()]))))), "... and its saved file has them");
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 
 await browser.close();
