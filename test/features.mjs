@@ -68,8 +68,12 @@ const lnAt = (n) => page.evaluate((t) => {
 await open('line-numbers-columns.docx');
 const colNums = await page.evaluate(() => [...document.querySelectorAll('.odx-lnnum')].map((s) => s.textContent));
 const n35 = await lnAt(35);
+// Column 1's numbers (right edge at 63pt, 84px) stop at its last line: carried lines' numbers had gone on below it,
+// in the bottom margin (35, 36). (The count is a line either way with other systems' fonts: Edge on Windows draws
+// Word's 139.)
+const col1Max = await page.evaluate(() => { const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect()); return Math.max(...[...document.querySelectorAll('.odx-lnnum')].filter((s) => { const r = s.getBoundingClientRect(); const q = sheets.find((x) => r.top >= x.top && r.top < x.bottom); return q && Math.abs(r.right - q.left - 84) < 2; }).map((s) => Number(s.textContent))); });
 // (Word: 1-68 on pages 1 and 2, 1-3 on page 3; 35 is column 2's first line, its right edge at 315.1pt, 420px.)
-check(colNums.length === 139 && n35.length === 2 && n35.every((p) => Math.abs(p.right - 420) < 1.5 && p.top < 120), `line numbers in columns: ${colNums.length} drawn, 35 atop column 2 (${n35.map((p) => `${p.right.toFixed(1)},${p.top.toFixed(0)}`).join(' ')})`);
+check(Math.abs(colNums.length - 139) <= 2 && col1Max <= 35 && n35.length === 2 && n35.every((p) => Math.abs(p.right - 420) < 1.5 && p.top < 120), `line numbers in columns: ${colNums.length} drawn, column 1 up to ${col1Max}, 35 atop column 2 (${n35.map((p) => `${p.right.toFixed(1)},${p.top.toFixed(0)}`).join(' ')})`);
 await open('line-numbers-rtl.docx');
 const r1 = (await lnAt(1))[0], r35 = (await lnAt(35))[0];
 // (Word: left edges at 549.2pt and 297.2pt, 9pt right of each column.)
