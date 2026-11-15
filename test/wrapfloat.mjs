@@ -115,6 +115,23 @@ const onRight = await hfBeside('footer-wrap-right.docx', '.odx-footer img');
 check(!onRight.left && onRight.right > 4 && !onRight.inside.length, `one wrapped "right": the body's text on its right only (${onRight.left} left, ${onRight.right} right, in its room: ${onRight.inside.join(' ') || 'none'})`);
 const head = await hfBeside('header-wrap.docx', '.odx-header img');
 check(head.left > 8 && !head.right && !head.inside.length && head.hfText < 1 && Math.abs(head.bodyTop - 96) < 2, `a header's tight-wrapped shape below its paragraph: the body's text on its left, the header's text and the body's start as without it (${head.left} left, ${head.right} right; header text at ${head.hfText.toFixed(1)}px, body at ${head.bodyTop.toFixed(1)}px)`);
+// A float placed from the page's top, anchored in a paragraph that would end page 1 (pagefloat-word pf-early, made in
+// Word): lifted there it wraps the text above until its paragraph moves on, so it goes on with it, as Word lays it out:
+// the paragraph and its picture start page 2, page 1 keeping no picture.
+await page.setInputFiles('input[type=file]', 'test/fixtures/float-page-moved.docx');
+await page.waitForFunction(() => window.odx?.fileName === 'float-page-moved.docx');
+await page.waitForTimeout(3000);
+const moved = await page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheet')].map((s) => s.getBoundingClientRect());
+  const sheetOf = (y) => sheets.findIndex((r) => y >= r.top && y < r.bottom);
+  const lift = document.querySelector('.odx-lift img');
+  const anchor = [...document.querySelectorAll('.odx-content > p')].find((p) => p.querySelector('.odx-lifted'));
+  const rg = document.createRange();
+  rg.selectNodeContents(anchor);
+  const first = [...rg.getClientRects()].find((r) => r.height > 0 && r.width > 1);
+  return { lift: lift ? sheetOf(lift.getBoundingClientRect().top + 2) : null, anchor: first ? sheetOf(first.top) : null };
+});
+check(moved.lift === 1 && moved.anchor === 1, `a page-placed float whose paragraph it pushes on goes on with it, as Word (picture on sheet ${moved.lift}, its paragraph on sheet ${moved.anchor})`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();
