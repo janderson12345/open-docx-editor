@@ -11,7 +11,8 @@ import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
 import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
-import { shapesSvg, diagramSvg } from './shapes.js';
+import { shapesSvg, diagramSvg, unmeasured } from './shapes.js';
+import { redrawLater } from '../editor/svgfonts.js';
 import { PRESETS } from './presets.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
@@ -164,6 +165,19 @@ export class DocxSession {
 
   /** Shapes and groups drawn as an SVG data URL; their pictures are inlined as data URLs. */
   shapeUrl(drawing, relOf, width, height, pad = 0) {
+    unmeasured(); // (a drawing before that stopped part way)
+    const out = this._shapeUrl(drawing, relOf, width, height, pad);
+    // Text measured in a fallback while the stand-in font was still loading: drawn again once it has, on the page only.
+    const fonts = unmeasured();
+    const src = typeof out === 'string' ? out : out?.src;
+    if (fonts && src) {
+      const tall = (o) => (o && typeof o === 'object' ? o.height : height);
+      redrawLater(src, fonts, tall(out), () => { const again = this._shapeUrl(drawing, relOf, width, height, pad); unmeasured(); return again && { src: typeof again === 'string' ? again : again.src, height: tall(again) }; });
+    }
+    return out;
+  }
+
+  _shapeUrl(drawing, relOf, width, height, pad) {
     this._dataUrls ||= new Map();
     const image = (rId) => {
       const rel = rId && relOf(rId);
