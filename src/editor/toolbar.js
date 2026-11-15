@@ -27,7 +27,7 @@ import * as aw from './aiwrite.js';
 import { PRESETS, SHAPE_GALLERY } from '../ooxml/presets.js';
 import { geometryPaths } from '../ooxml/geometry.js';
 import { drawShape } from './drawshape.js';
-import { WORDART, wordArtItems } from '../ooxml/wordart.js';
+import { WORDART, wordArtItems, wordArtLook, wordArtColor } from '../ooxml/wordart.js';
 import { textEffectsCss } from '../ooxml/texteffects.js';
 import { fontStack, lineFactor } from '../ooxml/props.js';
 import { mergeFieldNames } from '../merge.js';
@@ -304,8 +304,9 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     const text = picked || 'Your text here';
     const font = s.theme?.minor || 'Aptos';
     const g = document.createElement('canvas').getContext('2d');
-    g.font = `48px ${fontStack(font)}`; // (36pt)
-    const width = Math.ceil(g.measureText(text).width + 19.2 + 2);
+    const look = wordArtLook(i);
+    g.font = `${look.bold ? 'bold ' : ''}48px ${fontStack(font)}`; // (36pt)
+    const width = Math.ceil(g.measureText(text).width + text.length * look.spacing * (4 / 3) + 19.2 + 4);
     const height = Math.ceil(48 * lineFactor(font) + 9.6);
     const cs = getComputedStyle(v.dom);
     const colW = v.dom.clientWidth - (parseFloat(cs.getPropertyValue('--odx-page-left')) || 96) - (parseFloat(cs.getPropertyValue('--odx-page-right')) || 96);
@@ -328,7 +329,7 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   }
   const wordArtGallery = () => [el('div', { class: 'odx-gallery odx-wordart' }, ...WORDART.map(([name], i) =>
     el('button', { type: 'button', class: 'odx-gal odx-wa', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); insertWordArt(i, name); } },
-      el('span', { 'aria-hidden': 'true', style: textEffectsCss(wordArtItems(i)).join(';') }, 'A'))))];
+      el('span', { 'aria-hidden': 'true', style: [`color:${wordArtColor(i, getView()?.odx?.session?.theme?.colors)}`, `font-weight:${wordArtLook(i).bold ? 'bold' : 'normal'}`, ...textEffectsCss(wordArtItems(i))].join(';') }, 'A'))))];
   // Picked with the mouse: drawn on the page by dragging, as in Word (drawshape.js). From the keyboard: in line at the caret.
   let drawing = null;
   function pickShape(prst, name, arrow, keyboard) {

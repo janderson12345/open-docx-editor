@@ -19,9 +19,9 @@
   colour pickers also wrote their handlers into the page as inline-script attributes (inert, but refused under a strict
   policy).
 - **WordArt.** Insert > WordArt puts the selected text, or "Your text here", in a floating text box as wide as its
-  text, in one of fifteen styles in the theme's colours (fills, outlines, shadows, glows, reflections, gradients),
-  open for typing; the box widens to fit what's typed. Saved as Word writes WordArt (checked by opening the files in
-  Word and comparing its print).
+  text, in one of Word's fifteen gallery styles (written exactly as Word writes each, in the document's theme colours),
+  open for typing; the box widens to fit what's typed. Word's own WordArt prints as in Word, its box as wide as its text
+  (checked against Word's print of all fifteen).
 - **Word 2010's text effects drawn**: a run's coloured, transparent, gradient or no fill, its outline, shadow, glow and
   reflection (w14:textFill, textOutline, shadow, glow, reflection), in the text and in text boxes, as Word draws them,
   with the extra room Word gives a line for a glow or reflection (within 0.1pt of Word's prints at 18 to 72pt). They

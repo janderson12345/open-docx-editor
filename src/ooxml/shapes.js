@@ -163,6 +163,10 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   const t = ins('tIns', 4.8);
   const r = ins('rIns', 9.6);
   const wrap = bodyPr?.getAttribute('wrap') !== 'none';
+  // Not wrapped and resized to fit (WordArt's box): Word makes the box as wide as its text, from its left edge, so
+  // centred or right-aligned lines line up against the widest line, not the box's saved width (Word's PDF of its
+  // gallery's styles: each at the box's left, in a box saved 2in wide).
+  const shrink = !wrap && !!child(bodyPr, 'spAutoFit');
   const out = [];
   let y = t;
   // One paragraph between x = L and R (`tbl`: the table style round it, whose paragraph settings beat Normal's).
@@ -209,7 +213,9 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       const font = wa(rf, 'ascii') || wa(rf, 'hAnsi') || (theme && ctx.theme?.[theme.startsWith('major') ? 'major' : 'minor']) || cs.font || st.font || font0;
       // Word 2010's text effects (WordArt's): fill, outline, shadow, glow (texteffects.js).
       const fx = svgTextEffects(rPr, (ctx.fxN = (ctx.fxN || 0) + 1), serializeXml);
-      const paint = fx?.paint || `fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"`;
+      // (An outline or shadow alone keeps the run's own colour: Word draws the letters in w:color.)
+      const own = `fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"`;
+      const paint = fx?.paint ? (/\bfill=/.test(fx.paint) ? fx.paint : `${own} ${fx.paint}`) : own;
       const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
       if (fx?.defs) out.push(`<defs>${fx.defs}</defs>`);
       for (const n of els(run)) {
@@ -253,6 +259,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     const contextual = child(pPr, 'contextualSpacing') ? !/^(0|false|off)$/.test(ctx2 || '') : !!st.pPr.contextualSpacing;
     if (contextual && prevStyle === (sid || '')) { y -= prevAfter; }
     else y += Math.max(0, before - prevAfter);
+    const widest = Math.max(0, ...lines.filter((q) => q.pieces.length).map((q) => q.pieces[q.pieces.length - 1].ink - (q === lines[0] ? first : left)));
     for (const ln of lines) {
       const one = ln.one || sizePx * lineF;
       const lineH = heightOf(one);
@@ -265,7 +272,8 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       // Centred and right-aligned lines move as a whole (trailing spaces don't count).
       const start = ln === lines[0] ? first : left;
       const ink = ln.pieces[ln.pieces.length - 1].ink;
-      const shift = align === 'center' ? (right - ink) / 2 - (ln.pieces[0].x - start) / 2 : align === 'right' || align === 'end' ? right - ink : 0;
+      const edge = shrink ? Math.min(right, start + widest) : right;
+      const shift = align === 'center' ? (edge - ink) / 2 - (ln.pieces[0].x - start) / 2 : align === 'right' || align === 'end' ? edge - ink : 0;
       for (const pc of ln.pieces) {
         const text = `<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
         out.push(text);

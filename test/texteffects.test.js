@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { w14Color, textEffectsCss, setThemeColors } from '../src/ooxml/texteffects.js';
-import { WORDART, wordArtItems } from '../src/ooxml/wordart.js';
+import { WORDART, wordArtItems, wordArtRPr } from '../src/ooxml/wordart.js';
 
 // Word 2010's text effects as Word writes them (odx-test/mkeffects14.ps1: Word's own XML for each effect set through
 // its Font object).
@@ -39,12 +39,16 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
 test('WordArt: a floating text box as wide as its text, its runs in the style\'s effects, read back with them', () => {
   const session = DocxSession.blank();
   assert.equal(WORDART.length, 15);
-  for (let i = 0; i < WORDART.length; i++) assert.equal(wordArtItems(i).map(([, x]) => x).join(''), WORDART[i][2], WORDART[i][0]);
-  const r = session.addWordArt('Your text here', 3, 295, 84, { x: 86, y: 0 });
+  for (let i = 0; i < WORDART.length; i++) assert.ok(WORDART[i][1].endsWith(wordArtItems(i).map(([, x]) => x).join('')), WORDART[i][0]);
+  const r = session.addWordArt('Your text here', 8, 295, 84, { x: 86, y: 0 });
   assert.match(r.xml, /<wp:anchor\b[^>]*behindDoc="0"[\s\S]*<wp:wrapNone\/>/);
   assert.match(r.xml, /<wps:cNvSpPr txBox="1"\/>[\s\S]*<a:noFill\/><a:ln><a:noFill\/><\/a:ln>/);
   assert.match(r.xml, /<wps:bodyPr\b[^>]*wrap="none"[\s\S]*<a:spAutoFit\/>/);
-  assert.match(r.xml, /<w:rPr xmlns:w14="[^"]+"><w:color w:val="FFFFFF" w:themeColor="background1"\/><w:sz w:val="72"\/>[\s\S]*<w14:glow w14:rad="63500">/);
+  // (Word's own: "Fill: White; Outline: Accent 1; Glow: Accent 1", bold, a glow of 3pt.)
+  assert.match(r.xml, /<w:pPr><w:jc w:val="center"\/><w:rPr xmlns:w14="[^"]+"><w:b\/><w:color w:val="70AD47"\/><w:spacing w:val="10"\/><w:sz w:val="72"\/>/);
+  assert.match(r.xml, /<w:r><w:rPr xmlns:w14="[^"]+"><w:b\/>[\s\S]*<w14:glow w14:rad="38100">/);
+  // A theme colour's value from the theme, lightened as Word does (accent 2 at 40%: Word's F6C5AC).
+  assert.match(wordArtRPr(2, 72, { accent2: 'E97132' }), /<w:color w:val="F6C6AD" w:themeColor="accent2" w:themeTint="66"\/>/);
   assert.equal(r.width, 295);
   assert.match(r.place, /position:absolute/);
   // Its text box's text as the editor edits it, its effects kept.
