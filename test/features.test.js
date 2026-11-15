@@ -46,8 +46,9 @@ test('Strict documents read as their Transitional form and save as Transitional'
 
 test('line numbering settings', () => {
   assert.equal(lineNumbering('<w:sectPr><w:pgSz/></w:sectPr>'), null);
-  assert.deepEqual(lineNumbering('<w:sectPr><w:lnNumType w:countBy="1" w:restart="newPage"/></w:sectPr>'), { countBy: 1, start: 0, distance: 24, restart: 'newPage' });
-  assert.deepEqual(lineNumbering('<w:lnNumType w:countBy="2" w:distance="567" w:start="4" w:restart="continuous"/>'), { countBy: 2, start: 4, distance: 37.8, restart: 'continuous' });
+  assert.deepEqual(lineNumbering('<w:sectPr><w:lnNumType w:countBy="1" w:restart="newPage"/></w:sectPr>'), { countBy: 1, start: 0, distance: 24, restart: 'newPage', rtl: false });
+  assert.deepEqual(lineNumbering('<w:lnNumType w:countBy="2" w:distance="567" w:start="4" w:restart="continuous"/>'), { countBy: 2, start: 4, distance: 37.8, restart: 'continuous', rtl: false });
+  assert.equal(lineNumbering('<w:sectPr><w:lnNumType w:countBy="1"/><w:cols w:num="2"/><w:bidi/></w:sectPr>').rtl, true);
 });
 
 test('a picture watermark is a washed-out picture placed on the page; text watermarks need a browser to draw', () => {
