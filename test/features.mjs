@@ -829,6 +829,27 @@ check(shp.length === 3 && /fill="#156082"/.test(rect.svg || '') && /<a:prstGeom 
   `Insert > Shapes: a rectangle from the keyboard, an arrow and an oval drawn by dragging, saved as Word's (${JSON.stringify({ shp: shp.map((s) => [s.w, s.h, Math.round(s.x - p0.x), Math.round(s.y - p0.y)]), anchors: anchors.length, afterUndo, drawingOn, drawingOff })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
+// Insert > WordArt: fifteen styles, each previewed in its effects; one picked puts "Your text here" in a floating text box,
+// open for typing with its text selected; what's typed replaces it, the box widening to fit, saved with the effects.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+await page.keyboard.type('A paragraph under the WordArt.');
+await page.click('.odx-rtab:text-is("Insert")');
+await page.click('button[title^="WordArt"]');
+const waGallery = await page.evaluate(() => [...document.querySelectorAll('.odx-pop .odx-wa')].map((b) => ({ name: b.title, shadow: getComputedStyle(b.firstChild).textShadow })));
+await page.click('.odx-pop .odx-wa[title="Fill: White; Outline: Accent 1; Glow: Accent 1"]');
+await page.waitForTimeout(400);
+const waEditing = await page.evaluate(() => !!document.querySelector('.odx-txbxedit') && String(getSelection()));
+await page.keyboard.type('Hello WordArt, a little longer');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+const waImg = await page.evaluate(() => { const i = document.querySelector('.odx-content img:not(.ProseMirror-separator)'); return i && { w: i.width, abs: getComputedStyle(i).position }; });
+const waXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/document.xml']);
+check(waGallery.length === 15 && waGallery[3].shadow !== 'none' && waEditing === 'Your text here' && waImg && waImg.w > 295 && waImg.abs === 'absolute'
+  && /<wp:anchor\b[\s\S]*?<wp:wrapNone\/>[\s\S]*?<w:t[^>]*>Hello WordArt, a little longer<\/w:t>/.test(waXml) && /<w14:glow\b[^>]*\bw14:rad="63500"/.test(waXml) && /wrap="none"[\s\S]*?<a:spAutoFit\/>/.test(waXml) && !/Your text here/.test(waXml),
+  `Insert > WordArt: picked, typed over, widened to fit, saved with its effects (${JSON.stringify({ styles: waGallery.length, waEditing, waImg })})`);
+await page.click('.odx-rtab:text-is("Home")');
+
 // The stand-in fonts: their stylesheet linked from fonts.base (here the demo's own copy), and the Aptos stand-in (Morrow
 // Sans's letters at Aptos's fitted widths) loaded from its file when asked for.
 const fontsLoad = await page.evaluate(async () => {

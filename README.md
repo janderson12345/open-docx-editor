@@ -110,7 +110,8 @@ fs.writeFileSync('out.docx', s.save());
   them shaped and in order when it has the real font (with the PDF standard fonts, Hebrew and Arabic come out as "?").
 - **The smaller things Word draws**, each checked against Word's own PDF of a test document (`test/fixtures/mkfeatures.mjs`):
   text and picture watermarks, legal numbering ("1.1.1" under a Roman "I."), picture bullets, text effects (outline,
-  shadow, emboss, imprint), emphasis marks, borders round runs of text, a section's vertical alignment (centred,
+  shadow, emboss, imprint, and Word 2010's: coloured, transparent and gradient fills, outlines, shadows, glows and
+  reflections, with the room Word gives a glow or reflection on its line), emphasis marks, borders round runs of text, a section's vertical alignment (centred,
   bottom, spread over the page), and line numbers (every line or every nth, restarting each page or section or going
   on, at the distance the section sets). They print and go into PDF export too.
 - **Fit text** (text spread or squeezed to a width, Word's Asian Layout > Fit Text), **numbering** in every common
@@ -161,7 +162,10 @@ fs.writeFileSync('out.docx', s.save());
 - **Shapes**: Insert > Shapes offers Word's shapes, a line and an arrow, in the theme's colours. Pick one with the mouse
   and drag on the page to draw it, as in Word (Shift: a square, a circle, a line at 15-degree steps; Ctrl: from its
   centre; a click: its usual size; Esc stops): it floats in front of the text where you drew it. Picked from the
-  keyboard, it goes in line with the text at the caret. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
+  keyboard, it goes in line with the text at the caret.
+- **WordArt**: Insert > WordArt offers fifteen styles in the theme's colours (fills, outlines, shadows, glows,
+  reflections, gradients). The selected text, or "Your text here", goes in a text box floating in front of the text,
+  open for typing; the box widens to fit what's typed, as Word's. Select a shape and drag a corner to resize it freely (Shift keeps its proportions), or its yellow handles to
   change it as Word's do (an arrow's head, a rounded rectangle's corners, a callout's pointer); a line has a handle at
   each end instead (Shift: at 15-degree steps). Turn one with its rotate handle (Shift: 15-degree steps) or Alt+Left
   and Alt+Right. Drag a picture or shape in line with the text by its body to move it to another place in the text
