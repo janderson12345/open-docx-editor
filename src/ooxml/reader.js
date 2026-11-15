@@ -811,11 +811,11 @@ function readDrawing(drawing, ctx, rPrXml) {
 
 /**
  * A floating shape's place with room drawn round it for its outline and arrowheads (`pad` px each side, its picture that
- * much larger): its margins that much in, so it sits and wraps the text as before. (Not one with text on both sides,
- * wrapboth.js, whose room is its box.)
+ * much larger): its margins that much in, so it sits and wraps the text as before. (One with text on both sides, set
+ * where it is: wrapboth.js takes the pad back off its box for the room the text keeps clear.)
  */
 function padPlace(place, pad) {
-  if (!pad || !place || /--odx-both/.test(place)) return place;
+  if (!pad || !place) return place;
   const minus = (v) => (/^-?[\d.]+px$/.test(v) ? `${+(parseFloat(v) - pad).toFixed(2)}px` : `calc(${v} - ${pad}px)`);
   const fl = /^(float:(?:left|right);margin:)(\S+) (\S+) (\S+) (.+?)((?:;--odx-l.*)?)$/.exec(place);
   if (fl) return `${fl[1]}${minus(fl[2])} ${minus(fl[3])} ${minus(fl[4])} ${minus(fl[5])}${fl[6]}`;
@@ -824,7 +824,7 @@ function padPlace(place, pad) {
   if (/^position:absolute;/.test(place)) return place.replace(/margin-top:(-?[\d.]+px)/, (m, v) => `margin-top:${minus(v)};margin-left:${-pad}px`);
   return place;
 }
-const padded = (place, pad) => (pad && place && !/--odx-both/.test(place) ? `${place};--odx-pad:${pad}px` : place);
+const padded = (place, pad) => (pad && place ? `${place};--odx-pad:${pad}px` : place);
 
 /**
  * A turned shape (a:xfrm rot) placed as Word places it: its picture (drawn unturned) turned about its centre by the page,
