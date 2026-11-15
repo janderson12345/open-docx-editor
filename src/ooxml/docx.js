@@ -15,6 +15,8 @@ import { shapesSvg, diagramSvg } from './shapes.js';
 import { PRESETS } from './presets.js';
 import { fontAlts } from './fonts.js';
 import { setFontAlts } from './props.js';
+import { setThemeColors } from './texteffects.js';
+import { wordArtRPr } from './wordart.js';
 import { isEmf, emfToSvg } from './emf.js';
 import { isTiff, tiffToPng } from './tiff.js';
 import { readProtection, withProtection, withoutEnforcement, checkPassword, lockedStyles, markedFinal, withoutFinal } from './protect.js';
@@ -35,6 +37,7 @@ export class DocxSession {
     this.opts = opts;
     setFontAlts(fontAlts(this.pkg)); // (before the styles: their fonts' stacks and line heights use the stand-ins)
     this.theme = readTheme(this.pkg);
+    setThemeColors(this.theme.colors); // (for runs' text effects in theme colours: texteffects.js)
     this.styles = readStyles(this.pkg);
     // The document language (styles.xml docDefaults), so screen readers pronounce it correctly.
     this.lang = (/<w:rPrDefault>[\s\S]*?<w:lang\b[^>]*w:val="([^"]+)"/.exec(this.pkg.text("word/styles.xml") || "") || [])[1] || null;
@@ -878,6 +881,33 @@ export class DocxSession {
       + style
       + '<wps:bodyPr rot="0" spcFirstLastPara="0" vertOverflow="overflow" horzOverflow="overflow" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" numCol="1" spcCol="0" rtlCol="0" fromWordArt="0" anchor="ctr" anchorCtr="0" forceAA="0" compatLnSpc="1"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp><a:noAutofit/></wps:bodyPr>'
       + `</wps:wsp></a:graphicData></a:graphic></wp:${float ? 'anchor' : 'inline'}></w:drawing></w:r>`;
+    return this._shapeNode(xml);
+  }
+
+  /**
+   * New WordArt, as Word's Insert > WordArt makes it: a text box with no fill or outline, as wide and tall as its text
+   * (wrap="none", spAutoFit), floating in front of the text, placed `x` from the column's left and `y` below its
+   * paragraph's top (px); its text `text` in WordArt style `style` (wordart.js) at `size` half-points.
+   * Returns { xml, src, width, height, place }.
+   */
+  addWordArt(text, style, width, height, { x = 0, y = 0, size = 72 } = {}) {
+    this._picId = (this._picId || 1000) + 1;
+    const id = this._picId;
+    const ns = 'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+      + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
+    const ext = `<wp:extent cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`;
+    // (w14 declared on each run's properties: a text box's text is read on its own.)
+    const rPr = wordArtRPr(style, size, this.theme?.colors);
+    const runs = String(text).split(/\r?\n/).map((t) => `<w:p><w:r>${rPr}<w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`).join('');
+    const xml = `<w:r><w:drawing ${ns}><wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="${251659264 + id * 1024}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">`
+      + `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${pxToEmu(x)}</wp:posOffset></wp:positionH>`
+      + `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${pxToEmu(y)}</wp:posOffset></wp:positionV>${ext}<wp:wrapNone/>`
+      + `<wp:docPr id="${id}" name="Text Box ${id}"/><wp:cNvGraphicFramePr/>`
+      + '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/>'
+      + `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${pxToEmu(width)}" cy="${pxToEmu(height)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>`
+      + `<wps:txbx><w:txbxContent>${runs}</w:txbxContent></wps:txbx>`
+      + '<wps:bodyPr rot="0" spcFirstLastPara="0" vertOverflow="overflow" horzOverflow="overflow" vert="horz" wrap="none" lIns="91440" tIns="45720" rIns="91440" bIns="45720" numCol="1" spcCol="0" rtlCol="0" fromWordArt="0" anchor="t" anchorCtr="0" forceAA="0" compatLnSpc="1"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp><a:spAutoFit/></wps:bodyPr>'
+      + '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>';
     return this._shapeNode(xml);
   }
 

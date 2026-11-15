@@ -8,6 +8,7 @@ import { legacyInfo } from '../ooxml/ffdata.js';
 import { ommlToMathML } from '../ooxml/omml.js';
 import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineFactor } from '../ooxml/props.js';
 import { TWIPS_PER_PX } from '../ooxml/units.js';
+import { textEffectsCss, hasTextEffects } from '../ooxml/texteffects.js';
 import { wordDate } from './util.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
@@ -351,6 +352,7 @@ function rextraCss(items) {
   const effects = new Set();
   const val = (xml) => (/w:val="([^"]*)"/.exec(xml) || [])[1];
   const on = (xml) => !/w:val="(0|false|off)"/.test(xml);
+  const modern = hasTextEffects(items);
   for (const [name, xml] of items) {
     if (name === 'rFonts' && /w:cs="([^"]+)"/.test(xml)) css.push(`--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(xml)[1])}`);
     if (name === 'spacing') css.push(`--odx-csp:${Number(val(xml)) / 20}pt`, 'letter-spacing:var(--odx-csp)');
@@ -383,7 +385,8 @@ function rextraCss(items) {
     else if (name === 'color' && /^[0-9A-Fa-f]{6}$/.test(val(xml) || '')) css.push(`color:#${val(xml)}`);
     // Text effects as Word 2013+ draws them (compared with its PDFs): outline is hollow letters, shadow a grey copy down
     // and right; emboss and imprint are outlined letters with that copy down-right or up-left. None moves the text.
-    else if (['outline', 'shadow', 'emboss', 'imprint'].includes(name) && on(xml)) effects.add(name);
+    // (Not when the run has Word 2010's own effects, which Word writes the old ones beside: those are drawn instead.)
+    else if (['outline', 'shadow', 'emboss', 'imprint'].includes(name) && xml.startsWith('<w:') && on(xml) && !modern) effects.add(name);
     // Emphasis marks: over the letters (dot, comma, circle) or under them (underDot).
     // Word makes the line that much taller (0.31em, its PDFs at 11pt and 18pt): above it, or below for underDot.
     else if (name === 'em' && EMPHASIS[val(xml)]) css.push(`text-emphasis:${EMPHASIS[val(xml)]}`, `text-emphasis-position:${val(xml) === 'underDot' ? 'under' : 'over'} right`, `--odx-grow-${val(xml) === 'underDot' ? 'down' : 'up'}:0.31em`);
@@ -411,6 +414,7 @@ function rextraCss(items) {
     const shadow = effects.has('imprint') ? '-0.06em -0.06em 0 #a6a6a6' : effects.has('shadow') || effects.has('emboss') ? shade : null;
     if (shadow) css.push(`text-shadow:${shadow}`);
   }
+  if (modern) css.push(...textEffectsCss(items));
   return css.join(';');
 }
 

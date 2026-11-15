@@ -23,11 +23,33 @@ export function closeTextBox() {
   main.odx.hfView = null;
   document.removeEventListener('mousedown', outside, true);
   const doc = tv.state.doc;
+  // (A box as wide as its text: its new width, the widest line's and the insets, as Word fits it.)
+  let fit = null;
+  if (fitsText(node.attrs.xml)) {
+    const z = zoomOf(main);
+    const cs = getComputedStyle(el);
+    let w = 0;
+    for (const p of tv.dom.children) {
+      const r = document.createRange();
+      r.selectNodeContents(p);
+      w = Math.max(w, r.getBoundingClientRect().width / z);
+    }
+    // (With room to spare: Word wraps a line that only just fits, 1pt over in its print.)
+    fit = Math.ceil(w * 1.02 + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + 4);
+  }
   tv.destroy();
   el.remove();
   if (!doc.eq(doc0) && main.state.doc.nodeAt(pos) === node) {
-    const { xml, src } = main.odx.session.setTextBox(node.attrs.xml, doc, k);
-    const tr = main.state.tr.setNodeMarkup(pos, null, { ...node.attrs, xml, src: src || node.attrs.src });
+    let { xml, src } = main.odx.session.setTextBox(node.attrs.xml, doc, k);
+    let size = {};
+    if (fit && Math.abs(fit - node.attrs.width) >= 1) {
+      const r = main.odx.session.resizeShape(xml, fit, node.attrs.height);
+      if (r) ({ xml, src, ...size } = { ...r, src: r.src });
+      // (About its centre, so it stays where it was and on the page: Word wraps text that would pass the page's edge.)
+      const moved = r && main.odx.session.moveShape(xml, -Math.round((fit - node.attrs.width) / 2), 0);
+      if (moved) ({ xml, src, ...size } = { ...moved, src: moved.src });
+    }
+    const tr = main.state.tr.setNodeMarkup(pos, null, { ...node.attrs, ...size, xml, src: src || node.attrs.src });
     main.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)));
   }
   main.focus();
@@ -61,6 +83,8 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   el.className = 'odx-hfedit odx-txbxedit';
   const z = zoomOf(main); // (in the page's own px, whatever the zoom)
   el.style.cssText = `left:${(a.left - o.left) / z}px;top:${(a.top - o.top) / z}px;width:${a.width / z}px;min-height:${a.height / z}px;padding:${t}px ${rr}px ${b}px ${l}px;box-sizing:border-box`;
+  // A box as wide as its text (WordArt: wrap="none", resized to fit): its lines don't wrap, the box widening as it's typed.
+  if (fitsText(node.attrs.xml)) el.style.cssText += `;width:max-content;min-width:${a.width / z}px;white-space:pre`;
   const tag = document.createElement('div');
   tag.className = 'odx-hfedit-tag';
   const done = document.createElement('button');
@@ -99,6 +123,9 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   tv.focus();
   return tv;
 }
+
+// A text box as wide as its text: not wrapped (wrap="none"), resized to fit it (spAutoFit), as WordArt's.
+const fitsText = (xml) => /<wps:bodyPr\b[^>]*\bwrap="none"[\s\S]*?<a:spAutoFit\/>/.test(xml || '');
 
 /** Double-clicking a text box edits its text. */
 export function textBoxPlugin() {

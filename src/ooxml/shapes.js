@@ -1,7 +1,8 @@
 // DrawingML shapes and groups (wps:wsp, wpg:wgp, pic:pic inside them) drawn as one SVG:
 // preset and custom geometry, solid fills and outlines, pictures, and text boxes.
 // Display only; the drawing's XML is saved back untouched.
-import { esc, elementKids as els, childNamed as child } from './xml.js';
+import { esc, elementKids as els, childNamed as child, serializeXml } from './xml.js';
+import { svgTextEffects } from './texteffects.js';
 import { lineFactor } from './props.js';
 import { geometryPaths, readGeometry, adjustOf } from './geometry.js';
 import { PRESETS } from './presets.js';
@@ -43,7 +44,7 @@ const hexOf = (rgb) => rgb.map((c) => Math.round(Math.min(1, Math.max(0, c)) * 2
  * #156082 at shade 15% is #042433), lumMod and lumOff on its HSL luminance ("Accent 1, Darker 25%" is lumMod 75%),
  * hueOff/hueMod and satOff/satMod on its hue and saturation (SmartArt's colourful variations step the hue).
  */
-function modify(hex, kind, v) {
+export function modify(hex, kind, v) {
   const rgb = [16, 8, 0].map((s) => ((parseInt(hex, 16) >> s) & 255) / 255);
   if (kind === 'shade' || kind === 'tint') return hexOf(rgb.map((c) => toSrgb(kind === 'shade' ? toLin(c) * v : toLin(c) * v + 1 - v)));
   const [r, g, b] = rgb;
@@ -206,7 +207,11 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       const rf = child(rPr, 'rFonts');
       const theme = wa(rf, 'asciiTheme');
       const font = wa(rf, 'ascii') || wa(rf, 'hAnsi') || (theme && ctx.theme?.[theme.startsWith('major') ? 'major' : 'minor']) || cs.font || st.font || font0;
-      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      // Word 2010's text effects (WordArt's): fill, outline, shadow, glow (texteffects.js).
+      const fx = svgTextEffects(rPr, (ctx.fxN = (ctx.fxN || 0) + 1), serializeXml);
+      const paint = fx?.paint || `fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"`;
+      const open = `<tspan font-family="${esc(font)}, Calibri, Arial, sans-serif" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      if (fx?.defs) out.push(`<defs>${fx.defs}</defs>`);
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
         if (n.localName === 'tab') {
@@ -228,7 +233,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
             const last = cur.pieces[cur.pieces.length - 1];
             cur.one = Math.max(cur.one || 0, sizePx * lineFactor(font)); // (each line as tall as its own text: Word's)
             if (last && last.open === open && last.end === cur.x) last.text += word;
-            else cur.pieces.push({ x: cur.x, text: word, open });
+            else cur.pieces.push({ x: cur.x, text: word, open, filter: fx?.filter, refl: fx?.reflection, size: sizePx, n: ctx.fxN });
             cur.pieces[cur.pieces.length - 1].ink = cur.x + inked;
             cur.x += width;
             cur.pieces[cur.pieces.length - 1].end = cur.x;
@@ -262,7 +267,18 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
       const ink = ln.pieces[ln.pieces.length - 1].ink;
       const shift = align === 'center' ? (right - ink) / 2 - (ln.pieces[0].x - start) / 2 : align === 'right' || align === 'end' ? right - ink : 0;
       for (const pc of ln.pieces) {
-        out.push(`<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}" xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`);
+        const text = `<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
+        out.push(text);
+        // A reflection (w14:reflection): the text mirrored about its baseline (where Word starts it), that far
+        // below it, fading from its start opacity to its end one over its end position's share of the text's height.
+        if (pc.refl) {
+          const { stA, endA, endPos, dist } = pc.refl;
+          const h = pc.size * 1.2, bottom = base + pc.size * 0.02, top = bottom + dist;
+          const id = `odx-rf${pc.n}-${out.length}`;
+          out.push(`<defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="${stA}"/><stop offset="1" stop-color="#fff" stop-opacity="${endA}"/></linearGradient>`
+            + `<mask id="${id}" maskUnits="userSpaceOnUse" x="-10000" y="${top.toFixed(1)}" width="20000" height="${(h * endPos).toFixed(1)}"><rect x="-10000" y="${top.toFixed(1)}" width="20000" height="${(h * endPos).toFixed(1)}" fill="url(#${id}g)"/></mask></defs>`
+            + `<g mask="url(#${id})"><g transform="translate(0 ${(bottom + top).toFixed(1)}) scale(1 -1)">${text}</g></g>`);
+        }
       }
     }
     const after = (Number(sp('after')) || 0) / TWIPS_PER_PX;

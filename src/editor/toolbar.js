@@ -12,9 +12,9 @@ import * as hf from './hfedit.js';
 import * as tb from './txbxedit.js';
 import { toggleMarks, marksOn } from './marks.js';
 import * as cm from './comments.js';
-import { undo, redo } from 'prosemirror-history';
+import { undo, redo, closeHistory } from 'prosemirror-history';
 import { addColumnAfter, addColumnBefore, deleteRow, deleteColumn, mergeCells, splitCell, deleteTable, isInTable } from 'prosemirror-tables';
-import { TextSelection, AllSelection } from 'prosemirror-state';
+import { TextSelection, AllSelection, NodeSelection } from 'prosemirror-state';
 import { schema } from './schema.js';
 import * as cmd from './commands.js';
 import { setTracking, tracking, resolveChange, resolveAll, gotoChange } from './track.js';
@@ -27,6 +27,9 @@ import * as aw from './aiwrite.js';
 import { PRESETS, SHAPE_GALLERY } from '../ooxml/presets.js';
 import { geometryPaths } from '../ooxml/geometry.js';
 import { drawShape } from './drawshape.js';
+import { WORDART, wordArtItems } from '../ooxml/wordart.js';
+import { textEffectsCss } from '../ooxml/texteffects.js';
+import { fontStack, lineFactor } from '../ooxml/props.js';
 import { mergeFieldNames } from '../merge.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
@@ -289,6 +292,43 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
   };
   const shapesGallery = () => [el('div', { class: 'odx-gallery odx-shapes' }, ...SHAPE_GALLERY.filter(([p]) => PRESETS[p]).map(([prst, name, arrow]) =>
     el('button', { type: 'button', class: 'odx-gal odx-shape', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); pickShape(prst, name, arrow, e.viaKeyboard); } }, shapeIcon(prst, arrow))))];
+  // Insert > WordArt, as Word's: the selected text (in one paragraph), or "Your text here", in a text box as wide as it,
+  // floating in front of the text, centred in the column at its paragraph's top, in the style picked; its text then
+  // open for typing, all of it selected.
+  function insertWordArt(i, name) {
+    const v = getView();
+    if (!v || v.odx?.isStory || v.odx?.readOnly) return;
+    const s = v.odx.session;
+    const sel = v.state.selection;
+    const picked = sel.from < sel.to && sel.$from.sameParent(sel.$to) ? v.state.doc.textBetween(sel.from, sel.to).trim() : '';
+    const text = picked || 'Your text here';
+    const font = s.theme?.minor || 'Aptos';
+    const g = document.createElement('canvas').getContext('2d');
+    g.font = `48px ${fontStack(font)}`; // (36pt)
+    const width = Math.ceil(g.measureText(text).width + 19.2 + 2);
+    const height = Math.ceil(48 * lineFactor(font) + 9.6);
+    const cs = getComputedStyle(v.dom);
+    const colW = v.dom.clientWidth - (parseFloat(cs.getPropertyValue('--odx-page-left')) || 96) - (parseFloat(cs.getPropertyValue('--odx-page-right')) || 96);
+    let tr = closeHistory(v.state.tr);
+    if (picked) tr = tr.delete(sel.from, sel.to);
+    const $p = tr.doc.resolve(tr.mapping.map(sel.from));
+    let d = $p.depth;
+    while (d > 0 && !$p.node(d).isTextblock) d--;
+    if (!$p.node(d).isTextblock) return;
+    const pos = $p.start(d);
+    const made = s.addWordArt(text, i, width, height, { x: Math.max(0, Math.round((colW - width) / 2)), y: 0 });
+    if (!made) return;
+    tr = tr.insert(pos, schema.nodes.image.create({ ...made, alt: name }));
+    v.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)).scrollIntoView());
+    announce(`WordArt inserted, ${name}: type its text`);
+    setTimeout(() => {
+      const tv = tb.editTextBox(v, pos);
+      if (tv) tv.dispatch(tv.state.tr.setSelection(TextSelection.create(tv.state.doc, 1, Math.max(1, tv.state.doc.content.size - 1))));
+    }, 50);
+  }
+  const wordArtGallery = () => [el('div', { class: 'odx-gallery odx-wordart' }, ...WORDART.map(([name], i) =>
+    el('button', { type: 'button', class: 'odx-gal odx-wa', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); insertWordArt(i, name); } },
+      el('span', { 'aria-hidden': 'true', style: textEffectsCss(wordArtItems(i)).join(';') }, 'A'))))];
   // Picked with the mouse: drawn on the page by dragging, as in Word (drawshape.js). From the keyboard: in line at the caret.
   let drawing = null;
   function pickShape(prst, name, arrow, keyboard) {
@@ -523,7 +563,8 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
       grp('Tables', menu('▦', 'Insert table', () => [2, 3, 4, 5, 6].flatMap((r) => [2, 3, 4].map((c) => item(`${c} × ${r} table`, insertTable(r, c))).slice(r === 3 ? 0 : 1, r === 3 ? 3 : 2)), { label: 'Table', big: true })),
       grp('Illustrations', btn('🖼', 'Insert a picture from this device', () => picInput.click(), { label: 'Picture', big: true }), picInput),
       grp('Text', btn('▭', 'Insert a text box', () => (insertTextBox(), true), { label: 'Text Box', big: true }),
-        menu('⬠', 'Shapes: insert a shape', shapesGallery, { label: 'Shapes', big: true })),
+        menu('⬠', 'Shapes: insert a shape', shapesGallery, { label: 'Shapes', big: true }),
+        menu('A', 'WordArt: insert decorative text', wordArtGallery, { label: 'WordArt', big: true })),
       grp('Table of Contents', btn('☰', 'Insert table of contents', withView(toc.insertToc), { label: 'Table of Contents', big: true })),
       grp('Bookmarks', menu('🔖', 'Bookmark', () => {
         const v = getView();

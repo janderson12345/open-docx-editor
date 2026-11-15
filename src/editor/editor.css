@@ -446,6 +446,9 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-draw-shape path { fill: none; stroke: #4472c4; stroke-width: 1; vector-effect: non-scaling-stroke; }
 /* Insert > Shapes (toolbar.js): small pictures of the shapes, Word's gallery. */
 .odx-gallery.odx-shapes { grid-template-columns: repeat(8, 40px); gap: 2px; max-height: 320px; overflow: auto; }
+.odx-gallery.odx-wordart { grid-template-columns: repeat(5, 48px); gap: 4px; }
+.odx-toolbar .odx-gal.odx-wa { height: 48px; width: 48px; padding: 0; align-items: center; background: #fff; }
+.odx-toolbar .odx-gal.odx-wa span { font: bold 30px/1 Arial, sans-serif; color: #000; }
 .odx-toolbar .odx-gal.odx-shape { height: 36px; width: 40px; padding: 2px; align-items: center; color: #2b579a; }
 .odx-toolbar .odx-gal { height: 56px; border: 1px solid var(--odx-line); font-size: 16px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: 4px 8px; }
 .odx-toolbar .odx-gal div { font-size: 11px; line-height: 1.3; }
