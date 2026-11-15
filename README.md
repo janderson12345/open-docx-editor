@@ -201,9 +201,7 @@ fs.writeFileSync('out.docx', s.save());
 
 - Tracked cell deletions (w:cellDel) are shown, accepted and rejected, but not recorded while tracking (the editor
   has no "delete cells, shift left" of its own).
-- Co-editing shares the body, comments, pictures, page setup, headers, footers and notes (each as it's closed after
-  editing), but not styles or numbering definitions added after opening: the others get those when the document is
-  saved and reopened.
+- Co-editing shares headers, footers and notes only as each is closed after editing, not keystroke by keystroke.
 - PDF export falls back to the PDF standard fonts where it can't get the real one: in browsers without Local Font
   Access (Firefox, Safari), when the user declines it, and for fonts neither installed nor embedded in the document.
   Lines and pages are the layout's either way, but characters outside Windows-1252 (Hebrew, Arabic, Greek beyond

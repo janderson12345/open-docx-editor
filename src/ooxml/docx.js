@@ -226,8 +226,52 @@ export class DocxSession {
       .map((id) => BUILT_IN[id].replace(/(<w:basedOn w:val=")([^"]+)/, (_, a, base) => a + this.builtInId(base)));
     if (!add.length) return false;
     this.pkg.setText(path, xml.replace(/<\/w:styles>\s*$/, `${add.join('')}</w:styles>`));
-    this.styles = readStyles(this.pkg);
+    this._restyled();
+    this.onAddDefinitions?.(add.map((x) => ({ kind: 'style', id: /w:styleId="([^"]*)"/.exec(x)[1], xml: x }))); // (shared: src/collab.js)
     return true;
+  }
+
+  /** The styles read again after styles.xml changed (what was worked out from the old ones dropped). */
+  _restyled() {
+    this.styles = readStyles(this.pkg);
+    this._styleCache?.clear();
+  }
+
+  /**
+   * Style and numbering definitions another editor of a shared document added or changed (src/collab.js): each
+   * { kind: 'style' | 'abstractNum' | 'num', id, xml }, its element's XML. One with the same id here is replaced (so
+   * every editor ends with the room's); the others are added where Word keeps them.
+   */
+  addSharedDefinitions(defs) {
+    const merge = (path, list, before) => {
+      if (!list.length) return;
+      const doc = this.pkg.xml(path);
+      const root = doc.documentElement;
+      const idAttr = { style: 'styleId', abstractNum: 'abstractNumId', num: 'numId' };
+      for (const d of list) {
+        const el = doc.importNode(kids(parseXml(`<x xmlns:w="${NS.w}">${d.xml}</x>`).documentElement)[0], true);
+        const have = kids(root, d.kind).find((e) => e.getAttributeNS(NS.w, idAttr[d.kind]) === d.id);
+        if (have) root.replaceChild(el, have);
+        else root.insertBefore(el, (before && kids(root, before)[0]) || null);
+      }
+      this.pkg.setText(path, serializeXml(doc));
+    };
+    const styles = defs.filter((d) => d.kind === 'style');
+    // (With no styles part, Word's defaults stand in for one, here as in the editor that added them, which added none:
+    // addBuiltInStyles.)
+    const stylesPath = this.pkg.partByType(REL_TYPES.styles);
+    if (styles.length && stylesPath) {
+      merge(stylesPath, styles, null);
+      this._restyled();
+    }
+    const lists = defs.filter((d) => d.kind === 'abstractNum' || d.kind === 'num');
+    if (lists.length) {
+      this._applyChunkNumbering(); // (as in the editor that added them: their ids come after imported content's lists)
+      const path = this._numberingPart();
+      merge(path, lists.filter((d) => d.kind === 'abstractNum'), 'num'); // (all abstractNum elements before the nums)
+      merge(path, lists.filter((d) => d.kind === 'num'), null);
+      this.numbering = readNumbering(this.pkg);
+    }
   }
 
   /**
@@ -577,13 +621,7 @@ export class DocxSession {
 
   _addList(abstractXml) {
     this._applyChunkNumbering(); // (a new list's ids come after theirs)
-    let path = this.pkg.partByType(REL_TYPES.numbering);
-    if (!path) {
-      path = this.pkg.mainDir + 'numbering.xml';
-      this.pkg.setText(path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:numbering xmlns:w="${NS.w}"/>`);
-      this.pkg.addRel(REL_TYPES.numbering, 'numbering.xml');
-      this.pkg.addOverride(path, 'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml');
-    }
+    const path = this._numberingPart();
     const doc = this.pkg.xml(path);
     const root = doc.documentElement;
     const maxId = (els, a) => els.reduce((m, e) => Math.max(m, Number(e.getAttributeNS(NS.w, a)) || 0), 0);
@@ -596,7 +634,23 @@ export class DocxSession {
     root.appendChild(doc.importNode(num, true));
     this.pkg.setText(path, serializeXml(doc));
     this.numbering = readNumbering(this.pkg);
+    // (Shared: src/collab.js. Two editors adding a list at the same moment pick the same ids; the room keeps one's,
+    // and every editor shows the same list.)
+    // (Without the namespace declaration the serializer adds: the part's root has it.)
+    this.onAddDefinitions?.([abs, num].map((el) => ({ kind: el.localName, id: el.getAttributeNS(NS.w, el.localName === 'num' ? 'numId' : 'abstractNumId'), xml: serializeXml(el).replace(/ xmlns:w="[^"]*"/, '') })));
     return numId;
+  }
+
+  /** numbering.xml's path, the part added first when the document has none. */
+  _numberingPart() {
+    let path = this.pkg.partByType(REL_TYPES.numbering);
+    if (!path) {
+      path = this.pkg.mainDir + 'numbering.xml';
+      this.pkg.setText(path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:numbering xmlns:w="${NS.w}"/>`);
+      this.pkg.addRel(REL_TYPES.numbering, 'numbering.xml');
+      this.pkg.addOverride(path, 'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml');
+    }
+    return path;
   }
 
   /**
