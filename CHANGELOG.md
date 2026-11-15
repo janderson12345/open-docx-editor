@@ -60,9 +60,12 @@
   after one goes on in the next column, a page break in such a section on the next page, and a column break before a
   next-page section break keeps its own column. A section of columns ending at a continuous break with a column break
   of its own isn't balanced, as in Word, and what follows starts under its lowest column.
+- **A table longer than a column** goes on over as many columns as it takes, cut at a row at each column's foot, its
+  header rows again above each part, as in Word (it was cut once, its rest running down onto the next page).
 - **A paragraph longer than a column** goes on over as many columns as it takes, cut at each one's foot with two
   lines kept on each side, as in Word (it was carried once, its rest running down through the margin onto the next
-  page); its line numbers and footnotes follow it into each column. Endnotes in a document of columns are balanced in
+  page), in a document of columns or a section of columns among others; its line numbers and footnotes follow it
+  into each column. Endnotes in a document of columns are balanced in
   its columns as Word balances them, after the text's last columns, the first taking the odd line.
 - **Columns hold Word's lines.** A paragraph going on in the next column was measured a little too tall at the
   column's foot, so a column could hold a line fewer than Word's, and its lines in the next column sat about 2pt high;
