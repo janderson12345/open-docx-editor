@@ -30,6 +30,7 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   assert.doesNotMatch(sh, /--odx-grow/);
   const glow = textEffectsCss(items('<w14:glow w14:rad="127000"><w14:srgbClr w14:val="00B050"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:glow>')).join(';');
   assert.match(glow, /0 0 10pt rgba\(0,176,80,0.4\)/);
+  assert.match(glow, /--odx-glow:10pt rgba\(0,176,80,0.4\)/);
   assert.match(glow, /--odx-grow-up:0.1278em;--odx-grow-down:0.1722em/);
   const refl = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>')).join(';');
   assert.match(refl, /--odx-grow-down:0.257em/);

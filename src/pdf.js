@@ -121,12 +121,12 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
     }
     return fonts[key];
   };
-  // The Noto font for characters a run's font lacks, the first of them deciding the alphabet (null when there's none,
-  // or it can't be had: a host without network, a page whose policy refuses jsDelivr).
+  // The Noto font for a character a run's font lacks, for its alphabet (null when there's none, or it can't be had: a
+  // host without network, a page whose policy refuses jsDelivr).
   const fallbacks = new Map(); // url -> Promise of { font, chars } or null
-  const fallbackFor = (missing, bold, italic) => {
+  const fallbackFor = (ch, bold, italic) => {
     if (!fallbackFonts) return null;
-    const c = missing[0].codePointAt(0);
+    const c = ch.codePointAt(0);
     const sc = FALLBACK_SCRIPTS.find(([a, b]) => c >= a && c <= b);
     if (!sc) return null;
     const [, , pkg, subset, italics] = sc;
@@ -189,29 +189,32 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
       if (!fonts.Symbol) { const f = await pdf.embedFont(StandardFonts.Symbol); fonts.Symbol = { font: f, chars: new Set(f.getCharacterSet()) }; }
       if (missing.every((ch) => fonts.Symbol.chars.has(ch.codePointAt(0)))) ({ font, chars } = fonts.Symbol);
     }
-    // Characters the font still lacks (Hebrew, Arabic, Greek, Cyrillic in a standard font): the run in the Noto font for
-    // their alphabet, when it has them all and the run's other letters.
-    // their alphabet; what that lacks (a Hebrew run's full stop and digits: its file holds only the Hebrew letters) in the
-    // run's own font, the pieces side by side.
-    let base = null, fbk = null;
+    // Characters the font still lacks (Hebrew, Arabic, Greek, Cyrillic in a standard font): each in the Noto font for
+    // its alphabet, a run mixing two of them (Greek and Hebrew: test/fixtures/mixed-scripts.docx) in one for each; what
+    // those lack (a Hebrew run's full stop and digits: its file holds only the Hebrew letters) in the run's own font,
+    // the pieces side by side.
+    const base = { font, chars }, fbs = [];
     const lacking = [...text].filter((ch) => ch.trim() && !/[\u2010-\u2012\u2015\u2212\u200b-\u200f\u2060\ufeff\u00ad]/.test(ch) && !chars.has(ch.codePointAt(0)));
-    if (lacking.length) {
-      const fb = await fallbackFor(lacking, (parseInt(cs.fontWeight, 10) || 400) >= 600, /italic|oblique/.test(cs.fontStyle));
-      if (fb && lacking.every((ch) => fb.chars.has(ch.codePointAt(0)))) { base = { font, chars }; fbk = fb; ({ font, chars } = fb); }
+    for (const ch of lacking) {
+      if (fbs.some((fb) => fb.chars.has(ch.codePointAt(0)))) continue;
+      const fb = await fallbackFor(ch, (parseInt(cs.fontWeight, 10) || 400) >= 600, /italic|oblique/.test(cs.fontStyle));
+      if (fb && fb.chars.has(ch.codePointAt(0)) && !fbs.includes(fb)) fbs.push(fb);
     }
     const clean = (t) => t.replace(/[\u00a0\u2000-\u200a\u202f\u205f]/g, ' ').replace(/[\u200b-\u200f\u2060\ufeff\u00ad]/g, '').replace(/[\u2010\u2011\u2012\u2212]/g, '-').replace(/\u2015/g, '\u2014');
     // The run in pieces by font (one piece but for a fallback's): [{ font, chars, text }], in the order they're drawn
-    // (right to left in a right-to-left run: each piece's own letters the font library orders).
+    // (right to left in a right-to-left run: each piece's own letters the font library orders). A character stays in
+    // the piece it follows when that piece's font has it, else goes to the first fallback with it, else the run's font.
     let pieces = null;
-    if (fbk) {
+    if (fbs.length) {
       pieces = [];
       for (const ch of clean(text)) {
-        const f = fbk.chars.has(ch.codePointAt(0)) || !base.chars.has(ch.codePointAt(0)) ? fbk : base;
+        const c = ch.codePointAt(0);
         const last = pieces[pieces.length - 1];
-        // (A space joins the piece it's in: both fonts have one.)
-        if (last && (last.f === f || (ch === ' ' && last.f.chars.has(32)))) last.text += ch; else pieces.push({ f, text: ch });
+        // (A space joins the piece it's in: the fonts all have one.)
+        if (last && (last.f.chars.has(c) || (ch === ' ' && last.f.chars.has(32)))) { last.text += ch; continue; }
+        pieces.push({ f: fbs.find((fb) => fb.chars.has(c)) || base, text: ch });
       }
-      if (pieces.length === 1) pieces = null;
+      if (pieces.length === 1) { ({ font, chars } = pieces[0].f); pieces = null; }
       else {
         for (const pc of pieces) pc.text = [...pc.text].map((ch) => (pc.f.chars.has(ch.codePointAt(0)) ? ch : ch.trim() ? '?' : ' ')).join('');
         if (cs.direction === 'rtl' || /^[^A-Za-z0-9]*[\u0590-\u08ff\ufb1d-\ufeff]/.test(text)) pieces.reverse();
@@ -247,7 +250,11 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
       ops.push(endText(), popGraphicsState());
       page.pushOperators(...ops);
     };
-    if (shadow && color(shadow[1])) run(Number(shadow[2]), Number(shadow[3]), color(shadow[1]).rgb, 0);
+    // A glow (texteffects.js --odx-glow) under the rest; its text-shadows, drawn round the letters, not as a copy.
+    // (Math draws its text with a style of its own making, no custom properties.)
+    const glowCss = el && cs.getPropertyValue ? /^([\d.]+)pt\s+(.+)$/.exec(cs.getPropertyValue('--odx-glow').trim()) : null;
+    if (glowCss && !pieces && color(glowCss[2])) glow(page, font, safe, x, y, size, natural > 0 ? want / natural : 1, color(glowCss[2]), Number(glowCss[1]));
+    if (shadow && color(shadow[1]) && !(glowCss && Number(shadow[2]) === 0 && Number(shadow[3]) === 0)) run(Number(shadow[2]), Number(shadow[3]), color(shadow[1]).rgb, 0);
     run(0, 0, fillColor ? fillColor.rgb : c.rgb, stroke);
     if (el && !pieces && el.closest('.odx-rf')) reflect(page, font, safe, x, y, size, natural > 0 ? want / natural : 1, (fillColor || c).rgb, cs);
     // Underline and strikethrough, from the element that sets them (text-decoration isn't inherited, it's drawn through).
@@ -286,10 +293,57 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
     const { width: pw, height: ph } = page.getSize();
     const form = ctxt.register(ctxt.stream('/Sh0 sh', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, pw, ph], Group: { Type: 'Group', S: 'Transparency', CS: 'DeviceGray' }, Resources: { Shading: { Sh0: shading } } }));
     const gs = page.node.newExtGState('GSrf', ctxt.register(ctxt.obj({ Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: form } })));
-    const op = (name, ...args) => PDFOperator.of(name, args.map((a) => (typeof a === 'number' ? PDFNumber.of(+a.toFixed(5)) : a)));
     const ops = [pushGraphicsState(), op('gs', gs), op('re', x - size * 0.1, top - depth, width + size * 0.2, depth), op('W'), op('n'), setFillingRgbColor(fill.red, fill.green, fill.blue)];
     // The letters in font units, mirrored: x scaled as the run is to its laid-out width, y flipped down from the top.
-    ops.push(op('cm', k * hs, 0, 0, -k, x, top));
+    ops.push(op('cm', k * hs, 0, 0, -k, x, top), ...outline(glyphs), op('f'), popGraphicsState());
+    page.pushOperators(...ops);
+  }
+
+  /**
+   * A glowing run's halo (w14:glow): the glow colour round its letters, drawn as their outlines stroked at falling
+   * widths, each a little more opaque, so it is solid near the letters and fades out (pdf-lib has no blur). Fitted to
+   * Word's print of effects-word/effects14b.docx (00B050 at 40%, Arial bold): solid to a tenth of the radius out from
+   * the letters, half at 0.3, gone by half the radius (Glow 10 at 36: half 3.3pt out), the radius in proportion to the font size, 36pt
+   * the size it is written for (Glow 10 at 18 fades where Glow 5 at 36 does). Fonts without outlines have none.
+   */
+  function glow(page, font, text, x, y, size, hs, c, radius) {
+    const fk = font.embedder?.font;
+    if (!fk?.glyphsForString) return;
+    const glyphs = fk.glyphsForString(text);
+    const k = size / fk.unitsPerEm;
+    // (A wide glow spreads a little less than in proportion: Glow 20 at 36 is half gone 5.5pt out, not 6.6.)
+    const r0 = (radius * size) / 36, r = r0 * Math.min(1, 1.1 - 0.012 * r0);
+    // The halo's opacity, as a share of the colour's, by distance from the letters (a share of the radius).
+    const fall = [[0.1, 1], [0.2, 0.85], [0.3, 0.55], [0.4, 0.12], [0.5, 0]];
+    const at = (d) => {
+      if (d <= fall[0][0]) return 1;
+      const i = fall.findIndex(([e]) => e >= d);
+      if (i < 0) return 0;
+      const [[d0, f0], [d1, f1]] = [fall[i - 1], fall[i]];
+      return f0 + ((f1 - f0) * (d - d0)) / (d1 - d0);
+    };
+    // Strokes reaching out 0.5, 0.45 ... 0.15 of the radius: between one's edge and the next one's, the strokes over
+    // a point together give that band's opacity.
+    const reach = [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15];
+    const path = outline(glyphs);
+    const ops = [pushGraphicsState(), op('cm', k * hs, 0, 0, k, x, y), setFillingRgbColor(c.rgb.red, c.rgb.green, c.rgb.blue), setStrokingRgbColor(c.rgb.red, c.rgb.green, c.rgb.blue), op('j', 1)];
+    let shown = 0;
+    reach.forEach((w, i) => {
+      const want = c.a * at(i + 1 < reach.length ? (w + reach[i + 1]) / 2 : 0);
+      const a = Math.min(1, Math.max(0, 1 - (1 - want) / (1 - shown)));
+      shown = want;
+      if (a < 0.005) return;
+      const gs = page.node.newExtGState('GSgl', pdf.context.register(pdf.context.obj({ Type: 'ExtGState', CA: +a.toFixed(4), ca: +a.toFixed(4) })));
+      // (The stroke's width in font units: twice its reach. The interior filled too, for hollow letters.)
+      ops.push(op('gs', gs), op('w', (2 * w * r) / k), ...path, op('B'));
+    });
+    ops.push(popGraphicsState());
+    page.pushOperators(...ops);
+  }
+
+  /** Glyphs' outlines as path operators, in font units, side by side from the origin. */
+  function outline(glyphs) {
+    const ops = [];
     let pen = 0;
     for (const g of glyphs) {
       let cx = 0, cy = 0;
@@ -306,8 +360,11 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
       }
       pen += g.advanceWidth;
     }
-    ops.push(op('f'), popGraphicsState());
-    page.pushOperators(...ops);
+    return ops;
+  }
+
+  function op(name, ...args) {
+    return PDFOperator.of(name, args.map((a) => (typeof a === 'number' ? PDFNumber.of(+a.toFixed(5)) : a)));
   }
 
   function ascent(cs) {

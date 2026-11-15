@@ -84,6 +84,10 @@ export function textEffectsCss(items) {
     const r = num(glow, 'rad') || 0;
     // (Spread round the letters: copies at a third, two thirds and the whole radius, as Word's soft edge fades out.)
     if (c && r) for (const k of [1 / 3, 2 / 3, 1]) shadows.push(`0 0 ${pt(r * k)}pt ${c}`);
+    // (Also as a custom property, for PDF export (pdf.js), which draws it from the letters' outlines; the colour as
+    // rgb(), which it reads: custom properties aren't computed.)
+    const rgbOf = (s) => (s.startsWith('#') ? `rgb(${[1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)).join(',')})` : s);
+    if (c && r) css.push(`--odx-glow:${pt(r)}pt ${rgbOf(c)}`);
   }
   if (shadows.length) css.push(`text-shadow:${shadows.join(',')}`);
   // The room Word gives them: a glow's line is taller above and below, a reflection's below (Word's PDFs of
