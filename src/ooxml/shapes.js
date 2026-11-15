@@ -140,14 +140,33 @@ function arrowhead(end, at, width, c) {
 const wa = (el, name) => (el ? el.getAttribute(`w:${name}`) : null);
 
 let canvas = null;
+let missed = null; // canvas font -> text measured in a fallback because the page hadn't loaded that face yet
+
+/**
+ * The faces text was measured in a fallback for since the last call (canvas font -> some of its text), or null: a
+ * picture drawn then wraps its lines at the fallback's widths, and is drawn again once they've loaded (svgfonts.js
+ * redrawLater). (smartart.docx in Aptos: its boxes broke their lines in the fallback until drawn again.)
+ */
+export function unmeasured() {
+  const out = missed;
+  missed = null;
+  return out;
+}
+
 /** Width of `text` in px: measured in a browser, else estimated at half an em per character. */
 function textWidth(text, sizePx, bold, font) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
   if (!canvas) return text.length * sizePx * 0.5;
   canvas.fontKerning = 'none';
   canvas.font = `${bold ? 'bold ' : ''}${sizePx}px ${fontStack(font)}`;
-  // (A stand-in not loaded yet is asked for, for the next drawing: this one measures in what the page has.)
-  try { if (document.fonts && !document.fonts.check(canvas.font, text)) document.fonts.load(canvas.font, text).catch(() => {}); } catch { /* not a font */ }
+  // (A stand-in not loaded yet is asked for, and noted: this drawing measures in what the page has.)
+  try {
+    if (document.fonts && text.trim() && !document.fonts.check(canvas.font, text)) {
+      document.fonts.load(canvas.font, text).catch(() => {});
+      missed ||= new Map();
+      if ((missed.get(canvas.font) || '').length < 200) missed.set(canvas.font, (missed.get(canvas.font) || '') + text);
+    }
+  } catch { /* not a font */ }
   return canvas.measureText(text).width;
 }
 
