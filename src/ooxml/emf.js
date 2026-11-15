@@ -19,6 +19,17 @@ const WIN = { arial: [0.905, 0.212], calibri: [0.952, 0.269], cambria: [0.95, 0.
   'aptos display': [1.01, 0.275], 'arial narrow': [0.936, 0.212], consolas: [0.743, 0.257], georgia: [0.917, 0.219] };
 const win = (face) => WIN[face.toLowerCase()] || [0.92, 0.23];
 
+// Text width (px) in a CSS font, from a canvas where there is one; else about half an em a character.
+let measureCtx;
+const measure = (text, css) => {
+  if (measureCtx === undefined) {
+    try { measureCtx = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1).getContext('2d') : typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null; } catch { measureCtx = null; }
+  }
+  if (!measureCtx) return text.length * (parseFloat(css.replace(/^(italic |bold )*/, '')) || 16) * 0.5;
+  measureCtx.font = css;
+  return measureCtx.measureText(text).width;
+};
+
 /** True when `bytes` is an EMF (record 1, with the " EMF" signature). */
 export function isEmf(bytes) {
   return bytes && bytes.length > 88 && bytes[0] === 1 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 0 &&
@@ -376,7 +387,7 @@ export function emfToSvg(bytes) {
   // whose EMF+ records need something not read here is drawn from its GDI copy instead.
   let body = out, defs = clips;
   if (hasEmfPlus(dv)) {
-    const plus = emfPlusToSvg(bytes, { bx, by }, { png, dataUrl, emfToSvg, win, fontStack, esc });
+    const plus = emfPlusToSvg(bytes, { bx, by }, { png, dataUrl, emfToSvg, win, fontStack, esc, measure });
     const dual = (dv.getUint16(off0Plus(dv) + 2, true) & 1) === 1;
     if (!(plus.unsupported && dual)) {
       const inGdi = (at) => plus.gdi.some(([a, b]) => at >= a && at < b);

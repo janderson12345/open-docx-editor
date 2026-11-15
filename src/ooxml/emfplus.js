@@ -13,6 +13,10 @@ const alpha = (v) => ((v >>> 24) & 255) / 255;
 const mul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
   A[4] * B[0] + A[5] * B[2] + B[4], A[4] * B[1] + A[5] * B[3] + B[5]];
 const ID = [1, 0, 0, 1, 0, 0];
+const inverse = ([a, b, c, d, e, f]) => { const k = a * d - b * c || 1; return [d / k, -b / k, -c / k, a / k, (c * f - d * e) / k, (b * e - a * f) / k]; };
+// Line spacing (em) as GDI+ steps lines, its line gap included (FontFamily.GetLineSpacing / em height).
+const LINE = { arial: 1.1499, 'times new roman': 1.1499, calibri: 1.2207, 'calibri light': 1.2207, cambria: 1.1724, 'segoe ui': 1.3301,
+  tahoma: 1.2075, verdana: 1.2153, 'courier new': 1.1328, consolas: 1.1704, georgia: 1.1362, aptos: 1.2 };
 
 /** True when the EMF in `dv` holds EMF+ records (its first comment is an EMF+ header). */
 export function hasEmfPlus(dv) {
@@ -42,7 +46,8 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   let dpiX = 96, dpiY = 96;
   const objects = [];
   let pending = null; // an object split over several records: { id, total, parts, got }
-  let world = ID.slice(), pageUnit = 2, pageScale = 1;
+  // (The page unit starts as Display: a pixel of a display reference, 1/100 inch of a printer's.)
+  let world = ID.slice(), pageUnit = 1, pageScale = 1, refDisplay = true;
   // A container's own coordinates: its transforms are set relative to `base` (the world as it began), and its clip
   // limits everything inside it (`cClip`), as GDI+ plays containers.
   let base = ID.slice();
@@ -52,7 +57,10 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const saved = new Map();
   let gdiFrom = -1;
 
-  const unitPx = (u) => ({ 2: 1, 3: dpiX / 72, 4: dpiX, 5: dpiX / 300, 6: dpiX / 25.4 }[u] ?? 1);
+  const unitPx = (u) => ({ 1: refDisplay ? 1 : dpiX / 100, 2: 1, 3: dpiX / 72, 4: dpiX, 5: dpiX / 300, 6: dpiX / 25.4 }[u] ?? 1);
+  // A font's em in world units: World and Pixel sizes are world units (they follow the page transform, as GDI+ draws
+  // them); a physical size (points, inches, mm) is that size whatever the page scale.
+  const fontEm = (font) => (font.unit === 0 || font.unit === 2 ? font.em : (font.em * unitPx(font.unit)) / k());
   const k = () => unitPx(pageUnit) * pageScale;
   const toDevice = () => { const s = k(); return [world[0] * s, world[1] * s, world[2] * s, world[3] * s, world[4] * s - bx, world[5] * s - by]; };
   const mat = (M) => `matrix(${M.map((v) => +v.toPrecision(7)).join(' ')})`; // (significant digits: EMU-scaled worlds are tiny)
@@ -166,10 +174,15 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (type === 2) { // a metafile inside: drawn by the EMF reader, as SVG
       const mtype = r.u32(), size = r.u32();
       if (mtype < 3) return null; // WMF
-      const svg = h.emfToSvg(bytes.subarray(r.o, Math.min(end, r.o + size)));
+      const inner = bytes.subarray(r.o, Math.min(end, r.o + size));
+      const svg = h.emfToSvg(inner);
       if (!svg) return null;
+      // (Its size from its frame, in its reference's pixels: the drawing's rounded bounds came out a pixel short.)
+      const iv = new DataView(inner.buffer, inner.byteOffset, inner.byteLength);
+      const pxm = iv.getInt32(72, true) / (iv.getInt32(80, true) || 1);
+      const fw = ((iv.getInt32(32, true) - iv.getInt32(24, true)) / 100) * pxm, fh = ((iv.getInt32(36, true) - iv.getInt32(28, true)) / 100) * (iv.getInt32(76, true) / (iv.getInt32(84, true) || 1));
       const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
-      return { kind: 'image', w: m ? +m[1] : 1, h: m ? +m[2] : 1, href: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}` };
+      return { kind: 'image', w: fw > 0 ? fw : m ? +m[1] : 1, h: fh > 0 ? fh : m ? +m[2] : 1, href: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}` };
     }
     return null;
   };
@@ -179,10 +192,10 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (type === 0) return { kind: 'brush', type: 'solid', color: r.u32() };
     if (type === 1) return { kind: 'brush', type: 'hatch', style: r.u32(), fore: r.u32(), back: r.u32() };
     if (type === 2) { // texture
-      const flags = r.u32(); r.u32();
+      const flags = r.u32(), wrap = r.u32();
       const m = flags & 2 ? r.m() : null;
       const img = readImage(r, end);
-      return img ? { kind: 'brush', type: 'texture', img, m } : { kind: 'brush', type: 'solid', color: 0x80808080 };
+      return img ? { kind: 'brush', type: 'texture', img, m, wrap } : { kind: 'brush', type: 'solid', color: 0x80808080 };
     }
     if (type === 4) { // linear gradient
       const flags = r.u32(), wrap = r.u32();
@@ -201,15 +214,25 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       }
       return { kind: 'brush', type: 'linear', rect, m, stops, wrap };
     }
-    if (type === 3) { // path gradient: drawn as a radial one from the centre colour to the first surrounding colour
+    if (type === 3) { // path gradient: from the centre colour out to the boundary's
       const flags = r.u32(); r.u32();
       const center = r.u32(), cx = r.f32(), cy = r.f32();
       const cnt = r.u32(); const surround = []; for (let i = 0; i < cnt; i++) surround.push(r.u32());
-      let pts = [];
-      if (flags & 1) { const size = r.u32(); const p = readPath(r); r.o = Math.min(end, r.o); void size; pts = (p.d.match(/-?[\d.]+ -?[\d.]+/g) || []).map((s) => s.split(' ').map(Number)); }
-      else { const pc = r.u32(); pts = points(r, pc, 0); }
-      const rad = Math.max(1, ...pts.map(([x, y]) => Math.hypot(x - cx, y - cy)));
-      return { kind: 'brush', type: 'radial', cx, cy, r: rad, c1: center, c2: surround[0] ?? center };
+      let pts = [], curved = false;
+      if (flags & 1) {
+        const size = r.u32(), start = r.o;
+        const p = readPath(r);
+        r.o = start + size;
+        curved = /C/.test(p.d);
+        pts = (p.d.match(/-?[\d.]+ -?[\d.]+/g) || []).map((q) => q.split(' ').map(Number));
+      } else { const pc = r.u32(); pts = points(r, pc, 0); }
+      const m = flags & 2 ? r.m() : null;
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      // A curved boundary (an ellipse): elliptical, its colour reached at the boundary all round. Straight sides: a fan
+      // of triangles from the centre, each corner its own colour (the last one given for the corners after it).
+      if (curved || pts.length < 3) return { kind: 'brush', type: 'radial', cx, cy, rx: Math.max(1, (box[2] - box[0]) / 2), ry: Math.max(1, (box[3] - box[1]) / 2), c1: center, c2: surround[0] ?? center, m };
+      return { kind: 'brush', type: 'fan', cx, cy, pts, box, c1: center, cols: pts.map((_, i) => surround[Math.min(i, cnt - 1)] ?? center), m };
     }
     return { kind: 'brush', type: 'solid', color: 0xff808080 };
   };
@@ -223,7 +246,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const pen = { kind: 'pen', unit, width, style: 0, cap: 0, join: 0, miter: 10, dashes: null, dashOffset: 0 };
     if (flags & 0x01) pen.m = r.m();
     if (flags & 0x02) pen.cap = r.i32();
-    if (flags & 0x04) r.i32();
+    pen.endCap = flags & 0x04 ? r.i32() : pen.cap;
     if (flags & 0x08) pen.join = r.i32();
     if (flags & 0x10) pen.miter = r.f32();
     if (flags & 0x20) pen.style = r.i32();
@@ -231,7 +254,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (flags & 0x80) pen.dashOffset = r.f32();
     if (flags & 0x100) { const c = r.u32(); pen.dashes = []; for (let i = 0; i < c; i++) pen.dashes.push(r.f32()); }
     if (pen.dashes && !(flags & 0x20)) pen.style = 5; // (GDI+ writes a custom pattern with no line style)
-    if (flags & 0x200) r.i32();
+    if (flags & 0x200) pen.inset = r.i32() === 1;
     if (flags & 0x400) { const c = r.u32(); r.o += c * 4; }
     if (flags & 0x800) { const s = r.u32(); r.o += s; }
     if (flags & 0x1000) { const s = r.u32(); r.o += s; }
@@ -285,15 +308,31 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     if (typeof brush === 'number') return [hex(brush), alpha(brush)];
     if (brush.type === 'solid') return [hex(brush.color), alpha(brush.color)];
     if (brush.type === 'hatch') {
+      // An 8 x 8 tile of the picture's pixels, upright and unscaled whatever the world and page (as GDI+ draws them):
+      // its lines, or for the percent styles that share of its pixels.
       const g = id('h');
-      const lines = { 0: 'M0 4h8', 1: 'M4 0v8', 2: 'M0 0l8 8', 3: 'M8 0l-8 8', 4: 'M0 4h8M4 0v8', 5: 'M0 0l8 8M8 0l-8 8' }[brush.style];
-      if (!lines) return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
-      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/><path d="${lines}" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="1"/></pattern>`);
+      const lines = { 0: 'M0 4.5h8', 1: 'M4.5 0v8', 2: 'M0 0l8 8', 3: 'M8 0l-8 8', 4: 'M0 4.5h8M4.5 0v8', 5: 'M0 0l8 8M8 0l-8 8' }[brush.style];
+      const pct = { 6: 5, 7: 10, 8: 20, 9: 25, 10: 30, 11: 40, 12: 50, 13: 60, 14: 70, 15: 75, 16: 80, 17: 90 }[brush.style];
+      let ink = '';
+      if (lines) ink = `<path d="${lines}" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="1"/>`;
+      else if (pct) {
+        const cells = [];
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100) cells.push(`M${x} ${y}h1v1h-1Z`);
+        ink = `<path d="${cells.join('')}" fill="${hex(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`;
+      } else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
+      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'texture') {
+      // (Tiled; mirrored at every other tile for the flip modes, a tile of two by two. Clamped as tiled: the same over the
+      // picture itself, which is where such a brush fills, and a pattern too big for its scale draws nothing.)
       const g = id('t');
-      defs.push(`<pattern id="${g}" width="${brush.img.w}" height="${brush.img.h}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><image width="${brush.img.w}" height="${brush.img.h}" href="${brush.img.href}"/></pattern>`);
+      const { w, h: ih, href } = brush.img;
+      const fx = brush.wrap === 1 || brush.wrap === 3, fy = brush.wrap === 2 || brush.wrap === 3;
+      const tw = fx ? 2 * w : w, th = fy ? 2 * ih : ih;
+      const im = (sx, sy) => `<image width="${w}" height="${ih}" href="${href}" transform="matrix(${sx} 0 0 ${sy} ${sx < 0 ? 2 * w : 0} ${sy < 0 ? 2 * ih : 0})"/>`;
+      const tiles = [im(1, 1), fx && im(-1, 1), fy && im(1, -1), fx && fy && im(-1, -1)].filter(Boolean).join('');
+      defs.push(`<pattern id="${g}" width="${tw}" height="${th}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}>${tiles}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'linear') {
@@ -308,24 +347,72 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     }
     if (brush.type === 'radial') {
       const g = id('g');
-      defs.push(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(brush.cx)}" cy="${n(brush.cy)}" r="${n(brush.r)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
+      const { cx, cy, rx, ry } = brush;
+      const squash = mul(mul([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
+      defs.push(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mul(squash, brush.m) : squash)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
+      return [`url(#${g})`, 1];
+    }
+    if (brush.type === 'fan') {
+      // (A pattern the size of the boundary holding the triangles. Each is the centre colour, under its side's colours
+      // (one corner's to the next's, along the side) faded in from the centre out to the side: a corner gets its own
+      // colour, and the colours meet along the lines to the corners, as GDI+ blends them.)
+      const g = id('f');
+      const { cx, cy, pts, box, c1, cols } = brush;
+      const stop = (o, c) => `<stop offset="${o}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`;
+      const tris = pts.map((a, i) => {
+        const b = pts[(i + 1) % pts.length];
+        const ex = b[0] - a[0], ey = b[1] - a[1], len2 = ex * ex + ey * ey || 1;
+        const t = ((cx - a[0]) * ex + (cy - a[1]) * ey) / len2; // the foot of the perpendicular from the centre
+        const fx = a[0] + t * ex, fy = a[1] + t * ey;
+        const side = id('g'), fade = id('g'), mask = id('k');
+        const d = `M${n(cx)} ${n(cy)}L${n(a[0])} ${n(a[1])}L${n(b[0])} ${n(b[1])}Z`;
+        defs.push(`<linearGradient id="${side}" gradientUnits="userSpaceOnUse" x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}">${stop(0, cols[i])}${stop(1, cols[(i + 1) % pts.length])}</linearGradient>`);
+        defs.push(`<linearGradient id="${fade}" gradientUnits="userSpaceOnUse" x1="${n(cx)}" y1="${n(cy)}" x2="${n(fx)}" y2="${n(fy)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`);
+        defs.push(`<mask id="${mask}" maskUnits="userSpaceOnUse" x="-1e6" y="-1e6" width="2e6" height="2e6"><path d="${d}" fill="url(#${fade})" stroke="url(#${fade})" stroke-width="0.5"/></mask>`);
+        return `<path d="${d}" fill="${hex(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${hex(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
+      }).join('');
+      defs.push(`<pattern id="${g}" x="${n(box[0])}" y="${n(box[1])}" width="${n(box[2] - box[0])}" height="${n(box[3] - box[1])}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><g transform="translate(${n(-box[0])} ${n(-box[1])})">${tris}</g></pattern>`);
       return [`url(#${g})`, 1];
     }
     return ['#808080', 1];
   };
   const brushOf = (flags, v) => (flags & 0x8000 ? v : objects[v & 255]);
   const fillAttr = (brush, rule = 'evenodd') => { const [p, o] = paint(brush); return `fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} fill-rule="${rule}" stroke="none"`; };
-  const strokeAttr = (pen) => {
+  const strokeAttr = (pen, widen = 1) => {
     if (!pen || pen.kind !== 'pen') return 'stroke="#000" stroke-width="1" vector-effect="non-scaling-stroke"';
     const [p, o] = paint(pen.brush);
     let w = pen.width;
     if (pen.unit && pen.unit !== pageUnit && pen.unit > 1) w = (w * unitPx(pen.unit)) / k();
     const thin = !(w > 0);
     const dash = pen.style === 5 && pen.dashes ? pen.dashes : { 1: [3, 1], 2: [1, 1], 3: [3, 1, 1, 1], 4: [3, 1, 1, 1, 1, 1] }[pen.style];
-    const dw = thin ? 1 : w;
+    const dw = (thin ? 1 : w) * widen;
+    // (A different cap at each end: the line ends flat, each end's cap a marker, as SVG has one line cap.)
+    const capName = (c) => ['butt', 'square', 'round'][c] || 'butt';
+    const end = pen.endCap ?? pen.cap;
+    let caps = ` stroke-linecap="${capName(pen.cap)}"`;
+    if (end !== pen.cap) {
+      const marker = (c) => {
+        if (c !== 1 && c !== 2) return null;
+        const mid = id('m');
+        const shapeEl = c === 2 ? '<circle r="0.5"/>' : '<rect x="0" y="-0.5" width="0.5" height="1"/>';
+        defs.push(`<marker id="${mid}" markerUnits="strokeWidth" markerWidth="1" markerHeight="1" viewBox="-0.5 -0.5 1 1" orient="auto-start-reverse" overflow="visible"><g fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''}>${shapeEl}</g></marker>`);
+        return mid;
+      };
+      const ms = marker(pen.cap), me = marker(end);
+      caps = ` stroke-linecap="butt"${ms ? ` marker-start="url(#${ms})"` : ''}${me ? ` marker-end="url(#${me})"` : ''}`;
+    }
     return `fill="none" stroke="${p}"${o < 1 ? ` stroke-opacity="${n(o)}"` : ''} stroke-width="${n(dw)}"${thin ? ' vector-effect="non-scaling-stroke"' : ''}`
       + `${dash ? ` stroke-dasharray="${dash.map((v) => n(v * dw)).join(' ')}"${pen.dashOffset ? ` stroke-dashoffset="${n(pen.dashOffset * dw)}"` : ''}` : ''}`
-      + ` stroke-linecap="${['butt', 'square', 'round'][pen.cap] || 'butt'}" stroke-linejoin="${['miter', 'bevel', 'round', 'miter'][pen.join] || 'miter'}" stroke-miterlimit="${n(Math.max(1, pen.miter))}"`;
+      + `${caps} stroke-linejoin="${['miter', 'bevel', 'round', 'miter'][pen.join] || 'miter'}" stroke-miterlimit="${n(Math.max(1, pen.miter))}"`;
+  };
+  // A closed figure's outline: an inset pen inside it (twice as wide, clipped to the figure), as GDI+ draws it.
+  const outline = (d, pen, closed = true) => {
+    if (!d) return;
+    if (!(closed && pen && pen.kind === 'pen' && pen.inset)) { shape(d, strokeAttr(pen)); return; }
+    const was = clip;
+    clip = clipPath(d, toDevice(), clip);
+    shape(d, strokeAttr(pen, 2));
+    clip = was;
   };
   const rectD = ([x, y, w, hh]) => `M${n(x)} ${n(y)}h${n(w)}v${n(hh)}h${n(-w)}Z`;
   const ellipseD = ([x, y, w, hh]) => `M${n(x)} ${n(y + hh / 2)}a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(w)} 0a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(-w)} 0Z`;
@@ -413,30 +500,51 @@ export function emfPlusToSvg(input, { bx, by }, h) {
 
   const text = (str, font, brush, fmt, layout) => {
     if (!font || font.kind !== 'font' || !str) return;
-    const em = font.unit === 0 || font.unit === pageUnit ? font.em : (font.em * unitPx(font.unit)) / k();
+    const em = fontEm(font);
     const [asc, desc] = h.win(font.face);
     const [x, y, w, hh] = layout;
     // (The format's margins: 1/6 em before and after the text by default, none in GenericTypographic's.)
     const lead = (fmt ? fmt.lead : 1 / 6) * em, trail = (fmt ? fmt.trail : 1 / 6) * em;
     const align = fmt ? fmt.align : 0, valign = fmt ? fmt.lineAlign : 0;
-    const lines = str.replace(/\r\n?/g, '\n').split('\n');
-    const lh = (asc + desc) * em;
-    // (Drawn at a point, a layout of no size: centred or ended on the point.)
+    const flags = fmt ? fmt.flags : 0;
+    // Its lines: at its breaks, and, in a layout box of a width, wrapped at spaces to fit it (unless NoWrap).
+    let lines = str.replace(/\r\n?/g, '\n').split('\n');
+    const room = w - lead - trail;
+    if (w > 0 && !(flags & 0x1000) && h.measure) {
+      const css = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${em}px ${h.fontStack(font.face)}`;
+      lines = lines.flatMap((line) => {
+        const out = [];
+        let cur = '';
+        for (const word of line.split(/(?<= )/)) {
+          if (cur && h.measure(cur + word.trimEnd(), css) > room + 0.5) { out.push(cur.trimEnd()); cur = word; } else cur += word;
+        }
+        out.push(cur.trimEnd());
+        return out;
+      });
+    }
+    const lh = (LINE[font.face.toLowerCase()] ?? asc + desc) * em;
+    // (Drawn at a point, a layout of no size: centred or ended on the point. A centred or bottom block is a little
+    // taller than its lines, as GDI+ measures it.)
     const span = hh > 0 ? hh : 0;
-    const top = valign === 1 ? y + (span - lh * lines.length) / 2 : valign === 2 ? y + span - lh * lines.length : y;
+    const block = lh * lines.length + (valign ? 0.09 * em : 0);
+    const top = valign === 1 ? y + (span - block) / 2 : valign === 2 ? y + span - block : y;
     const anchor = align === 1 ? 'middle' : align === 2 ? 'end' : 'start';
     const tx = anchor === 'middle' ? x + w / 2 : anchor === 'end' ? x + w - trail : x + lead;
     const [p, o] = paint(brush);
     const deco = [font.underline && 'underline', font.strike && 'line-through'].filter(Boolean).join(' ');
     const spans = lines.map((s, i) => `<tspan x="${n(tx)}" y="${n(top + asc * em + i * lh)}">${h.esc(s)}</tspan>`).join('');
+    // (Cut off at its layout box, unless NoClip.)
+    const was = clip;
+    if (w > 0 && hh > 0 && !(flags & 0x4000)) clip = clipPath(rectD([x, y, w, hh]), toDevice(), clip);
     emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''}${deco ? ` text-decoration="${deco}"` : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} text-anchor="${anchor}" xml:space="preserve"${tf()}>${spans}</text>`);
+    clip = was;
   };
 
   // ----- the records -----
   const record = (type, flags, r, end) => {
     const lo = flags & 255;
     switch (type) {
-      case 0x4001: r.u32(); r.u32(); dpiX = r.u32() || 96; dpiY = r.u32() || 96; void dpiY; break; // header
+      case 0x4001: r.u32(); refDisplay = !!(r.u32() & 1); dpiX = r.u32() || 96; dpiY = r.u32() || 96; void dpiY; break; // header
       case 0x4002: case 0x4003: break; // end of file, comment
       case 0x4004: gdiFrom = -2; break; // GetDC: GDI records follow
       case 0x4008: { // object
@@ -464,16 +572,16 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       }
       case 0x4009: { const c = r.u32(); emit(`<rect x="-1e5" y="-1e5" width="2e5" height="2e5" fill="${hex(c)}"${alpha(c) < 1 ? ` fill-opacity="${n(alpha(c))}"` : ''}/>`); break; } // clear
       case 0x400a: { const b = r.u32(), c = r.u32(); shape(rects(r, c, flags & 0x4000).map(rectD).join(''), fillAttr(brushOf(flags, b))); break; } // FillRects
-      case 0x400b: { const c = r.u32(); shape(rects(r, c, flags & 0x4000).map(rectD).join(''), strokeAttr(objects[lo])); break; } // DrawRects
+      case 0x400b: { const c = r.u32(); for (const q of rects(r, c, flags & 0x4000)) outline(rectD(q), objects[lo]); break; } // DrawRects
       case 0x400c: { const b = r.u32(), c = r.u32(); shape(polyD(points(r, c, flags), true), fillAttr(brushOf(flags, b))); break; } // FillPolygon
-      case 0x400d: { const c = r.u32(); shape(polyD(points(r, c, flags), flags & 0x2000), strokeAttr(objects[lo])); break; } // DrawLines
+      case 0x400d: { const c = r.u32(); outline(polyD(points(r, c, flags), flags & 0x2000), objects[lo], !!(flags & 0x2000)); break; } // DrawLines
       case 0x400e: { const b = r.u32(); shape(ellipseD(rects(r, 1, flags & 0x4000)[0]), fillAttr(brushOf(flags, b))); break; } // FillEllipse
-      case 0x400f: shape(ellipseD(rects(r, 1, flags & 0x4000)[0]), strokeAttr(objects[lo])); break; // DrawEllipse
+      case 0x400f: outline(ellipseD(rects(r, 1, flags & 0x4000)[0]), objects[lo]); break; // DrawEllipse
       case 0x4010: { const b = r.u32(), s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, true), fillAttr(brushOf(flags, b))); break; } // FillPie
       case 0x4011: case 0x4012: { const s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, type === 0x4011), strokeAttr(objects[lo])); break; } // DrawPie, DrawArc
       case 0x4013: { const b = r.u32(); const reg = objects[lo]; if (reg && reg.kind === 'region') fillRegion(reg.node, fillAttr(brushOf(flags, b), 'nonzero')); break; } // FillRegion
       case 0x4014: { const b = r.u32(); const p = objects[lo]; if (p && p.kind === 'path') shape(p.d, fillAttr(brushOf(flags, b))); break; } // FillPath
-      case 0x4015: { const pen = objects[r.u32() & 255]; const p = objects[lo]; if (p && p.kind === 'path') shape(p.d, strokeAttr(pen)); break; } // DrawPath
+      case 0x4015: { const pen = objects[r.u32() & 255]; const p = objects[lo]; if (p && p.kind === 'path') outline(p.d, pen, /Z$/.test(p.d)); break; } // DrawPath
       case 0x4016: { const b = r.u32(), t = r.f32(), c = r.u32(); shape(curveD(points(r, c, flags), t, true), fillAttr(brushOf(flags, b), flags & 0x2000 ? 'nonzero' : 'evenodd')); break; } // FillClosedCurve
       case 0x4017: { const t = r.f32(), c = r.u32(); shape(curveD(points(r, c, flags), t, true), strokeAttr(objects[lo])); break; } // DrawClosedCurve
       case 0x4018: { // DrawCurve
@@ -525,7 +633,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const m = hasMatrix ? r.m() : null; // (turned or skewed text: charts' labels)
         const font = objects[lo];
         if (!font || font.kind !== 'font' || !c) break;
-        const em = font.unit === 0 || font.unit === pageUnit ? font.em : (font.em * unitPx(font.unit)) / k();
+        const em = fontEm(font);
         const [p, o] = paint(brushOf(flags, b));
         // (With realized advances only the first position counts: the font's own advances place the rest.)
         const xy = opts & 4 ? [pts[0]] : pts;
