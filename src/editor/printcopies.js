@@ -26,7 +26,9 @@ export function printCopies(sheet, pages, { pageW, pageH, pageTop }) {
     const one = document.createElement('div');
     one.style.cssText = `page:odx-h${sizeOf(p)};width:${pageW(p)}px;height:${h}px;overflow:hidden;position:relative;break-after:page`;
     const c = p ? copy.cloneNode(true) : copy;
-    c.style.cssText += `;display:block;position:absolute;left:0;top:${-pageTop(p)}px;height:${pageTop(pages)}px`;
+    // (Not cut at its own width, the first section's: a landscape page's sheet is wider than a portrait one's, and printed
+    // cut off at the portrait width, longfn-word fnland. The page's box above cuts it at the page's own size.)
+    c.style.cssText += `;display:block;position:absolute;left:0;top:${-pageTop(p)}px;height:${pageTop(pages)}px;overflow:visible`;
     one.append(c);
     printBox.append(one);
   }

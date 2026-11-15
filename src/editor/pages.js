@@ -216,26 +216,38 @@ export function createPages(view, session, { sheet, scope }) {
     return sepRtl;
   };
   const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
-  const noteHeight = (note, kind, n) => {
-    if (!noteHeights.has(note.doc)) {
+  // (At `w`, a page's text width when it isn't the first section's: a landscape page's notes are wider, so shorter,
+  // longfn-word2 fnland.)
+  const noteHeight = (note, kind, n, w = null) => {
+    const key = w == null ? '' : String(Math.round(w));
+    if (!noteHeights.has(note.doc)) { noteHeights.set(note.doc, new Map()); noteBounds.set(note.doc, new Map()); }
+    if (!noteHeights.get(note.doc).has(key)) {
       const box = document.createElement('div');
       box.className = 'odx-notes';
-      box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;right:${page.right}px`;
+      box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;${w == null ? `right:${page.right}px` : `width:${w}px`}`;
       const el = noteEl(note, kind, n);
       box.append(el);
       sheet.append(box);
       const top = box.getBoundingClientRect().top;
-      noteHeights.set(note.doc, box.getBoundingClientRect().height);
+      noteHeights.get(note.doc).set(key, box.getBoundingClientRect().height);
       // (A table's rows each end a place it can be cut too: a note holding a long table goes on on the next page from
       // the row that doesn't fit, as in Word.)
-      noteBounds.set(note.doc, [...el.children].flatMap((c) => {
+      noteBounds.get(note.doc).set(key, [...el.children].flatMap((c) => {
         const t = c.tagName === 'TABLE' ? c : c.querySelector(':scope > table');
         const rows = t && t.tBodies[0] ? [...t.tBodies[0].rows] : [];
-        return (rows.length ? rows : [c]).map((e) => e.getBoundingClientRect().bottom - top);
+        if (rows.length) return rows.map((e) => e.getBoundingClientRect().bottom - top);
+        // (And a paragraph's every line: a note longer than its page goes on on the next from the first line that doesn't
+        // fit, as in Word, not from mid-line (longfn-word fnhuge).)
+        const rg = document.createRange();
+        rg.selectNodeContents(c);
+        const tops = [];
+        for (const q of rg.getClientRects()) if (q.height > 0 && !tops.some((t) => Math.abs(t - q.top) < 2)) tops.push(q.top);
+        tops.sort((x, y) => x - y);
+        return [...tops.slice(1).map((t) => t - top), c.getBoundingClientRect().bottom - top];
       }).filter((b) => b > 0));
       box.remove();
     }
-    return noteHeights.get(note.doc);
+    return noteHeights.get(note.doc).get(key);
   };
   // A band's notes in its columns, balanced as Word balances them: the lowest band that holds them, the first column
   // taking the extra, a note split between columns only where each part keeps two lines (so a note of three lines
@@ -341,6 +353,17 @@ export function createPages(view, session, { sheet, scope }) {
     for (let p = withNotes[0]; carry.length || p <= last; p = nextBand(p)) {
       const items = [...carry, ...(notesOn.get(p) || [])];
       if (!items.length) continue;
+      // (Measured at this page's text width, out of columns: a landscape section's among portrait ones.)
+      if (!colGeo(p)) {
+        const m = marginsAt(p);
+        const tw = pageW(p) - (m.left ?? page.left) - (m.right ?? page.right);
+        const wide = Math.abs(tw - (page.width - page.left - page.right)) > 1;
+        for (const r of items) {
+          if (!r.note) continue;
+          r.h = noteHeight(r.note, r.kind, r.n, wide ? tw : null);
+          r.wKey = wide ? String(Math.round(tw)) : '';
+        }
+      }
       const total = items.reduce((t, r) => t + r.h, 0) - skip;
       let room = Math.max(40, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
       // In columns of its own: the band's balanced height. (Too tall for the page, it's laid out as one, below.)
@@ -350,20 +373,25 @@ export function createPages(view, session, { sheet, scope }) {
         : allEnd && cols && !cols.unequal && cols.num > 1 ? { m: cols.num, gap: cols.space, rtl: !!cols.rtl } : null);
       const lay = bc && bandLayout(items, bc);
       if (bc && lay.h <= room) { noteFlow.set(p, { items, skip: 0, h: lay.h, cols: bc, lay }); notesH.set(p, lay.h + NOTE_SEP); carry = []; continue; }
+      // (Its notes cut under the text when one's reference line stayed on a page too short for it: splitParagraph.)
+      const part = (notesOn.get(p) || []).filter((r) => r.partial && r.at != null);
+      if (part.length) { const at0 = Math.max(...part.map((r) => r.at)), pv = pageOf(at0); room = Math.max(40, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
       if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
       // Too long for the page: in Word it takes all the room under the text with its reference (that text's page ends
       // there), not only what the page keeps for its body. (`at` is in the flow: in columns, its own column's page.)
       const ats = (notesOn.get(p) || []).map((r) => r.at).filter((v) => v != null);
-      if (ats.length) { const at0 = Math.max(...ats), pv = pageOf(at0); room = Math.max(40, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
+      if (ats.length && !part.length) { const at0 = Math.max(...ats), pv = pageOf(at0); room = Math.max(40, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
       // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
       let at = 0, cut = 0;
       for (const r of items) {
-        for (const b of noteBounds.get(r.note?.doc) || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
+        for (const b of noteBounds.get(r.note?.doc)?.get(r.wKey ?? '') || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
         at += r.h;
       }
       if (!cut) cut = room;
       noteFlow.set(p, { items, skip, h: cut });
-      notesH.set(p, cut + NOTE_SEP);
+      // (Under its reference's text, cut at a line's end: the band starts at the text's end, the room left below the cut, as in
+      // Word (longfn-word fnhuge: not at the foot with the room above it).)
+      notesH.set(p, (ats.length ? Math.max(cut, room) : cut) + NOTE_SEP);
       const rest = [];
       let acc = 0, next = 0;
       for (const r of items) {
@@ -1176,24 +1204,71 @@ export function createPages(view, session, { sheet, scope }) {
     // (Up to the half of "multiple" spacing's extra, as for lead: sample S058's double-spaced 13pt Times, its
     // 10px offset left on, moved page 1's last line to page 2.)
     const inset = lead0 > 0 && (lead0 <= 6 || (lead && lead0 <= 20)) ? lead0 : 0;
+    // The block's own footnotes, each with its reference's screen top: a line before a reference needs no room for its
+    // note (Word keeps the lines above a long note's reference on the page, the reference's line going on with the note).
+    const ownNotes = (blockNotes.get(b.i) || []).filter((r) => r.kind === 'footnote').map((r) => {
+      const e = view.nodeDOM(r.pos);
+      // (Its middle: a superscript mark's top is above its line's.)
+      const q = e && e.nodeType === 1 ? e.getBoundingClientRect() : null;
+      return { r, y: q ? (q.top + q.bottom) / 2 : null };
+    }).filter((x) => x.y != null);
+    const bottomFor = (pg, n) => {
+      const base = contentBottom(pg);
+      const end = lines[n + 1] ? lines[n + 1].screenTop : Infinity;
+      const band = bandOf(pg);
+      const later = ownNotes.filter((x) => x.y >= end - 1 && placed.get(x.r.kind + x.r.id) === band).map((x) => x.r);
+      if (!later.length) return base;
+      const list = notesOn.get(band) || [];
+      notesOn.set(band, list.filter((x) => !later.includes(x)));
+      sumNotes(band);
+      const without = contentBottom(pg);
+      notesOn.set(band, list);
+      sumNotes(band);
+      return without;
+    };
+    const partialFits = (pg, n, bottom) => {
+      const band = bandOf(pg);
+      const end = lines[n + 1] ? lines[n + 1].screenTop : Infinity;
+      const mine = (x) => placed.get(x.r.kind + x.r.id) === band;
+      const inLine = ownNotes.filter((x) => mine(x) && x.y >= lines[n].screenTop - 1 && x.y < end - 1).map((x) => x.r);
+      if (!inLine.length) return false;
+      const later = new Set(ownNotes.filter((x) => mine(x) && x.y >= end - 1).map((x) => x.r));
+      const others = (notesOn.get(band) || []).filter((r) => !later.has(r) && !inLine.includes(r));
+      const at = bottom + (n === lines.length - 1 ? spaceAfter(b.node) : 0) + 11.5;
+      const under = pageTop(pg) + pageH(pg) - marginsAt(pg).bottom - at - NOTE_SEP;
+      // (Its first two lines: a note's paragraph keeps two lines together at a page's foot, as body text does, longfn-word2
+      // fn4long's page 1, where Word moves the reference line on rather than leave one line of its note.)
+      const bounds = noteBounds.get(inLine[0].note?.doc)?.get(inLine[0].wKey ?? '') || [];
+      const first = bounds[1] ?? inLine[0].h;
+      // (And what of a note goes on from the page before: it comes first in the band, longfn-word2 fnhuge page 2.)
+      const flow = noteFlow.get(band);
+      const own = notesOn.get(band) || [];
+      const carried = flow ? Math.max(0, flow.items.filter((r) => !own.includes(r)).reduce((t, r) => t + r.h, 0) - (flow.skip || 0)) : 0;
+      if (under < carried + others.reduce((t, r) => t + r.h, 0) + first) return false;
+      for (const r of inLine) { r.partial = true; r.at = at; }
+      sumNotes();
+      return true;
+    };
     for (let n = 0; n < lines.length; n++) {
       const top = lines[n].top + shift + extra;
       const bottom = lines[n].bottom + shift + extra - (n < lines.length - 1 ? inset : 0);
       const pg = pageOf(top);
+      // (Only asked for a line that wouldn't fit with all of them.)
+      const room = (k) => (bottom > contentBottom(pg) + slack && ownNotes.length ? bottomFor(pg, k) : contentBottom(pg));
       let at = -1;
       if (lines[n].forced) {
         // A paragraph that starts a page with a page break: the break already happened (Word doesn't add a blank page).
         if (n === 1 && moved && pushes.length === 0 && leadingBreak(b.el)) continue;
         at = n;
       }
-      else if (bottom > contentBottom(pg) + slack && n > pageStart) {
+      else if (bottom > room(n) + slack && n > pageStart && !(ownNotes.length && partialFits(pg, n, bottom))) {
         if (keepLines(b.node) && pushes.length === 0) return blockFirstOnPage ? { pushes, total: 0 } : null;
         at = n;
         if (widow) {
           if (lines.length - at < 2 && at - 1 > pageStart) at = lines.length - 2; // keep two lines for the next page
           if (at - pageStart < 2 && pageStart === 0 && !blockFirstOnPage) return null; // a single line can't stay behind
         }
-      } else if (bottom > contentBottom(pg) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
+      } else if (bottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
       // (A first line that only holds a page break stays at the bottom of its page, as in Word: the text after it starts the next.)
       if (at < 0) continue;
       const lineTop = lines[at].top + shift + extra;
@@ -1366,6 +1441,19 @@ export function createPages(view, session, { sheet, scope }) {
    * to its height, and the original is hidden. Positions are read from the current layout (one pass behind: the next
    * pass settles them).
    */
+  // Where a block's first line is (px, screen): its box's top, unless pagination moved its lines to the next page by a
+  // spacer inside it (a paragraph whose box still starts at the foot of the page before: pagefloat-word pf-early's anchor,
+  // its picture lifted onto the wrong page).
+  const firstLineTop = (el) => {
+    const top = el.getBoundingClientRect().top;
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('.odx-lift, .odx-push') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    const t = w.nextNode();
+    if (!t) return top;
+    const rg = document.createRange();
+    rg.setStart(t, 0); rg.setEnd(t, Math.min(1, t.data.length));
+    const q = rg.getClientRects()[0];
+    return q ? Math.max(top, q.top) : top;
+  };
   const liftFloats = (base) => {
     const out = [];
     view.state.doc.descendants((node, pos) => {
@@ -1373,7 +1461,7 @@ export function createPages(view, session, { sheet, scope }) {
       const img = view.nodeDOM(pos);
       const host = img && img.nodeType === 1 ? img.closest('.odx-content > *') : null;
       if (!host || host.parentElement !== view.dom) return false;
-      const pg = pageOf(host.getBoundingClientRect().top - base);
+      const pg = pageOf(firstLineTop(host) - base);
       const place = node.attrs.place;
       const rel = /--odx-lrel:\s*(\w+)/.exec(place)[1];
       const off = parseFloat((/--odx-ly:\s*(-?[\d.]+)px/.exec(place) || [])[1]) || 0;
@@ -1383,9 +1471,12 @@ export function createPages(view, session, { sheet, scope }) {
       const top0 = pageTop(pg) + (rel === 'page' ? 0 : m.top);
       const bottom0 = pageTop(pg) + pageH(pg) - (rel === 'page' ? 0 : m.bottom);
       const y = align === 'top' ? top0 : align === 'bottom' ? bottom0 - h : align === 'center' ? (top0 + bottom0 - h) / 2 : top0 + off;
-      const first = [...view.dom.children].find((e) => e.tagName === 'P' && e.getBoundingClientRect().top - base >= contentTop(pg) - 1);
-      if (!first || pageOf(first.getBoundingClientRect().top - base) !== pg) return false;
-      const drop = Math.round((y - (first.getBoundingClientRect().top - base)) * 10) / 10;
+      // (The page's first paragraph by where its first line is, and the drop from the page's text top, where pagination puts
+      // that line: measured from the paragraph's box, a pass behind, the lift and the push chased each other and never
+      // settled, pagefloat-word pf-early's picture drawn on the page before.)
+      const first = [...view.dom.children].find((e) => e.tagName === 'P' && firstLineTop(e) - base >= contentTop(pg) - 1);
+      if (!first || pageOf(firstLineTop(first) - base) !== pg) return false;
+      const drop = Math.round((y - Math.max(contentTop(pg), first.getBoundingClientRect().top - base)) * 10) / 10;
       const at = view.posAtDOM(first, 0);
       const cs = getComputedStyle(img);
       const side = cs.float === 'right' ? 'right' : 'left';
@@ -1423,7 +1514,7 @@ export function createPages(view, session, { sheet, scope }) {
       const host = img && img.nodeType === 1 ? img.closest('.odx-content > *') : null;
       const cb = img && img.offsetParent;
       if (!host || host.parentElement !== view.dom || !cb) return false;
-      const pg = pageOf(host.getBoundingClientRect().top - base);
+      const pg = pageOf(firstLineTop(host) - base);
       const place = node.attrs.place;
       const rel = /--odx-arel:\s*(\w+)/.exec(place)[1];
       const off = parseFloat((/--odx-ay:\s*(-?[\d.]+)px/.exec(place) || [])[1]) || 0;
@@ -2059,8 +2150,9 @@ export function createPages(view, session, { sheet, scope }) {
         if (e.moved != null) { shift += e.moved; top += e.moved; p = pageOf(top); }
         if (e.again) balanceAgain = true;
       }
-      // (Below it, its space after and the note separator's line as Word draws it, when a note has to start under it.)
-      reserveNotes(b.i, p, b.bottom + shift + spaceAfter(b.node) + 16);
+      // (Below it, its space after and the note separator's line as Word draws it, when a note has to start under it: its first
+      // line 37.6pt under the text's last baseline in Word's print, longfn-word fnhuge.)
+      reserveNotes(b.i, p, b.bottom + shift + spaceAfter(b.node) + 11.5);
       // A new section's margins: from this page if it starts one, else from the next.
       while (margins.length > 1 && margins[margins.length - 1][0] > p + 1) margins.pop(); // left by an earlier pass over these blocks
       // (The section that ends between the block before and this one: its paragraph may have no box, collapsed into the

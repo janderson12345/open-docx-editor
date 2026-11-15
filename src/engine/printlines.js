@@ -72,7 +72,42 @@ function lines(el) {
       from = lo + 1;
     }
   }
-  return pending ? null : out;
+  if (pending) return null;
+  // A line goes on past its last text over the textless widgets after it on the same line: a note's reference mark at a
+  // line's (or the paragraph's) end, its number drawn by CSS (::after), had been left out of the printed copy.
+  for (const ln of out) {
+    let [n, o] = ln.end;
+    if (n.nodeType !== 3 || o < n.data.length) continue;
+    for (;;) {
+      while (n !== el && !n.nextSibling) n = n.parentNode;
+      if (n === el) break;
+      const s = n.nextSibling;
+      if (s.nodeType !== 1 || s.textContent || !s.matches?.('[data-kind$="Reference"]')) break;
+      const q = s.getBoundingClientRect();
+      if (q.bottom < ln.lo - 1 || q.top > ln.bottom + 1) break;
+      ln.endAfter = s;
+      n = s;
+    }
+  }
+  return out;
+}
+
+const ROMAN = [['m', 1000], ['cm', 900], ['d', 500], ['cd', 400], ['c', 100], ['xc', 90], ['l', 50], ['xl', 40], ['x', 10], ['ix', 9], ['v', 5], ['iv', 4], ['i', 1]];
+let noteMarks = null; // (the document's reference marks in order, for one build: element -> its number)
+/** A note reference mark's number as editor.css draws it: footnotes 1, 2, 3..., endnotes i, ii, iii... */
+function noteNumber(mark, contentEl) {
+  if (!noteMarks || noteMarks.root !== contentEl) {
+    noteMarks = { root: contentEl, of: new Map() };
+    for (const kind of ['footnoteReference', 'endnoteReference']) {
+      contentEl.querySelectorAll(`[data-kind="${kind}"]`).forEach((e, i) => {
+        let n = i + 1;
+        let v = String(n);
+        if (kind === 'endnoteReference') { v = ''; for (const [k, d] of ROMAN) while (n >= d) { v += k; n -= d; } }
+        noteMarks.of.set(e, v);
+      });
+    }
+  }
+  return noteMarks.of.get(mark) || null;
 }
 
 /** A ':nth-child' path from `root` (exclusive) down to `el`, for a rule that hides it without touching it. */
@@ -115,6 +150,7 @@ const SKIP = 'img:not(.ProseMirror-separator):not(.odx-lifted):not(.odx-lift > i
  */
 export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
   removePrintLines(sheet);
+  noteMarks = null;
   const layer = document.createElement('div');
   layer.className = LAYER;
   sheet.append(layer);
@@ -199,9 +235,10 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
     ls.forEach((ln, k) => {
       if (ln.top >= clip - 1 || ln.top < clipTop - 1) return;
       r.setStart(...ln.start); r.setEnd(...ln.end);
+      if (ln.endAfter) r.setEndAfter(ln.endAfter);
       // A wrapped line's trailing spaces hang past its end, as on screen and in Word: in the copy (white-space: pre) they
       // would count, and a right-aligned or justified line would end a space short (07-paragraph-format: 2.8px).
-      if (k < ls.length - 1 && ln.end[0].nodeType === 3) {
+      if (k < ls.length - 1 && !ln.endAfter && ln.end[0].nodeType === 3) {
         let [en, eo] = ln.end;
         while (eo > 0 && en.data[eo - 1] === ' ' && !(en === ln.start[0] && eo - 1 <= ln.start[1])) eo--;
         if (eo !== ln.end[1]) r.setEnd(en, eo);
@@ -233,6 +270,13 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
         frag = c;
       }
       line.append(frag);
+      // Its notes' reference marks numbered as on screen: CSS counts them (::after), and in this sheet's layer the count
+      // would start again.
+      const marks = line.querySelectorAll('[data-kind="footnoteReference"], [data-kind="endnoteReference"]');
+      if (marks.length) {
+        const own = [...el.querySelectorAll('[data-kind="footnoteReference"], [data-kind="endnoteReference"]')].filter((e) => r.intersectsNode(e));
+        marks.forEach((m, i) => { const n = own[i] && noteNumber(own[i], contentEl); if (n) m.dataset.n = n; });
+      }
       // A line broken at an automatic hyphenation point (hyphenate.js: the browser's own, or its soft hyphens): on screen
       // the browser draws the hyphen there, but in the copy (white-space: pre) nothing breaks, so the hyphen is written
       // in, in the run's font. (The browser's own: the next line goes on in the same word, the same text node.)

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Long footnotes laid out as Word lays them out** (checked against Word's print of four test documents): the lines
+  above a long note's reference stay on the page, the reference's line going on with its note; a reference's line stays
+  when its note's first two lines fit under it, the rest of the note going on on the next page; a note longer than its
+  page starts under the text and is cut at a line's end, not partway through one; notes on a landscape page among
+  portrait ones are measured at that page's width. Printing: footnote reference numbers at a line's end print again,
+  and a landscape page among portrait ones prints whole (it was cut off at the portrait width).
+- **Delete Cells (shift cells left)** on the Table tab: the cells go and the cells after them move left, as Word's
+  dialog does; with changes tracked, each is recorded as a deleted cell (w:cellDel), as is each cell of a column
+  deleted, and goes when accepted (Word reads it as a cell deletion and accepts it the same).
+- **Pictures placed against the page**: the text wraps on the side with room (one near the right margin had its text
+  squeezed into a sliver on its right, a letter a line).
+- **A line holding a picture** under 1.5 or double spacing has all of the spacing's extra below it, as in Word (the
+  next line had been 3pt and 7pt too high).
 - **Security fixes from code scanning.** A crafted document could make reading its page margins or a merge field's
   number picture take a very long time (regular expressions that backtracked): both are now read in linear time, as is
   Find's replacement text. Tracked rows' author names decode `&amp;` last (an author named with an escaped quote was
