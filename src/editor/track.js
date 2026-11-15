@@ -103,6 +103,20 @@ function since(tr, start) {
   return m;
 }
 
+/**
+ * since(tr, start).map, kept as the transaction grows: one mapping taking each new step's map as it comes, and none
+ * that moves nothing (a mark or a node's attributes changed). Built afresh for each position, Accept All on 6000
+ * changes took seconds (each lookup went through every step made so far).
+ */
+function sinceMapper(tr, start) {
+  const m = new Mapping();
+  let n = start;
+  return (p, assoc) => {
+    for (; n < tr.mapping.maps.length; n++) { const mp = tr.mapping.maps[n]; if (!mp.ranges || mp.ranges.length) m.appendMap(mp); }
+    return m.map(p, assoc);
+  };
+}
+
 let idSeq = 0;
 function nextId(doc) {
   if (!idSeq) {
@@ -403,7 +417,7 @@ export function resolveChanges(tr, from, to, accept) {
   const doc = tr.doc;
   // Positions in `doc` mapped through the steps made here (the transaction may hold others before them).
   const begin = tr.steps.length;
-  const mapIn = (p, assoc) => since(tr, begin).map(p, assoc);
+  const mapIn = sinceMapper(tr, begin);
   const removes = [];
   const unmark = [];
   const restores = [];
@@ -505,8 +519,8 @@ export function resolveChanges(tr, from, to, accept) {
   // (Text first, so a paragraph that goes whole is empty by the time its mark goes.)
   const desc = (x, y) => y.at - x.at;
   const cuts = [...[...removes.map(([s, e]) => ({ at: s, s, e })), ...gone].sort(desc), ...joins.map((p) => ({ at: p, join: p })).sort(desc)];
+  const map = sinceMapper(tr, start);
   for (const c of cuts) {
-    const map = (p, assoc) => since(tr, start).map(p, assoc);
     if (c.join != null) {
       const p = map(c.join);
       const $p = tr.doc.resolve(p);
@@ -600,7 +614,16 @@ export const resolveAll = (accept) => (state, dispatch) => {
   if (!findChange(state.doc, 0, 1)) return false;
   if (!resolvingAllowed(state)) return refused(dispatch);
   if (dispatch) {
-    dispatch(resolveChanges(state.tr.setMeta('odx-untracked', true), 0, state.doc.content.size, accept).scrollIntoView());
+    let tr = resolveChanges(state.tr.setMeta('odx-untracked', true), 0, state.doc.content.size, accept);
+    // Many changes: the result as one step, its content in place of the document's. Every decoration (pagination's,
+    // line heights') was mapped through each of thousands of steps: 6000 changes took seconds. (Unchanged paragraphs
+    // are the same nodes, so the view keeps their DOM; it's one undo step either way.)
+    if (tr.steps.length > 200) {
+      const one = state.tr.setMeta('odx-untracked', true).setMeta('odx-resolve', true);
+      one.replaceWith(0, state.doc.content.size, tr.doc.content);
+      tr = one;
+    }
+    dispatch(tr.scrollIntoView());
     announce(`All changes ${accept ? 'accepted' : 'rejected'}`);
   }
   return true;
