@@ -55,3 +55,15 @@ test('EMF+ regions and clips: an intersection, and a clip moved by OffsetClip', 
   assert.match(svg, /<clipPath id="p\d+"><path d="M400 120 C400 147\.614/, 'the region\'s circle clips its rectangle');
   assert.match(svg, /<path d="M20 240h40v40h-40Z" clip-rule="nonzero" transform="matrix\(1 0 0 1 60 0\)"/, 'the clip moved 60 to the right');
 });
+
+// Settled against Windows' own GDI+ playing the pictures (emfplus-word2/WORD-CHECK.md).
+test('EMF+ font sizes: a point size ignores the page scale; a pixel size follows it as world units do', () => {
+  const svg = emfToSvg(fixture('emfplus-pagepoint.emf'));
+  assert.match(svg, /font-size="6"[^>]*transform="matrix\(2\.666667 0 0 2\.666667 0 0\)"><tspan[^>]*>12pt x2/, '12pt under PageScale 2: still 16px');
+  assert.match(svg, /font-size="12"[^>]*transform="matrix\(2\.666667 0 0 2\.666667 0 0\)"><tspan[^>]*>12px x2/, '12px under PageScale 2: 32px');
+});
+
+test('EMF+ Display units of a printer reference are 1/100 inch', () => {
+  const svg = emfToSvg(fixture('emfplus-dpi600.emf'));
+  assert.match(svg, /<path d="M10 10h120v80h-120Z" fill="#4472c4"[^>]*transform="matrix\(6 0 0 6 0 0\)"/);
+});
