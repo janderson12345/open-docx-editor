@@ -56,6 +56,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   let interp = 0;
   const saved = new Map();
   let gdiFrom = -1;
+  let multi = 0; // multi-format: 1 in its first section, 2 in a later one
 
   const unitPx = (u) => ({ 1: refDisplay ? 1 : dpiX / 100, 2: 1, 3: dpiX / 72, 4: dpiX, 5: dpiX / 300, 6: dpiX / 25.4 }[u] ?? 1);
   // A font's em in world units: World and Pixel sizes are world units (they follow the page transform, as GDI+ draws
@@ -313,14 +314,29 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       const g = id('h');
       const lines = { 0: 'M0 4.5h8', 1: 'M4.5 0v8', 2: 'M0 0l8 8', 3: 'M8 0l-8 8', 4: 'M0 4.5h8M4.5 0v8', 5: 'M0 0l8 8M8 0l-8 8' }[brush.style];
       const pct = { 6: 5, 7: 10, 8: 20, 9: 25, 10: 30, 11: 40, 12: 50, 13: 60, 14: 70, 15: 75, 16: 80, 17: 90 }[brush.style];
+      // (The other named styles: their lines at their spacing and weight, or a rule for which pixels are inked.)
+      const down = 'M-4 -4l16 16M-4 4l16 16M-4 -12l16 16', up = 'M12 -4l-16 16M12 4l-16 16M12 -12l-16 16', wide = (d) => [d, 3];
+      const more = {
+        18: [down, 1], 19: [up, 1], 20: [down, 2], 21: [up, 2], 22: wide('M0 0l8 8M-8 0l16 16M0 -8l16 16'), 23: wide('M8 0l-8 8M16 0l-16 16M8 -8l-16 16'),
+        24: ['M0.5 0v8M4.5 0v8', 1], 25: ['M0 0.5h8M0 4.5h8', 1], 26: ['M0.5 0v8M2.5 0v8M4.5 0v8M6.5 0v8', 1], 27: ['M0 0.5h8M0 2.5h8M0 4.5h8M0 6.5h8', 1],
+        28: ['M1 0v8M5 0v8', 2], 29: ['M0 1h8M0 5h8', 2], 30: ['M0 0l4 4M4 0l4 4', 1], 31: ['M4 0l-4 4M8 0l-4 4', 1], 32: ['M0 0.5h4M4 4.5h4', 1],
+        33: ['M0.5 0v4M4.5 4v4', 1], 36: ['M0 4l4-4l4 4', 1], 37: ['M0 4q2-3 4 0t4 0', 1], 38: ['M0 8l8-8M4 4l4 4', 1], 39: ['M0 0.5h8M0.5 0v4M0 4.5h8M4.5 4v4', 1],
+        46: ['M0 0l8 8M8 0l-8 8M0 4h8', 1], 48: ['M0 0.5h8M0 4.5h8M0.5 0v8M4.5 0v8', 1], 51: ['M0 0l8 8M8 0l-8 8', 1],
+      }[brush.style];
+      const dots = {
+        34: (x, y) => (x * 5 + y * 3) % 8 === 0, 35: (x, y) => ((x >> 1) * 5 + (y >> 1) * 3) % 4 === 0, 43: (x, y) => (x === 0 && y % 2 === 0) || (y === 0 && x % 2 === 0),
+        44: (x, y) => (x + y) % 4 === 0 && (x - y) % 4 === 0, 49: (x, y) => ((x >> 1) + (y >> 1)) % 2 === 0, 50: (x, y) => ((x >> 2) + (y >> 2)) % 2 === 0,
+        52: (x, y) => Math.abs(x - 3.5) + Math.abs(y - 3.5) <= 4,
+        40: (x, y) => (x + y) % 4 === 0 || (x - y + 8) % 8 === 0, 41: (x, y) => y < 4 ? (x + y) % 2 === 0 : x < 4 && y < 6, 42: (x, y) => (x === 2 && y === 1) || (x === 3 && y === 2) || (x === 6 && y === 5) || (x === 5 && y === 6),
+        45: (x, y) => y === 0 || (y < 4 && x === 0) || (y === 4) || (y > 4 && x === 4), 47: (x, y) => x % 2 === 0 && y % 2 === 0,
+      }[brush.style];
       let ink = '';
-      if (lines) ink = `<path d="${lines}" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="1"/>`;
-      else if (pct) {
-        const cells = [];
-        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100) cells.push(`M${x} ${y}h1v1h-1Z`);
-        ink = `<path d="${cells.join('')}" fill="${hex(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`;
-      } else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
-      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
+      const cellsOf = (on) => { const c = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (on(x, y)) c.push(`M${x} ${y}h1v1h-1Z`); return `<path d="${c.join('')}" fill="${hex(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`; };
+      if (lines || more) ink = `<path d="${lines || more[0]}" fill="none" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="${lines ? 1 : more[1]}"/>`;
+      else if (pct) ink = cellsOf((x, y) => (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100));
+      else if (dots) ink = cellsOf(dots);
+      else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
+      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'texture') {
@@ -406,8 +422,32 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       + `${caps} stroke-linejoin="${['miter', 'bevel', 'round', 'miter'][pen.join] || 'miter'}" stroke-miterlimit="${n(Math.max(1, pen.miter))}"`;
   };
   // A closed figure's outline: an inset pen inside it (twice as wide, clipped to the figure), as GDI+ draws it.
-  const outline = (d, pen, closed = true) => {
+  // A pen with a transform of its own (thicker one way than another): the figure taken through the transform's inverse,
+  // stroked there, and drawn through the transform, so the pen's width turns and stretches with it.
+  const mapD = (d, M) => {
+    let cx = 0, cy = 0, out = '';
+    const pt = (x, y) => { const q = [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]]; return `${n(q[0])} ${n(q[1])}`; };
+    for (const [, c, args] of d.matchAll(/([MLCZHVhv])([^MLCZHVhv]*)/g)) {
+      const a = (args.match(/-?[\d.]+(?:e-?\d+)?/g) || []).map(Number);
+      if (c === 'Z') { out += 'Z'; continue; }
+      if (c === 'H' || c === 'h') { cx = c === 'H' ? a[0] : cx + a[0]; out += `L${pt(cx, cy)}`; continue; }
+      if (c === 'V' || c === 'v') { cy = c === 'V' ? a[0] : cy + a[0]; out += `L${pt(cx, cy)}`; continue; }
+      const ps = [];
+      for (let i = 0; i + 1 < a.length; i += 2) { ps.push(pt(a[i], a[i + 1])); cx = a[i]; cy = a[i + 1]; }
+      out += c + ps.join(' ');
+    }
+    return out;
+  };
+  const outline = (d, pen, closed = true, plain = null) => {
     if (!d) return;
+    if (pen && pen.kind === 'pen' && pen.m && !pen.inset && plain !== false) {
+      const src = plain || d;
+      if (!/[aA]/.test(src)) {
+        const Pm = [pen.m[0], pen.m[1], pen.m[2], pen.m[3], 0, 0];
+        emit(`<path d="${mapD(src, inverse(Pm))}" ${strokeAttr(pen)} transform="${mat(mul(Pm, toDevice()))}"/>`);
+        return;
+      }
+    }
     if (!(closed && pen && pen.kind === 'pen' && pen.inset)) { shape(d, strokeAttr(pen)); return; }
     const was = clip;
     clip = clipPath(d, toDevice(), clip);
@@ -415,6 +455,12 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     clip = was;
   };
   const rectD = ([x, y, w, hh]) => `M${n(x)} ${n(y)}h${n(w)}v${n(hh)}h${n(-w)}Z`;
+  // An ellipse as four beziers (for a figure that has to go through a transform as points).
+  const ellipseBez = ([x, y, w, hh]) => {
+    const cx = x + w / 2, cy = y + hh / 2, rx = w / 2, ry = hh / 2, k = 0.5522847;
+    return `M${n(cx + rx)} ${n(cy)}C${n(cx + rx)} ${n(cy + k * ry)} ${n(cx + k * rx)} ${n(cy + ry)} ${n(cx)} ${n(cy + ry)}C${n(cx - k * rx)} ${n(cy + ry)} ${n(cx - rx)} ${n(cy + k * ry)} ${n(cx - rx)} ${n(cy)}`
+      + `C${n(cx - rx)} ${n(cy - k * ry)} ${n(cx - k * rx)} ${n(cy - ry)} ${n(cx)} ${n(cy - ry)}C${n(cx + k * rx)} ${n(cy - ry)} ${n(cx + rx)} ${n(cy - k * ry)} ${n(cx + rx)} ${n(cy)}Z`;
+  };
   const ellipseD = ([x, y, w, hh]) => `M${n(x)} ${n(y + hh / 2)}a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(w)} 0a${n(w / 2)} ${n(hh / 2)} 0 1 0 ${n(-w)} 0Z`;
   const arcD = ([x, y, w, hh], start, sweep, pie) => {
     const cx = x + w / 2, cy = y + hh / 2, rx = w / 2, ry = hh / 2;
@@ -522,6 +568,11 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         return out;
       });
     }
+    // (NoWrap in a box it's cut off at: the characters that don't wholly fit are left out, as GDI+'s character trimming.)
+    if (w > 0 && hh > 0 && flags & 0x1000 && !(flags & 0x4000) && h.measure) {
+      const css = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${em}px ${h.fontStack(font.face)}`;
+      lines = lines.map((line) => { let t = line; while (t && h.measure(t, css) > room + 0.5) t = t.slice(0, -1); return t; });
+    }
     const lh = (LINE[font.face.toLowerCase()] ?? asc + desc) * em;
     // (Drawn at a point, a layout of no size: centred or ended on the point. A centred or bottom block is a little
     // taller than its lines, as GDI+ measures it.)
@@ -576,7 +627,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       case 0x400c: { const b = r.u32(), c = r.u32(); shape(polyD(points(r, c, flags), true), fillAttr(brushOf(flags, b))); break; } // FillPolygon
       case 0x400d: { const c = r.u32(); outline(polyD(points(r, c, flags), flags & 0x2000), objects[lo], !!(flags & 0x2000)); break; } // DrawLines
       case 0x400e: { const b = r.u32(); shape(ellipseD(rects(r, 1, flags & 0x4000)[0]), fillAttr(brushOf(flags, b))); break; } // FillEllipse
-      case 0x400f: outline(ellipseD(rects(r, 1, flags & 0x4000)[0]), objects[lo]); break; // DrawEllipse
+      case 0x400f: { const q = rects(r, 1, flags & 0x4000)[0]; outline(ellipseD(q), objects[lo], true, ellipseBez(q)); break; } // DrawEllipse
       case 0x4010: { const b = r.u32(), s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, true), fillAttr(brushOf(flags, b))); break; } // FillPie
       case 0x4011: case 0x4012: { const s = r.f32(), w = r.f32(); shape(arcD(rects(r, 1, flags & 0x4000)[0], s, w, type === 0x4011), strokeAttr(objects[lo])); break; } // DrawPie, DrawArc
       case 0x4013: { const b = r.u32(); const reg = objects[lo]; if (reg && reg.kind === 'region') fillRegion(reg.node, fillAttr(brushOf(flags, b), 'nonzero')); break; } // FillRegion
@@ -691,7 +742,11 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const t = dv.getUint16(p, true), fl = dv.getUint16(p + 2, true), sz = dv.getUint32(p + 4, true), ds = dv.getUint32(p + 8, true);
         if (sz < 12 || p + sz > end) break;
         at = off + sub / 1000;
-        try { record(t, fl, rd(p + 12), p + 12 + ds); } catch { unsupported = true; }
+        // (Multi-format sections hold the same drawing in other forms: the first is drawn, the others skipped.)
+        if (t === 0x4005) multi = 1;
+        else if (t === 0x4006) multi = 2;
+        else if (t === 0x4007) multi = 0;
+        else if (multi !== 2) { try { record(t, fl, rd(p + 12), p + 12 + ds); } catch { unsupported = true; } }
         p += sz;
       }
       if (gdiFrom === -2) gdiFrom = off + size;
