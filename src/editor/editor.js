@@ -393,6 +393,8 @@ function paragraphPlugin(session) {
   return {
     sync,
     initial,
+    /** The styles changed (another co-editor's arrived): what was worked out from the old ones is dropped. */
+    reset() { tableCache.clear(); styleCs.clear(); },
     plugin: new Plugin({
       appendTransaction(trs, _old, state) {
         if (!trs.some((t) => t.docChanged)) return null;
@@ -560,6 +562,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
       view.odx.comments?.stop();
       view.odx.stories?.stop();
       view.odx.docAttrs?.stop();
+      view.odx.definitions?.stop();
       closeStory();
       closeNote();
       pages.destroy();
@@ -573,6 +576,18 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     view.odx.comments = collab.bindComments(session, () => refreshComments(view)); // (its push then finds nothing new)
     view.odx.stories = collab.bindStories(session, { fromJSON: (json) => schema.nodeFromJSON(json), onRemote: () => pages.restory() });
     view.odx.docAttrs = collab.bindDoc(view);
+    // Styles and lists another editor added: their CSS, then the paragraphs' list labels and spacing worked out again
+    // (after the shared body has taken the same update, as bindDoc's), and the pages measured again.
+    view.odx.definitions = collab.bindDefinitions(session, () => {
+      paras.reset();
+      view.odx.restyle();
+      setTimeout(() => {
+        if (view.isDestroyed) return;
+        const tr = paras.sync(view.state.tr);
+        if (tr.docChanged) view.dispatch(tr.setMeta('odx-remote', true).setMeta('addToHistory', false));
+        pages.restory();
+      });
+    });
   }
   hfDoubleClick(view);
   noteClicks(view);

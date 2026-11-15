@@ -7,10 +7,15 @@ import * as comments from '../../src/editor/comments.js';
 
 import * as hf from '../../src/editor/hfedit.js';
 import * as notes from '../../src/editor/notes.js';
+import * as toc from '../../src/editor/toc.js';
+import { setList } from '../../src/editor/commands.js';
+import { LIST_LIBRARY } from '../../src/ooxml/template.js';
 
 window.cm = comments; // (the test adds, answers, resolves and deletes comments through these)
 window.hf = hf; // (and edits a header and adds a footnote through these)
 window.notes = notes;
+window.lists = { setList, LIST_LIBRARY }; // (and makes a new list and a table of contents through these)
+window.toc = toc;
 
 const q = new URLSearchParams(location.search);
 const ydoc = new Y.Doc();
