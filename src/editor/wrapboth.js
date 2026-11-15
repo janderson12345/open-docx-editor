@@ -81,7 +81,10 @@ function zones(view, stories) {
     const r = img.getBoundingClientRect();
     if (!r.width || !r.height) continue;
     const [t, rt, b, l] = v.length === 4 ? v : [0, 0, 0, 0];
-    out.push({ left: r.left - l, right: r.right + rt, top: r.top - t, bottom: r.bottom + b });
+    // (Its own box: less the room drawn round its outline, reader.js padPlace's --odx-pad. floatshapes-word's 6pt-outlined
+    // rectangle by Text 2, its lines' words otherwise kept that much further off each side.)
+    const pad = Number(/--odx-pad:\s*([\d.]+)px/.exec(img.getAttribute('style') || '')?.[1]) || 0;
+    out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + pad - t, bottom: r.bottom - pad + b });
   }
   // A float drawn up to end at its page's edge (pages.js floatsPast) over lines of paragraphs above its own: Word lays
   // those lines out round it too (its PDF: the short lines above such a float go on to its right). Its own paragraph's
