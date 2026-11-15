@@ -440,6 +440,10 @@ td[data-odx-phantom] > * { display: none; }
 .odx-stats > div > span:last-child { font-variant-numeric: tabular-nums; }
 body.odx-painting .odx-content { cursor: copy; }
 .odx-gallery { display: grid; grid-template-columns: repeat(4, 64px); gap: 4px; padding: 4px; }
+/* Drawing a shape (drawshape.js): a crosshair over the window, the shape's outline as it's dragged. */
+.odx-draw { position: fixed; inset: 0; z-index: 2147483000; cursor: crosshair; touch-action: none; }
+.odx-draw-shape { position: fixed; overflow: visible; pointer-events: none; }
+.odx-draw-shape path { fill: none; stroke: #4472c4; stroke-width: 1; vector-effect: non-scaling-stroke; }
 /* Insert > Shapes (toolbar.js): small pictures of the shapes, Word's gallery. */
 .odx-gallery.odx-shapes { grid-template-columns: repeat(8, 40px); gap: 2px; max-height: 320px; overflow: auto; }
 .odx-toolbar .odx-gal.odx-shape { height: 36px; width: 40px; padding: 2px; align-items: center; color: #2b579a; }

@@ -42,9 +42,9 @@ the same character widths as Microsoft's, for computers without them (used only 
 | Cousine (as Liberation Mono) | Courier New | SIL Open Font License 1.1 |
 
 Their license texts are in `src/fonts/LICENSE.md`. Beside them, `src/fonts/files/` holds eight small fonts standing in
-for Aptos and Aptos Display: Source Sans 3's letters (Adobe), each narrowed or widened to Aptos's width and scaled to its
-x-height (made by `tools/fonts/build-aptos.mjs`), a modified version of Source Sans 3 under its SIL Open Font License
-1.1, named without its Reserved Font Name. The editor loads these files from jsDelivr (or the host's copy) only when a
+for Aptos and Aptos Display: the letters of Morrow Sans and Morrow Sans Display (open-metric-fonts), each narrowed or
+widened to the width the editor gives Aptos's letter (made by `tools/fonts/build-aptos.mjs`), modified versions of those
+fonts under their SIL Open Font License 1.1, with names of their own. The editor loads these files from jsDelivr (or the host's copy) only when a
 document uses a font the computer lacks. For
 other fonts, the stylesheet refers to a stand-in installed on the computer by name (`local()`), sized to the
 original's widths. `src/engine/metrics.json` holds measurements (ascent,

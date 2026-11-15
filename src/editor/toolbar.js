@@ -26,6 +26,7 @@ import * as mm from './mailmerge.js';
 import * as aw from './aiwrite.js';
 import { PRESETS, SHAPE_GALLERY } from '../ooxml/presets.js';
 import { geometryPaths } from '../ooxml/geometry.js';
+import { drawShape } from './drawshape.js';
 import { mergeFieldNames } from '../merge.js';
 import { createCommandSearch } from './cmdsearch.js';
 import { announce } from './live.js';
@@ -259,8 +260,8 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     const line = prst === 'line';
     const width = line ? 144 : 96;
     const height = line ? 1 : 72;
-    const { xml, src } = v.odx.session.addShape(prst, width, height, { arrow });
-    v.dispatch(v.state.tr.replaceSelectionWith(schema.nodes.image.create({ xml, src, width, height, alt: name })).scrollIntoView());
+    const { xml, src, place } = v.odx.session.addShape(prst, width, height, { arrow });
+    v.dispatch(v.state.tr.replaceSelectionWith(schema.nodes.image.create({ xml, src, width, height, place, alt: name })).scrollIntoView());
     v.focus();
     announce(`${name} inserted`);
     return true;
@@ -287,7 +288,17 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     return svg;
   };
   const shapesGallery = () => [el('div', { class: 'odx-gallery odx-shapes' }, ...SHAPE_GALLERY.filter(([p]) => PRESETS[p]).map(([prst, name, arrow]) =>
-    el('button', { type: 'button', class: 'odx-gal odx-shape', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); insertShape(prst, name, arrow); } }, shapeIcon(prst, arrow))))];
+    el('button', { type: 'button', class: 'odx-gal odx-shape', title: name, 'aria-label': name, onmousedown: (e) => { e.preventDefault(); closeMenu(); pickShape(prst, name, arrow, e.viaKeyboard); } }, shapeIcon(prst, arrow))))];
+  // Picked with the mouse: drawn on the page by dragging, as in Word (drawshape.js). From the keyboard: in line at the caret.
+  let drawing = null;
+  function pickShape(prst, name, arrow, keyboard) {
+    const v = getView();
+    if (!v || v.odx?.isStory || v.odx?.readOnly) return;
+    if (keyboard) { insertShape(prst, name, arrow); return; }
+    drawing?.();
+    announce(`Drag on the page to draw a ${name.toLowerCase()}; click for one at its usual size; Esc to stop`);
+    drawing = drawShape(v, { prst, name, arrow }, (ok) => { drawing = null; if (ok) announce(`${name} inserted`); else v.focus(); });
+  }
 
   // --- Find and Replace bar ---
   const { findBar, openFind } = createFindBar(getView, withView);

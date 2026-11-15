@@ -10,11 +10,19 @@
   one file per alphabet its text needs, from npm's `@open-metric-fonts` packages on jsDelivr, or from your own copy
   (`fonts.omf`: the release's web bundle unzipped, or the npm packages you want; README "Self-contained hosting"),
   or not at all (`fonts.omf: false`). `OMF_VERSION` says which release the editor's map is for.
+- **The Aptos stand-in, now from Morrow Sans.** The Aptos and Aptos Display stand-ins bundled with the editor
+  are now made from open-metric-fonts' Morrow Sans and Morrow Sans Display (fonts drawn to Aptos's widths), each letter
+  at the width it had before (fitted to Word's prints): lines break and sit exactly where they did.
 - **Self-contained hosting, documented and tested**: README "Self-contained hosting" shows how to serve the stand-in fonts
   from your own site (no CDN) and the Content-Security-Policy the editor needs (only `'self'`, with `data:`/`blob:`
   images and generated styles); a test runs the editor under that policy. Fixed on the way: the ribbon's drop-downs and
   colour pickers also wrote their handlers into the page as inline-script attributes (inert, but refused under a strict
   policy).
+- **Drawing shapes, as in Word.** A shape picked from Insert > Shapes with the mouse is drawn by dragging on the page
+  (Shift: a square, a circle, or a line at 15-degree steps; Ctrl: from its centre out; a click: at Word's size; Esc
+  stops), floating in front of the text where it was drawn and anchored to the paragraph beside it, as Word's are (one
+  Undo each; checked by opening the saved file in Word, whose print has them where the editor drew them). Picked from
+  the keyboard, a shape still goes in line with the text at the caret.
 - **Resizing shapes as in Word.** A shape's corner handles now resize it freely, as Word's do (Shift keeps its
   proportions, as does a shape locked to them; pictures keep theirs, as before). Its yellow handles change its adjust
   values (an arrow's head and shaft, a rounded rectangle's corners, a callout's pointer, a block arc's angles: each of

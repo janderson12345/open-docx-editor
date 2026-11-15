@@ -19,12 +19,14 @@ are replaced.
 ## The Aptos stand-ins
 
 `src/fonts/files/odx-aptos-*.woff2` are eight small fonts for Aptos and Aptos Display (regular, bold, italic, bold
-italic), with their `@font-face` lines in `src/fonts/fonts.css`: Source Sans 3's Latin letters (its letters are closer
-to Aptos's than Arial's design), each narrowed or widened sideways to the width the editor gives Aptos's letter (fitted
+italic), with their `@font-face` lines in `src/fonts/fonts.css`: the Latin letters of Morrow Sans and Morrow Sans
+Display (open-metric-fonts, made with Aptos's widths and metrics), each narrowed or widened sideways to the width the editor gives Aptos's letter (fitted
 to Word's PDFs), the font scaled so its x-height is Aptos's. `build-aptos.mjs` measures those widths as the stand-ins
 draw them now (in Microsoft Edge), builds the fonts with `aptos_standin.py` (Python with fontTools and brotli) and
-writes them and their CSS. It needs Source Sans 3's TTFs (from github.com/adobe-fonts/source-sans releases):
+writes them and their CSS. It needs the @open-metric-fonts/morrow-sans package's files folder (its whole-font
+files, morrowsans.woff2, morrowsans-bold.woff2... and morrowsansdisplay*.woff2):
 
 ```sh
-node tools/fonts/build-aptos.mjs <folder with SourceSans3-Regular.ttf, -Bold.ttf, -It.ttf, -BoldIt.ttf>
+npm install --no-save @open-metric-fonts/morrow-sans
+node tools/fonts/build-aptos.mjs node_modules/@open-metric-fonts/morrow-sans/files
 ```
