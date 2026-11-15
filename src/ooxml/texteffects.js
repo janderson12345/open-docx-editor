@@ -40,7 +40,8 @@ const pt = (emu) => +(emu / 12700).toFixed(2);
  * The CSS for a run's w14 effects (`items`: [localName, xml] of its unmodelled w:rPr children). Fill: the letters'
  * colour (none: hollow; a gradient: drawn through the letters); outline: a stroke of that width centred on the
  * letters' edges, as Word draws it; shadow: a copy offset by its distance and direction, blurred; glow: the colour
- * spread round the letters by its radius. (A reflection isn't drawn.)
+ * spread round the letters by its radius; reflection: custom properties for its mirrored copy (textspans.js puts the
+ * copy on each word, editor.css draws it).
  */
 export function textEffectsCss(items) {
   const css = [];
@@ -55,7 +56,8 @@ export function textEffectsCss(items) {
       // (A linear gradient's angle is clockwise from left to right; CSS's from bottom to top.)
       const deg = Number.isFinite(ang) ? 90 + ang / 60000 : 90;
       const kind = /<w14:path\b/.test(fill) ? `radial-gradient(${stops.join(',')})` : `linear-gradient(${+deg.toFixed(2)}deg,${stops.join(',')})`;
-      if (stops.length) css.push(`background-image:${kind}`, '-webkit-background-clip:text', 'background-clip:text', '-webkit-text-fill-color:transparent');
+      // (Also as a custom property, which inherits, for a reflection's copy: background-image doesn't.)
+      if (stops.length) css.push(`background-image:${kind}`, `--odx-fill-bg:${kind}`, '-webkit-background-clip:text', 'background-clip:text', '-webkit-text-fill-color:transparent');
     } else {
       const c = w14Color(fill);
       if (c) css.push(`-webkit-text-fill-color:${c}`);
@@ -94,7 +96,19 @@ export function textEffectsCss(items) {
     down = (0.62 * r) / 36;
   }
   const refl = w14('reflection');
-  if (refl) down = Math.max(down, reflectionRoom(num(refl, 'endPos') || 0, num(refl, 'dist') || 0));
+  if (refl) {
+    down = Math.max(down, reflectionRoom(num(refl, 'endPos') || 0, num(refl, 'dist') || 0));
+    // The copy: from its start opacity at the top to its end one at its end position, a share of the font's ascent
+    // (the part mirrored), and that opacity on below. Word's PDFs of effects-word/effects14b.docx, 36pt Arial bold:
+    // Reflection 1 (endPos 45.5%) fades out 15.2pt below the baseline, 2 (58%) 19pt, then stays at its end opacity
+    // to the mirrored letters' foot; 0.905em (Arial's ascent) times each. Its gap below the baseline is twice the
+    // distance less the blur, near enough: 3.8pt for a 2.36pt distance and 0.5pt blur (Reflection 4), 8.25pt for
+    // 4.72pt (Reflection 7), none for none. (Word's copy keeps the round letters' overshoot below the baseline,
+    // which starts it a little higher; ours is cut at the baseline, so the gap is fitted to where each starts.)
+    const a = (k) => +Math.min(1, Math.max(0, (num(refl, k) || 0) / 100000)).toFixed(4);
+    const gap = Math.max(0, 2 * pt(num(refl, 'dist') || 0) - pt(num(refl, 'blurRad') || 0));
+    css.push(`--odx-rf-a:${a('stA')}`, `--odx-rf-b:${a('endA')}`, `--odx-rf-pos:${+((num(refl, 'endPos') || 0) / 1000).toFixed(2)}%`, `--odx-rf-gap:${+gap.toFixed(2)}pt`);
+  }
   if (up) css.push(`--odx-grow-up:${+up.toFixed(4)}em`);
   if (down) css.push(`--odx-grow-down:${+down.toFixed(4)}em`);
   return css;

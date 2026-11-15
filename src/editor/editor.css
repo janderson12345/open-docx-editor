@@ -197,6 +197,13 @@
    An unset size or font is the one around it. */
 .odx-cs { font-weight: var(--odx-bcs, normal); font-style: var(--odx-ics, normal); font-size: var(--odx-szcs); font-family: var(--odx-fcs); }
 :where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-grow-up, 0); padding-bottom: var(--odx-grow-down, 0); }
+/* A reflection (w14:reflection, texteffects.js): each word of the run drawn again (textspans.js), flipped about its
+   baseline as Word does (algn="bl"), its gap below, fading from its start opacity to its end one. Placed at the word's
+   top (its font's ascent above the baseline) and trimmed to exactly that ascent (text-box), so the flip's origin, the
+   box's foot, is the baseline whatever the font. It takes no room (the line already has it: --odx-grow-down) and isn't
+   text: no alternative text for screen readers, no selection or clicks. */
+.odx-rf { position: relative; }
+.odx-rf::after { content: attr(data-odx-rf) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; transform-origin: 0 100%; transform: translateY(var(--odx-rf-gap, 0)) scaleY(-1); -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); background-image: var(--odx-fill-bg, none); -webkit-background-clip: text; background-clip: text; pointer-events: none; user-select: none; }
 .odx-content p.odx-li.odx-picbullet::before { content: var(--odx-picbullet); } /* a picture bullet, its foot on the baseline as in Word */
 .odx-content p.odx-li.odx-contlines::before { content: none; } /* a paragraph's lines going on in a column of another width (pages.js) */
 /* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the

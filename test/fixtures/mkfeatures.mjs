@@ -1,5 +1,5 @@
 // Builds the test documents for the smaller things Word draws: text effects (outline, shadow, emboss, imprint),
-// emphasis marks and run borders (effects.docx); legal numbering and picture bullets (numbering-legal.docx); a
+// emphasis marks, run borders and a reflection (effects.docx); legal numbering and picture bullets (numbering-legal.docx); a
 // section's vertical alignment (valign.docx); line numbers (line-numbers.docx); and text and picture watermarks
 // (watermark-text.docx, watermark-picture.docx). Each was compared with Word's own PDF of it.
 import '../setup.js';
@@ -54,6 +54,9 @@ build('effects', [
   para(run('A run border: ') + run('bordered words', '<w:bdr w:val="single" w:sz="8" w:space="0" w:color="auto"/>') + run(' and then the line goes on. ' + LONG)),
   para(run('A run border with space: ') + run('spaced border', '<w:bdr w:val="single" w:sz="12" w:space="4" w:color="2F5496"/>') + run(' and then the line goes on. ' + LONG)),
   para(run('Two runs sharing one border: ') + run('first half ', '<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/>') + run('second half', '<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:b/>') + run(' after. ' + LONG)),
+  // Word 2010's reflection (Text Effects > Reflection, its first: "Tight Reflection: Touching"), last so the
+  // paragraphs above keep their places.
+  para(run('Reflected words', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="72"/><w14:reflection xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>') + run(' and plain after')),
   SECT(),
 ].join(''));
 

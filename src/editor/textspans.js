@@ -23,12 +23,20 @@ const strut = () => {
   return s;
 };
 
+// A run with Word 2010's reflection (w14:reflection; texteffects.js gives it the room below the line and the custom
+// properties) is drawn mirrored below its baseline: each word in an odx-rf span carrying its text, which editor.css
+// draws again as the span's ::after, flipped and faded. Generated content isn't selected, copied, found or read out,
+// and is in no saved document; a word at a time, so a run that wraps is mirrored on each of its lines.
+const reflects = (c) => c.marks.some((m) => m.type.name === 'rextra' && m.attrs.items.some(([n, x]) => n === 'reflection' && x.startsWith('<w14:')));
+const WORD = /\S+/g;
+
 /** The decorations of one textblock at `pos`: each text node in an odx-t span, a strut before a break after a break. */
 function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
   node.forEach((c, off) => {
     const at = pos + 1 + off;
     if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: 'odx-t' }));
+    if (c.isText && reflects(c)) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, { class: 'odx-rf', 'data-odx-rf': m[0] }));
     if (c.type.name === 'hard_break') {
       if (afterBreak) out.push(Decoration.widget(at, strut, { side: -1, key: 'odx-strut', ignoreSelection: true }));
       afterBreak = true;
@@ -89,6 +97,17 @@ export function wrapText(root) {
     s.className = 'odx-t';
     t.replaceWith(s);
     s.append(t);
+    // (A reflected run's words, as in the editor.)
+    if (s.closest('[style*="--odx-rf-a"]')) {
+      s.replaceChildren(...t.data.split(/(\S+)/).filter(Boolean).map((w) => {
+        if (!/\S/.test(w)) return document.createTextNode(w);
+        const r = document.createElement('span');
+        r.className = 'odx-rf';
+        r.dataset.odxRf = w;
+        r.textContent = w;
+        return r;
+      }));
+    }
   }
   const isMarker = (c) => (c.classList.contains('odx-opaque-inline') && !c.textContent) || (c.tagName === 'IMG' && /float:|position:\s*absolute/.test(c.getAttribute('style') || ''));
   for (const p of root.querySelectorAll('p')) {
