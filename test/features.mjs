@@ -918,6 +918,19 @@ await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
 
+// The ribbon's layout chosen by the page (mountDocxEditor's `ribbon`, the demo's ?ribbon=): over the user's last
+// choice, still switched by the ribbon's own button, and by setRibbon().
+const ribbonPage = await browser.newPage();
+await ribbonPage.addInitScript(() => { try { localStorage.setItem('odx-ribbon', 'classic'); } catch { /* storage blocked */ } });
+await ribbonPage.goto(`http://localhost:${server.address().port}/?ribbon=simple`);
+await ribbonPage.waitForSelector('.odx-content p');
+const simpleNow = await ribbonPage.evaluate(() => [document.querySelector('.odx-toolbar').classList.contains('odx-simple'), window.odx.ribbon]);
+await ribbonPage.click('.odx-ribbon-mode');
+const afterBtn = await ribbonPage.evaluate(() => [document.querySelector('.odx-toolbar').classList.contains('odx-simple'), window.odx.ribbon]);
+const afterApi = await ribbonPage.evaluate(() => { window.odx.setRibbon('simple'); return [document.querySelector('.odx-toolbar').classList.contains('odx-simple'), window.odx.ribbon]; });
+check(simpleNow.join() === 'true,simple' && afterBtn.join() === 'false,classic' && afterApi.join() === 'true,simple', `ribbon: 'simple' starts the one-line ribbon over the user's classic; the button and setRibbon() switch it (${simpleNow} | ${afterBtn} | ${afterApi})`);
+await ribbonPage.close();
+
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
 server.close();

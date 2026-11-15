@@ -509,9 +509,12 @@ const editor = mountDocxEditor(el, {
   readOnly: true,                         // show the document only (no ribbon, nothing editable)
   features: { review: false, comments: false }, // hide a tab by name, or a group by its label on any tab
   toolbar: true,                          // false hides the ribbon but keeps editing
+  ribbon: 'simple',                       // start with the one-line ribbon ('classic': the full one; without
+                                          // it, the user's last choice); the ribbon's own button still switches
 });
 editor.setReadOnly(false);                // switch at any time
 editor.setFeatures({ review: true });
+editor.setRibbon('classic');
 ```
 
 Tab names: `file`, `home`, `insert`, `layout`, `references`, `review`, `view`.

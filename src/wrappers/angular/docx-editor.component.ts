@@ -21,6 +21,8 @@ export class DocxEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   @Input() readOnly = false;
   @Input() features: Record<string, boolean> | null = null;
   @Input() toolbar = true;
+  /** The ribbon's layout to start with: 'simple' (one line) or 'classic'; without it, the user's last choice. */
+  @Input() ribbon: 'simple' | 'classic' | null = null;
   @Input() forms = false;
   /** Replaces the download when the user saves. */
   @Input() save: ((bytes: Uint8Array, fileName: string) => void) | null = null;
@@ -39,7 +41,7 @@ export class DocxEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     // Outside Angular's zone: the editor's own events (typing, layout frames) don't run change detection; ours do.
     this.zone.runOutsideAngular(() => {
       this.api = mountDocxEditor(this.host.nativeElement, {
-        fileName: this.fileName, author: this.author, readOnly: this.readOnly, features: this.features || {}, toolbar: this.toolbar, forms: this.forms,
+        fileName: this.fileName, author: this.author, readOnly: this.readOnly, features: this.features || {}, toolbar: this.toolbar, ...(this.ribbon ? { ribbon: this.ribbon } : {}), forms: this.forms,
         onChange: (view: unknown) => this.zone.run(() => this.changed.emit(view)),
         onSave: this.save ? (bytes: Uint8Array, name: string) => this.zone.run(() => this.save!(bytes, name)) : undefined,
         onOpened: (timings: unknown, name: string) => this.zone.run(() => this.opened.emit({ timings, fileName: name })),
@@ -57,6 +59,7 @@ export class DocxEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     if (changes['src'] && this.src != null) api.open(this.src, this.fileName).catch((e: unknown) => this.failed.emit(e));
     if (changes['readOnly']) api.setReadOnly(this.readOnly);
     if (changes['forms']) api.setForms(this.forms);
+    if (changes['ribbon'] && this.ribbon) api.setRibbon(this.ribbon);
     if (changes['features'] && this.features) api.setFeatures(this.features);
   }
 
