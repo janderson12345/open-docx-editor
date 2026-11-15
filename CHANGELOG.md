@@ -31,6 +31,12 @@
   stops), floating in front of the text where it was drawn and anchored to the paragraph beside it, as Word's are (one
   Undo each; checked by opening the saved file in Word, whose print has them where the editor drew them). Picked from
   the keyboard, a shape still goes in line with the text at the caret.
+- **EMF+ pictures drawn.** A picture saved as EMF+ (GDI+'s metafile records: charts and drawings copied from Office
+  and other programs) is now drawn from those records: fills, transparency, gradient, hatch and picture brushes, pens
+  with their widths, dashes, caps and joins, paths, curves, arcs and pies, text, bitmaps, clipping and the world, page
+  and container transforms. An EMF+ only file (no GDI copy to fall back on) was blank; a dual file now shows what its
+  GDI copy lacks, such as transparency and Visio's colours. Checked against Word's print of pictures drawn by Windows'
+  own GDI+. A dual file whose EMF+ records need something not read yet is drawn from its GDI copy, as before.
 - **Resizing shapes as in Word.** A shape's corner handles now resize it freely, as Word's do (Shift keeps its
   proportions, as does a shape locked to them; pictures keep theirs, as before). Its yellow handles change its adjust
   values (an arrow's head and shaft, a rounded rectangle's corners, a callout's pointer, a block arc's angles: each of

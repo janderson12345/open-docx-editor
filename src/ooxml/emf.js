@@ -1,10 +1,14 @@
 // EMF (Windows enhanced metafile) pictures as SVG. Word documents carry them for pasted drawings, Visio and Office
-// screenshots; a browser can't show them. This draws the GDI records (an EMF+ file's own records ride in comments and
-// are skipped: Word writes a GDI copy alongside): shapes and lines with their pens and brushes, text with its font and
-// character advances, bitmaps, clip rectangles, and the window/viewport and world transforms.
+// screenshots; a browser can't show them. This draws the GDI records: shapes and lines with their pens and brushes,
+// text with its font and character advances, bitmaps, clip rectangles, and the window/viewport and world transforms.
+// An EMF+ file's own records ride in comments; emfplus.js draws those.
 
 import { fontStack } from './props.js';
 import { esc } from './xml.js';
+import { hasEmfPlus, emfPlusToSvg } from './emfplus.js';
+
+// The offset of the EMF+ header record (inside the comment after the EMF header).
+const off0Plus = (dv) => dv.getUint32(4, true) + 16;
 
 const rgb = (v) => `#${[v & 255, (v >> 8) & 255, (v >> 16) & 255].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 const n = (v) => +v.toFixed(3);
@@ -144,6 +148,8 @@ export function emfToSvg(bytes) {
   };
   const stack = [];
   const out = [];
+  let off = 0;
+  const put = (svg) => out.push({ at: off, s: svg });
   let path = null; // the figure being built between BEGINPATH and ENDPATH: SVG path data
   let clipId = 0;
   const clips = [];
@@ -178,10 +184,9 @@ export function emfToSvg(bytes) {
   };
   const shape = (d, filled) => {
     if (path) { path.push(d); return; }
-    out.push(`<path d="${d}" ${filled ? fill() : 'fill="none"'} ${stroke()} fill-rule="${dc.fill}"${clipAttr()}/>`);
+    put(`<path d="${d}" ${filled ? fill() : 'fill="none"'} ${stroke()} fill-rule="${dc.fill}"${clipAttr()}/>`);
   };
 
-  let off = 0;
   while (off + 8 <= bytes.length) {
     const type = u32(off), size = u32(off + 4);
     if (size < 8 || off + size > bytes.length) break;
@@ -251,7 +256,7 @@ export function emfToSvg(bytes) {
         if (!path) break;
         const d = path.join(' ');
         path = null;
-        out.push(`<path d="${d}" ${type === 64 ? 'fill="none"' : fill()} ${type === 62 ? 'stroke="none"' : stroke()} fill-rule="${dc.fill}"${clipAttr()}/>`);
+        put(`<path d="${d}" ${type === 64 ? 'fill="none"' : fill()} ${type === 62 ? 'stroke="none"' : stroke()} fill-rule="${dc.fill}"${clipAttr()}/>`);
         break;
       }
       case 68: path = null; break; // ABORTPATH
@@ -325,11 +330,11 @@ export function emfToSvg(bytes) {
         if (!cbBmi || !cbBits) { // no bitmap: a fill by its raster operation (others, like the no-op EMF+ files end with, draw nothing)
           const rop = type === 81 ? u32(o + 60) : u32(o + 32);
           const color = rop === 0x00f00021 && dc.brush && dc.brush.style !== 1 ? fill() : rop === 0x00000042 ? 'fill="#000000"' : rop === 0x00ff0062 ? 'fill="#ffffff"' : null;
-          if (color) out.push(`<rect x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" ${color}${clipAttr()}/>`);
+          if (color) put(`<rect x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" ${color}${clipAttr()}/>`);
           break;
         }
         const href = bmp(bytes, off + offBmi, cbBmi, off + offBits, cbBits);
-        out.push(`<image x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" preserveAspectRatio="none" href="${href}"${clipAttr()}/>`);
+        put(`<image x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" preserveAspectRatio="none" href="${href}"${clipAttr()}/>`);
         break;
       }
       case 84: case 83: { // EXTTEXTOUTW (and A)
@@ -355,11 +360,11 @@ export function emfToSvg(bytes) {
         const xAttr = offDx && anchor === 'start' ? pts.map(([px]) => n(px)).join(' ') : n(sx0);
         if ((options & 2) && dc.bkMode === 2) { /* ETO_OPAQUE: the background is filled by the record's rectangle */
           const [ox1, oy1] = pt(i32(t + 20), i32(t + 24)), [ox2, oy2] = pt(i32(t + 28), i32(t + 32));
-          out.push(`<rect x="${n(Math.min(ox1, ox2))}" y="${n(Math.min(oy1, oy2))}" width="${n(Math.abs(ox2 - ox1))}" height="${n(Math.abs(oy2 - oy1))}" fill="${rgb(dc.bkColor)}"${clipAttr()}/>`);
+          put(`<rect x="${n(Math.min(ox1, ox2))}" y="${n(Math.min(oy1, oy2))}" width="${n(Math.abs(ox2 - ox1))}" height="${n(Math.abs(oy2 - oy1))}" fill="${rgb(dc.bkColor)}"${clipAttr()}/>`);
         }
         const deco = [f.underline && 'underline', f.strike && 'line-through'].filter(Boolean).join(' ');
         const rot = f.escapement ? ` transform="rotate(${n(-f.escapement / 10)} ${n(sx0)} ${n(sy0)})"` : '';
-        out.push(`<text x="${xAttr}" y="${n(sy0)}" font-family="${esc(fontStack(f.face))}" font-size="${n(fh)}" font-weight="${f.weight >= 600 ? 'bold' : 'normal'}"${f.italic ? ' font-style="italic"' : ''}${deco ? ` text-decoration="${deco}"` : ''} fill="${rgb(dc.textColor)}" text-anchor="${anchor}" xml:space="preserve"${rot}${clipAttr()}>${esc(s)}</text>`);
+        put(`<text x="${xAttr}" y="${n(sy0)}" font-family="${esc(fontStack(f.face))}" font-size="${n(fh)}" font-weight="${f.weight >= 600 ? 'bold' : 'normal'}"${f.italic ? ' font-style="italic"' : ''}${deco ? ` text-decoration="${deco}"` : ''} fill="${rgb(dc.textColor)}" text-anchor="${anchor}" xml:space="preserve"${rot}${clipAttr()}>${esc(s)}</text>`);
         break;
       }
       case 14: off = bytes.length; break; // EOF
@@ -367,5 +372,17 @@ export function emfToSvg(bytes) {
     }
     off += size;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(bw)} ${n(bh)}" width="${n(bw)}" height="${n(bh)}" preserveAspectRatio="none"><defs>${clips.join('')}</defs>${out.join('')}</svg>`;
+  // An EMF+ file is drawn from its EMF+ records, with only the GDI records it hands to GDI (after a GetDC); a dual file
+  // whose EMF+ records need something not read here is drawn from its GDI copy instead.
+  let body = out, defs = clips;
+  if (hasEmfPlus(dv)) {
+    const plus = emfPlusToSvg(bytes, { bx, by }, { png, dataUrl, emfToSvg, win, fontStack, esc });
+    const dual = (dv.getUint16(off0Plus(dv) + 2, true) & 1) === 1;
+    if (!(plus.unsupported && dual)) {
+      const inGdi = (at) => plus.gdi.some(([a, b]) => at >= a && at < b);
+      body = [...out.filter((o) => inGdi(o.at)), ...plus.items].sort((a, b) => a.at - b.at);
+      defs = [...clips, ...plus.defs];
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(bw)} ${n(bh)}" width="${n(bw)}" height="${n(bh)}" preserveAspectRatio="none"><defs>${defs.join('')}</defs>${body.map((o) => o.s).join('')}</svg>`;
 }
