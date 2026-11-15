@@ -2,6 +2,7 @@
 // exported with src/pdf.js gives a PDF with a page per sheet, each the sheet's size.
 import { chromium } from 'playwright';
 import { PDFDocument, PDFName } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { serveDemo, launchOptions } from './browser.mjs';
@@ -39,6 +40,21 @@ for (const f of fs.readdirSync('test/fixtures').filter((n) => n.endsWith('.docx'
   if (f === 'effects.docx' && fontNames.some((n) => /Arial|Liberation|Arimo/i.test(n))) {
     const masks = pdf.context.enumerateIndirectObjects().filter(([, o]) => o?.get?.(PDFName.of('SMask'))?.get?.(PDFName.of('S'))?.toString() === '/Luminosity').length;
     if (masks !== 2) { failed++; console.log(`FAIL ${f}: ${masks} reflection masks for the two reflected words`); }
+    // A glow ("Glowing words", w14:glow): the letters' outlines stroked in the glow colour at falling widths, each
+    // stroke's opacity a graphics state of its own.
+    const glows = pdf.context.enumerateIndirectObjects().filter(([, o]) => o?.get?.(PDFName.of('CA')) && o.get(PDFName.of('Type'))?.toString() === '/ExtGState').length;
+    if (glows < 4) { failed++; console.log(`FAIL ${f}: ${glows} glow strokes`); }
+  }
+  // A run mixing Greek, Hebrew and Cyrillic, which the standard font lacks (mixed-scripts.docx): each in its Noto font,
+  // none left as "?" (the PDF's text, as a reader extracts it).
+  if (f === 'mixed-scripts.docx') {
+    const task = getDocument({ data: new Uint8Array(bytes), disableFontFace: true, useSystemFonts: false, standardFontDataUrl: `${path.resolve('node_modules/pdfjs-dist/standard_fonts').split(path.sep).join('/')}/` });
+    const text = (await (await (await task.promise).getPage(1)).getTextContent()).items.map((i) => i.str).join('');
+    await task.destroy();
+    const noto = ['NotoSans', 'NotoSansHebrew'].every((n) => fontNames.some((x) => x.includes(n)));
+    if (text.includes('?') || !/[Ͱ-Ͽ]/.test(text) || !/[֐-׿]/.test(text) || !/[Ѐ-ӿ]/.test(text) || !noto) {
+      failed++; console.log(`FAIL ${f}: the mixed run's text is ${JSON.stringify(text)} (${fontNames.join(', ')})`);
+    }
   }
   if (!ok || errors.length) { failed++; console.log(`FAIL ${f}: ${sizes.length} PDF pages for ${sheets.length} sheets ${errors.join(' | ')}`); }
   else console.log(`ok   ${f}: ${sizes.length} pages, ${(bytes.length / 1024).toFixed(0)} KB`);

@@ -1,5 +1,5 @@
 // Builds the test documents for the smaller things Word draws: text effects (outline, shadow, emboss, imprint),
-// emphasis marks, run borders and a reflection (effects.docx); legal numbering and picture bullets (numbering-legal.docx); a
+// emphasis marks, run borders, a reflection and a glow (effects.docx); legal numbering and picture bullets (numbering-legal.docx); a
 // section's vertical alignment (valign.docx); line numbers (line-numbers.docx); and text and picture watermarks
 // (watermark-text.docx, watermark-picture.docx). Each was compared with Word's own PDF of it.
 import '../setup.js';
@@ -57,6 +57,8 @@ build('effects', [
   // Word 2010's reflection (Text Effects > Reflection, its first: "Tight Reflection: Touching"), last so the
   // paragraphs above keep their places.
   para(run('Reflected words', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="72"/><w14:reflection xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>') + run(' and plain after')),
+  // Word 2010's glow, as in effects-word/effects14b.docx's "Glow 10 at 36": 10pt of 00B050 at 40%.
+  para(run('Glowing words', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="72"/><w14:glow xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:rad="127000"><w14:srgbClr w14:val="00B050"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:glow>') + run(' and plain after')),
   SECT(),
 ].join(''));
 
@@ -122,3 +124,10 @@ build('watermark-picture', marked('A document with a picture watermark.'), {
   },
   rels: HDR_REL, types: HDR_TYPE,
 });
+
+// One run mixing three alphabets Arial lacks in the standard PDF fonts (Greek, Hebrew, Cyrillic): PDF export draws each
+// in the Noto font for it, not the second and third as "?".
+build('mixed-scripts', [
+  para(run('Greek αβγδ, Hebrew שלום and Cyrillic Жизнь in one run.', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>')),
+  SECT(),
+].join(''));
