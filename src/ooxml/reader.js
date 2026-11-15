@@ -651,9 +651,13 @@ function anchorCss(drawing, page) {
   // In a header or footer (read without a page): Word wraps the body's text round it too, on every page showing it, so
   // the sides the text takes and the room kept clear round it go with it, for the body to wrap round it where it's drawn
   // (wrapboth.js storyZones). Only one placed against its paragraph: drawn there, where Word has it (pagefloat-word
-  // pf-footer, a rectangle 400pt above its footer paragraph, Text 4's lines on both sides of it).
+  // pf-footer, a rectangle 400pt above its footer paragraph, Text 4's lines on both sides of it). The room is the wrap
+  // distance past the shape's effect extent (its outline's room): footwrap-word fw-right, the text 1.5pt further right
+  // than the distance alone, as the rectangle's extent.
+  const fxe = (k) => emuToPx(fx?.getAttribute(k) || 0);
+  const room = (d, k) => `${r2(px(anchor.getAttribute(d)) + fxe(k))}px`;
   const hfWrap = !page && /^wrap(Square|Tight|Through)$/.test(wrap) && ['paragraph', 'line'].includes(vRel)
-    ? `;--odx-hfwrap:${wrapText} ${px(anchor.getAttribute('distT'))}px ${dR}px ${px(anchor.getAttribute('distB'))}px ${dL}px` : '';
+    ? `;--odx-hfwrap:${wrapText} ${room('distT', 't')} ${room('distR', 'r')} ${room('distB', 'b')} ${room('distL', 'l')}` : '';
   return `float:${right ? 'right' : 'left'};margin:${y}px ${r2(mr)}px ${r2(px(anchor.getAttribute('distB')) - trimBottom)}px ${ml}${lift}${hfWrap}`;
 }
 
