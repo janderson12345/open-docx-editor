@@ -1476,12 +1476,14 @@ export function createPages(view, session, { sheet, scope }) {
       // settled, pagefloat-word pf-early's picture drawn on the page before.)
       const first = [...view.dom.children].find((e) => e.tagName === 'P' && firstLineTop(e) - base >= contentTop(pg) - 1);
       if (!first || pageOf(firstLineTop(first) - base) !== pg) return false;
-      const drop = Math.round((y - Math.max(contentTop(pg), first.getBoundingClientRect().top - base)) * 10) / 10;
+      // (A shape drawn with room round its outline, reader.js padPlace: its picture that much larger and higher.)
+      const pad = Number(/--odx-pad:([\d.]+)px/.exec(place)?.[1]) || 0;
+      const drop = Math.round((y - pad - Math.max(contentTop(pg), first.getBoundingClientRect().top - base)) * 10) / 10;
       const at = view.posAtDOM(first, 0);
       const cs = getComputedStyle(img);
       const side = cs.float === 'right' ? 'right' : 'left';
       const src = img.getAttribute('src') || '';
-      const style = `float:${side};clear:${side};width:${node.attrs.width}px;height:${h}px;margin:${Math.min(0, drop)}px ${cs.marginRight} ${cs.marginBottom} ${cs.marginLeft}`;
+      const style = `float:${side};clear:${side};width:${node.attrs.width + 2 * pad}px;height:${h + 2 * pad}px;margin:${Math.min(0, drop)}px ${cs.marginRight} ${cs.marginBottom} ${cs.marginLeft}`;
       out.push(Decoration.widget(at, () => {
         const w = document.createElement('span');
         w.className = 'odx-lift';
@@ -1525,7 +1527,9 @@ export function createPages(view, session, { sheet, scope }) {
       const [top0, bottom0] = rel === 'page' ? [p0, p1] : rel === 'topMargin' ? [p0, p0 + m.top] : rel === 'bottomMargin' ? [p1 - m.bottom, p1] : [p0 + m.top, p1 - m.bottom];
       const y = align === 'top' ? top0 : align === 'bottom' ? bottom0 - h : align === 'center' ? (top0 + bottom0 - h) / 2 : top0 + off;
       const top = Math.round((y - (cb.getBoundingClientRect().top - base)) * 10) / 10;
-      out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top}px;margin-top:0` }, { key: `onpage:${top}` }));
+      // (Less the room drawn round a shape's outline: reader.js padPlace.)
+      const pad = Number(/--odx-pad:([\d.]+)px/.exec(place)?.[1]) || 0;
+      out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top - pad}px;margin-top:0` }, { key: `onpage:${top - pad}` }));
       return false;
     });
     return out;

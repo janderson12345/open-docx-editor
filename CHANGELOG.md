@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **PDF export of Hebrew, Arabic, Greek and Cyrillic without the real font** (Firefox, Safari, or a font the computer
+  lacks): the characters a run's font lacks are set in the Noto font for their alphabet, fetched when first needed
+  (`fallbackFonts`: npm's `@fontsource` packages on jsDelivr by default, your own copy, or `false`), the run's other
+  characters in its own font beside them; they had come out as "?". Arabic letters are joined and right-to-left runs
+  ordered as on screen.
+- **Floating shapes' outlines and arrowheads drawn whole**: a thick outline or an arrow's heads past the shape's box were
+  cut off at it (only shapes in line with the text had the room); now drawn past it as Word does, the shape still
+  wrapping the text as before.
 - **Long footnotes laid out as Word lays them out** (checked against Word's print of four test documents): the lines
   above a long note's reference stay on the page, the reference's line going on with its note; a reference's line stays
   when its note's first two lines fit under it, the rest of the note going on on the next page; a note longer than its

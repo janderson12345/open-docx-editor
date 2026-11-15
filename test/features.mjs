@@ -866,7 +866,8 @@ await page.click('button[title^="Shapes"]');
 await page.focus('.odx-pop button[title="Rectangle"]');
 await page.keyboard.press('Enter');
 await page.waitForTimeout(300);
-const imgs = () => page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => { const r = i.getBoundingClientRect(); return { w: i.width, h: i.height, x: r.left, y: r.top, svg: decodeURIComponent(i.src.split(',')[1] || '') }; }));
+// (Each shape's own box: less the room drawn round a floating one's outline or arrowheads, reader.js padPlace's --odx-pad.)
+const imgs = () => page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => { const r = i.getBoundingClientRect(); const pad = Number(/--odx-pad:\s*([\d.]+)px/.exec(i.getAttribute('style') || '')?.[1]) || 0; return { w: i.width - 2 * pad, h: i.height - 2 * pad, x: r.left + pad, y: r.top + pad, svg: decodeURIComponent(i.src.split(',')[1] || '') }; }));
 const p0 = await page.evaluate(() => { const r = document.querySelector('.odx-content p').getBoundingClientRect(); return { x: r.left, y: r.bottom }; });
 const drawOn = async (title, x0, y0, x1, y1) => {
   await page.click('button[title^="Shapes"]');

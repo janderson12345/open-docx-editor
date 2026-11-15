@@ -6,22 +6,38 @@
 // computer, read with the browser's Local Font Access (Chromium browsers: it asks the user once); else the PDF standard
 // fonts (Helvetica, Times, Courier and their bold and italic faces). Real fonts are embedded as subsets (fontkit). Each
 // run is drawn at the exact width the layout gave it, so lines, line breaks and pages are the layout's in any font;
-// with a standard font the letter shapes are its own, and characters it lacks are drawn as "?" (it covers
-// Windows-1252's only).
+// with a standard font the letter shapes are its own. A run with characters its font lacks (Hebrew, Arabic, Greek,
+// Cyrillic in a standard font) is drawn in the Noto font for their alphabet, fetched when first needed (`fallbackFonts`:
+// npm's @fontsource packages on jsDelivr, the host's own copy, or false); without one they are drawn as "?".
 import { PDFDocument, StandardFonts, rgb, PDFOperator, PDFOperatorNames, PDFNumber, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setTextMatrix, showText, setFillingRgbColor, setStrokingRgbColor, setLineWidth, setTextRenderingMode, TextRenderingMode, setWordSpacing } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { embeddedFonts } from './ooxml/fonts.js';
 import { formatNumber } from './ooxml/styles.js';
 
 const PT = 0.75; // CSS px to PDF points
+
+/** Where the fallback fonts load from when the host doesn't say: npm's @fontsource packages, on jsDelivr. */
+export const FALLBACK_CDN = 'https://cdn.jsdelivr.net/npm/@fontsource/';
+const FALLBACK_VERSION = '5.1.0';
+// Alphabets a fallback is fetched for: [first, last code point, package, subset, has italics].
+const FALLBACK_SCRIPTS = [
+  [0x0590, 0x05ff, 'noto-sans-hebrew', 'hebrew', false], [0xfb1d, 0xfb4f, 'noto-sans-hebrew', 'hebrew', false],
+  [0x0600, 0x06ff, 'noto-sans-arabic', 'arabic', false], [0x0750, 0x077f, 'noto-sans-arabic', 'arabic', false],
+  [0xfb50, 0xfdff, 'noto-sans-arabic', 'arabic', false], [0xfe70, 0xfeff, 'noto-sans-arabic', 'arabic', false],
+  [0x0370, 0x03ff, 'noto-sans', 'greek', true], [0x1f00, 0x1fff, 'noto-sans', 'greek-ext', true],
+  [0x0400, 0x045f, 'noto-sans', 'cyrillic', true], [0x0460, 0x052f, 'noto-sans', 'cyrillic-ext', true],
+  [0x1ea0, 0x1ef9, 'noto-sans', 'vietnamese', true], [0x0100, 0x024f, 'noto-sans', 'latin-ext', true], [0x1e00, 0x1eff, 'noto-sans', 'latin-ext', true],
+];
 // Not drawn: what printing hides too (editing aids, comments beside the page, the screen-reader text).
 const SKIP = '.odx-markup, .odx-ruler, .odx-imgsize, .odx-fm-layer, .odx-hfedit-tag, .odx-sr, .odx-live, .odx-nav, .odx-findbar, .odx-toolbar, .odx-ctx, .odx-pop, .odx-balloons, .ProseMirror-separator, .ProseMirror-trailingBreak, .odx-lifted';
 
 /**
  * The editor's pages as a PDF. `editor` is mountDocxEditor's API or an editor view. Returns the PDF's bytes.
- * Options: `title`, `author` (document information); `localFonts` false not to ask for the installed fonts.
+ * Options: `title`, `author` (document information); `localFonts` false not to ask for the installed fonts;
+ * `fallbackFonts`: where the Noto fonts for characters a run's font lacks load from (a folder holding the @fontsource
+ * packages as npm has them, <folder>/<package>/files/...; FALLBACK_CDN by default), or false for none.
  */
-export async function exportPdf(editor, { title, author, localFonts = true } = {}) {
+export async function exportPdf(editor, { title, author, localFonts = true, fallbackFonts = FALLBACK_CDN } = {}) {
   const view = editor.view || editor;
   const pageEl = view.dom.closest('.odx-page') || view.dom.parentElement;
   // Fields updated first, as Word does when it exports (page references, cross-references), and the pages laid out
@@ -35,7 +51,7 @@ export async function exportPdf(editor, { title, author, localFonts = true } = {
   const unlayer = view.odx?.pages?.printLayer ? view.odx.pages.printLayer() : () => {};
   try {
     const sources = await fontSources(view.odx?.session?.pkg, localFonts);
-    return await draw(pageEl, { title, author, sources });
+    return await draw(pageEl, { title, author, sources, fallbackFonts });
   } finally {
     unlayer();
     pageEl.classList.remove('odx-exporting');
@@ -68,7 +84,7 @@ async function fontSources(pkg, local) {
   return { key, embedded, installed };
 }
 
-async function draw(pageEl, { title, author, sources }) {
+async function draw(pageEl, { title, author, sources, fallbackFonts }) {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   if (title) pdf.setTitle(title);
@@ -104,6 +120,25 @@ async function draw(pageEl, { title, author, sources }) {
       fonts[key] = { font, chars: new Set(font.getCharacterSet()) };
     }
     return fonts[key];
+  };
+  // The Noto font for characters a run's font lacks, the first of them deciding the alphabet (null when there's none,
+  // or it can't be had: a host without network, a page whose policy refuses jsDelivr).
+  const fallbacks = new Map(); // url -> Promise of { font, chars } or null
+  const fallbackFor = (missing, bold, italic) => {
+    if (!fallbackFonts) return null;
+    const c = missing[0].codePointAt(0);
+    const sc = FALLBACK_SCRIPTS.find(([a, b]) => c >= a && c <= b);
+    if (!sc) return null;
+    const [, , pkg, subset, italics] = sc;
+    const root = fallbackFonts === FALLBACK_CDN ? `${FALLBACK_CDN}${pkg}@${FALLBACK_VERSION}/files/` : `${String(fallbackFonts).replace(/\/?$/, '/')}${pkg}/files/`;
+    const url = `${root}${pkg}-${subset}-${bold ? 700 : 400}-${italic && italics ? 'italic' : 'normal'}.woff`;
+    if (!fallbacks.has(url)) {
+      fallbacks.set(url, fetch(url, { credentials: 'omit' })
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .then(async (b) => { if (!b) return null; const font = await pdf.embedFont(new Uint8Array(b), { subset: true }); return { font, chars: new Set(font.getCharacterSet()) }; })
+        .catch(() => null));
+    }
+    return fallbacks.get(url);
   };
   const sheets = [...pageEl.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => ({ el: s, r: s.getBoundingClientRect() }));
   if (!sheets.length) throw new Error('No pages to export.');
@@ -154,6 +189,34 @@ async function draw(pageEl, { title, author, sources }) {
       if (!fonts.Symbol) { const f = await pdf.embedFont(StandardFonts.Symbol); fonts.Symbol = { font: f, chars: new Set(f.getCharacterSet()) }; }
       if (missing.every((ch) => fonts.Symbol.chars.has(ch.codePointAt(0)))) ({ font, chars } = fonts.Symbol);
     }
+    // Characters the font still lacks (Hebrew, Arabic, Greek, Cyrillic in a standard font): the run in the Noto font for
+    // their alphabet, when it has them all and the run's other letters.
+    // their alphabet; what that lacks (a Hebrew run's full stop and digits: its file holds only the Hebrew letters) in the
+    // run's own font, the pieces side by side.
+    let base = null, fbk = null;
+    const lacking = [...text].filter((ch) => ch.trim() && !/[\u2010-\u2012\u2015\u2212\u200b-\u200f\u2060\ufeff\u00ad]/.test(ch) && !chars.has(ch.codePointAt(0)));
+    if (lacking.length) {
+      const fb = await fallbackFor(lacking, (parseInt(cs.fontWeight, 10) || 400) >= 600, /italic|oblique/.test(cs.fontStyle));
+      if (fb && lacking.every((ch) => fb.chars.has(ch.codePointAt(0)))) { base = { font, chars }; fbk = fb; ({ font, chars } = fb); }
+    }
+    const clean = (t) => t.replace(/[\u00a0\u2000-\u200a\u202f\u205f]/g, ' ').replace(/[\u200b-\u200f\u2060\ufeff\u00ad]/g, '').replace(/[\u2010\u2011\u2012\u2212]/g, '-').replace(/\u2015/g, '\u2014');
+    // The run in pieces by font (one piece but for a fallback's): [{ font, chars, text }], in the order they're drawn
+    // (right to left in a right-to-left run: each piece's own letters the font library orders).
+    let pieces = null;
+    if (fbk) {
+      pieces = [];
+      for (const ch of clean(text)) {
+        const f = fbk.chars.has(ch.codePointAt(0)) || !base.chars.has(ch.codePointAt(0)) ? fbk : base;
+        const last = pieces[pieces.length - 1];
+        // (A space joins the piece it's in: both fonts have one.)
+        if (last && (last.f === f || (ch === ' ' && last.f.chars.has(32)))) last.text += ch; else pieces.push({ f, text: ch });
+      }
+      if (pieces.length === 1) pieces = null;
+      else {
+        for (const pc of pieces) pc.text = [...pc.text].map((ch) => (pc.f.chars.has(ch.codePointAt(0)) ? ch : ch.trim() ? '?' : ' ')).join('');
+        if (cs.direction === 'rtl' || /^[^A-Za-z0-9]*[\u0590-\u08ff\ufb1d-\ufeff]/.test(text)) pieces.reverse();
+      }
+    }
     const safe = [...text.replace(/[\u00a0\u2000-\u200a\u202f\u205f]/g, ' ').replace(/[\u200b-\u200d\u2060\ufeff\u00ad]/g, '').replace(/[\u2010\u2011\u2012\u2212]/g, '-').replace(/\u2015/g, '\u2014')]
       .map((ch) => (chars.has(ch.codePointAt(0)) ? ch : ch.trim() ? '?' : ' ')).join(''); // (hyphens, spaces and joiners the standard fonts lack, as theirs)
     if (!safe.trim()) return;
@@ -162,7 +225,7 @@ async function draw(pageEl, { title, author, sources }) {
     const x = (r.left - sr.left) * PT;
     const baseline = r.top + ascent(cs);
     const y = (sr.bottom - baseline) * PT;
-    const natural = font.widthOfTextAtSize(safe, size);
+    const natural = pieces ? pieces.reduce((t, pc) => t + pc.f.font.widthOfTextAtSize(pc.text, size), 0) : font.widthOfTextAtSize(safe, size);
     const want = r.width != null ? r.width * PT : natural;
     const spaces = (safe.match(/ /g) || []).length;
     const page = pages[n];
@@ -178,7 +241,10 @@ async function draw(pageEl, { title, author, sources }) {
       // Justified lines stretch their spaces; others scale to the width the layout measured (a different font's).
       if (spaces && want > natural * 1.03 && cs.textAlign === 'justify') ops.push(setWordSpacing((want - natural) / spaces));
       else if (natural > 0 && Math.abs(want - natural) > 0.1) ops.push(PDFOperator.of(PDFOperatorNames.SetTextHorizontalScaling, [PDFNumber.of(+(100 * want / natural).toFixed(2))]));
-      ops.push(setTextMatrix(1, 0, 0, 1, x + dx * PT, y - dy * PT), showText(font.encodeText(safe)), endText(), popGraphicsState());
+      ops.push(setTextMatrix(1, 0, 0, 1, x + dx * PT, y - dy * PT));
+      if (pieces) for (const pc of pieces) ops.push(setFontAndSize(page.node.newFontDictionary(pc.f.font.name, pc.f.font.ref), size), showText(pc.f.font.encodeText(pc.text)));
+      else ops.push(showText(font.encodeText(safe)));
+      ops.push(endText(), popGraphicsState());
       page.pushOperators(...ops);
     };
     if (shadow && color(shadow[1])) run(Number(shadow[2]), Number(shadow[3]), color(shadow[1]).rgb, 0);

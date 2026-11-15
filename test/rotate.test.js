@@ -42,7 +42,10 @@ test('a turned floating shape wrapped round (text on its right): the text keeps 
   const m = /float:left;margin:(-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px;transform:translate\(([\d.]+)px, ([\d.]+)px\) rotate\(30deg\)/.exec(n.place);
   assert.ok(m, n.place);
   const [t, r, b, l, tx, ty] = m.slice(1).map(Number);
-  assert.ok(Math.abs(t - (10 - 19.18)) < 0.02 && Math.abs(l - (100 - 11.57)) < 0.02, n.place);
+  // (Less the room drawn round its outline, each side: reader.js padPlace, --odx-pad.)
+  const pad = Number(/--odx-pad:([\d.]+)px/.exec(n.place)?.[1]) || 0;
+  assert.ok(pad > 0, n.place);
+  assert.ok(Math.abs(t - (10 - 19.18 - pad)) < 0.02 && Math.abs(l - (100 - 11.57 - pad)) < 0.02, n.place);
   assert.ok(Math.abs(tx - 11.57) < 0.02 && Math.abs(ty - 19.18) < 0.02, n.place);
-  assert.ok(Math.abs(r - (12 + 11.57)) < 0.02 && Math.abs(b - 19.18) < 0.02, n.place);
+  assert.ok(Math.abs(r - (12 + 11.57 - pad)) < 0.02 && Math.abs(b - (19.18 - pad)) < 0.02, n.place);
 });
