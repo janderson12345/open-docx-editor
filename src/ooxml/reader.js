@@ -648,7 +648,13 @@ function anchorCss(drawing, page) {
   const mr = fromRight != null ? fromRight : (hAlign === 'right' ? 0 : px(anchor.getAttribute('distR'))) - (right ? 0 : trimSide);
   // (Aligned, centred say, its place in the column worked out: an offset of 0 had put a centred one at the margin.)
   const ml = right ? `${r2(px(anchor.getAttribute('distL')) - trimSide)}px` : hAlign && xCol != null ? `${r2(xCol)}px` : inFlowX;
-  return `float:${right ? 'right' : 'left'};margin:${y}px ${r2(mr)}px ${r2(px(anchor.getAttribute('distB')) - trimBottom)}px ${ml}${lift}`;
+  // In a header or footer (read without a page): Word wraps the body's text round it too, on every page showing it, so
+  // the sides the text takes and the room kept clear round it go with it, for the body to wrap round it where it's drawn
+  // (wrapboth.js storyZones). Only one placed against its paragraph: drawn there, where Word has it (pagefloat-word
+  // pf-footer, a rectangle 400pt above its footer paragraph, Text 4's lines on both sides of it).
+  const hfWrap = !page && /^wrap(Square|Tight|Through)$/.test(wrap) && ['paragraph', 'line'].includes(vRel)
+    ? `;--odx-hfwrap:${wrapText} ${px(anchor.getAttribute('distT'))}px ${dR}px ${px(anchor.getAttribute('distB'))}px ${dL}px` : '';
+  return `float:${right ? 'right' : 'left'};margin:${y}px ${r2(mr)}px ${r2(px(anchor.getAttribute('distB')) - trimBottom)}px ${ml}${lift}${hfWrap}`;
 }
 
 /**

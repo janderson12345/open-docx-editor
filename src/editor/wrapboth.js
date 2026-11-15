@@ -42,9 +42,40 @@ export const wrapBothPlugin = new Plugin({
   props: { decorations: (state) => key.getState(state).set },
 });
 
-// The room kept clear round each such shape, as drawn (its turned outline when turned): { left, right, top, bottom }.
-function zones(view) {
+/**
+ * Shapes wrapped round in the headers and footers drawn on the sheets under `root` (reader.js anchorCss, --odx-hfwrap:
+ * the sides the text takes and the room round it): Word wraps the body's text round them on every page showing them,
+ * as round its own. The room as drawn on each page, reaching to the margin on a side the text doesn't take: a line
+ * beside it then goes on past it (text on its right only) or stops before it (on its left only). pagefloat-word
+ * pf-footer: a rectangle 400pt above its footer's paragraph, Text 4's lines on both sides of it.
+ */
+function storyZones(root) {
   const out = [];
+  if (!root) return out;
+  const MIN_GAP = 6; // px: room for no word at all, as reader.js anchorCss
+  for (const img of root.querySelectorAll('.odx-hf img[style*="--odx-hfwrap"]')) {
+    const [side, ...d] = img.style.getPropertyValue('--odx-hfwrap').trim().split(/\s+/);
+    const [t, rt, b, l] = d.map((x) => parseFloat(x) || 0);
+    const r = img.getBoundingClientRect();
+    const col = img.closest('.odx-hf').getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const z = { left: r.left - l, right: r.right + rt, top: r.top - t, bottom: r.bottom + b };
+    const gapL = z.left - col.left, gapR = col.right - z.right;
+    // (The side the text takes: both, its left or right only, or the larger; both when there's room for a word on each.)
+    const takes = side === 'left' ? 'left' : side === 'right' ? 'right' : side === 'largest' ? (gapL > gapR ? 'left' : 'right')
+      : gapL < MIN_GAP ? 'right' : gapR < MIN_GAP ? 'left' : 'both';
+    // (On its left only: the line's spacer fills it to the margin, a px short so it stays on its line.)
+    if (takes === 'right') z.left = Math.min(z.left, col.left);
+    else if (takes === 'left') z.right = col.right - 1;
+    z.story = true;
+    out.push(z);
+  }
+  return out;
+}
+
+// The room kept clear round each such shape, as drawn (its turned outline when turned): { left, right, top, bottom }.
+function zones(view, stories) {
+  const out = storyZones(stories);
   for (const img of view.dom.querySelectorAll('img[style*="--odx-both"]')) {
     const v = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map((x) => parseFloat(x) || 0);
     const r = img.getBoundingClientRect();
@@ -102,13 +133,14 @@ function linesOf(chars) {
  * One pass: for each paragraph beside a both-sides shape, the first line that runs into its room gets a spacer at the
  * start of the first word that doesn't fit before it, as wide as takes that word to the room's right side; a spacer no
  * longer where its line meets the room (the text before it changed) goes, with those after it in the paragraph. True
- * when the spacers changed (lines move: measure again).
+ * when the spacers changed (lines move: measure again). `stories`: the sheets' headers and footers, for their shapes
+ * (storyZones).
  */
-export function applyWrapBoth(view) {
+export function applyWrapBoth(view, stories = null) {
   const st = key.getState(view.state);
   // (A paragraph settles in a pass for each line beside a shape; this many means something keeps undoing them.)
   if (!st || st.passes > 80) return false;
-  const zs = zones(view);
+  const zs = zones(view, stories);
   if (!zs.length && !st.list.length) return false;
   let list = st.list.slice().sort((a, b) => a.pos - b.pos);
   let changed = false;
@@ -135,9 +167,10 @@ export function applyWrapBoth(view) {
     let above = er.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
     for (const line of lines) { line.boxTop = Math.min(line.top, above); above = line.bottom; }
     // (A paragraph's last line down through its space after: Word's PDF, a line 7pt above a float, its space after
-    // reaching it, goes beside it.)
-    if (lines.length) lines[lines.length - 1].bottom += after;
-    const beside = (top, bottom, z) => bottom > z.top + 0.25 && top < z.bottom - 0.25;
+    // reaching it, goes beside it. Not beside a header's or footer's shape: pagefloat-word pf-footer, Text 3's last line
+    // above its rectangle, its space after reaching it, whole.)
+    if (lines.length) lines[lines.length - 1].after = after;
+    const beside = (top, bottom, z, extra = 0) => bottom + (z.story ? 0 : extra) > z.top + 0.25 && top < z.bottom - 0.25;
     // A spacer no longer ending at the room's right side on a line beside it (the text before it changed, or the lines
     // moved): it and those after it in the paragraph go, to be put back as the lines settle. (Its word may have gone on
     // to the next line, not fitting beside the room: the spacer still ends there. Its line by where it sits; one holding
@@ -147,9 +180,9 @@ export function applyWrapBoth(view) {
     const stale = own.find((s, i) => {
       const r = els[i]?.getBoundingClientRect();
       if (!r) return true;
-      const line = lines.find((l) => r.top >= l.top - 1 && r.top <= l.bottom + 1);
+      const line = lines.find((l) => r.top >= l.top - 1 && r.top <= l.bottom + (l.after || 0) + 1);
       const [top, bottom] = line ? [line.boxTop, line.bottom] : [r.bottom - lh, r.bottom];
-      return !near.some((z) => beside(top, bottom, z) && Math.abs(r.right - z.right) <= 1);
+      return !near.some((z) => beside(top, bottom, z, line?.after) && Math.abs(r.right - z.right) <= 1);
     });
     if (stale) {
       list = list.filter((s) => !(s.pos >= stale.pos && s.pos < to));
@@ -157,7 +190,7 @@ export function applyWrapBoth(view) {
       return;
     }
     for (const line of lines) {
-      const z = near.find((zz) => beside(line.boxTop, line.bottom, zz));
+      const z = near.find((zz) => beside(line.boxTop, line.bottom, zz, line.after));
       if (!z) continue;
       // The first character (not a space) in the room.
       const k = line.chars.findIndex((c) => !c.space && c.x1 > z.left + 0.5 && c.x0 < z.right - 0.5);
