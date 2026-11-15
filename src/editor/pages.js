@@ -1556,6 +1556,14 @@ export function createPages(view, session, { sheet, scope }) {
       const line = parseFloat(lineHeightOf(getComputedStyle(blocks[re.k0].el))) || 18;
       const want = { sheet, h: total / re.num + line / 2 };
       const had = balanced.get(re.lo);
+      // (Word raises the cut until the last column is no taller than it: a paragraph that keeps two lines a side may not
+      // split at an even share, and moved whole it overfills the last column.)
+      if (had && had.sheet === sheet && vEnd > first) {
+        const last = (bottoms.get(vEnd) ?? base(vEnd)) - base(vEnd);
+        if (last > had.h + 1) want.h = Math.max(want.h, had.h + line);
+        else want.h = Math.max(want.h, had.h > want.h && had.raised ? had.h : want.h);
+        want.raised = want.h > total / re.num + line / 2 + 0.5;
+      }
       if (!had || had.sheet !== sheet || Math.abs(had.h - want.h) > 2) { balanced.set(re.lo, want); again = true; }
     }
     return { moved, again };
@@ -2132,7 +2140,7 @@ export function createPages(view, session, { sheet, scope }) {
           }
           colSplits.set(b.i, cs);
           notesByCol(b, p, cs);
-          if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut + (cs.lift || 0)) + (cs.head || 0) });
+          if (inReg) rec.set(k, { top, bottom: top + cs.cut - (cs.lift || 0), carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut + (cs.lift || 0)) + (cs.head || 0) });
           const nb = blocks[k + 1];
           if (nb) { starts.set(nb.i, (starts.get(nb.i) || 0) + cs.delta); shift += cs.delta; }
           continue;
@@ -2293,7 +2301,7 @@ export function createPages(view, session, { sheet, scope }) {
     lastMs = performance.now() - t0;
     passes++;
     // A balanced columns section's cut changed: lay out again with it (a few times at most, should it not settle).
-    if (balanceAgain && balancePasses < 4) { balancePasses++; schedule(); }
+    if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
     // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
     colsAgain = false;
