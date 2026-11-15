@@ -144,6 +144,28 @@ await open('effects.docx');
 // (Two lines of 11pt Calibri at 1.08 are 38.7px; the marks add 0.31em, 4.5px, above the first or below it.)
 const grow = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(6, 10).map((p) => p.getBoundingClientRect().height));
 check(grow.every((h) => h > 42.5 && h < 45), `emphasis marks make their line taller (${grow.map((h) => h.toFixed(1)).join(', ')}px)`);
+// A reflection (w14:reflection, 36pt Arial bold): each word drawn again below it, flipped about its baseline and
+// faded (as Word's print of effects-word/effects14b.docx), the copy as tall as the font's ascent (0.905em, 43.4px)
+// and its foot on the word's baseline; not text: not in the paragraph's text, a selection or what a screen reader reads.
+const refl = await page.evaluate(() => {
+  const p = [...document.querySelectorAll('.odx-content > p')].find((x) => x.textContent.startsWith('Reflected'));
+  const words = [...p.querySelectorAll('.odx-rf')];
+  const a = getComputedStyle(words[0], '::after');
+  const sel = getSelection();
+  sel.selectAllChildren(p);
+  const copied = sel.toString();
+  sel.removeAllRanges();
+  // (The word's baseline: its font's ascent below the top of its box, where the copy is placed.)
+  const ctx = document.createElement('canvas').getContext('2d');
+  const cs = getComputedStyle(words[0]);
+  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const base = ctx.measureText('R').fontBoundingBoxAscent;
+  return { words: words.map((w) => w.dataset.odxRf), content: a.content, transform: a.transform, mask: a.maskImage || a.webkitMaskImage, height: parseFloat(a.height), base, text: p.textContent, copied };
+});
+const reflAria = await page.locator('.odx-content > p', { hasText: 'Reflected' }).ariaSnapshot();
+check(refl.words.join(',') === 'Reflected,words' && refl.content === '"Reflected" / ""' && /matrix\(1, 0, 0, -1, 0, 0\)/.test(refl.transform) && /linear-gradient/.test(refl.mask)
+  && Math.abs(refl.height - 43.4) < 1.5 && Math.abs(refl.base - refl.height) < 1 && refl.text === 'Reflected words and plain after' && !/Reflected.*Reflected/.test(refl.copied) && (reflAria.match(/Reflected/g) || []).length === 1,
+  `a reflection: each word mirrored below its baseline, faded, not text (${JSON.stringify({ ...refl, mask: undefined, aria: reflAria })})`);
 
 await open('notes-long.docx');
 // (Four notes of 45 paragraphs each, from one paragraph: they continue at the foot of the pages after it, as in Word,
