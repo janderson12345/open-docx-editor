@@ -36,7 +36,9 @@
   with their widths, dashes, caps and joins, paths, curves, arcs and pies, text, bitmaps, clipping and the world, page
   and container transforms. An EMF+ only file (no GDI copy to fall back on) was blank; a dual file now shows what its
   GDI copy lacks, such as transparency and Visio's colours. Checked against Word's print of pictures drawn by Windows'
-  own GDI+. A dual file whose EMF+ records need something not read yet is drawn from its GDI copy, as before.
+  own GDI+. A dual file whose EMF+ records need something not read yet is drawn from its GDI copy, as before. Text
+  wraps in its layout box and is cut off at it, path gradients take each corner's colour, hatches are drawn in the
+  picture's pixels, and pens keep a different cap at each end, as GDI+ draws them.
 - **Footnotes in newspaper columns, as Word lays them out.** A page's footnotes are one band across its foot, every
   column on the page cut at its top, the notes in the section's columns, balanced as Word balances them (the first
   column taking more, a note split between columns only where each part keeps two lines), right to left in a
@@ -44,6 +46,16 @@
   width). Each note is on the page of its reference, also when the reference is in lines carried to the next column
   (they went on the wrong page, or were lost, in any section of columns). The separator is 2in long, as Word's, at
   the right when its paragraph is right to left. Checked against Word's prints of 13 documents.
+- **`ribbon: 'simple'`**: a page can start the editor with the one-line simplified ribbon (`'classic'`: the full one)
+  instead of the user's last choice in the browser; the ribbon's own button still switches, and `editor.setRibbon()`
+  and `editor.ribbon` change and read it. Also on the React, Vue and Angular components, and the demo's `?ribbon=`.
+- **Columns hold Word's lines.** A paragraph going on in the next column was measured a little too tall at the
+  column's foot, so a column could hold a line fewer than Word's, and its lines in the next column sat about 2pt high;
+  both now as Word lays them out (two and three columns, tables, right to left, unequal widths).
+- **Section breaks after columns, and odd and even pages.** A next-page break from one section of columns into
+  another starts the new section on a new page (it began under the columns); a page filled to its foot keeps its
+  section's empty last paragraph, so the next section doesn't start a page late; and an odd- or even-page break adds
+  the blank page Word adds to reach the right side. Checked against Word's prints of 20 documents.
 - **Line numbers in columns, as Word numbers them.** A paragraph's lines carried to the next column are numbered there,
   in reading order (they were numbered where they're cut off, in the bottom margin, and the next column's count was
   off from there); a right-to-left section's numbers go right of each column, as in Word; and a section that restarts

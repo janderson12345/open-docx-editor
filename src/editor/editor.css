@@ -226,7 +226,7 @@
 .odx-content [data-kind="footnoteReference"], .odx-content [data-kind="endnoteReference"],
 [data-kind="footnoteRef"], [data-kind="endnoteRef"] { vertical-align: super; font-size: .66em; line-height: 0; }
 .odx-notes { position: absolute; }
-.odx-note-sep { width: 192px; border-top: 1px solid currentColor; opacity: .6; margin: 6px 0 7px; } /* Word's: 2in, whatever the text's width */
+.odx-note-sep { width: 192px; border-top: 1px solid currentColor; opacity: .6; margin: 3.6px 0 9.4px; } /* Word's: 2in, whatever the text's width, 17.1pt above the first note's baseline */
 .odx-note-sep-rtl { margin-left: auto; } /* at the right, its paragraph right to left */
 .odx-note-cols-rtl { direction: rtl; } .odx-note-cols-rtl > * { direction: ltr; } /* endnotes in right-to-left columns: the first column on the right, each note in its own direction */
 .odx-note p, .odx-note-content p { margin: 0; }

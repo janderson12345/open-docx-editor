@@ -101,7 +101,9 @@ export function sectionBreaks(doc, session, page, storyHeight) {
   });
   ends.forEach((e, n) => {
     const next = n + 1 < ends.length ? ends[n + 1].xml : doc.attrs.sectPr || '';
-    out.set(e.i, { page: !/<w:type\b[^>]*w:val="continuous"/.test(next), next: all[n + 1], index: n + 1 });
+    // (An odd- or even-page break starts the section on the next page of that parity, a blank page between if need be.)
+    const parity = (/<w:type\b[^>]*w:val="(oddPage|evenPage)"/.exec(next) || [])[1] || null;
+    out.set(e.i, { page: !/<w:type\b[^>]*w:val="continuous"/.test(next), parity, next: all[n + 1], index: n + 1 });
   });
   return { ends: out, first: all[0] };
 }
