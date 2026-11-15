@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Security fixes from code scanning.** A crafted document could make reading its page margins or a merge field's
+  number picture take a very long time (regular expressions that backtracked): both are now read in linear time, as is
+  Find's replacement text. Tracked rows' author names decode `&amp;` last (an author named with an escaped quote was
+  read as another); the agent's markdown tables escape backslashes before pipes. The CI workflow asks only to read the
+  repository.
 - **Text in shapes, text boxes, WordArt and SmartArt in the stand-in fonts.** These are drawn as pictures, which can't
   use the page's web fonts, so where the computer lacked the document's font their text fell back to an installed one
   (Aptos's text in Calibri). The editor now shows each with the stand-in faces its text needs embedded (fetched once

@@ -54,7 +54,7 @@ export function findAll(doc, query, opts = {}) {
 /** The replacement for a match: with a pattern, $& (the match), $1-$99 and $<name> filled in, $$ for a dollar sign. */
 export function replacementFor(m, replacement) {
   if (!m.groups) return replacement;
-  return replacement.replace(/\$(\$|&|\d{1,2}|<([^>]+)>)/g, (all, k, name) => {
+  return replacement.replace(/\$(\$|&|\d{1,2}|<([^>$]{1,64})>)/g, (all, k, name) => {
     if (k === '$') return '$';
     if (k === '&') return m.groups[0];
     if (name != null) return m.named?.[name] ?? '';

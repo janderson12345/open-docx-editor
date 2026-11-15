@@ -76,6 +76,7 @@ function formatDate(d, pic) {
 
 /** A number picture (\# "$#,##0.00") applied to a number: digits (0 shown, # if any), a thousands comma, decimals. */
 function formatNumber(v, pic) {
+  if (pic.length > 64) return String(v);
   const m = /^([^#0,.]*)([#0,]*)(?:\.([#0]+))?(.*)$/.exec(pic);
   if (!m) return String(v);
   const [, pre, int, dec = '', post] = m;
