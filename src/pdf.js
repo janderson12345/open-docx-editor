@@ -249,6 +249,7 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
     };
     if (shadow && color(shadow[1])) run(Number(shadow[2]), Number(shadow[3]), color(shadow[1]).rgb, 0);
     run(0, 0, fillColor ? fillColor.rgb : c.rgb, stroke);
+    if (el && !pieces && el.closest('.odx-rf')) reflect(page, font, safe, x, y, size, natural > 0 ? want / natural : 1, (fillColor || c).rgb, cs);
     // Underline and strikethrough, from the element that sets them (text-decoration isn't inherited, it's drawn through).
     for (let e = el; e && e !== pageEl; e = e.parentElement) {
       const d = getComputedStyle(e);
@@ -260,6 +261,53 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
       if (lines.includes('underline')) page.drawLine({ start: { x, y: y - size * 0.12 }, end: { x: x + want, y: y - size * 0.12 }, thickness: thick, color: dc.rgb });
       if (lines.includes('line-through')) page.drawLine({ start: { x, y: y + size * 0.3 }, end: { x: x + want, y: y + size * 0.3 }, thickness: thick, color: dc.rgb });
     }
+  }
+
+  /**
+   * A reflected word's mirrored copy (w14:reflection; editor.css draws it as the word's ::after, textspans.js marks the
+   * words): its letters' outlines, not text, so it isn't found, copied or read out twice; flipped about the baseline
+   * `y`, the gap below it, faded by a soft mask from the start opacity to the end one over the end position's share of
+   * the ascent, and cut at the ascent's depth as on the page. Fonts without outlines (the standard fonts) have none.
+   */
+  function reflect(page, font, text, x, y, size, hs, fill, cs) {
+    const fk = font.embedder?.font;
+    if (!fk?.glyphsForString) return;
+    const v = (k) => cs.getPropertyValue(k).trim();
+    const stA = Number(v('--odx-rf-a')) || 0, endA = Number(v('--odx-rf-b')) || 0;
+    const pos = (parseFloat(v('--odx-rf-pos')) || 0) / 100, gap = parseFloat(v('--odx-rf-gap')) || 0;
+    const depth = ascent(cs) * PT;
+    const top = y - gap, fade = Math.max(0.01, pos * depth);
+    const glyphs = fk.glyphsForString(text);
+    const k = size / fk.unitsPerEm;
+    const width = glyphs.reduce((t, g) => t + g.advanceWidth, 0) * k * hs;
+    // The soft mask: an axial shading in grey (its luminosity the opacity), stA at the copy's top to endA a fade below.
+    const ctxt = pdf.context;
+    const shading = ctxt.register(ctxt.obj({ ShadingType: 2, ColorSpace: 'DeviceGray', Coords: [0, top, 0, top - fade], Function: { FunctionType: 2, Domain: [0, 1], C0: [stA], C1: [endA], N: 1 }, Extend: [true, true] }));
+    const { width: pw, height: ph } = page.getSize();
+    const form = ctxt.register(ctxt.stream('/Sh0 sh', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, pw, ph], Group: { Type: 'Group', S: 'Transparency', CS: 'DeviceGray' }, Resources: { Shading: { Sh0: shading } } }));
+    const gs = page.node.newExtGState('GSrf', ctxt.register(ctxt.obj({ Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: form } })));
+    const op = (name, ...args) => PDFOperator.of(name, args.map((a) => (typeof a === 'number' ? PDFNumber.of(+a.toFixed(5)) : a)));
+    const ops = [pushGraphicsState(), op('gs', gs), op('re', x - size * 0.1, top - depth, width + size * 0.2, depth), op('W'), op('n'), setFillingRgbColor(fill.red, fill.green, fill.blue)];
+    // The letters in font units, mirrored: x scaled as the run is to its laid-out width, y flipped down from the top.
+    ops.push(op('cm', k * hs, 0, 0, -k, x, top));
+    let pen = 0;
+    for (const g of glyphs) {
+      let cx = 0, cy = 0;
+      for (const { command, args: a } of g.path.commands) {
+        if (command === 'moveTo') { ops.push(op('m', pen + a[0], a[1])); [cx, cy] = a; }
+        else if (command === 'lineTo') { ops.push(op('l', pen + a[0], a[1])); [cx, cy] = a; }
+        else if (command === 'bezierCurveTo') { ops.push(op('c', pen + a[0], a[1], pen + a[2], a[3], pen + a[4], a[5])); [cx, cy] = [a[4], a[5]]; }
+        else if (command === 'quadraticCurveTo') {
+          // (A quadratic curve as the cubic through the same points.)
+          const [qx, qy, ex, ey] = a;
+          ops.push(op('c', pen + cx + (2 / 3) * (qx - cx), cy + (2 / 3) * (qy - cy), pen + ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), pen + ex, ey));
+          [cx, cy] = [ex, ey];
+        } else if (command === 'closePath') ops.push(op('h'));
+      }
+      pen += g.advanceWidth;
+    }
+    ops.push(op('f'), popGraphicsState());
+    page.pushOperators(...ops);
   }
 
   function ascent(cs) {
