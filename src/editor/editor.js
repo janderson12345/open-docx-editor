@@ -4,7 +4,7 @@ import { commentsPlugin, addComment, refresh as refreshComments } from './commen
 import { hfDoubleClick, closeStory, flushStory } from './hfedit.js';
 import { formsPlugin } from './fields.js';
 import { noteClicks, closeNote, flushNote, insertNote } from './notes.js';
-import { EditorState, Plugin } from 'prosemirror-state';
+import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { Fragment, Slice } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
@@ -420,6 +420,28 @@ const activeBlock = new Plugin({
 });
 
 /**
+ * End (Shift+End) on a paragraph's last line when the paragraph ends in a marker inside a link or other mark, such as
+ * the field end after a Word TOC entry's page number (toc-u-only.docx: the hyperlink holds the entry, its tab, and the
+ * PAGEREF field to its end). The browser's own End stops before that uneditable marker, or goes to the end of the
+ * document, and what's typed next goes there: the paragraph's end, as Word's End does. (Other lines, and other
+ * paragraphs, keep the browser's.)
+ */
+export const lineEnd = (extend) => (state, dispatch, view) => {
+  const { $head, empty } = state.selection;
+  if (!view || (!empty && !extend) || !$head.parent.isTextblock) return false;
+  const last = $head.parent.lastChild;
+  if (!last || last.isText || !last.marks.length) return false;
+  const end = $head.end();
+  if (end === $head.pos) return true;
+  try {
+    const here = view.coordsAtPos($head.pos, 1), there = view.coordsAtPos(end, -1);
+    if (Math.abs(here.top - there.top) > Math.max(2, (here.bottom - here.top) / 2)) return false; // (not the last line)
+  } catch { return false; }
+  if (dispatch) dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, state.selection.anchor, end) : TextSelection.create(state.doc, end)).scrollIntoView());
+  return true;
+};
+
+/**
  * Pasted paragraphs' built-in styles by the document's own ids (Word's English ids, as a pasted <h1> gets, are another
  * language's in a document from a localised Word: Heading1 is "Ttulo1" from Spanish Word).
  *
@@ -481,6 +503,8 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Mod-z': doUndo,
     'Mod-y': doRedo,
     'Mod-Shift-z': doRedo,
+    End: lineEnd(false),
+    'Shift-End': lineEnd(true),
     'Mod-b': spoken('bold', 'Bold'),
     'Mod-i': spoken('italic', 'Italic'),
     'Mod-u': spoken('underline', 'Underline'),
