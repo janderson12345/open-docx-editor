@@ -156,7 +156,11 @@ function measurer(host) {
     let prev = 0, word = 0;
     for (let i = 0; i < text.length; i++) {
       if (text[i] === ' ') { out.push(ctx.measureText(' ').width); word = i + 1; prev = 0; continue; }
-      const w = ctx.measureText(text.slice(word, i + 1)).width;
+      // (Measured over the word so far, so kerning counts; past 32 letters over the last 32 only, so a run without
+      // spaces costs its length, not its square.)
+      const from = Math.max(word, i - 31);
+      if (from > word) prev = ctx.measureText(text.slice(from, i)).width;
+      const w = ctx.measureText(text.slice(from, i + 1)).width;
       out.push(w - prev);
       prev = w;
     }

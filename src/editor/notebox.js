@@ -81,13 +81,19 @@ export function createNoteBoxes({ page, sheet, session }) {
         const rg = document.createRange();
         rg.selectNodeContents(c);
         const rects = [...rg.getClientRects()].filter((q) => q.height > 0);
+        // (Swept in order once, line ends and rects together: a note paragraph of thousands of lines costs its length,
+        // not lines times rects.)
         const tops = [];
-        for (const q of rects) if (!tops.some((t) => Math.abs(t - q.top) < 2)) tops.push(q.top);
-        tops.sort((x, y) => x - y);
+        for (const t of rects.map((q) => q.top).sort((x, y) => x - y)) if (!tops.length || t - tops[tops.length - 1] >= 2) tops.push(t);
         const ends = [...tops.slice(1), c.getBoundingClientRect().bottom];
+        const byMid = rects.map((q) => ({ mid: (q.top + q.bottom) / 2, bottom: q.bottom })).sort((x, y) => x.mid - y.mid);
+        let k = 0;
         return ends.map((e, i) => {
-          const inLine = rects.filter((q) => (q.top + q.bottom) / 2 < e && (q.top + q.bottom) / 2 > (i ? ends[i - 1] : -Infinity));
-          return { y: e - top, ink: Math.min(e, Math.max(-Infinity, ...inLine.map((q) => q.bottom))) - top };
+          const from = i ? ends[i - 1] : -Infinity;
+          while (k < byMid.length && byMid[k].mid <= from) k++;
+          let ink = -Infinity;
+          for (; k < byMid.length && byMid[k].mid < e; k++) if (byMid[k].mid > from) ink = Math.max(ink, byMid[k].bottom);
+          return { y: e - top, ink: Math.min(e, ink) - top };
         });
       }).filter((b) => b.y > 0);
       noteBounds.get(note.doc).set(key, cuts.map((b) => b.y));

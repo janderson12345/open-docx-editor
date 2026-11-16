@@ -377,10 +377,14 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           const words = [];
           for (const word of n.textContent.match(/\S*\s*/g).filter(Boolean)) {
             if (!fit || textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
-            let part = '';
+            let part = '', partW = 0;
             for (const ch of word) {
-              if (part && /\S/.test(ch) && textWidth(part + ch, sizePx, bold, font) + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; }
+              // (The piece measured whole while short, so kerning counts; then by adding each letter, so a long word
+              // costs its length, not its square.)
+              let w = part.length < 64 ? textWidth(part + ch, sizePx, bold, font) : partW + textWidth(ch, sizePx, bold, font);
+              if (part && /\S/.test(ch) && w + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; w = textWidth(ch, sizePx, bold, font); }
               part += ch;
+              partW = w;
             }
             if (part) words.push(part);
           }

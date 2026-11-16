@@ -69,19 +69,21 @@ export class DocxSession {
     const compat = settings && /<w:compat>([\s\S]*?)<\/w:compat>/.exec(this.pkg.text(settings) || '')?.[1];
     this.compat = new Set(compat ? [...compat.matchAll(/<w:(\w+)\b([^>]*)\/?>/g)].filter(([, n, a]) => n !== 'compatSetting' && !/w:val="(?:0|false|off)"/.test(a)).map(([, n]) => n) : []);
     // Word hyphenates the document's words at line ends (w:autoHyphenation; a paragraph's suppressAutoHyphens stops it).
-    this.autoHyphenation = !!settings && /<w:autoHyphenation(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
-    this.doNotHyphenateCaps = !!settings && /<w:doNotHyphenateCaps(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
+    // (Settings read by their start tags, startTag: a regular expression's [^>]* over a long comment of unclosed tags
+    // went back over it once for each.)
+    const setXml = (settings && this.pkg.text(settings)) || '';
+    this.autoHyphenation = settingOn(setXml, 'w:autoHyphenation');
+    this.doNotHyphenateCaps = settingOn(setXml, 'w:doNotHyphenateCaps');
     // The hyphenation zone (twips; 0.25in when not given): a word is hyphenated only where wrapping it whole would leave
     // more room than this at the line's end. Word follows it in a document of Word 2010's layout or older (compatibility
     // mode 14 and under); from Word 2013's on it has none, hyphenating wherever a part fits. And the most lines in a row
     // that may end in a hyphen (w:consecutiveHyphenLimit; 0, none given, is no limit).
-    const hz = settings && /<w:hyphenationZone\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
-    this.hyphenationZone = this.compatMode <= 14 ? (hz ? Number(hz[1]) : 360) : 0;
-    const hl = settings && /<w:consecutiveHyphenLimit\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
-    this.consecutiveHyphenLimit = hl ? Number(hl[1]) : 0;
+    const hz = settingNum(setXml, 'w:hyphenationZone');
+    this.hyphenationZone = this.compatMode <= 14 ? (hz ?? 360) : 0;
+    this.consecutiveHyphenLimit = settingNum(setXml, 'w:consecutiveHyphenLimit') ?? 0;
     // Track Changes on when the document was saved (the editor updates this as it's toggled).
     this.settingsPath = settings;
-    this.trackRevisions = this._trackRevisions0 = !!settings && /<w:trackRevisions(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
+    this.trackRevisions = this._trackRevisions0 = settingOn(setXml, 'w:trackRevisions');
     const dts = settings && /<w:defaultTabStop\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
     this.defaultTabStop = dts ? Number(dts[1]) : 720;
     this.numbering = readNumbering(this.pkg);
@@ -1101,6 +1103,19 @@ const BUILT_IN = {
 
 // w:settings children that come after w:trackRevisions (ECMA-376 Part 1, §17.15.1.78).
 const AFTER_TRACK = ['doNotTrackMoves', 'doNotTrackFormatting', 'documentProtection', 'autoFormatOverride', 'styleLockTheme', 'styleLockQFSet', 'defaultTabStop', 'autoHyphenation', 'consecutiveHyphenLimit', 'hyphenationZone', 'doNotHyphenateCaps', 'showEnvelope', 'summaryLength', 'clickAndTypeStyle', 'defaultTableStyle', 'evenAndOddHeaders', 'bookFoldRevPrinting', 'bookFoldPrinting', 'bookFoldPrintingSheets', 'drawingGridHorizontalSpacing', 'drawingGridVerticalSpacing', 'displayHorizontalDrawingGridEvery', 'displayVerticalDrawingGridEvery', 'doNotUseMarginsForDrawingGridOrigin', 'drawingGridHorizontalOrigin', 'drawingGridVerticalOrigin', 'doNotShadeFormData', 'noPunctuationKerning', 'characterSpacingControl', 'printTwoOnOne', 'strictFirstAndLastChars', 'noLineBreaksAfter', 'noLineBreaksBefore', 'savePreviewPicture', 'doNotValidateAgainstSchema', 'saveInvalidXml', 'ignoreMixedContent', 'alwaysShowPlaceholderText', 'doNotDemarcateInvalidXml', 'saveXmlDataOnly', 'useXSLTWhenSaving', 'saveThroughXslt', 'showXMLTags', 'alwaysMergeEmptyNamespace', 'updateFields', 'hdrShapeDefaults', 'footnotePr', 'endnotePr', 'compat', 'docVars', 'rsids', 'mathPr', 'attachedSchema', 'themeFontLang', 'clrSchemeMapping', 'doNotIncludeSubdocsInStats', 'doNotAutoCompressPictures', 'forceUpgrade', 'captions', 'readModeInkLockDown', 'smartTagType', 'schemaLibrary', 'shapeDefaults', 'doNotEmbedSmartTags', 'decimalSymbol', 'listSeparator'];
+
+/** Whether settings.xml has an on/off setting `name` turned on (present, its w:val not 0, false or off). */
+function settingOn(xml, name) {
+  const t = startTag(xml, name);
+  return !!t && !['0', 'false', 'off'].includes(attrOf(t.tag, 'w:val'));
+}
+
+/** A whole-number setting's w:val in settings.xml, or null when it isn't given. */
+function settingNum(xml, name) {
+  const t = startTag(xml, name);
+  const v = t && attrOf(t.tag, 'w:val');
+  return v != null && /^\d{1,9}$/.test(v) ? Number(v) : null;
+}
 
 /** settings.xml with w:trackRevisions added or removed. */
 function withTrackRevisions(xml, on) {

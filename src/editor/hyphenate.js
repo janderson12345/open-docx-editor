@@ -136,6 +136,8 @@ function holdWords(view, session) {
             if (sameLine(c, r)) whole = (right - c.left) / scale <= zone;
           }
         }
+        // (A word already held that the browser still breaks is left be: holding it again would spend every round.)
+        if (whole && heldIn(node, session)?.has(w)) continue;
         if (whole) {
           hold(node, session, w, len);
           changed = true;
