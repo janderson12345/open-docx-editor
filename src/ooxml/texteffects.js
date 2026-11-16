@@ -89,10 +89,10 @@ const innerShadowFx = (dx, dy, blur, c, merge) => `<feComponentTransfer in="Sour
 // shiny material (not matte or flat) also gets a highlight where the slope faces the light. Word's print of
 // wordart-leftovers/bevel.docx (gallery Styles 5 and 10, 36 and 72pt, in the text and in text boxes): the soft bevel
 // (circle, 2pt by 3pt, softEdge) a rounded rim, bright along edges facing up, dark along those facing down; the sharp
-// one (angle, 5pt by 1pt, matte) flat facets, a little lighter above, darker below. The bevel is as wide at 72pt as at
+// one (angle, 5pt by 1pt, matte) flat facets, drawn as such (facetFx). The bevel is as wide at 72pt as at
 // 36pt, so it's in points, not ems. Word's extrusion (extrusionH) and contour, seen face on, don't show: not drawn.
 // (An approximation: Word renders the letters in 3-D; a lit relief of their outline is what can be drawn here.)
-export function bevelFx(props3d, out = 'odxbev') {
+export function bevelFx(props3d, out = 'odxbev', box = false) {
   // (Its tags read one pass each, xml.js startTag. A bevel's size defaults to 6pt by 6pt, its shape to a circle.)
   const bt = props3d ? [...startTags(props3d, 'w14:bevelT')][0]?.tag : null;
   if (!bt) return '';
@@ -101,14 +101,15 @@ export function bevelFx(props3d, out = 'odxbev') {
   const prst = tagAttr(bt, 'w14:prst') || 'circle';
   if (!(w > 0) || !(h > 0)) return '';
   const material = tagAttr([...startTags(props3d, 'w14:props3d')][0]?.tag || '', 'w14:prstMaterial') || 'warmMatte';
-  // (The slope a third of the bevel's width each side of the edge; an angle's, flat and low, made steeper to show.)
-  const angled = ['angle', 'coolSlant', 'slope', 'divot'].includes(prst);
+  const shiny = !['matte', 'flat', 'dkEdge', 'warmMatte', 'legacyMatte'].includes(material);
+  // (Straight-sided bevels: flat facets, facetFx.)
+  if (['angle', 'coolSlant', 'slope', 'divot'].includes(prst)) return facetFx(w, h, shiny, out, box);
+  // (The slope a third of the bevel's width each side of the edge.)
   const sd = +(w / 3).toFixed(2);
-  const scale = +Math.min(12, (angled ? 2 : 1) * h).toFixed(2);
+  const scale = +Math.min(12, h).toFixed(2);
   // (The light's height, and what it gives a flat face, subtracted so that stays the letters' own colour.)
   const el = 55, rad = (el * Math.PI) / 180, flat = Math.sin(rad);
   const k = material === 'matte' || material === 'flat' ? 0.4 : 0.45;
-  const shiny = !['matte', 'flat', 'dkEdge', 'warmMatte', 'legacyMatte'].includes(material);
   const exp = 40, flatSpec = 0.9 * ((1 + flat) / Math.hypot(Math.cos(rad), 1 + flat)) ** exp;
   const spec = shiny
     ? `<feSpecularLighting in="bv0" surfaceScale="${scale}" specularConstant="0.9" specularExponent="${exp}" lighting-color="#fff" result="bv3"><feDistantLight azimuth="240" elevation="${el}"/></feSpecularLighting>`
@@ -119,6 +120,43 @@ export function bevelFx(props3d, out = 'odxbev') {
     + `<feComposite in="SourceGraphic" in2="bv1" operator="arithmetic" k2="1" k3="${k}" k4="${+(-k * flat).toFixed(4)}" result="bv2"/>`
     + spec
     + `<feComposite in="${shiny ? 'bv5' : 'bv2'}" in2="SourceAlpha" operator="in" result="${out}"/>`;
+}
+
+// An angled bevel's flat facets (bevelFx): a slope rising evenly from the outline to the bevel's width (w) and its
+// height (h), the outline eroded in steps and the steps averaged, smoothed a little; lit, each facet one tone. Word's
+// print of wordart-leftovers/bevel.docx (Style 10: angle 5pt by 1pt, matte, accent 3 196B24): facets facing up 7.5%
+// lighter than the colour, facing left 5% lighter, those facing away from the light about as the face, which is 4%
+// darker than the colour; where a stem is narrower than two bevels its facets meet in a ridge. So the light (from up
+// and left) maps to that: no darker than the face, lighter as a facet turns to it. In a text box (`box`) Word lights
+// the same bevel otherwise, from the left and harder (its print of word-wordart-styles.docx, Style 10 at 36pt): facets
+// facing left 7% lighter than the colour, right 42% darker, up and down 16% darker.
+function facetFx(w, h, shiny, out, box) {
+  const n = 6, el = 55, az = box ? 180 : 230, rad = (el * Math.PI) / 180, flat = Math.sin(rad);
+  let fx = '';
+  for (let i = 1; i <= n; i++) {
+    fx += `<feMorphology in="SourceAlpha" operator="erode" radius="${+((w * i) / n).toFixed(2)}" result="bf${i}"/>`;
+    fx += i === 1 ? '' : `<feComposite in="bf${i}" in2="${i === 2 ? 'bf1' : `bs${i - 1}`}" operator="arithmetic" k2="${+(1 / n).toFixed(4)}" k3="${i === 2 ? +(1 / n).toFixed(4) : 1}" result="bs${i}"/>`;
+  }
+  // (The light a facet facing it straight up gets, for this slope; the tones between the face's and its as a table.)
+  const s = h / w, up = (s * Math.cos(rad) * Math.sin(((az - 180) * Math.PI) / 180) + flat) / Math.hypot(1, s);
+  // (In a box: the tone straight with the light, about a facet across it, at 2.2 times its change.)
+  const across = flat / Math.hypot(1, s);
+  const tone = (l) => +(Math.max(0, box ? 0.84 + 2.2 * (l - across)
+    : 0.96 + (l > flat ? ((l - flat) / Math.max(1e-3, up - flat)) * 0.105 : (flat - l) * 0.25)) / 2).toFixed(4);
+  const table = Array.from({ length: 41 }, (_, i) => tone(i / 40)).join(' ');
+  const spec = shiny
+    ? `<feSpecularLighting in="bf0" surfaceScale="${h}" specularConstant="0.9" specularExponent="40" lighting-color="#fff" result="bf7"><feDistantLight azimuth="${az}" elevation="${el}"/></feSpecularLighting>`
+      + `<feComposite in="bf8" in2="bf7" operator="arithmetic" k2="1" k3="0.5" result="bf9"/>`
+    : '';
+  return fx
+    + `<feGaussianBlur in="bs${n}" stdDeviation="${+((w / n) * 0.7).toFixed(2)}" result="bf0"/>`
+    + `<feDiffuseLighting in="bf0" surfaceScale="${h}" diffuseConstant="1" lighting-color="#fff" result="bfl"><feDistantLight azimuth="${az}" elevation="${el}"/></feDiffuseLighting>`
+    + `<feComponentTransfer in="bfl" result="bft"><feFuncR type="table" tableValues="${table}"/><feFuncG type="table" tableValues="${table}"/><feFuncB type="table" tableValues="${table}"/></feComponentTransfer>`
+    // (Both opaque, the letters' colour as it is, so the product brightens as well as darkens; their edge restored after.)
+    + `<feComponentTransfer in="SourceGraphic" result="bfs"><feFuncA type="table" tableValues="1 1"/></feComponentTransfer>`
+    + `<feComposite in="bfs" in2="bft" operator="arithmetic" k1="2" result="bf8"/>`
+    + spec
+    + `<feComposite in="${shiny ? 'bf9' : 'bf8'}" in2="SourceAlpha" operator="in" result="${out}"/>`;
 }
 
 // Filters for body text, defined once each in the page (an SVG of no size at the end of the body, which prints with
@@ -301,7 +339,7 @@ export function svgTextEffects(rPr, n, serialize) {
   }
   const fx = [];
   // A bevel first, on the letters; the shadow and glow then take the bevelled letters for theirs.
-  const bevel = bevelFx(get('props3d'));
+  const bevel = bevelFx(get('props3d'), 'odxbev', true);
   if (bevel) fx.push(bevel);
   const src = bevel ? 'odxbev' : 'SourceGraphic';
   const sh = get('shadow');
