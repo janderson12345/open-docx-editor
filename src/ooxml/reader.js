@@ -197,7 +197,9 @@ function readParagraph(p, ctx) {
       attrs.ilvl = props.ilvl;
     }
     for (const c of kids(pPr)) if (!(c.namespaceURI === NS.w && PPR_MODELLED.has(c.localName))) attrs.extra.push([c.localName, ctx.xml(c)]);
-    for (const k of ['before', 'beforeAuto', 'after', 'afterAuto', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'noHyph', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs', 'bidi']) if (props[k] != null) attrs.view[k] = props[k];
+    for (const k of ['before', 'beforeAuto', 'after', 'afterAuto', 'line', 'lineRule', 'indLeft', 'indRight', 'indFirst', 'noHyph', 'contextualSpacing', 'keepNext', 'keepLines', 'widowControl', 'pageBreakBefore', 'borders', 'shading', 'tabs', 'bidi', 'outlineLvl']) if (props[k] != null) attrs.view[k] = props[k];
+    // (outlineLvl for reading only, written back from extra: a level set on the paragraph itself is its heading level
+    // in the navigation pane and a \u table of contents, as in Word (toc-u-only.docx's "Direct level 5").)
   }
   // Word's paragraph identities (w14:paraId, w14:textId) and revision-save ids (w:rsid*), written back as they were.
   const own = [...p.attributes].filter((a) => a.prefix !== 'xmlns' && a.name !== 'xmlns').map((a) => [a.name, a.value]);

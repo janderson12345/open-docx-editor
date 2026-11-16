@@ -80,6 +80,29 @@ function revAttrs(d) {
 
 const HEADING_TAGS = { h1: 'Heading1', h2: 'Heading2', h3: 'Heading3', h4: 'Heading4', h5: 'Heading5', h6: 'Heading6' };
 
+/**
+ * A pasted <p> that is a heading in all but its tag, as some pages and editors write them, by the heading style it
+ * names: Word's clipboard HTML (class=MsoHeading1, mso-style-name:"Heading 1", mso-outline-level:1), a class of
+ * "Heading1" or "heading-2", role=heading with aria-level, or a whole paragraph in bold at a heading's size relative to
+ * the text round it (font-size:2em is a browser's own <h1>, 1.5em its <h2>, 1.17em its <h3>). Null for body text.
+ * (mso-* properties aren't CSS the browser keeps in d.style: read from the attribute as written.)
+ */
+export function pastedHeading(d) {
+  const css = d.getAttribute('style') || '';
+  const level = (m) => (m ? `Heading${m[1]}` : null);
+  const cls = (d.getAttribute('class') || '').split(/\s+/).map((c) => /^(?:Mso)?Heading-?([1-9])$/i.exec(c)).find(Boolean);
+  if (cls) return level(cls);
+  const named = /mso-style-name\s*:\s*["']?\s*heading\s*([1-9])\s*["']?\s*(?:;|$)/i.exec(css) || /mso-outline-level\s*:\s*([1-9])\b/i.exec(css);
+  if (named) return level(named);
+  if (d.getAttribute('role') === 'heading') return level(/^([1-9])$/.exec(d.getAttribute('aria-level') || '2') || ['', '2']);
+  const em = /^([\d.]+)r?em$/.exec(d.style.fontSize || '');
+  if (em && /^(bold|bolder|[6-9]00)$/.test(d.style.fontWeight)) {
+    const n = Number(em[1]);
+    return n >= 1.8 ? 'Heading1' : n >= 1.4 ? 'Heading2' : n >= 1.15 ? 'Heading3' : null;
+  }
+  return null;
+}
+
 /** A CSS colour (rgb(), #rrggbb) as Word's RRGGBB, or null (none, transparent, white). */
 function cssHex(v) {
   const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?/.exec(v || '');
@@ -134,7 +157,7 @@ export const schema = new Schema({
         deco: { default: null }, // computed by the editor (list label, contextual spacing); never saved
       },
       parseDOM: [
-        { tag: 'p', getAttrs: (d) => ({ styleId: d.getAttribute('data-style') || null, align: alignFromCss(d.style.textAlign), ...pastedSpacing(d) }) },
+        { tag: 'p', getAttrs: (d) => ({ styleId: d.getAttribute('data-style') || pastedHeading(d), align: alignFromCss(d.style.textAlign), ...pastedSpacing(d) }) },
         ...Object.entries(HEADING_TAGS).map(([tag, styleId]) => ({ tag, attrs: { styleId } })),
         { tag: 'li', getAttrs: () => ({}) },
       ],
