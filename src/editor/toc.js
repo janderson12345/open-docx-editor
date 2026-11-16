@@ -23,7 +23,9 @@ const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind ==
  * matched by name in any case, over the level \o would give them; \t without \o takes those styles only, \u adding none.
  */
 export function tocSwitches(instr) {
-  const o = /\\o(?:\s+"?\s*(\d)\s*-\s*(\d)\s*"?)?/i.exec(instr);
+  // (Only the quote between the two runs of spaces, so a long run of them with no range after it is read once: as
+  // \s+"?\s* it was split every way first, 1.2s for 40,000 spaces.)
+  const o = /\\o(?:\s+(?:"\s*)?(\d)\s*-\s*(\d))?/i.exec(instr);
   const u = /\\u\b/i.test(instr);
   const t = /\\t\s+"([^"]*)"/i.exec(instr);
   const styles = new Map();

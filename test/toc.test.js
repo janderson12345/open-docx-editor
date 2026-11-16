@@ -59,4 +59,13 @@ test('TOC switches: a bare TOC or \\o alone is \\o "1-9"; \\u alone takes levels
   assert.deepEqual(plain(tocSwitches(' TOC \\o "2-5" \\u ')), { o: true, u: true, from: 1, to: 4, styles: {} });
   assert.deepEqual(plain(tocSwitches(' TOC \\u \\h \\z ')), { o: false, u: true, from: 0, to: 8, styles: {} });
   assert.deepEqual(plain(tocSwitches(' TOC \\t "Title,1,Sub Title;2,Note" ')), { o: false, u: false, from: 0, to: 8, styles: { title: 0, 'sub title': 1, note: 0 } });
+  assert.deepEqual(plain(tocSwitches(' TOC \\o " 2 - 4 " ')), { o: true, u: false, from: 1, to: 3, styles: {} });
+});
+
+test('TOC switches: a field code with a long run of spaces is read in linear time', () => {
+  const t0 = performance.now();
+  for (const pad of [' '.repeat(40000), ' '.repeat(40000) + '"', ' '.repeat(20000) + '"' + ' '.repeat(20000)]) {
+    assert.equal(tocSwitches(` TOC \\o${pad}x \\t${pad}`).from, 0);
+  }
+  assert.ok(performance.now() - t0 < 200, `${(performance.now() - t0).toFixed(0)}ms`); // (was 2.6s: 1.2s, 1.2s, 0.3s)
 });
