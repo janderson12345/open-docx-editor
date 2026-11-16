@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { unzipSync, strFromU8 } from 'fflate';
-import { mailMerge, mergeFieldNames, formatMergeValue } from '../src/index.js';
+import { mailMerge, mergeFieldNames, formatMergeValue, ifCompare } from '../src/index.js';
 
 const bytes = new Uint8Array(fs.readFileSync(new URL('./fixtures/mailmerge.docx', import.meta.url)));
 const records = [
@@ -58,4 +58,65 @@ test('one document per record', () => {
   assert.equal(files.length, 2);
   assert.match(text(docXml(files[1])), /Alan TURING/);
   assert.doesNotMatch(text(docXml(files[1])), /Ada/);
+});
+
+// IF fields and merge fields in a header and footer (test/fixtures/mkmergeif.mjs), against Word's own merge of the same
+// document with these records (Mailings > Finish & Merge through Word, a CSV data source): each line's text per record.
+const ifBytes = new Uint8Array(fs.readFileSync(new URL('./fixtures/mergeif.docx', import.meta.url)));
+const people = [
+  { Name: 'Ada', Amount: '150', City: 'New York' },
+  { Name: 'alan', Amount: '50', City: 'Boston' },
+  { Name: 'Bea', Amount: '100', City: 'New York' },
+  { Name: 'Zed', Amount: '', City: 'London' },
+  { Name: 'Ida', Amount: '45', City: '' },
+];
+const LABELS = 'gt lt ge le ne eqcase star qmark starcase strlt strltcase quoted bare numstr text nested nofalse upper rec'.split(' ');
+const WORD = [
+  'big|not under|yes|gt|has amount|ne|A-name|q|no a-star|before B|before b|NY|NY|not hundred|Dear Ada, thanks|big|only big|BIG|not second',
+  'small|under|no|le|has amount|ne|other|nq|a-star|before B|before b|not NY|not NY|not hundred|Hello alan|mid||SMALL|second',
+  'small|not under|yes|gt|has amount|ne|other|nq|no a-star|from B|from b|NY|NY|hundred|Hello Bea|mid||SMALL|not second',
+  'small|under|no|le|no amount|ne|other|nq|no a-star|from B|from b|not NY|not NY|not hundred|Hello Zed|tiny||SMALL|not second',
+  'small|under|no|le|has amount|ne|other|q|no a-star|from B|from b|not NY|not NY|not hundred|Hello Ida|mid||SMALL|not second',
+];
+const WORD_HF = [['Statement for Ada', 'City: New York / big'], ['Statement for alan', 'City: Boston / small'], ['Statement for Bea', 'City: New York / small'],
+  ['Statement for Zed', 'City: London / small'], ['Statement for Ida', 'City:  / small']];
+const paras = (xml) => xml.split('</w:p>').map(text).filter(Boolean);
+
+test('IF fields per record, as Word merges them', () => {
+  const { bytes: out } = mailMerge(ifBytes, people);
+  const xml = docXml(out);
+  assert.doesNotMatch(xml, /fldChar|instrText|fldSimple/);
+  const lines = paras(xml);
+  assert.equal(lines.length, LABELS.length * people.length);
+  people.forEach((_, r) => WORD[r].split('|').forEach((want, k) => assert.equal(lines[r * LABELS.length + k], `${LABELS[k]}: ${want}`, `record ${r + 1}, ${LABELS[k]}`)));
+});
+
+test('the comparisons Word\'s IF makes', () => {
+  assert.equal(ifCompare('1,234.5', '>', '999'), true);
+  assert.equal(ifCompare('100', '=', '100.0'), true);
+  assert.equal(ifCompare('Ada', '=', 'ada'), false);
+  assert.equal(ifCompare('Ada', '<>', 'A*'), false);
+  assert.equal(ifCompare('alan', '<', 'B'), true);
+  assert.equal(ifCompare('a.b', '=', 'a?b'), true);
+  assert.equal(ifCompare('axb', '=', 'a.b'), false);
+});
+
+test('headers and footers filled for each record, each record its own', () => {
+  const { bytes: out, fields } = mailMerge(ifBytes, people);
+  assert.deepEqual(fields, ['Amount', 'Name', 'City']);
+  const files = unzipSync(out);
+  const rels = strFromU8(files['word/_rels/document.xml.rels']);
+  const part = (id) => strFromU8(files[`word/${new RegExp(`Id="${id}"[^>]*Target="([^"]+)"`).exec(rels)[1]}`]);
+  const sects = docXml(out).match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g);
+  assert.equal(sects.length, people.length);
+  sects.forEach((s, r) => {
+    const h = /headerReference w:type="default" r:id="([^"]+)"/.exec(s)[1];
+    const f = /footerReference w:type="default" r:id="([^"]+)"/.exec(s)[1];
+    assert.deepEqual([text(part(h)), text(part(f))], WORD_HF[r], `record ${r + 1}`);
+    assert.doesNotMatch(part(h) + part(f), /fldChar|instrText/);
+  });
+  assert.match(strFromU8(files['[Content_Types].xml']), /\/word\/header5\.xml/);
+  // One document per record: its own header filled in place.
+  const one = mailMerge(ifBytes, people, { combine: false }).files[2];
+  assert.equal(text(strFromU8(unzipSync(one)['word/header1.xml'])), 'Statement for Bea');
 });

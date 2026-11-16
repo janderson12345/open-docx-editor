@@ -10,6 +10,7 @@ import { deletedWhole } from './pararules.js';
 import { wrapText } from './textspans.js';
 import { uniformRun } from './runs.js';
 import { docProps, fillFields } from './pagefields.js';
+import { previewStory } from './mailmerge.js';
 
 /** Header and footer paragraphs -> their nodes, for laying out their tabs once drawn. */
 export const hfNodes = new WeakMap();
@@ -82,7 +83,9 @@ export function storyDrawer(session) {
   const serializer = DOMSerializer.fromSchema(schema);
   let props = null; // the file's properties, for header and footer fields
   const styleTables = (doc, el) => styleStoryTables(session, doc, el);
-  return (doc, cls, pageNo, pages) => {
+  return (story, cls, pageNo, pages) => {
+    // (Preview Results: the merge fields filled with the record's values, mailmerge.js.)
+    const doc = previewStory(session, story);
     const el = document.createElement('div');
     el.className = `odx-hf ${cls}`;
     el.append(serializer.serializeFragment(doc.content));

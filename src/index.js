@@ -9,7 +9,7 @@ export * as commands from './editor/commands.js';
 export * as track from './editor/track.js';
 export { listFields, fieldValues, setFieldValues, setForms } from './editor/fields.js';
 export { readFieldValues, fillFields } from './fieldsNode.js';
-export { mailMerge, mergeFieldNames, formatMergeValue } from './merge.js';
+export { mailMerge, mergeFieldNames, formatMergeValue, ifCompare } from './merge.js';
 export { FONTS_CDN, OMF_CDN } from './editor/fontload.js';
 export { OMF_VERSION } from './fonts/omf.js';
 export { VERSION } from './version.js';
