@@ -7,7 +7,12 @@
   bitmap claiming any size, metafiles nested without end, an object drawn again and again, long text wrapped), or make
   a mail-merge comparison backtrack for seconds; a co-editor could do the same through a picture's attributes, write
   parts outside the package's folders with a "../" name, or loop an editor for ever with a name without an extension.
-  A cross-reference to a list label of thousands of dots or spaces took time growing with its square, and a field's format switch naming "constructor" was taken as a format. All are bounded or checked now. Two slow patterns over table-of-contents switches and pasted styles were made linear.
+  A cross-reference to a list label of thousands of dots or spaces took time growing with its square, and a field's format switch naming "constructor" was taken as a format. All are bounded or checked now. Two slow patterns over table-of-contents switches and pasted styles were made linear,
+  as were the reads of a tag's attributes in notes, pictures, shapes, page fields and text effects (seconds each on a
+  crafted tag); a chart's embedded workbook no longer puts its own sheet id into a regular expression.
+- **Endnotes move with the text**: when columns or the text above them changed, endnotes stayed where they were first
+  drawn (in a one-section document of columns, at the page's foot). A footnote mark just after a comment's end is
+  printed now.
 - **Mail merge: IF fields per record, and merge fields in headers and footers**, in the merged document and the preview,
   as Word's own merge fills them.
 - **Tables of contents**: `\u` alone lists paragraphs by outline level; `\t` takes entries from named styles at their
