@@ -115,5 +115,11 @@ export const childNamed = (el, name) => elementKids(el).find((n) => n.localName 
 /** Its child elements with this local name (any namespace). */
 export const childrenNamed = (el, name) => elementKids(el).filter((n) => n.localName === name);
 
-/** An attribute value's entities decoded (&quot; &apos; &lt; &gt; &amp;), as the XML parser would. */
-export const unescapeXml = (s) => (s == null ? s : s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+/**
+ * An attribute value's or text's entities decoded (&quot; &apos; &lt; &gt; &#nn; &#xhh; and &amp; last, so "&amp;lt;"
+ * stays "&lt;"), as the XML parser would. The one place XML read with regexes is unescaped: track.js, merge.js,
+ * refs.js and svgfonts.js each had their own, and one had &amp; in the wrong place.
+ */
+const codePoint = (n) => (n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '\uFFFD');
+export const unescapeXml = (s) => (s == null ? s : s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#(\d+);/g, (m, d) => codePoint(Number(d))).replace(/&#x([\da-f]+);/gi, (m, h) => codePoint(parseInt(h, 16))).replace(/&amp;/g, '&'));

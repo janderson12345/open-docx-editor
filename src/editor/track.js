@@ -14,7 +14,7 @@ import { Mapping, ReplaceStep, ReplaceAroundStep, AddMarkStep, RemoveMarkStep } 
 import { schema } from './schema.js';
 import { rPr as rPrXml, pPrXml } from '../ooxml/writer.js';
 import { marksFromRPr, paragraphAttrsFromPPr } from '../ooxml/reader.js';
-import { esc } from '../ooxml/xml.js';
+import { esc, unescapeXml } from '../ooxml/xml.js';
 import { now } from './util.js';
 import { resolvingAllowed } from './protect.js';
 
@@ -116,6 +116,10 @@ function sinceMapper(tr, start) {
     return m.map(p, assoc);
   };
 }
+
+// Accept or Reject All with more steps than this goes in as one step (resolveAll): 6,000 changes took seconds as steps,
+// a few hundred are quick either way (b3052d7).
+const ONE_STEP_PAST = 200;
 
 let idSeq = 0;
 function nextId(doc) {
@@ -225,7 +229,7 @@ function trackDelete(out, a, b, attrsFor, own) {
     if (node.type === schema.nodes.table_row && pos >= a && pos + node.nodeSize <= b && rowRev(node) !== 'del') {
       // The author's own inserted row goes outright, as their own inserted text does.
       const by = rowRev(node) === 'ins' && /<w:ins\b[^>]*\bw:author="([^"]*)"/.exec(node.attrs.trPr);
-      if (by && own({ attrs: { author: by[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') } })) { remove.push([pos, pos + node.nodeSize]); return false; }
+      if (by && own({ attrs: { author: unescapeXml(by[1]) } })) { remove.push([pos, pos + node.nodeSize]); return false; }
       rows.push(pos);
     }
     if (node.isInline) {
@@ -278,7 +282,7 @@ function trackDelete(out, a, b, attrsFor, own) {
 function insOfMark(attrs) {
   const r = extraItem(attrs, 'rPr');
   const m = r && /<w:ins\b[^>]*\bw:author="([^"]*)"/.exec(r[1]);
-  return m ? { attrs: { author: m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') } } : null;
+  return m ? { attrs: { author: unescapeXml(m[1]) } } : null;
 }
 
 /** Insert `slice` at `at`, marked inserted; returns the position after it. */
@@ -618,7 +622,7 @@ export const resolveAll = (accept) => (state, dispatch) => {
     // Many changes: the result as one step, its content in place of the document's. Every decoration (pagination's,
     // line heights') was mapped through each of thousands of steps: 6000 changes took seconds. (Unchanged paragraphs
     // are the same nodes, so the view keeps their DOM; it's one undo step either way.)
-    if (tr.steps.length > 200) {
+    if (tr.steps.length > ONE_STEP_PAST) {
       const one = state.tr.setMeta('odx-untracked', true).setMeta('odx-resolve', true);
       one.replaceWith(0, state.doc.content.size, tr.doc.content);
       tr = one;

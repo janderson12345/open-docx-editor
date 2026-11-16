@@ -4,6 +4,7 @@
 // not a transform: a line of its own, moved by a transform, prints where it's laid out. Line breaks are still the
 // browser's; only where each line prints changes. The original paragraphs stay (hidden) so pages keep their layout.
 // On by default for printing; off with window.odxEngine = false (or ?noengine in the page's URL).
+import { noteLabel } from '../editor/notes.js';
 
 const LAYER = 'odx-printlines';
 
@@ -74,7 +75,9 @@ function lines(el) {
   }
   if (pending) return null;
   // A line goes on past its last text over the textless widgets after it on the same line: a note's reference mark at a
-  // line's (or the paragraph's) end, its number drawn by CSS (::after), had been left out of the printed copy.
+  // line's (or the paragraph's) end, its number drawn by CSS (::after), had been left out of the printed copy. Over the
+  // markers between them too (a comment's end and its reference, the editor's separator picture): find-all.docx's
+  // footnote mark after its comment's end had still been left out.
   for (const ln of out) {
     let [n, o] = ln.end;
     if (n.nodeType !== 3 || o < n.data.length) continue;
@@ -82,29 +85,27 @@ function lines(el) {
       while (n !== el && !n.nextSibling) n = n.parentNode;
       if (n === el) break;
       const s = n.nextSibling;
-      if (s.nodeType !== 1 || s.textContent || !s.matches?.('[data-kind$="Reference"]')) break;
-      const q = s.getBoundingClientRect();
-      if (q.bottom < ln.lo - 1 || q.top > ln.bottom + 1) break;
-      ln.endAfter = s;
+      const marker = s.nodeType === 1 && !s.textContent && (s.classList.contains('odx-opaque-inline') || s.matches('img.ProseMirror-separator'));
+      if (!marker) break;
+      if (s.matches('[data-kind="footnoteReference"], [data-kind="endnoteReference"]')) {
+        const q = s.getBoundingClientRect();
+        if (q.bottom < ln.lo - 1 || q.top > ln.bottom + 1) break;
+        ln.endAfter = s;
+      }
       n = s;
     }
   }
   return out;
 }
 
-const ROMAN = [['m', 1000], ['cm', 900], ['d', 500], ['cd', 400], ['c', 100], ['xc', 90], ['l', 50], ['xl', 40], ['x', 10], ['ix', 9], ['v', 5], ['iv', 4], ['i', 1]];
 let noteMarks = null; // (the document's reference marks in order, for one build: element -> its number)
 /** A note reference mark's number as editor.css draws it: footnotes 1, 2, 3..., endnotes i, ii, iii... */
 function noteNumber(mark, contentEl) {
   if (!noteMarks || noteMarks.root !== contentEl) {
     noteMarks = { root: contentEl, of: new Map() };
     for (const kind of ['footnoteReference', 'endnoteReference']) {
-      contentEl.querySelectorAll(`[data-kind="${kind}"]`).forEach((e, i) => {
-        let n = i + 1;
-        let v = String(n);
-        if (kind === 'endnoteReference') { v = ''; for (const [k, d] of ROMAN) while (n >= d) { v += k; n -= d; } }
-        noteMarks.of.set(e, v);
-      });
+      const note = kind === 'endnoteReference' ? 'endnote' : 'footnote';
+      contentEl.querySelectorAll(`[data-kind="${kind}"]`).forEach((e, i) => noteMarks.of.set(e, noteLabel(note, i + 1)));
     }
   }
   return noteMarks.of.get(mark) || null;

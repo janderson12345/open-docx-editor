@@ -6,6 +6,7 @@ import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseH
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
+import { placeVar, cssDecls, cssText } from './place.js';
 
 // w:pPr children we model as attrs; all others go to `extra`.
 const PPR_MODELLED = new Set(['pStyle', 'numPr', 'jc']);
@@ -803,9 +804,7 @@ function readDrawing(drawing, ctx, rPrXml) {
       src,
       width,
       height,
-      // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
-      // keeps other floats on theirs: pages.js floatsPast.)
-      place: ((a) => (grown && /^float:/.test(a) ? `${a};--odx-grown:1` : a))(padded(turned(padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]), floatPad) || effect, drawing, width, height), floatPad)),
+      place: placeOf(drawing, ctx, { width, height, effect, floatPad, grown }),
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
       // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
       ...(() => {
@@ -818,18 +817,53 @@ function readDrawing(drawing, ctx, rPrXml) {
 }
 
 /**
+ * A drawing's place (its image node's CSS): floating, where anchorCss puts it, its margins in by the room drawn round its
+ * outline (padPlace); in line, its effect extent's room (`effect`); turned and flipped as Word draws it (turned); then
+ * marked with that room (--odx-pad) and, a floating text box grown to fit its text, --odx-grown.
+ */
+function placeOf(drawing, ctx, { width, height, effect, floatPad, grown }) {
+  const anchored = padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]), floatPad);
+  const place = padded(turned(anchored || effect, drawing, width, height), floatPad);
+  // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
+  // keeps other floats on theirs: pages.js floatsPast.)
+  return grown && /^float:/.test(place) ? `${place};--odx-grown:1` : place;
+}
+
+/**
  * A floating shape's place with room drawn round it for its outline and arrowheads (`pad` px each side, its picture that
  * much larger): its margins that much in, so it sits and wraps the text as before. (One with text on both sides, set
  * where it is: wrapboth.js takes the pad back off its box for the room the text keeps clear.)
  */
-function padPlace(place, pad) {
+export function padPlace(place, pad) {
   if (!pad || !place) return place;
-  const minus = (v) => (/^-?[\d.]+px$/.test(v) ? `${+(parseFloat(v) - pad).toFixed(2)}px` : `calc(${v} - ${pad}px)`);
-  const fl = /^(float:(?:left|right);margin:)(\S+) (\S+) (\S+) (.+?)((?:;--odx-l.*)?)$/.exec(place);
-  if (fl) return `${fl[1]}${minus(fl[2])} ${minus(fl[3])} ${minus(fl[4])} ${minus(fl[5])}${fl[6]}`;
-  const bl = /^(display:block;margin-top:)(.+?)(;margin-left:)(.+?)(;margin-bottom:)(-?[\d.]+px)(.*)$/.exec(place);
-  if (bl) return `${bl[1]}${minus(bl[2])}${bl[3]}${minus(bl[4])}${bl[5]}${minus(bl[6])}${bl[7]}`;
-  if (/^position:absolute;/.test(place)) return place.replace(/margin-top:(-?[\d.]+px)/, (m, v) => `margin-top:${minus(v)};margin-left:${-pad}px`);
+  const isPx = (v) => /^-?[\d.]+px$/.test(v);
+  // (A margin of 0 or auto: 0 is -pad, auto stays: a centred shape stays centred, one aligned right reaches past the
+  // margin by its pad as the others do.)
+  const minus = (v) => (v === 'auto' ? v : v === '0' ? `${-pad}px` : isPx(v) ? `${+(parseFloat(v) - pad).toFixed(2)}px` : `calc(${v} - ${pad}px)`);
+  const ds = cssDecls(place);
+  const get = (k) => ds.find((d) => d[0] === k);
+  const [float, margin, display, position] = ['float', 'margin', 'display', 'position'].map(get);
+  if (margin && ((float && /^(left|right)$/.test(float[1])) || display?.[1] === 'block')) {
+    // margin: top right bottom left (the left one a length or a calc(), with spaces in it), or top auto bottom [auto].
+    const parts = margin[1].split(' ');
+    const sides = parts.length > 4 ? [...parts.slice(0, 3), parts.slice(3).join(' ')] : parts;
+    if (sides.length < (float ? 4 : 3)) return place;
+    margin[1] = sides.map(minus).join(' ');
+    return cssText(ds);
+  }
+  if (display?.[1] === 'block') {
+    const t = get('margin-top'), l = get('margin-left'), b = get('margin-bottom');
+    if (!t || !l || !b || !isPx(b[1])) return place;
+    for (const d of [t, l, b]) d[1] = minus(d[1]);
+    return cssText(ds);
+  }
+  if (position?.[1] === 'absolute') {
+    const t = get('margin-top');
+    if (!t || !isPx(t[1])) return place;
+    t[1] = minus(t[1]);
+    ds.splice(ds.indexOf(t) + 1, 0, ['margin-left', `${-pad}px`]);
+    return cssText(ds);
+  }
   return place;
 }
 const padded = (place, pad) => (pad && place ? `${place};--odx-pad:${pad}px` : place);
@@ -840,7 +874,7 @@ const padded = (place, pad) => (pad && place ? `${place};--odx-pad:${pad}px` : p
  * wrapped round when floating (square, tight, through, top and bottom), the text keeps clear of the turned shape's whole
  * outline, not its box: the float's margins that much wider, its picture moved back where it was.
  */
-function turned(place, drawing, w, h) {
+export function turned(place, drawing, w, h) {
   const uri = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '';
   // (A picture too: pic:spPr's rot, and its flips, drawn mirrored.)
   const picture = /\/picture$/.test(uri);
@@ -852,17 +886,27 @@ function turned(place, drawing, w, h) {
   const ey = Math.max(0, (w * Math.abs(Math.sin(a)) + h * Math.abs(Math.cos(a)) - h) / 2);
   const r2 = (v) => +v.toFixed(2);
   const turn = [deg && `rotate(${r2(deg)}deg)`, flip.h && 'scaleX(-1)', flip.v && 'scaleY(-1)'].filter(Boolean).join(' ');
-  const fl = /^float:(left|right);margin:(-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px (.+?)(;--odx-l.*)?$/.exec(place || '');
-  if (fl) {
-    // (Margins as anchorCss writes them: top, right, bottom, left; the left one a length or a calc().)
-    const [, side, t, r, b, l, rest = ''] = fl;
-    const left = /^-?[\d.]+px$/.test(l) ? `${r2(parseFloat(l) - (side === 'left' ? ex : -ex))}px` : `calc(${l} - ${r2(side === 'left' ? ex : -ex)}px)`;
-    const right = r2(Number(r) + (side === 'left' ? ex : -ex));
-    return `float:${side};margin:${r2(Number(t) - ey)}px ${right}px ${r2(Number(b) + ey)}px ${left}${rest};transform:translate(${r2(side === 'left' ? ex : -ex)}px, ${r2(ey)}px) ${turn}`;
+  // (Read and rewritten by its properties, padPlace's way: margins as anchorCss writes them, top, right, bottom, left, the
+  // left one a length or a calc().)
+  const ds = cssDecls(place);
+  const get = (k) => ds.find((d) => d[0] === k);
+  const isPx = (v) => /^-?[\d.]+px$/.test(v);
+  const float = get('float'), margin = get('margin');
+  const sides = margin ? margin[1].split(' ') : [];
+  if (float && /^(left|right)$/.test(float[1]) && sides.length >= 4 && sides.slice(0, 3).every(isPx)) {
+    const side = float[1];
+    const [t, r, b] = sides.slice(0, 3).map(parseFloat);
+    const l = sides.slice(3).join(' ');
+    const dx = side === 'left' ? ex : -ex;
+    const left = isPx(l) ? `${r2(parseFloat(l) - dx)}px` : `calc(${l} - ${r2(dx)}px)`;
+    margin[1] = `${r2(t - ey)}px ${r2(r + dx)}px ${r2(b + ey)}px ${left}`;
+    return `${cssText(ds)};transform:translate(${r2(dx)}px, ${r2(ey)}px) ${turn}`;
   }
-  if (/^display:block;margin-top:/.test(place || '')) {
-    const m = /^display:block;margin-top:(.+?);margin-left:(.+?);margin-bottom:(-?[\d.]+)px(.*)$/.exec(place);
-    if (m) return `display:block;margin-top:calc(${m[1]} - ${r2(ey)}px);margin-left:${m[2]};margin-bottom:${r2(Number(m[3]) + ey)}px${m[4]};transform:translate(0px, ${r2(ey)}px) ${turn}`;
+  if (get('display')?.[1] === 'block' && get('margin-top') && get('margin-left') && isPx(get('margin-bottom')?.[1] || '')) {
+    const t = get('margin-top'), b = get('margin-bottom');
+    t[1] = `calc(${t[1]} - ${r2(ey)}px)`;
+    b[1] = `${r2(parseFloat(b[1]) + ey)}px`;
+    return `${cssText(ds)};transform:translate(0px, ${r2(ey)}px) ${turn}`;
   }
   // In line with the text: Word draws a turned shape its left and top room further along from its box (a 96 x 72 shape
   // Word turned to 30.5 degrees, room 14, 22, 10, 20px: drawn 10.5pt right and 16.5pt down of the room's middle in its
@@ -875,7 +919,7 @@ function turned(place, drawing, w, h) {
   // middle of it.
   const q = deg % 180;
   if (picture && fx && q >= 45 && q < 135) {
-    const v = (k) => Number(new RegExp(`--odx-${k}:(-?[0-9.]+)px`).exec(place || '')?.[1]) || 0;
+    const v = (k) => parseFloat(placeVar(place, `odx-${k}`)) || 0;
     const side = (h - w) / 2;
     const swap = `--odx-fxt:${r2(v('fxt') + w - h)}px;--odx-fxl:${r2(v('fxl') + side)}px;--odx-fxr:${r2(v('fxr') + side)}px`;
     return `${place ? `${place};` : ''}${swap};transform:translate(0px, ${r2((h - w) / 2)}px) ${turn}`;

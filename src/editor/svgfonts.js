@@ -4,12 +4,14 @@
 // (data: URLs of the files the page's own @font-face rules load: fonts.css, open-metric-fonts, the host's substitutes),
 // once they're fetched; until then it shows as drawn. Only what's shown changes: the node keeps the picture as drawn
 // (schema.js maps the copy back to it for copy and paste).
+import { unescapeXml } from '../ooxml/xml.js';
+import { drawsOwn } from '../ooxml/fontprobe.js';
 
 const done = new Map(); // a picture as drawn -> the copy shown (itself when it needs nothing)
 const pending = new Set();
 const files = new Map(); // font file URL -> Promise of its data: URL (null if it can't be had)
 const installed = new Map();
-const KEEP = 300;
+const KEEP = 300; // pictures remembered (resizing a shape draws it again at each step: only the latest are kept)
 const redrawn = new Map(); // a picture drawn before its stand-in faces loaded -> { src, height } drawn again after
 const waiting = new Set();
 const origin = new Map(); // a picture shown in place of one as drawn -> that one
@@ -99,11 +101,11 @@ export async function withFonts(src) {
   const svg = decode(src);
   if (!svg || !/<text\b|<tspan\b/.test(svg)) return null;
   const stacks = new Set();
-  for (const m of svg.matchAll(/font-family(?:="([^"]*)"|='([^']*)'|\s*:\s*([^;"'>]+))/g)) stacks.add(unescape(m[1] ?? m[2] ?? m[3]));
+  for (const m of svg.matchAll(/font-family(?:="([^"]*)"|='([^']*)'|\s*:\s*([^;"'>]+))/g)) stacks.add(unescapeXml(m[1] ?? m[2] ?? m[3]));
   if (!stacks.size) return null;
   const bold = /font-weight(?:=["']|\s*:\s*)(bold|[6-9]00)/.test(svg);
   const italic = /font-style(?:=["']|\s*:\s*)(italic|oblique)/.test(svg);
-  const text = unescape([...svg.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(''));
+  const text = unescapeXml([...svg.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(''));
   const rules = faceRules();
   const want = new Set();
   for (const stack of stacks) {
@@ -140,7 +142,8 @@ export async function withFonts(src) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(out)}`;
 }
 
-function decode(src) {
+/** A data: URL's text (base64 or percent-encoded), or null. */
+export function decode(src) {
   const comma = src.indexOf(',');
   if (comma < 0) return null;
   const head = src.slice(0, comma), body = src.slice(comma + 1);
@@ -157,7 +160,6 @@ function decode(src) {
   }
 }
 
-const unescape = (s) => s.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d)).replace(/&#x([\da-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, '&');
 
 /** The page's @font-face rules: { family (lower case), url, format, weight, italic, range, distance(w) }. */
 function faceRules() {
@@ -195,7 +197,7 @@ function rules(sheet) {
 }
 
 /** Whether a unicode-range takes any of the characters in `text` (no range: every one). */
-function covers(range, text) {
+export function covers(range, text) {
   if (!range) return true;
   const spans = range.split(',').map((r) => {
     const v = r.trim().replace(/^u\+/i, '');
@@ -213,17 +215,7 @@ function covers(range, text) {
 /** Whether a font of that name is installed (it draws differently from the generic families it would fall back to). */
 function isInstalled(family) {
   if (installed.has(family)) return installed.get(family);
-  let yes = false;
-  try {
-    const c = document.createElement('canvas').getContext('2d');
-    const probe = 'mmmmmmmmmlliWW@#0O';
-    yes = ['monospace', 'serif', 'sans-serif'].some((g) => {
-      c.font = `72px ${g}`;
-      const w = c.measureText(probe).width;
-      c.font = `72px "${family.replace(/["\\]/g, '')}", ${g}`;
-      return c.measureText(probe).width !== w;
-    });
-  } catch { /* none */ }
+  const yes = drawsOwn(family, { probe: 'mmmmmmmmmlliWW@#0O', size: 72, generics: ['monospace', 'serif', 'sans-serif'] });
   installed.set(family, yes);
   return yes;
 }

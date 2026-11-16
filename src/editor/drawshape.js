@@ -8,6 +8,7 @@ import { schema } from './schema.js';
 import { PRESETS } from '../ooxml/presets.js';
 import { geometryPaths } from '../ooxml/geometry.js';
 import { zoomOf } from './zoom.js';
+import { padOf } from '../ooxml/place.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 // (A click's size: Word's click-to-insert, 1in by 0.75in; a line 1.5in across.)
@@ -140,7 +141,7 @@ function place(view, { prst, name, arrow, line }, b, z) {
     const n = view.state.doc.nodeAt(pos);
     const img = view.nodeDOM(pos);
     if (!n || n.attrs.xml !== made.xml || !img?.getBoundingClientRect) return;
-    const pad = Number(/--odx-pad:([\d.]+)px/.exec(n.attrs.place || '')?.[1]) || 0;
+    const pad = padOf(n.attrs.place);
     const q = img.getBoundingClientRect();
     const dx = Math.round((b.left - q.left) / z - pad), dy = Math.round((b.top - q.top) / z - pad);
     if (!dx && !dy) return;

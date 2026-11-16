@@ -7,12 +7,13 @@
 // GDI records between a GetDC record and the next EMF+ record belong to the drawing too: the result says which, so
 // the GDI reader draws those (and only those) in order with these.
 
-const n = (v) => +(+v).toFixed(3);
-const hex = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.toString(16).padStart(2, '0')).join('')}`;
+import { reader, points, rects, utf16, lerp, readObject, n } from './emfplus-read.js';
+
+// An EMF+ ARGB colour (0xAARRGGBB) as #rrggbb, and its alpha; emf.js colorref is GDI's 0x00BBGGRR.
+const argb = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.toString(16).padStart(2, '0')).join('')}`;
 const alpha = (v) => ((v >>> 24) & 255) / 255;
-// The most pixels an uncompressed bitmap object may have (as tiff.js: 160 MB of RGBA); a larger one isn't drawn.
-const MAX_PIXELS = 40e6;
-const mul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
+// Matrices as GDI+ keeps them, [m11 m12 m21 m22 dx dy] applied to row vectors: A then B (shapes.js composes SVG's).
+const mulRow = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
   A[4] * B[0] + A[5] * B[2] + B[4], A[4] * B[1] + A[5] * B[3] + B[5]];
 const ID = [1, 0, 0, 1, 0, 0];
 const inverse = ([a, b, c, d, e, f]) => { const k = a * d - b * c || 1; return [d / k, -b / k, -c / k, a / k, (c * f - d * e) / k, (b * e - a * f) / k]; };
@@ -39,13 +40,13 @@ export function hasEmfPlus(dv) {
  * from its GDI copy).
  */
 export function emfPlusToSvg(input, { bx, by }, h) {
-  // (Rebound while an object split over several records is read from a joined copy of its parts.)
-  let bytes = input;
-  let dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const bytes = input;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const rd = reader(bytes);
   const items = [], defs = [], gdi = [];
   let unsupported = false, defId = 0;
   const id = (p) => `${p}${++defId}`;
-  let dpiX = 96, dpiY = 96;
+  let dpiX = 96; // (the header's vertical dpi is skipped: every unit here is worked out from the horizontal one)
   const objects = [];
   let pending = null; // an object split over several records: { id, total, parts, got }
   // (The page unit starts as Display: a pixel of a display reference, 1/100 inch of a printer's.)
@@ -87,256 +88,11 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     return `<use href="#${img.ref}"${attrs}/>`;
   };
 
-  // ----- reading -----
-  const rd = (o) => ({
-    o,
-    u8() { return dv.getUint8(this.o++); },
-    u16() { const v = dv.getUint16(this.o, true); this.o += 2; return v; },
-    i16() { const v = dv.getInt16(this.o, true); this.o += 2; return v; },
-    u32() { const v = dv.getUint32(this.o, true); this.o += 4; return v; },
-    i32() { const v = dv.getInt32(this.o, true); this.o += 4; return v; },
-    f32() { const v = dv.getFloat32(this.o, true); this.o += 4; return v; },
-    m() { return [this.f32(), this.f32(), this.f32(), this.f32(), this.f32(), this.f32()]; },
-  });
-  const points = (r, count, flags) => {
-    const pts = [];
-    if (flags & 0x0800) { // relative, 7 or 15 bits each
-      let x = 0, y = 0;
-      const one = () => { const b = r.u8(); if (!(b & 0x80)) return b & 0x40 ? b - 0x80 : b; const v = ((b & 0x7f) << 8) | r.u8(); return v & 0x4000 ? v - 0x8000 : v; };
-      for (let i = 0; i < count; i++) { x += one(); y += one(); pts.push([x, y]); }
-    } else if (flags & 0x4000) for (let i = 0; i < count; i++) pts.push([r.i16(), r.i16()]);
-    else for (let i = 0; i < count; i++) pts.push([r.f32(), r.f32()]);
-    return pts;
-  };
-  const rects = (r, count, compressed) => {
-    const out = [];
-    for (let i = 0; i < count; i++) out.push(compressed ? [r.i16(), r.i16(), r.i16(), r.i16()] : [r.f32(), r.f32(), r.f32(), r.f32()]);
-    return out;
-  };
-  const utf16 = (r, len) => { let s = ''; for (let i = 0; i < len; i++) s += String.fromCharCode(r.u16()); return s; };
-
-  // ----- objects -----
-  const readPath = (r) => {
-    r.u32(); // version
-    const count = r.u32(), flags = r.u32();
-    const pts = points(r, count, flags & 0x4000 ? 0x4000 : flags & 0x0800 ? 0x0800 : 0);
-    const types = [];
-    if (flags & 0x1000) { // run-length encoded types
-      while (types.length < count) {
-        const a = r.u8(), b = r.u8();
-        const run = a & 0x3f;
-        for (let i = 0; i < run && types.length < count; i++) types.push(b);
-      }
-    } else for (let i = 0; i < count; i++) types.push(r.u8());
-    let d = '';
-    for (let i = 0; i < count; i++) {
-      const t = types[i] & 7;
-      if (t === 0) d += `M${n(pts[i][0])} ${n(pts[i][1])}`;
-      else if (t === 3 && i + 2 < count) {
-        d += ` C${n(pts[i][0])} ${n(pts[i][1])} ${n(pts[i + 1][0])} ${n(pts[i + 1][1])} ${n(pts[i + 2][0])} ${n(pts[i + 2][1])}`;
-        i += 2;
-      } else d += ` L${n(pts[i][0])} ${n(pts[i][1])}`;
-      if (types[i] & 0x80) d += 'Z';
-    }
-    return { kind: 'path', d };
-  };
-  const readImage = (r, end) => {
-    r.u32(); // version
-    const type = r.u32();
-    if (type === 1) { // bitmap
-      const w = r.i32(), hh = r.i32(), stride = r.i32(), format = r.u32(), compressed = r.u32();
-      if (compressed === 1) {
-        const data = bytes.subarray(r.o, end);
-        const mime = data[0] === 0x89 && data[1] === 0x50 ? 'image/png' : data[0] === 0xff && data[1] === 0xd8 ? 'image/jpeg'
-          : data[0] === 0x47 && data[1] === 0x49 ? 'image/gif' : data[0] === 0x42 && data[1] === 0x4d ? 'image/bmp' : null;
-        if (!mime) return null;
-        const [iw, ih] = w > 0 && hh > 0 ? [w, hh] : imageSize(data); // (GDI+ leaves a compressed bitmap's size 0)
-        return { kind: 'image', w: iw || 1, h: ih || 1, href: h.dataUrl(mime, data) };
-      }
-      const bpp = (format >> 8) & 255;
-      let palette = null;
-      if (format & 0x00010000) { // indexed: a palette comes first
-        r.u32();
-        const count = r.u32();
-        palette = [];
-        for (let i = 0; i < count; i++) palette.push(r.u32());
-      }
-      // (Its rows must be in the record, each at least as long as its pixels: a stride of 0 would read one row for all.)
-      if (!(w > 0 && hh > 0 && w * hh <= MAX_PIXELS) || stride < Math.ceil((w * bpp) / 8) || r.o + stride * hh > end) return null;
-      const rgba = new Uint8Array(w * hh * 4);
-      const premul = format === 0x000e200b;
-      for (let y = 0; y < hh; y++) {
-        const row = r.o + y * stride;
-        for (let x = 0; x < w; x++) {
-          const d = (y * w + x) * 4;
-          let c;
-          if (bpp === 32) { c = dv.getUint32(row + x * 4, true); if (format === 0x00022009) c |= 0xff000000; }
-          else if (bpp === 24) c = 0xff000000 | (bytes[row + x * 3 + 2] << 16) | (bytes[row + x * 3 + 1] << 8) | bytes[row + x * 3];
-          else if (bpp === 16) {
-            const v = dv.getUint16(row + x * 2, true), f5 = (q) => Math.round((q * 255) / 31);
-            if (format === 0x00021006) c = 0xff000000 | (f5(v >> 11) << 16) | (Math.round((((v >> 5) & 63) * 255) / 63) << 8) | f5(v & 31); // RGB565
-            else if (format === 0x00021005 || format === 0x00061007) c = ((format === 0x00061007 && !(v & 0x8000) ? 0 : 255) << 24 | (f5((v >> 10) & 31) << 16) | (f5((v >> 5) & 31) << 8) | f5(v & 31)) >>> 0; // RGB555, ARGB1555
-            else if (format === 0x00101004) { const g = v >> 8; c = (0xff000000 | (g << 16) | (g << 8) | g) >>> 0; } // 16-bit grey
-            else return null;
-          }
-          else if (palette && (bpp === 8 || bpp === 4 || bpp === 1)) {
-            const bit = x * bpp, byte = bytes[row + (bit >> 3)];
-            const idx = bpp === 8 ? byte : (byte >> (8 - bpp - (bit & 7))) & ((1 << bpp) - 1);
-            c = palette[idx] ?? 0;
-          } else return null;
-          const a = (c >>> 24) & 255;
-          const f = premul && a ? 255 / a : 1;
-          rgba[d] = Math.min(255, ((c >> 16) & 255) * f); rgba[d + 1] = Math.min(255, ((c >> 8) & 255) * f); rgba[d + 2] = Math.min(255, (c & 255) * f); rgba[d + 3] = a;
-        }
-      }
-      return { kind: 'image', w, h: hh, href: h.png(w, hh, rgba) };
-    }
-    if (type === 2) { // a metafile inside: drawn by the EMF reader, as SVG
-      const mtype = r.u32(), size = r.u32();
-      if (mtype < 3) return null; // WMF
-      const inner = bytes.subarray(r.o, Math.min(end, r.o + size));
-      if (inner.length < 88) return null;
-      // (Its size from its frame, in its reference's pixels: the drawing's rounded bounds came out a pixel short.)
-      const iv = new DataView(inner.buffer, inner.byteOffset, inner.byteLength);
-      const pxm = iv.getInt32(72, true) / (iv.getInt32(80, true) || 1);
-      const fw = ((iv.getInt32(32, true) - iv.getInt32(24, true)) / 100) * pxm, fh = ((iv.getInt32(36, true) - iv.getInt32(28, true)) / 100) * (iv.getInt32(76, true) / (iv.getInt32(84, true) || 1));
-      // Drawn by the EMF reader when first drawn (imageUse), not when defined: a crafted file defining many image
-      // objects it never draws, each a metafile at the SVG budget, took seconds and gigabytes. (Converted now only when
-      // its frame gives no size, to read the size from the drawing.)
-      let svg;
-      const draw = () => { if (svg === undefined) svg = h.emfToSvg(inner) || ''; return svg; };
-      let w = fw, ih = fh;
-      if (!(fw > 0 && fh > 0)) {
-        const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(draw());
-        if (!svg) return null;
-        w = fw > 0 ? fw : m ? +m[1] : 1;
-        ih = fh > 0 ? fh : m ? +m[2] : 1;
-      }
-      return { kind: 'image', w, h: ih, get href() { return draw() ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(draw())))}` : 'data:,'; } };
-    }
-    return null;
-  };
-  const readBrush = (r, end) => {
-    r.u32(); // version
-    const type = r.u32();
-    if (type === 0) return { kind: 'brush', type: 'solid', color: r.u32() };
-    if (type === 1) return { kind: 'brush', type: 'hatch', style: r.u32(), fore: r.u32(), back: r.u32() };
-    if (type === 2) { // texture
-      const flags = r.u32(), wrap = r.u32();
-      const m = flags & 2 ? r.m() : null;
-      const img = readImage(r, end);
-      return img ? { kind: 'brush', type: 'texture', img, m, wrap } : { kind: 'brush', type: 'solid', color: 0x80808080 };
-    }
-    if (type === 4) { // linear gradient
-      const flags = r.u32(), wrap = r.u32();
-      const rect = [r.f32(), r.f32(), r.f32(), r.f32()];
-      const c1 = r.u32(), c2 = r.u32();
-      r.u32(); r.u32();
-      const m = flags & 2 ? r.m() : null;
-      let stops = [[0, c1], [1, c2]];
-      if (flags & 4) { // preset colours
-        const cnt = r.u32(); const pos = []; for (let i = 0; i < cnt; i++) pos.push(r.f32());
-        stops = pos.map((p) => [p, r.u32()]);
-      } else if (flags & 8) { // blend factors (horizontal)
-        const cnt = r.u32(); const pos = []; for (let i = 0; i < cnt; i++) pos.push(r.f32());
-        const fac = []; for (let i = 0; i < cnt; i++) fac.push(r.f32());
-        stops = pos.map((p, i) => [p, lerp(c1, c2, fac[i])]);
-      }
-      return { kind: 'brush', type: 'linear', rect, m, stops, wrap };
-    }
-    if (type === 3) { // path gradient: from the centre colour out to the boundary's
-      const flags = r.u32(); r.u32();
-      const center = r.u32(), cx = r.f32(), cy = r.f32();
-      const cnt = r.u32(); const surround = []; for (let i = 0; i < cnt; i++) surround.push(r.u32());
-      let pts = [], curved = false;
-      if (flags & 1) {
-        const size = r.u32(), start = r.o;
-        const p = readPath(r);
-        r.o = start + size;
-        curved = /C/.test(p.d);
-        pts = (p.d.match(/-?[\d.]+ -?[\d.]+/g) || []).map((q) => q.split(' ').map(Number));
-      } else { const pc = r.u32(); pts = points(r, pc, 0); }
-      const m = flags & 2 ? r.m() : null;
-      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
-      const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-      // A curved boundary (an ellipse): elliptical, its colour reached at the boundary all round. Straight sides: a fan
-      // of triangles from the centre, each corner its own colour (the last one given for the corners after it).
-      if (curved || pts.length < 3) return { kind: 'brush', type: 'radial', cx, cy, rx: Math.max(1, (box[2] - box[0]) / 2), ry: Math.max(1, (box[3] - box[1]) / 2), c1: center, c2: surround[0] ?? center, m };
-      return { kind: 'brush', type: 'fan', cx, cy, pts, box, c1: center, cols: pts.map((_, i) => surround[Math.min(i, cnt - 1)] ?? center), m };
-    }
-    return { kind: 'brush', type: 'solid', color: 0xff808080 };
-  };
-  const lerp = (a, b, t) => {
-    const ch = (s) => Math.round(((a >>> s) & 255) * (1 - t) + ((b >>> s) & 255) * t);
-    return ((ch(24) << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
-  };
-  const readPen = (r, end) => {
-    r.u32(); r.u32(); // version, type
-    const flags = r.u32(), unit = r.u32(), width = r.f32();
-    const pen = { kind: 'pen', unit, width, style: 0, cap: 0, join: 0, miter: 10, dashes: null, dashOffset: 0 };
-    if (flags & 0x01) pen.m = r.m();
-    if (flags & 0x02) pen.cap = r.i32();
-    pen.endCap = flags & 0x04 ? r.i32() : pen.cap;
-    if (flags & 0x08) pen.join = r.i32();
-    if (flags & 0x10) pen.miter = r.f32();
-    if (flags & 0x20) pen.style = r.i32();
-    if (flags & 0x40) r.i32();
-    if (flags & 0x80) pen.dashOffset = r.f32();
-    if (flags & 0x100) { const c = r.u32(); pen.dashes = []; for (let i = 0; i < c; i++) pen.dashes.push(r.f32()); }
-    if (pen.dashes && !(flags & 0x20)) pen.style = 5; // (GDI+ writes a custom pattern with no line style)
-    if (flags & 0x200) pen.inset = r.i32() === 1;
-    if (flags & 0x400) { const c = r.u32(); r.o += c * 4; }
-    if (flags & 0x800) { const s = r.u32(); r.o += s; }
-    if (flags & 0x1000) { const s = r.u32(); r.o += s; }
-    pen.brush = r.o < end ? readBrush(r, end) : { kind: 'brush', type: 'solid', color: 0xff000000 };
-    return pen;
-  };
-  const readFont = (r) => {
-    r.u32();
-    const em = r.f32(), unit = r.u32(), style = r.i32(); r.u32();
-    const len = r.u32();
-    let face = utf16(r, len).replace(/\0.*$/, '');
-    // (GDI+ may write the family in capitals, "ARIAL": font names match whatever their case, the stand-ins don't.)
-    if (face === face.toUpperCase()) face = face.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
-    return { kind: 'font', em, unit, bold: !!(style & 1), italic: !!(style & 2), underline: !!(style & 4), strike: !!(style & 8), face };
-  };
-  const readFormat = (r) => {
-    r.u32();
-    const flags = r.u32(); r.u32();
-    const align = r.u32(), lineAlign = r.u32();
-    r.u32(); r.u32(); r.f32(); r.i32(); // digit substitution and language, first tab offset, hotkey prefix
-    return { kind: 'format', flags, align, lineAlign, lead: r.f32(), trail: r.f32() };
-  };
-  const readRegion = (r) => {
-    r.u32(); r.u32(); // version, node count
-    const node = () => {
-      const type = r.u32();
-      if (type >= 1 && type <= 5) { const a = node(); const b = node(); return { op: type, a, b }; }
-      if (type === 0x10000000) { const [x, y, w, hh] = [r.f32(), r.f32(), r.f32(), r.f32()]; return { d: `M${n(x)} ${n(y)}h${n(w)}v${n(hh)}h${n(-w)}Z` }; }
-      if (type === 0x10000001) { const size = r.u32(); const start = r.o; const p = readPath(r); r.o = start + size; return { d: p.d }; }
-      if (type === 0x10000002) return { d: '' };
-      return { d: 'M-1e6 -1e6h2e6v2e6h-2e6Z', infinite: true };
-    };
-    return { kind: 'region', node: node() };
-  };
-  const readObject = (type, r, end) => {
-    switch (type) {
-      case 1: return readBrush(r, end);
-      case 2: return readPen(r, end);
-      case 3: return readPath(r);
-      case 4: return readRegion(r);
-      case 5: return readImage(r, end);
-      case 6: return readFont(r);
-      case 7: return readFormat(r);
-      default: return null;
-    }
-  };
-
   // ----- painting -----
   const paint = (brush) => { // [paint, opacity] for fill or stroke, in the current world units
     if (!brush) return ['none', 1];
-    if (typeof brush === 'number') return [hex(brush), alpha(brush)];
-    if (brush.type === 'solid') return [hex(brush.color), alpha(brush.color)];
+    if (typeof brush === 'number') return [argb(brush), alpha(brush)];
+    if (brush.type === 'solid') return [argb(brush.color), alpha(brush.color)];
     if (brush.type === 'hatch') {
       // An 8 x 8 tile of the picture's pixels, upright and unscaled whatever the world and page (as GDI+ draws them):
       // its lines, or for the percent styles that share of its pixels.
@@ -360,12 +116,12 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         45: (x, y) => y === 0 || (y < 4 && x === 0) || (y === 4) || (y > 4 && x === 4), 47: (x, y) => x % 2 === 0 && y % 2 === 0,
       }[brush.style];
       let ink = '';
-      const cellsOf = (on) => { const c = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (on(x, y)) c.push(`M${x} ${y}h1v1h-1Z`); return `<path d="${c.join('')}" fill="${hex(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`; };
-      if (lines || more) ink = `<path d="${lines || more[0]}" fill="none" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="${lines ? 1 : more[1]}"/>`;
+      const cellsOf = (on) => { const c = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (on(x, y)) c.push(`M${x} ${y}h1v1h-1Z`); return `<path d="${c.join('')}" fill="${argb(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`; };
+      if (lines || more) ink = `<path d="${lines || more[0]}" fill="none" stroke="${argb(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="${lines ? 1 : more[1]}"/>`;
       else if (pct) ink = cellsOf((x, y) => (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100));
       else if (dots) ink = cellsOf(dots);
-      else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
-      addDef(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
+      else return [argb(lerp(brush.fore, brush.back, 0.5)), 1];
+      addDef(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${argb(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'texture') {
@@ -386,15 +142,15 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // (Across its rectangle, through the brush's matrix; repeated past it as GDI+ tiles by default, mirrored, or
       // padded only when clamped.)
       const spread = brush.wrap === 4 ? '' : ` spreadMethod="${brush.wrap === 0 ? 'repeat' : 'reflect'}"`;
-      const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
+      const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${argb(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
       addDef(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(x)}" y1="${n(y + hh / 2)}" x2="${n(x + w)}" y2="${n(y + hh / 2)}"${spread}${brush.m ? ` gradientTransform="${mat(brush.m)}"` : ''}>${stops}</linearGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'radial') {
       const g = id('g');
       const { cx, cy, rx, ry } = brush;
-      const squash = mul(mul([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
-      addDef(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mul(squash, brush.m) : squash)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
+      const squash = mulRow(mulRow([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
+      addDef(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mulRow(squash, brush.m) : squash)}"><stop offset="0" stop-color="${argb(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${argb(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'fan') {
@@ -403,7 +159,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // colour, and the colours meet along the lines to the corners, as GDI+ blends them.)
       const g = id('f');
       const { cx, cy, pts, box, c1, cols } = brush;
-      const stop = (o, c) => `<stop offset="${o}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`;
+      const stop = (o, c) => `<stop offset="${o}" stop-color="${argb(c)}" stop-opacity="${n(alpha(c))}"/>`;
       const tris = pts.map((a, i) => {
         const b = pts[(i + 1) % pts.length];
         const ex = b[0] - a[0], ey = b[1] - a[1], len2 = ex * ex + ey * ey || 1;
@@ -414,7 +170,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         addDef(`<linearGradient id="${side}" gradientUnits="userSpaceOnUse" x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}">${stop(0, cols[i])}${stop(1, cols[(i + 1) % pts.length])}</linearGradient>`);
         addDef(`<linearGradient id="${fade}" gradientUnits="userSpaceOnUse" x1="${n(cx)}" y1="${n(cy)}" x2="${n(fx)}" y2="${n(fy)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`);
         addDef(`<mask id="${mask}" maskUnits="userSpaceOnUse" x="-1e6" y="-1e6" width="2e6" height="2e6"><path d="${d}" fill="url(#${fade})" stroke="url(#${fade})" stroke-width="0.5"/></mask>`);
-        return `<path d="${d}" fill="${hex(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${hex(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
+        return `<path d="${d}" fill="${argb(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${argb(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
       }).join('');
       addDef(`<pattern id="${g}" x="${n(box[0])}" y="${n(box[1])}" width="${n(box[2] - box[0])}" height="${n(box[3] - box[1])}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><g transform="translate(${n(-box[0])} ${n(-box[1])})">${tris}</g></pattern>`);
       return [`url(#${g})`, 1];
@@ -473,7 +229,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       const src = plain || d;
       if (!/[aA]/.test(src)) {
         const Pm = [pen.m[0], pen.m[1], pen.m[2], pen.m[3], 0, 0];
-        emit(`<path d="${mapD(src, inverse(Pm))}" ${strokeAttr(pen)} transform="${mat(mul(Pm, toDevice()))}"/>`);
+        emit(`<path d="${mapD(src, inverse(Pm))}" ${strokeAttr(pen)} transform="${mat(mulRow(Pm, toDevice()))}"/>`);
         return;
       }
     }
@@ -566,7 +322,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const [p0, p1, p2] = dest;
     const [sx, sy, sw, sh] = src[2] > 0 && src[3] > 0 ? src : [0, 0, img.w, img.h];
     const A = [(p1[0] - p0[0]) / sw, (p1[1] - p0[1]) / sw, (p2[0] - p0[0]) / sh, (p2[1] - p0[1]) / sh, p0[0], p0[1]];
-    const M = mul([1, 0, 0, 1, -sx, -sy], mul(A, toDevice()));
+    const M = mulRow([1, 0, 0, 1, -sx, -sy], mulRow(A, toDevice()));
     const crop = sx || sy || sw !== img.w || sh !== img.h;
     const smooth = interp === 5 ? ' style="image-rendering:pixelated"' : '';
     const el = imageUse(img, smooth);
@@ -637,7 +393,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const record = (type, flags, r, end) => {
     const lo = flags & 255;
     switch (type) {
-      case 0x4001: r.u32(); refDisplay = !!(r.u32() & 1); dpiX = r.u32() || 96; dpiY = r.u32() || 96; void dpiY; break; // header
+      case 0x4001: r.u32(); refDisplay = !!(r.u32() & 1); dpiX = r.u32() || 96; r.u32(); break; // header
       case 0x4002: case 0x4003: break; // end of file, comment
       case 0x4004: gdiFrom = -2; break; // GetDC: GDI records follow
       case 0x4008: { // object
@@ -655,15 +411,13 @@ export function emfPlusToSvg(input, { bx, by }, h) {
           let q = 0;
           for (const p of pending.parts) { all.set(p, q); q += p.length; }
           pending = null;
-          const [b0, d0] = [bytes, dv];
-          bytes = all; dv = new DataView(all.buffer);
-          try { objects[lo] = readObject(otype, rd(0), all.length); } finally { bytes = b0; dv = d0; }
+          objects[lo] = readObject(otype, reader(all)(0), all.length, h);
           break;
         }
-        objects[lo] = readObject(otype, r, end);
+        objects[lo] = readObject(otype, r, end, h);
         break;
       }
-      case 0x4009: { const c = r.u32(); emit(`<rect x="-1e5" y="-1e5" width="2e5" height="2e5" fill="${hex(c)}"${alpha(c) < 1 ? ` fill-opacity="${n(alpha(c))}"` : ''}/>`); break; } // clear
+      case 0x4009: { const c = r.u32(); emit(`<rect x="-1e5" y="-1e5" width="2e5" height="2e5" fill="${argb(c)}"${alpha(c) < 1 ? ` fill-opacity="${n(alpha(c))}"` : ''}/>`); break; } // clear
       case 0x400a: { const b = r.u32(), c = r.u32(); shape(rects(r, c, flags & 0x4000).map(rectD).join(''), fillAttr(brushOf(flags, b))); break; } // FillRects
       case 0x400b: { const c = r.u32(); for (const q of rects(r, c, flags & 0x4000)) outline(rectD(q), objects[lo]); break; } // DrawRects
       case 0x400c: { const b = r.u32(), c = r.u32(); shape(polyD(points(r, c, flags), true), fillAttr(brushOf(flags, b))); break; } // FillPolygon
@@ -730,7 +484,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const [p, o] = paint(brushOf(flags, b));
         // (With realized advances only the first position counts: the font's own advances place the rest.)
         const xy = opts & 4 ? [pts[0]] : pts;
-        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${xy.map(([x]) => n(x)).join(' ')}" y="${xy.map(([, y]) => n(y)).join(' ')}" transform="${mat(m ? mul(m, toDevice()) : toDevice())}">${h.esc(s)}</text>`);
+        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${xy.map(([x]) => n(x)).join(' ')}" y="${xy.map(([, y]) => n(y)).join(' ')}" transform="${mat(m ? mulRow(m, toDevice()) : toDevice())}">${h.esc(s)}</text>`);
         break;
       }
       case 0x4021: interp = lo; break; // SetInterpolationMode
@@ -744,17 +498,17 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const dst = [r.f32(), r.f32(), r.f32(), r.f32()], src = [r.f32(), r.f32(), r.f32(), r.f32()].map((v) => (v * unitPx(lo)) / k());
         saved.set(r.u32(), { world: world.slice(), base, pageUnit, pageScale, clip, cClip });
         const sx = src[2] ? dst[2] / src[2] : 1, sy = src[3] ? dst[3] / src[3] : 1;
-        world = mul([sx, 0, 0, sy, dst[0] - src[0] * sx, dst[1] - src[1] * sy], world);
+        world = mulRow([sx, 0, 0, sy, dst[0] - src[0] * sx, dst[1] - src[1] * sy], world);
         base = world.slice(); cClip = clip;
         break;
       }
       case 0x4026: case 0x4029: { const s = saved.get(r.u32()); if (s) ({ world, base, pageUnit, pageScale, clip, cClip } = { ...s, world: s.world.slice() }); break; } // Restore, EndContainer
-      case 0x402a: world = mul(r.m(), base); break; // (relative to the container)
+      case 0x402a: world = mulRow(r.m(), base); break; // (relative to the container)
       case 0x402b: world = base.slice(); break;
-      case 0x402c: { const m = r.m(); world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402d: { const m = [1, 0, 0, 1, r.f32(), r.f32()]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402e: { const sx = r.f32(), sy = r.f32(); const m = [sx, 0, 0, sy, 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402f: { const a = (r.f32() * Math.PI) / 180; const m = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
+      case 0x402c: { const m = r.m(); world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402d: { const m = [1, 0, 0, 1, r.f32(), r.f32()]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402e: { const sx = r.f32(), sy = r.f32(); const m = [sx, 0, 0, sy, 0, 0]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402f: { const a = (r.f32() * Math.PI) / 180; const m = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
       case 0x4030: pageUnit = lo; pageScale = r.f32() || 1; break; // SetPageTransform
       case 0x4031: clip = cClip; break; // ResetClip (to the container's clip)
       case 0x4032: setClip(rectD([r.f32(), r.f32(), r.f32(), r.f32()]), (flags >> 8) & 15); break; // SetClipRect
@@ -801,18 +555,3 @@ export function emfPlusToSvg(input, { bx, by }, h) {
 }
 
 /** The pixel size of a PNG, GIF, BMP or JPEG file, or [0, 0]. */
-function imageSize(b) {
-  const be = (o) => (b[o] << 8) | b[o + 1];
-  if (b[0] === 0x89 && b.length > 24) return [(be(16) << 16) | be(18), (be(20) << 16) | be(22)];
-  if (b[0] === 0x47 && b.length > 10) return [b[6] | (b[7] << 8), b[8] | (b[9] << 8)];
-  if (b[0] === 0x42 && b.length > 26) { const dv = new DataView(b.buffer, b.byteOffset); return [dv.getInt32(18, true), Math.abs(dv.getInt32(22, true))]; }
-  if (b[0] === 0xff) { // JPEG: the first start-of-frame marker
-    for (let o = 2; o + 9 < b.length;) {
-      if (b[o] !== 0xff) { o++; continue; }
-      const m = b[o + 1];
-      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return [be(o + 7), be(o + 5)];
-      o += 2 + be(o + 2);
-    }
-  }
-  return [0, 0];
-}
