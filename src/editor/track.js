@@ -9,7 +9,8 @@
 // - moved text is a deletion and an insertion with `move` set (Word's w:moveFrom / w:moveTo).
 // While tracking is on, `trackTransaction` rewrites each edit into that form.
 import { announce } from './live.js';
-import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
+import { EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
+import { Fragment } from 'prosemirror-model';
 import { Mapping, ReplaceStep, ReplaceAroundStep, AddMarkStep, RemoveMarkStep } from 'prosemirror-transform';
 import { schema } from './schema.js';
 import { rPr as rPrXml, pPrXml } from '../ooxml/writer.js';
@@ -613,11 +614,65 @@ export const resolveChange = (accept) => (state, dispatch) => {
   return true;
 };
 
+/** Moved text or a move's range markers anywhere in the document (resolveChanges takes the markers out document-wide). */
+function hasMoves(doc) {
+  let found = false;
+  doc.descendants((node) => {
+    if (found) return false;
+    if ((node.isInline && node.marks.some((m) => REV_MARKS.includes(m.type.name) && m.attrs.move))
+      || (node.type === schema.nodes.opaque_inline && /^move(From|To)Range(Start|End)$/.test(node.attrs.kind))) found = true;
+    return !found;
+  });
+  return found;
+}
+
+// Accept or Reject All on more top-level blocks than this resolves them a run of RUN_BLOCKS at a time (resolveByRuns).
+const RUNS_PAST = 200;
+const RUN_BLOCKS = 32;
+
+/**
+ * Accept or Reject All on a long document: its top-level blocks resolved a run at a time, each run a document of its own
+ * (a paragraph whose mark goes in the run with the next, which it joins), the runs' blocks then one content. The same
+ * result as resolving the whole document, and linear in its length: each change's step resolved positions through every
+ * block before it, so 4 times the changes took 11 times as long (test/stress.test.js). Returns { content, steps }, the
+ * steps the runs took; null where a run can't stand alone (moved text: its markers go document-wide).
+ */
+function resolveByRuns(doc, accept) {
+  if (hasMoves(doc)) return null;
+  const kids = [];
+  let steps = 0;
+  let run = [];
+  const flush = () => {
+    const mini = doc.type.create(doc.attrs, run);
+    const tr = resolveChanges(EditorState.create({ doc: mini }).tr, 0, mini.content.size, accept);
+    steps += tr.steps.length;
+    tr.doc.forEach((b) => kids.push(b));
+    run = [];
+  };
+  doc.forEach((block) => {
+    run.push(block);
+    const rev = block.type === schema.nodes.paragraph ? markRev(block.attrs) : null;
+    const joins = (accept && rev === 'del') || (!accept && rev === 'ins');
+    if (run.length >= RUN_BLOCKS && !joins) flush();
+  });
+  if (run.length) flush();
+  return { content: Fragment.fromArray(kids), steps };
+}
+
 /** Accept or reject every change in the document. */
 export const resolveAll = (accept) => (state, dispatch) => {
   if (!findChange(state.doc, 0, 1)) return false;
   if (!resolvingAllowed(state)) return refused(dispatch);
   if (dispatch) {
+    // A long document with many changes: resolved a run of blocks at a time, in as one step (below).
+    const runs = state.doc.childCount > RUNS_PAST ? resolveByRuns(state.doc, accept) : null;
+    if (runs && runs.steps > ONE_STEP_PAST) {
+      const one = state.tr.setMeta('odx-untracked', true).setMeta('odx-resolve', true);
+      one.replaceWith(0, state.doc.content.size, runs.content);
+      dispatch(one.scrollIntoView());
+      announce(`All changes ${accept ? 'accepted' : 'rejected'}`);
+      return true;
+    }
     let tr = resolveChanges(state.tr.setMeta('odx-untracked', true), 0, state.doc.content.size, accept);
     // Many changes: the result as one step, its content in place of the document's. Every decoration (pagination's,
     // line heights') was mapped through each of thousands of steps: 6000 changes took seconds. (Unchanged paragraphs
