@@ -81,7 +81,7 @@ function legacyFields(doc) {
         const f = { key: `l${out.length}`, tag: info.name || undefined, alias: undefined, kind: info.kind, from, to, text, legacy: true, begin, block: false, pr: '' };
         if (info.kind === 'checkbox') f.value = f.checked = info.checked;
         else if (info.kind === 'dropdown') { f.items = info.items.map((x) => ({ text: x, value: x })); f.value = info.text; }
-        else f.value = text.trim() ? text : '';
+        else { f.value = text.trim() ? text : ''; if (info.maxLength) f.maxLength = info.maxLength; }
         out.push(f);
       }
     });
@@ -109,8 +109,10 @@ function writeLegacy(tr, f, value) {
   }
   let marks = beginNode.marks;
   tr.doc.nodesBetween(f.from, f.to, (n) => { if (n.isText) marks = n.marks; });
-  const text = value == null || value === '' ? '\u2002\u2002\u2002\u2002\u2002' : String(value); // Word's empty text field: five en spaces
-  const lines = text.split(/\r\n|\r|\n/);
+  let text = value == null || value === '' ? '\u2002\u2002\u2002\u2002\u2002' : String(value).replace(/\r\n?/g, '\n'); // Word's empty text field: five en spaces
+  // A value longer than the field's maximum length is cut to it, as Word does (a line break counts as one character).
+  if (f.maxLength && value != null && value !== '') text = [...text].slice(0, f.maxLength).join('');
+  const lines = text.split('\n');
   const $from = tr.doc.resolve(f.from);
   const $to = tr.doc.resolve(f.to);
   if (lines.length === 1 && $from.sameParent($to)) {
@@ -226,6 +228,17 @@ export const formsKey = new PluginKey('odx-forms');
 
 const inField = (fields, from, to) => fields.some((f) => from >= f.from && to <= f.to);
 
+// A legacy text field's length as Word counts it: its characters, a paragraph mark one, its blank (en spaces) none.
+const ffLength = (f) => [...f.text.replace(/\u2002/g, '')].length;
+/** Whether an edit takes a legacy text field past its maximum length (typing there is refused, as in Word). */
+function overLength(before, after) {
+  const now = legacyFields(after);
+  if (!now.some((f) => f.maxLength)) return false;
+  const was = legacyFields(before);
+  if (was.length !== now.length) return false;
+  return now.some((f, i) => f.maxLength && ffLength(f) > f.maxLength && ffLength(f) > ffLength(was[i]));
+}
+
 const shadeKey = new PluginKey('odx-ff-shade');
 function shade(doc) {
   const decos = legacyFields(doc).filter((f) => f.kind === 'text' && f.to > f.from).map((f) => Decoration.inline(f.from, f.to, { class: 'odx-ff' }));
@@ -259,7 +272,7 @@ export function formsPlugin() {
         const f = fields.find((x) => from >= x.from && to <= x.to);
         if (f && f.kind === 'checkbox') return false;
       }
-      return true;
+      return !overLength(state.doc, tr.doc);
     },
     // Text typed at the very start of an inline field joins the field.
     appendTransaction(trs, oldState, state) {
