@@ -51,8 +51,8 @@
 }
 /* ==== The page and the document: sheets, paragraphs, runs, tables, fields, tracked changes in the text ==== */
 .odx-canvas { background: var(--odx-canvas); padding: 24px 16px; overflow: auto; }
-.odx-page { position: relative; margin: 0 auto; color: #000; }
-.odx-sheets { position: absolute; inset: 0; pointer-events: none; }
+.odx-page { position: relative; margin: 0 auto; color: #000; isolation: isolate; }
+.odx-sheets { position: absolute; inset: 0; pointer-events: none; z-index: -2; } /* below a drawing behind the text (z-index -1, reader.js anchorCss), which had been drawn under the sheet, unseen; the page its own stacking context, so it is above the canvas */
 .odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
 .odx-content .odx-push { display: block; width: 0; pointer-events: none; }
 .odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
