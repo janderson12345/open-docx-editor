@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Inner shadows drawn in body text**: Word's inner shadow (a text shadow scaled to nothing, the letters looking
+  pressed in, as in the WordArt gallery's Style 15) is drawn on the page and in print; text boxes' version now falls on
+  Word's side at Word's depth.
+- **Glows in PDF export**, close to Word's print (with an installed or embedded font, as reflections); and a run mixing
+  alphabets its font lacks (Greek and Hebrew, say) gets the Noto fallback for each, not "?" for all but the first.
+- **Shapes with text on both sides draw their outline whole**, past their box as Word does, the text beside them where
+  it was.
+- **A float placed against the page that pushes its own paragraph to the next page goes on with it**: the paragraph
+  and its picture start the next page, as Word lays it out (the picture had been left on the page before).
 - **Body text wraps round shapes in headers and footers**: a square-, tight- or through-wrapped shape anchored in a
   header or footer pushes the body text aside on every page showing it, as Word lays it out (it was drawn over the
   text). Checked against Word's print of seven test documents; on the way, a header shape placed below its paragraph
