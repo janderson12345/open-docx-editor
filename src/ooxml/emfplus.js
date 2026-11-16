@@ -43,7 +43,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const items = [], defs = [], gdi = [];
   let unsupported = false, defId = 0;
   const id = (p) => `${p}${++defId}`;
-  let dpiX = 96, dpiY = 96;
+  let dpiX = 96; // (the header's vertical dpi is skipped: every unit here is worked out from the horizontal one)
   const objects = [];
   let pending = null; // an object split over several records: { id, total, parts, got }
   // (The page unit starts as Display: a pixel of a display reference, 1/100 inch of a printer's.)
@@ -595,7 +595,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const record = (type, flags, r, end) => {
     const lo = flags & 255;
     switch (type) {
-      case 0x4001: r.u32(); refDisplay = !!(r.u32() & 1); dpiX = r.u32() || 96; dpiY = r.u32() || 96; void dpiY; break; // header
+      case 0x4001: r.u32(); refDisplay = !!(r.u32() & 1); dpiX = r.u32() || 96; r.u32(); break; // header
       case 0x4002: case 0x4003: break; // end of file, comment
       case 0x4004: gdiFrom = -2; break; // GetDC: GDI records follow
       case 0x4008: { // object
