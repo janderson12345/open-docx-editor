@@ -112,60 +112,75 @@ export function createNoteBoxes({ page, sheet, session }) {
   // (bandFill takes the columns' stretches of that). (The browser's own balanced columns ignore widows and orphans.)
   // { total, w, breaks: [px], inks: [px], notes: [[top, bottom] px] }.
   const bandLays = new Map(); // key -> layout
+  const noteLays = new Map(); // note doc -> `${n}/${width}` -> one note laid out at a column's width
   const noteDocIds = new WeakMap();
   let noteDocSeq = 0;
   const bandWidth = (bc) => bc.w ?? (page.width - page.left - page.right - bc.gap * (bc.m - 1)) / bc.m;
-  const bandLayout = (items, bc) => {
-    const key = `${bc.m}/${bc.gap}/${bc.w ?? ''}/${page.width - page.left - page.right}:${items.map((r) => { if (!noteDocIds.has(r.note.doc)) noteDocIds.set(r.note.doc, ++noteDocSeq); return `${noteDocIds.get(r.note.doc)}.${r.n}`; }).join(',')}`;
-    if (bandLays.has(key)) return bandLays.get(key);
-    const w = bandWidth(bc);
+  // One note at width w, measured once: its height, where a column may end in it (between its paragraphs, at a
+  // table's rows, and inside a paragraph of n lines after its line i when 2 <= i <= n - 2) and where the text above
+  // each of those ends (its ink), px from its top. A band's notes are these stacked: the band laid out again as each note
+  // was reserved had cost a long document of columns most of each layout pass (fncols-word many2).
+  const noteLay = (r, w) => {
+    const k = `${r.n}/${w.toFixed(2)}`;
+    if (!noteLays.has(r.note.doc)) noteLays.set(r.note.doc, new Map());
+    const byW = noteLays.get(r.note.doc);
+    if (byW.has(k)) return byW.get(k);
     const box = document.createElement('div');
     box.className = 'odx-notes';
     box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;width:${w}px`;
-    const els = items.map((r) => noteEl(r.note, r.kind, r.n));
-    box.append(...els);
+    const el = noteEl(r.note, r.kind, r.n);
+    box.append(el);
     sheet.append(box);
-    const top0 = box.getBoundingClientRect().top;
-    const total = box.getBoundingClientRect().height;
+    const top0 = el.getBoundingClientRect().top;
+    const h = el.getBoundingClientRect().height;
     const range = document.createRange();
-    // Where a column may end: between notes and between a note's paragraphs, at a table's rows, and inside a paragraph
-    // of n lines after its line i when 2 <= i <= n - 2.
     const breaks = [];
-    const spans = []; // each note's [top, bottom]
-    const lines = []; // every line's text, [mid, bottom]: where the text above a break ends (its ink)
-    els.forEach((el, j) => {
-      const r = el.getBoundingClientRect();
-      spans.push([r.top - top0, r.bottom - top0]);
-      if (j) breaks.push(r.top - top0);
-      [...el.children].forEach((c, ci) => {
-        if (ci) breaks.push(c.getBoundingClientRect().top - top0);
-        const t = ownTable(c);
-        if (t && t.tBodies[0]) {
-          [...t.tBodies[0].rows].forEach((row, ri) => { const q = row.getBoundingClientRect(); if (ri) breaks.push(q.top - top0); lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]); });
-          return;
+    const lines = []; // every line's text, [mid, bottom]
+    [...el.children].forEach((c, ci) => {
+      if (ci) breaks.push(c.getBoundingClientRect().top - top0);
+      const t = ownTable(c);
+      if (t && t.tBodies[0]) {
+        [...t.tBodies[0].rows].forEach((row, ri) => { const q = row.getBoundingClientRect(); if (ri) breaks.push(q.top - top0); lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]); });
+        return;
+      }
+      const tops = [];
+      const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+      for (let tn = walk.nextNode(); tn; tn = walk.nextNode()) {
+        if (!tn.data.length) continue;
+        range.selectNodeContents(tn);
+        for (const q of range.getClientRects()) {
+          if (!q.height) continue;
+          lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]);
+          if (!tops.some((y) => Math.abs(y - q.top) < 2)) tops.push(q.top);
         }
-        const tops = [];
-        const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
-        for (let tn = walk.nextNode(); tn; tn = walk.nextNode()) {
-          if (!tn.data.length) continue;
-          range.selectNodeContents(tn);
-          for (const q of range.getClientRects()) {
-            if (!q.height) continue;
-            lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]);
-            if (!tops.some((y) => Math.abs(y - q.top) < 2)) tops.push(q.top);
-          }
-        }
-        tops.sort((x, y) => x - y);
-        for (let i = 2; i <= tops.length - 2; i++) breaks.push(tops[i] - top0);
-      });
+      }
+      tops.sort((x, y) => x - y);
+      for (let i = 2; i <= tops.length - 2; i++) breaks.push(tops[i] - top0);
     });
     box.remove();
     breaks.sort((x, y) => x - y);
     // (Each break's ink: the lowest text above it. Swept once, lines and breaks in order.)
     lines.sort((x, y) => x[0] - y[0]);
-    const ink = (ys) => { let k = 0, hi = 0; return ys.map((y) => { for (; k < lines.length && lines[k][0] < y; k++) hi = Math.max(hi, lines[k][1]); return Math.min(y, hi || y); }); };
-    const [inks, totalInk] = [ink(breaks), ink([total])[0]];
-    const lay = { total, totalInk, w, breaks, inks, notes: spans, fills: new Map() };
+    const ink = (ys) => { let q = 0, hi = 0; return ys.map((y) => { for (; q < lines.length && lines[q][0] < y; q++) hi = Math.max(hi, lines[q][1]); return Math.min(y, hi || y); }); };
+    const out = { h, breaks, inks: ink(breaks), endInk: ink([h])[0] };
+    byW.set(k, out);
+    return out;
+  };
+  const bandLayout = (items, bc) => {
+    const key = `${bc.m}/${bc.gap}/${bc.w ?? ''}/${page.width - page.left - page.right}:${items.map((r) => { if (!noteDocIds.has(r.note.doc)) noteDocIds.set(r.note.doc, ++noteDocSeq); return `${noteDocIds.get(r.note.doc)}.${r.n}`; }).join(',')}`;
+    if (bandLays.has(key)) return bandLays.get(key);
+    const w = bandWidth(bc);
+    const breaks = [], inks = [], spans = [];
+    let off = 0, lastInk = 0;
+    for (const [j, r] of items.entries()) {
+      const nl = noteLay(r, w);
+      if (j) { breaks.push(off); inks.push(lastInk); } // (between notes: the text above ends where the note before's does)
+      nl.breaks.forEach((y, q) => { breaks.push(off + y); inks.push(off + nl.inks[q]); });
+      spans.push([off, off + nl.h]);
+      lastInk = off + nl.endInk;
+      off += nl.h;
+    }
+    const lay = { total: off, totalInk: lastInk, w, breaks, inks, notes: spans, fills: new Map() };
     bandLays.set(key, lay);
     return lay;
   };
@@ -241,6 +256,6 @@ export function createNoteBoxes({ page, sheet, session }) {
     /** Where the text of the line ending at each of those cuts ends (px from the note's top). */
     inksOf: (doc, key) => noteInks.get(doc)?.get(key),
     /** Everything measured forgotten: the notes or the styles they're drawn in changed. */
-    clear() { noteHeights.clear(); bandLays.clear(); for (const k of Object.keys(sepRtl)) delete sepRtl[k]; },
+    clear() { noteHeights.clear(); bandLays.clear(); noteLays.clear(); for (const k of Object.keys(sepRtl)) delete sepRtl[k]; },
   };
 }
