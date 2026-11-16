@@ -71,6 +71,14 @@ export class DocxSession {
     // Word hyphenates the document's words at line ends (w:autoHyphenation; a paragraph's suppressAutoHyphens stops it).
     this.autoHyphenation = !!settings && /<w:autoHyphenation(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
     this.doNotHyphenateCaps = !!settings && /<w:doNotHyphenateCaps(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
+    // The hyphenation zone (twips; 0.25in when not given): a word is hyphenated only where wrapping it whole would leave
+    // more room than this at the line's end. Word follows it in a document of Word 2010's layout or older (compatibility
+    // mode 14 and under); from Word 2013's on it has none, hyphenating wherever a part fits. And the most lines in a row
+    // that may end in a hyphen (w:consecutiveHyphenLimit; 0, none given, is no limit).
+    const hz = settings && /<w:hyphenationZone\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
+    this.hyphenationZone = this.compatMode <= 14 ? (hz ? Number(hz[1]) : 360) : 0;
+    const hl = settings && /<w:consecutiveHyphenLimit\b[^>]*w:val="(\d+)"/.exec(this.pkg.text(settings) || '');
+    this.consecutiveHyphenLimit = hl ? Number(hl[1]) : 0;
     // Track Changes on when the document was saved (the editor updates this as it's toggled).
     this.settingsPath = settings;
     this.trackRevisions = this._trackRevisions0 = !!settings && /<w:trackRevisions(?![^>]*w:val="(?:0|false|off)")[^>]*\/?>/.test(this.pkg.text(settings) || '');
