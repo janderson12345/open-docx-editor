@@ -101,6 +101,14 @@ test('a bevel (w14:props3d) as a lit relief of the letters, and a text box refle
   assert.match(a, /<feDiffuseLighting\b[\s\S]*<feSpecularLighting\b/);
   assert.match(b, /<feDiffuseLighting\b/);
   assert.doesNotMatch(b, /feSpecularLighting/); // (matte: no highlight)
+  // An angled bevel's flat facets: an even slope 5pt (6.67px) wide, the outline eroded in six steps, 1pt (1.33px) high;
+  // in a text box lit from the left and harder, as Word's.
+  assert.equal(b.match(/<feMorphology\b[^>]*operator="erode"/g).length, 6);
+  assert.match(b, /radius="6.67"[\s\S]*surfaceScale="1.33"[\s\S]*azimuth="230"/);
+  const tableOf = (fx) => fx.match(/tableValues="([^"]+)"/)[1].split(' ').map(Number);
+  const spread = (t) => Math.max(...t.slice(28, 38)) - Math.min(...t.slice(28, 38));
+  assert.match(bevelFx(sharp, 'odxbev', true), /azimuth="180"/);
+  assert.ok(spread(tableOf(bevelFx(sharp, 'odxbev', true))) > 3 * spread(tableOf(b)));
   assert.equal(bevelFx('<w14:props3d w14:extrusionH="57150"/>'), ''); // (no bevel: nothing to draw)
   assert.ok(hasTextEffects([['props3d', soft]]));
   // In the text: the page's filter for it; in a text box: the text's own, its shadow then taking the bevelled letters.

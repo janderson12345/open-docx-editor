@@ -7,9 +7,11 @@
   in it, while typing and when drawn; Word's own files print as in Word (checked against Word's print at 36 and 54pt,
   saved 2in and 9in wide, at the column's edge, moved in and placed against the page).
 - **Bevels drawn** (Word 2010's 3-D format on text, w14:props3d: the WordArt gallery's Soft Bevel and Sharp Bevel), in
-  the text and in text boxes: the letters lit from above over a rounded or flat rim as wide as the bevel, an
-  approximation of Word's 3-D rendering close to its print. Its extrusion and contour, which don't show face on, aren't
-  drawn, nor in PDF export.
+  the text and in text boxes: the letters lit from above over a rounded rim as wide as the bevel, or, for a sharp
+  (angled) bevel, over flat facets of one tone each, meeting in mitred corners and in ridges along narrow strokes, lit
+  softly from above and left in the text and harder from the left in text boxes, as Word lights them; an approximation
+  of Word's 3-D rendering close to its print. Its extrusion and contour, which don't show face on, aren't drawn, nor in
+  PDF export.
 - **Reflections keep their descenders and blur**: a reflected g, j, p or y's tail is mirrored too (rising into the
   reflection's gap, as in Word's print), and the copy is softened by its blur as Word's print softens it, on the page
   and in text boxes (descenders in PDF export too).
