@@ -224,3 +224,12 @@ test('built-in headings used but not defined are Normal, as in Word; a style hid
   assert.deepEqual(styleMenu(gallery, new Set()).map((s) => s.id), ['Heading1']);
   assert.deepEqual(styleMenu(gallery, new Set(['Heading1'])).map((s) => s.id), ['Heading1', 'Heading2']);
 });
+
+test('a document-wide w:kern reaches the text and the notes, which are otherwise not kerned; its threshold against the default size', async () => {
+  const { stylesToCss } = await import('../src/ooxml/styles.js');
+  const css = (rPr) => stylesToCss('.d', { styles: new Map(), defaults: { rPr, pPr: {} }, defaultParagraph: null }, { minor: 'Calibri' });
+  const rule = /\.d :is\(\.odx-content, \.odx-notes[^)]*\)\{font-kerning:(\w+)\}/;
+  assert.equal(rule.exec(css({ kern: 2, size: 24 }))?.[1], 'normal');
+  assert.equal(rule.exec(css({ kern: 28, size: 24 }))?.[1], 'none'); // (kerned from 14pt: 12pt text isn't)
+  assert.doesNotMatch(css({ size: 24 }), rule); // (no w:kern: left as the editor has it, unkerned)
+});

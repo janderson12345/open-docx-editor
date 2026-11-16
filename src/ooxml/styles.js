@@ -90,6 +90,11 @@ export function stylesToCss(scope, info, theme) {
     `${scope}{--odx-font-minor:${fontStack(theme.minor || 'Calibri')};--odx-lh-minor:${lineFactor(theme.minor || 'Calibri')};--odx-font-major:${fontStack(theme.major || theme.minor || 'Calibri')};--odx-lh-major:${lineFactor(theme.major || theme.minor || 'Calibri')}}`,
     `${scope}{${fontCss(baseFont || 'Calibri')};${sizeCss((defaults.rPr.size || 20) / 2)};${rPrToCss({ ...defaults.rPr, font: null, themeFont: null, size: null }, theme)}}`,
   );
+  // A document-wide w:kern reaches the text: the editor turns kerning off on the text, notes and header tables (Word
+  // kerns only when asked), which had kept this one from them. Word kerns it all (longfn-word2: its 10pt Calibri notes
+  // as wide as kerned Calibri, unkerned they took a word less on some lines and their notes broke differently).
+  const dk = defaults.rPr.kern;
+  if (dk != null) rules.push(`${scope} :is(.odx-content, .odx-notes, .odx-noteedit, .odx-hf td, .odx-repeat){font-kerning:${dk && (defaults.rPr.size == null || defaults.rPr.size >= dk) ? 'normal' : 'none'}}`);
   rules.push(`${scope} p{margin:0;margin-inline-start:calc(0pt - var(--odx-bdl, 0pt));margin-inline-end:calc(0pt - var(--odx-bdr, 0pt));direction:ltr;${pPrToCss(defaults.pPr)}}`); // (left-to-right unless it says otherwise, also in a right-to-left table)
   for (const st of styles.values()) {
     if (st.type !== 'paragraph' && st.type !== 'character') continue;
