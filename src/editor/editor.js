@@ -422,6 +422,11 @@ const activeBlock = new Plugin({
 /**
  * Pasted paragraphs' built-in styles by the document's own ids (Word's English ids, as a pasted <h1> gets, are another
  * language's in a document from a localised Word: Heading1 is "Ttulo1" from Spanish Word).
+ *
+ * Paragraphs pasted into an empty one: the first keeps its own paragraph formatting (a pasted heading stays a heading),
+ * as in Word when what was copied holds that paragraph's mark, ending where the next begins. ProseMirror joins it into
+ * the paragraph at the caret, which kept that paragraph's style. (Part of one paragraph takes the formatting of where it
+ * goes, as in Word; and not while tracking changes, where Word would record the change of style.)
  */
 function localStylesPlugin(session) {
   const map = (frag) => Fragment.fromArray(frag.content.map((n) => {
@@ -430,7 +435,34 @@ function localStylesPlugin(session) {
     const local = id && session.builtInId(id);
     return n.type.create(local && local !== id ? { ...n.attrs, styleId: local } : n.attrs, map(n.content), n.marks);
   }));
-  return new Plugin({ props: { transformPasted: (slice) => new Slice(map(slice.content), slice.openStart, slice.openEnd) } });
+  let into = null; // { pos, attrs }: the empty paragraph pasted into and the first pasted paragraph's attrs
+  return new Plugin({
+    props: {
+      transformPasted: (slice, view) => {
+        const out = new Slice(map(slice.content), slice.openStart, slice.openEnd);
+        const { selection } = view.state;
+        const first = out.content.firstChild;
+        into = null;
+        if (selection.empty && selection.$from.parent.type === schema.nodes.paragraph && !selection.$from.parent.content.size
+          && out.openStart > 0 && out.content.childCount > 1 && first.type === schema.nodes.paragraph && !tracking(view.state).on) {
+          into = { pos: selection.$from.before(), attrs: first.attrs };
+        }
+        return out;
+      },
+    },
+    appendTransaction(trs, _old, state) {
+      const tr = trs.find((t) => t.getMeta('uiEvent') === 'paste');
+      if (!tr || !into) return null;
+      const { attrs } = into;
+      let pos = into.pos;
+      into = null;
+      for (const t of trs.slice(trs.indexOf(tr))) pos = t.mapping.map(pos, -1);
+      const node = state.doc.nodeAt(pos);
+      if (!node || node.type !== schema.nodes.paragraph) return null;
+      // (The paragraph's own identity and content control stay its own: a copy's paraIds would be duplicates.)
+      return state.tr.setNodeMarkup(pos, null, { ...attrs, pattrs: node.attrs.pattrs, sdt: node.attrs.sdt, deco: null });
+    },
+  });
 }
 
 export function createEditor(mount, session, { onChange, author = 'Author', collab = null } = {}) {

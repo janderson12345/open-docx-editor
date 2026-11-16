@@ -359,15 +359,30 @@ check(visits.join(' ') === 'body:apple body:apple box:apple header:apple footer:
   `Find goes through the body, text box, header, footer, notes and comments (${visits.join(' ')}; ${info})`);
 await page.keyboard.press('Control+h');
 await page.fill('.odx-findbar input[aria-label="Replace with"]', 'pear');
+const findFor = await page.inputValue('.odx-findbar input[aria-label="Find"]'); // (what Replace All looks for: said if it fails)
 await page.click('.odx-findbar button:has-text("Replace all")');
-await page.waitForTimeout(500);
+await page.waitForFunction(() => /results?$/.test(document.querySelector('.odx-findinfo').textContent));
 const replaced = await page.textContent('.odx-findinfo');
 const saved = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
 const partText = (f) => strFromU8(saved[f]).replace(/<w:t\b[^>]*>([^<]*)<\/w:t>|<[^>]+>/g, '$1');
 const parts = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml', 'word/endnotes.xml', 'word/comments.xml'];
 const pears = parts.map((f) => (partText(f).match(/pear/g) || []).length);
 check(replaced === '8 results' && parts.every((f) => !partText(f).includes('apple')) && pears.join() === '4,1,1,1,1,1',
-  `Replace All in every part, saved (${replaced}; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy)`);
+  `Replace All in every part, saved (${replaced} for "${findFor}"; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy; apples left ${parts.map((f) => (partText(f).match(/apple/g) || []).length).join()})`);
+await page.keyboard.press('Escape');
+// The find bar closed with Escape, then Ctrl+H with the text box selected: the search typed before stays, as in Word.
+// (The browser's Escape in a search box emptied it; and a picture has no text to search for, where taking its "" did
+// too: Replace All then found nothing.)
+await page.evaluate(() => {
+  const v = window.odx.view;
+  let at = null;
+  v.state.doc.descendants((n, pos) => { if (at == null && n.type.name === 'image') at = pos; });
+  v.focus();
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, at, at + 1)));
+});
+await page.keyboard.press('Control+h');
+const kept = await page.inputValue('.odx-findbar input[aria-label="Find"]');
+check(kept === 'apple', `Escape, then Ctrl+H with a picture selected: the search stays (${JSON.stringify(kept)})`);
 await page.keyboard.press('Escape');
 
 // Columns of their own widths (mkcolumns.mjs: 1.5in, 3in and 1.25in), laid out as Word's PDF of the file has them: each
@@ -524,6 +539,46 @@ const pasted = await page.evaluate(() => {
   return [marks('Red'), marks('plain')];
 });
 check(pasted[0] === 'color=C00000 font=Georgia size=32' && pasted[1] === '', `pasted colour, size and font kept (${pasted.join(' | ')})`);
+
+// Pasted headings written as styled <p>s (Word's clipboard HTML, other editors' classes, role=heading, a whole
+// paragraph in bold at 2em): headings in the heading style they name; bold or MsoNormal text stays body text. Pasted
+// into an empty paragraph, the first keeps its own style too, as in Word.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+const pHeads = await page.evaluate(() => {
+  const dt = new DataTransfer();
+  dt.setData('text/html', '<p class="MsoHeading1">wordclass</p><p class="MsoNormal" style="mso-style-name:\'Heading 2\';margin:0">msoname</p>'
+    + '<p class="MsoNormal" style="mso-outline-level:3">outline</p><p class="heading-2">editorclass</p><p style="font-size:2em;font-weight:bold">bigbold</p>'
+    + '<p role="heading" aria-level="4">aria</p><p style="font-weight:bold">justbold</p><p class="MsoNormal">body</p>');
+  dt.setData('text/plain', 'x');
+  window.odx.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  const out = [];
+  window.odx.view.state.doc.forEach((n) => { if (n.textContent) out.push(`${n.textContent}=${n.attrs.styleId || ''}`); });
+  return out.join(' ');
+});
+check(pHeads === 'wordclass=Heading1 msoname=Heading2 outline=Heading3 editorclass=Heading2 bigbold=Heading1 aria=Heading4 justbold= body=',
+  `pasted <p> headings arrive as headings, the first in the empty paragraph it went into (${pHeads})`);
+// Words from one paragraph (no paragraph mark of their own) into an empty heading: it stays a heading; one Undo takes
+// away the paste and its style together.
+const oneP = await page.evaluate(() => {
+  const v = window.odx.view;
+  const end = v.state.doc.content.size;
+  const tr = v.state.tr.insert(end, v.state.schema.nodes.paragraph.create({ styleId: 'Heading2' }));
+  v.dispatch(tr.setSelection(v.state.selection.constructor.create(tr.doc, end + 1)));
+  const dt = new DataTransfer(); dt.setData('text/html', '<p>some words</p>'); dt.setData('text/plain', 'some words');
+  v.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  return v.state.doc.lastChild.textContent + '=' + v.state.doc.lastChild.attrs.styleId;
+});
+await page.keyboard.press('Control+Home');
+await page.evaluate(() => {
+  const v = window.odx.view;
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1)));
+});
+await page.keyboard.press('Control+z'); // (the one-paragraph paste)
+await page.keyboard.press('Control+z'); // (the inserted heading paragraph)
+await page.keyboard.press('Control+z'); // (the first paste, style and all)
+const undone = await page.evaluate(() => `${window.odx.view.state.doc.childCount}:${window.odx.view.state.doc.firstChild.attrs.styleId || ''}:${window.odx.view.state.doc.textContent}`);
+check(oneP === 'some words=Heading2' && undone === '1::', `words from one paragraph keep the heading they go into; Undo takes a paste back whole (${oneP}, ${undone})`);
 
 // Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
 // Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
@@ -767,6 +822,39 @@ const loc = await page.evaluate(() => ({
 const locXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/styles.xml']);
 check(loc.toc === 'TDC1,TDC2,Ttulo1,Ttulo2,TtuloTDC' && loc.pasted === 'Ttulo1' && !/w:styleId="(TOC1|TOCHeading|Heading1)"/.test(locXml),
   `a localised document's TOC and pasted heading use its own style ids (${JSON.stringify(loc)})`);
+
+// Update table on a TOC \u \h \z (toc-u-only.docx, made with Word COM): the field keeps its switches and lists what Word's
+// own update did, outline levels set on paragraphs or through styles, 1-9, and no style based on Heading 1 at body text.
+const updateToc = async (file) => {
+  await open(file);
+  await page.click('.odx-content p');
+  await page.click('.odx-rtab:text-is("References")');
+  await page.click('button[title="Table of contents"]');
+  await page.click('.odx-pop .odx-item:has-text("Update table")');
+  await page.waitForTimeout(500);
+  return tocEntries();
+};
+const tocEntries = () => page.evaluate(() => {
+  const words = [];
+  let instr = null;
+  window.odx.view.state.doc.forEach((p) => {
+    p.forEach((c) => { if (instr == null && c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr = c.attrs.xml.replace(/<[^>]*>/g, ''); });
+    const m = /^TOC(\d)$/.exec(p.attrs.styleId || '');
+    if (!m) return;
+    let t = '', tab = false;
+    p.forEach((c) => { if (c.type.name === 'tab') tab = true; else if (!tab && c.isText) t += c.text; });
+    words.push(`${t.trim()}:${m[1]}`);
+  });
+  return { instr: instr.trim().replace(/&quot;/g, '"'), words: words.slice(0, 9).join(', ') };
+});
+const tocU = await updateToc('toc-u-only.docx');
+check(tocU.instr === 'TOC \\u \\h \\z' && tocU.words === 'H1 styled:1, H2 styled:2, H4 styled:4, Direct level 1:1, Direct level 5:5, Direct level 9:9, Custom style level 2:2, Custom style level 6:6, H1 styled:1',
+  `a \\u-only TOC updates to Word's entries (${JSON.stringify(tocU)})`);
+// And a TOC \t "Section Title,1,Deep Title,3" \h \z (toc-t-switch.docx): those two styles at those levels, nothing else
+// (the next entry is the second table's, as Word left it).
+const tocT = await updateToc('toc-t-switch.docx');
+check(tocT.instr === 'TOC \\t "Section Title,1,Deep Title,3" \\h \\z' && tocT.words.startsWith('Custom style level 2:1, Custom style level 6:3, H1 styled:1'),
+  `a \\t TOC updates to Word's entries (${JSON.stringify(tocT)})`);
 
 // Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
 // cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
