@@ -22,9 +22,9 @@ const origin = new Map(); // a picture shown in place of one as drawn -> that on
  * loaded, `again()` draws it again ({ src, height }) and that's shown instead. Only what's shown changes, as with the
  * fonts embedded below: the node keeps the picture as drawn, so the redraw isn't an edit (no undo step, the document
  * isn't changed, nothing goes to a shared document's room). `height`: the picture's as drawn (a text box grown to fit
- * its text may grow less or more).
+ * its text may grow less or more); `width`, as drawn (WordArt's box, as wide as its text, may widen or narrow).
  */
-export function redrawLater(src, fonts, height, again) {
+export function redrawLater(src, fonts, height, again, width = null) {
   if (typeof document === 'undefined' || !document.fonts || typeof src !== 'string' || redrawn.has(src) || waiting.has(src)) return;
   waiting.add(src);
   const list = [...fonts];
@@ -48,6 +48,7 @@ export function redrawLater(src, fonts, height, again) {
         const at = img.getAttribute('src');
         if (at !== src && (!was || at !== was)) continue;
         if (next.height != null && next.height !== height && img.style.height) img.style.height = `${parseFloat(img.style.height) - height + next.height}px`;
+        if (width != null && next.width != null && next.width !== width && img.style.width) img.style.width = `${parseFloat(img.style.width) - width + next.width}px`;
         img.setAttribute('src', shownSrc(src));
       }
     }, () => {})

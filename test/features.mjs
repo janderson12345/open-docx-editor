@@ -211,6 +211,15 @@ const reflAria = await page.locator('.odx-content > p', { hasText: 'Reflected' }
 check(refl.words.join(',') === 'Reflected,words' && refl.content === '"Reflected" / ""' && /matrix\(1, 0, 0, -1, 0, 0\)/.test(refl.transform) && /linear-gradient/.test(refl.mask)
   && Math.abs(refl.height - 43.4) < 1.5 && Math.abs(refl.base - refl.height) < 1 && refl.text === 'Reflected words and plain after' && !/Reflected.*Reflected/.test(refl.copied) && (reflAria.match(/Reflected/g) || []).length === 1,
   `a reflection: each word mirrored below its baseline, faded, not text (${JSON.stringify({ ...refl, mask: undefined, aria: reflAria })})`);
+// Its copy keeps the descenders (room for them below the baseline, the flip about the baseline still), and is softened
+// by its blur (effects.docx's 0.5pt), as Word's print of wordart-leftovers/refl.docx.
+const reflMore = await page.evaluate(() => {
+  const w = document.querySelector('.odx-rf');
+  const a = getComputedStyle(w, '::after');
+  return { pad: parseFloat(a.paddingBottom), size: parseFloat(a.fontSize), origin: a.transformOrigin, height: parseFloat(a.height), filter: a.filter };
+});
+check(Math.abs(reflMore.pad - reflMore.size * 0.25) < 0.5 && Math.abs(parseFloat(reflMore.origin.split(' ')[1]) - reflMore.height) < 1 && /^blur\(0\.\d+px\)$/.test(reflMore.filter),
+  `a reflection keeps its descenders and is blurred (${JSON.stringify(reflMore)})`);
 // An inner shadow (a w14:shadow scaled to nothing: the gallery's Style 15, 36pt Arial bold): each word drawn again over
 // itself through the page's SVG filter for it, which keeps only the shadow inside the letters (as Word's print of
 // odx-test/mkinnershadow.ps1); not text, and no room: the line as tall as the plain 36pt line after it would be.
@@ -1144,6 +1153,28 @@ const waXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () =>
 check(waGallery.length === 15 && waGallery[0].shadow !== 'none' && waEditing === 'Your text here' && waImg && waImg.w > 295 && waImg.abs === 'absolute'
   && /<wp:anchor\b[\s\S]*?<wp:wrapNone\/>[\s\S]*?<w:t[^>]*>Hello WordArt, a little longer<\/w:t>/.test(waXml) && /<w14:glow\b[^>]*\bw14:rad="38100"/.test(waXml) && /wrap="none"[\s\S]*?<a:spAutoFit\/>/.test(waXml) && !/Your text here/.test(waXml),
   `Insert > WordArt: picked, typed over, widened to fit, saved with its effects (${JSON.stringify({ styles: waGallery.length, waEditing, waImg })})`);
+// WordArt wider than the column wraps there, as Word's (wordart-leftovers/wide.docx: its box no wider than the column,
+// taller for the lines it wraps onto), while it's typed and once drawn; the gallery's Soft Bevel is drawn as a lit
+// relief of the letters (an SVG lighting filter), as Word prints it.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+await page.click('.odx-rtab:text-is("Insert")');
+await page.click('button[title^="WordArt"]');
+await page.click('.odx-pop .odx-wa[title="Fill: Accent 4; Soft Bevel"]');
+await page.waitForTimeout(400);
+await page.keyboard.type('This WordArt is far too long to fit on one line of its column');
+const waTyping = await page.evaluate(() => { const e = document.querySelector('.odx-txbxedit'); return e && { w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }; });
+await page.keyboard.press('Escape');
+await page.waitForTimeout(500);
+const waWide = await page.evaluate(() => {
+  const v = document.querySelector('.odx-content');
+  const cs = getComputedStyle(v);
+  const col = v.clientWidth - parseFloat(cs.getPropertyValue('--odx-page-left')) - parseFloat(cs.getPropertyValue('--odx-page-right'));
+  const i = document.querySelector('.odx-content img:not(.ProseMirror-separator)');
+  return i && { col, w: i.getBoundingClientRect().width, h: i.getBoundingClientRect().height, lit: /feDiffuseLighting/.test(decodeURIComponent(i.getAttribute('src'))) };
+});
+check(waTyping && waWide && waTyping.w <= waWide.col + 1 && waTyping.h > 100 && waWide.w <= waWide.col + 1 && waWide.w > waWide.col * 0.6 && waWide.h > 100 && waWide.lit,
+  `WordArt wider than the column wraps at it; a bevel is lit (${JSON.stringify({ waTyping, waWide })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
 // The stand-in fonts: their stylesheet linked from fonts.base (here the demo's own copy), and the Aptos stand-in (Morrow

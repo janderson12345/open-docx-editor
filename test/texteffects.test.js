@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { DocxSession } from '../src/ooxml/docx.js';
-import { w14Color, textEffectsCss, setThemeColors, innerShadowFilter, svgTextEffects } from '../src/ooxml/texteffects.js';
+import { w14Color, textEffectsCss, setThemeColors, innerShadowFilter, svgTextEffects, bevelFx, hasTextEffects } from '../src/ooxml/texteffects.js';
 import { WORDART, wordArtItems, wordArtRPr } from '../src/ooxml/wordart.js';
 
 // Word 2010's text effects as Word writes them (odx-test/mkeffects14.ps1: Word's own XML for each effect set through
@@ -35,12 +35,13 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   assert.match(glow, /--odx-grow-up:0.1278em;--odx-grow-down:0.1722em/);
   const refl = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>')).join(';');
   assert.match(refl, /--odx-grow-down:0.257em/);
-  // Its mirrored copy (editor.css): 55% opaque at the baseline, 0.3% at 45.5% of the ascent down; no gap.
-  assert.match(refl, /--odx-rf-a:0.55;--odx-rf-b:0.003;--odx-rf-pos:45.5%;--odx-rf-gap:0pt/);
+  // Its mirrored copy (editor.css): 55% opaque at the baseline, 0.3% at 45.5% of the ascent down; no gap; softened by
+  // a fifth of its 0.5pt blur, as Word's print.
+  assert.match(refl, /--odx-rf-a:0.55;--odx-rf-b:0.003;--odx-rf-pos:45.5%;--odx-rf-k:0.455;--odx-rf-gap:0pt;--odx-rf-blur:0.1pt/);
   // (A 2.36pt distance with a 0.5pt blur: 4.22pt below the baseline, as Word's Reflection 4 starts; a start opacity
   // over 100% (Word's Reflection 8 writes 600%) is fully opaque.)
   const far = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="600000" w14:endA="900" w14:endPos="60000" w14:dist="29997" w14:algn="bl"/>')).join(';');
-  assert.match(far, /--odx-rf-a:1;--odx-rf-b:0.009;--odx-rf-pos:60%;--odx-rf-gap:4.22pt/);
+  assert.match(far, /--odx-rf-a:1;--odx-rf-b:0.009;--odx-rf-pos:60%;--odx-rf-k:0.6;--odx-rf-gap:4.22pt/);
   assert.equal(textEffectsCss(items('<w14:textFill><w14:noFill/></w14:textFill>')).join(';'), '-webkit-text-fill-color:transparent');
 });
 
@@ -84,4 +85,29 @@ test('WordArt: a floating text box as wide as its text, its runs in the style\'s
   assert.equal(box.textContent, 'Your text here');
   const back = session.setTextBox(r.xml, box, 0);
   assert.match(back.xml, /<w14:glow\b[\s\S]*<w14:textOutline\b[\s\S]*<w14:textFill\b/);
+});
+
+test('a bevel (w14:props3d) as a lit relief of the letters, and a text box reflection with its descenders and blur', () => {
+  const svgFx = (xml) => {
+    const rPr = new DOMParser().parseFromString(`<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">${xml}</w:rPr>`, 'application/xml').documentElement;
+    return svgTextEffects(rPr, 1, (n) => new XMLSerializer().serializeToString(n).replace(/ xmlns:w14="[^"]*"/, ''));
+  };
+  // The gallery's Style 5 (soft: circle, 2pt by 3pt, softEdge) and Style 10 (sharp: angle, 5pt by 1pt, matte).
+  const soft = '<w14:props3d w14:extrusionH="57150" w14:contourW="0" w14:prstMaterial="softEdge"><w14:bevelT w14:w="25400" w14:h="38100" w14:prst="circle"/></w14:props3d>';
+  const sharp = '<w14:props3d w14:extrusionH="57150" w14:contourW="0" w14:prstMaterial="matte"><w14:bevelT w14:w="63500" w14:h="12700" w14:prst="angle"/></w14:props3d>';
+  const a = bevelFx(soft), b = bevelFx(sharp);
+  // (Its slope a third of the bevel's width: 2pt is 2.67px.)
+  assert.match(a, /<feGaussianBlur in="SourceAlpha" stdDeviation="0.89"/);
+  assert.match(a, /<feDiffuseLighting\b[\s\S]*<feSpecularLighting\b/);
+  assert.match(b, /<feDiffuseLighting\b/);
+  assert.doesNotMatch(b, /feSpecularLighting/); // (matte: no highlight)
+  assert.equal(bevelFx('<w14:props3d w14:extrusionH="57150"/>'), ''); // (no bevel: nothing to draw)
+  assert.ok(hasTextEffects([['props3d', soft]]));
+  // In the text: the page's filter for it; in a text box: the text's own, its shadow then taking the bevelled letters.
+  assert.match(textEffectsCss(items(soft)).join(';'), /filter:url\(#odx-bv\d+\)/);
+  const box = svgFx(soft + '<w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000"><w14:srgbClr w14:val="000000"/></w14:shadow>');
+  assert.match(box.defs, /color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha"[\s\S]*result="odxbev"\/><feDropShadow\b/);
+  // A reflection in a text box keeps its blur for its copy (the gallery's Style 7: 0.5pt).
+  const rf = svgFx('<w14:reflection w14:blurRad="6350" w14:stA="53000" w14:stPos="0" w14:endA="300" w14:endPos="35500" w14:dist="0" w14:algn="bl"/>');
+  assert.equal(rf.reflection.blur, 0.67);
 });
