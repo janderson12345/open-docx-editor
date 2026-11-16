@@ -58,14 +58,17 @@ export function createFindBar(getView, withView) {
     el('button', { type: 'button', title: 'Close', class: 'odx-close', onmousedown: (e) => { e.preventDefault(); closeFind(); } }, '✕'));
   findBox.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') fdo((v) => findNextAll(v, findBox.value, fOpts(), e.shiftKey ? -1 : 1))(e);
-    if (e.key === 'Escape') closeFind();
+    // (Not the browser's own Escape in a search box, which empties it: the search stays for the next Ctrl+F, as in Word.)
+    if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
   });
-  replBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFind(); });
+  replBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeFind(); } });
   const openFind = (replace) => withView((v) => {
     findBar.hidden = false;
     replRow.hidden = !replace;
     const { from, to } = v.state.selection;
-    if (to > from && to - from < 100) findBox.value = v.state.doc.textBetween(from, to);
+    // (Selected text only: a selected picture or text box has none, and the search typed before stays, as in Word.)
+    const picked = to > from && to - from < 100 ? v.state.doc.textBetween(from, to) : '';
+    if (picked.trim()) findBox.value = picked;
     setTimeout(() => findBox.select());
     return true;
   });
