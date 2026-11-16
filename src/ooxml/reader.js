@@ -15,14 +15,14 @@ const RPR_MODELLED = new Set(['rStyle', 'rFonts', 'b', 'i', 'strike', 'color', '
 // Paragraph-level markers with no visible content.
 export const ZERO_WIDTH = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'permStart', 'permEnd', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']);
 
-export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, resolveChunk = null, chunkList = null, padShapes = false } = {}) {
+export function readDocument(docXml, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, resolveChunk = null, chunkList = null, padShapes = false, compatMode = 15 } = {}) {
   sdtGroup = 0; // field keys are per document, so reading is repeatable
   chunkGroup = 0;
   const root = docXml.documentElement;
   const rootNs = nsDecls(root);
   const body = kid(root, 'body');
   if (!body) throw new Error('document.xml has no w:body');
-  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, resolveChunk, chunkList, padShapes, xml: (el) => outerXml(el, rootNs) };
+  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, resolveChunk, chunkList, padShapes, compatMode, xml: (el) => outerXml(el, rootNs) };
 
   let sectPr = null;
   const bodyKids = kids(body);
@@ -66,12 +66,12 @@ function stackDrawings(content) {
 }
 
 /** A header or footer part (w:hdr / w:ftr) as a doc. */
-export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, padShapes = false } = {}, sectPrXml = null) {
+export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () => null, resolveChart = () => null, resolveShape = () => null, padShapes = false, compatMode = 15 } = {}, sectPrXml = null) {
   const root = xmlDoc.documentElement;
   const rootNs = nsDecls(root);
   // (padShapes: room drawn round an inline shape's arrowheads, as readDocument; for a shape inserted or changed in the
   // body, read as a story, so it's drawn as it will be when the document is opened again.)
-  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, padShapes, xml: (el) => outerXml(el, rootNs) };
+  const ctx = { rootNs, resolveImage, resolveLink, resolveChart, resolveShape, padShapes, compatMode, xml: (el) => outerXml(el, rootNs) };
   // (A story read for the body (a shape moved or resized there): its drawings placed and sized on the body's page.)
   if (sectPrXml) { ctx.pages = [pageBox(parseXml(sectPrXml).documentElement)]; ctx.sect = 0; }
   const content = readBlocks(kids(root), ctx);
@@ -530,7 +530,7 @@ function rPrMarks(rPr, ctx) {
  * "top and bottom" wrapping, floated for square/tight wrapping, out of the flow for none.
  * Horizontal offsets from the page edge use --odx-page-left (the left margin).
  */
-function anchorCss(drawing, page) {
+function anchorCss(drawing, page, compatMode = 15) {
   const anchor = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'anchor');
   if (!anchor) return '';
   const px = (v) => Math.round(emuToPx(v || 0));
@@ -550,19 +550,18 @@ function anchorCss(drawing, page) {
   const hAlign = childNamed(posH, 'align')?.textContent;
   const x = px(childNamed(posH, 'posOffset')?.textContent);
   const vRel = posV ? posV.getAttribute('relativeFrom') : 'paragraph';
-  // A text box's offset places it with its effect extent (room for a shadow or outline): the box itself sits that much in
-  // (sample S078's cover box, 1px lower in Word's PDF than its anchor paragraph's top; at its offset, 14 of its lines
-  // moved more than 1px).
+  // The offset places the drawing's box, not its effect extent (room for an outline, arrowheads or a shadow round it):
+  // Word draws it there (shapeclip-word: a line with large arrowheads, 14px of room above it, and a rectangle with a 10pt
+  // outline, 6px; tbox-word's text boxes with 3pt; a turned rectangle with 40px of room above it; groupturn-word's groups
+  // with 4px and 20px). But in a document for Word 2010 or before (compatibility mode 14 or less), one placed across the
+  // page by alignment (centred, say) has its offset to its effect extent's top: the box that much lower (sample S078's
+  // centred cover box, 1px of room above it, 1px lower in Word's PDF; the same box at an offset across, or centred in a
+  // mode-15 document, at its offset; a centred line in a mode-14 document 14px lower, its room). (Not a turned one's:
+  // that room is for its turned outline.)
   const fx = childNamed(anchor, 'effectExtent');
-  // (Not a shape without text: Word draws it at its offset, whatever room its outline or arrowheads take round it
-  // (shapeclip-word: a line with large arrowheads, 14px of room above it, and a rectangle with a 10pt outline, 6px,
-  // both at their offsets in Word's print). Nor a turned shape's: Word sets that room round the turned outline and draws
-  // the shape where its box is, turned about its centre: a rectangle at 60 degrees with 40px of room above it, in Word's
-  // PDF, where it was at 30 with none. Nor a group's with shapes turned inside it: that room is for them (groupturn-word,
-  // groups with 4px and 20px of room above them drawn at their offsets).)
+  const fxT = compatMode < 15 && hAlign && !shapeTurn(drawing) && !turnedInside(drawing) ? emuToPx(fx?.getAttribute('t') || 0) : 0;
   const textBox = [...drawing.getElementsByTagName('*')].some((n) => n.localName === 'txbx');
-  const fxT = !textBox || shapeTurn(drawing) || turnedInside(drawing) ? 0 : emuToPx(fx?.getAttribute('t') || 0);
-  // Such a shape wrapped round keeps the text clear of its effect extent too, past its wrap distance (shapeclip-word: a
+  // A shape without text wrapped round keeps the text clear of its effect extent too, past its wrap distance (shapeclip-word: a
   // 10pt-outlined rectangle's third line beside it in Word's print, where its box ends at the second; as the header and
   // footer's room, --odx-hfwrap below). (Not a text box's or a picture's, as before: the samples' are 1px or less. Nor a
   // turned one's, whose room is its turned outline's: turned() keeps the text clear of that.)
@@ -837,7 +836,7 @@ function readDrawing(drawing, ctx, rPrXml) {
  * marked with that room (--odx-pad) and, a floating text box grown to fit its text, --odx-grown.
  */
 function placeOf(drawing, ctx, { width, height, effect, floatPad, grown }) {
-  const anchored = padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)]), floatPad);
+  const anchored = padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)], ctx.compatMode), floatPad);
   const place = padded(turned(anchored || effect, drawing, width, height), floatPad);
   // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
   // keeps other floats on theirs: pages.js floatsPast.)
