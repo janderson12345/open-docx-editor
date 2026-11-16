@@ -5,7 +5,7 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { EditorState } from 'prosemirror-state';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { blankDocxBytes } from '../src/ooxml/template.js';
-import { listFields, fieldValues, setFieldValues } from '../src/editor/fields.js';
+import { listFields, fieldValues, setFieldValues, formsPlugin, formsKey } from '../src/editor/fields.js';
 import { schema } from '../src/editor/schema.js';
 
 // Legacy form fields (Developer > Legacy Tools), as Word saves them. Addr's result runs over two paragraphs, as
@@ -48,7 +48,8 @@ test('legacy form fields are listed with their values, and check boxes and drop-
 test('legacy form fields are filled in and saved as Word expects', () => {
   const s = open(BODY);
   const view = { state: EditorState.create({ doc: s.doc }), dispatch(tr) { this.state = this.state.apply(tr); } };
-  assert.deepEqual(setFieldValues(view, { Name: 'Bartholome', Agree: true, Pick: 'Two & more', Addr: 'A\nB', Blank: 'x' }), []);
+  // (Name's maximum length is 10: a longer value is cut to it, as Word does.)
+  assert.deepEqual(setFieldValues(view, { Name: 'Bartholomew Smith', Agree: true, Pick: 'Two & more', Addr: 'A\nB', Blank: 'x' }), []);
   assert.deepEqual(fieldValues(view.state.doc), { Name: 'Bartholome', Agree: true, Pick: 'Two & more', Addr: 'A\nB', Blank: 'x' });
   const out = strFromU8(unzipSync(s.save(view.state.doc))[s.pkg.mainPath]);
   assert.match(out, /<w:checkBox><w:sizeAuto\/><w:default w:val="0"\/><w:checked w:val="1"\/><\/w:checkBox>/);
@@ -59,6 +60,31 @@ test('legacy form fields are filled in and saved as Word expects', () => {
   assert.deepEqual(fieldValues(again.doc), fieldValues(view.state.doc));
   // Addr's two lines are two paragraphs, the field ending in the second.
   assert.match(out, /<w:t[^>]*>A<\/w:t><\/w:r><\/w:p><w:p>(?:(?!<\/w:p>).)*<w:t[^>]*>B<\/w:t><\/w:r><w:r>(?:(?!<\/w:r>).)*fldCharType="end"/);
+});
+
+test('a legacy text field keeps to its maximum length, filled in or typed into', () => {
+  const s = open(`<w:p>${fld(['Short', '<w:textInput><w:maxLength w:val="5"/></w:textInput>'], 'FORMTEXT', t('ab'))}</w:p>`
+    + `<w:p>${fld(['Free', '<w:textInput><w:maxLength w:val="0"/></w:textInput>'], 'FORMTEXT', t('x'))}</w:p>`);
+  assert.equal(listFields(s.doc)[0].maxLength, 5);
+  assert.equal(listFields(s.doc)[1].maxLength, undefined); // (0: unlimited)
+  const view = { state: EditorState.create({ doc: s.doc }), dispatch(tr) { this.state = this.state.apply(tr); } };
+  // A line break is one character, as in Word ("ab\rcd").
+  setFieldValues(view, { Short: 'ab\ncdefgh', Free: 'a long value, no limit' });
+  assert.deepEqual(fieldValues(view.state.doc), { Short: 'ab\ncd', Free: 'a long value, no limit' });
+  setFieldValues(view, { Short: 'abc' });
+
+  // Forms mode: typing that would take the field past 5 characters is refused; deleting and typing within it is not.
+  let state = EditorState.create({ doc: view.state.doc, plugins: [formsPlugin()].flat() });
+  state = state.apply(state.tr.setMeta(formsKey, { on: true }));
+  const end = () => listFields(state.doc)[0].to;
+  const type = (str) => { const r = state.applyTransaction(state.tr.insertText(str, end())); state = r.state; return r.transactions.length > 0; };
+  assert.equal(type('de'), true);
+  assert.equal(fieldValues(state.doc).Short, 'abcde');
+  assert.equal(type('f'), false);
+  assert.equal(fieldValues(state.doc).Short, 'abcde');
+  state = state.applyTransaction(state.tr.delete(end() - 1, end())).state;
+  assert.equal(type('z'), true);
+  assert.equal(fieldValues(state.doc).Short, 'abcdz');
 });
 
 test('a one-line value written into a two-paragraph text field joins it into one paragraph', () => {
