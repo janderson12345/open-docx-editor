@@ -526,12 +526,13 @@ const pasted = await page.evaluate(() => {
 check(pasted[0] === 'color=C00000 font=Georgia size=32' && pasted[1] === '', `pasted colour, size and font kept (${pasted.join(' | ')})`);
 
 // Pasted headings written as styled <p>s (Word's clipboard HTML, other editors' classes, role=heading, a whole
-// paragraph in bold at 2em): headings in the heading style they name; bold or MsoNormal text stays body text.
+// paragraph in bold at 2em): headings in the heading style they name; bold or MsoNormal text stays body text. Pasted
+// into an empty paragraph, the first keeps its own style too, as in Word.
 await page.evaluate(() => window.odx.newDocument({ share: false }));
 await page.click('.odx-content p');
 const pHeads = await page.evaluate(() => {
   const dt = new DataTransfer();
-  dt.setData('text/html', '<p>before</p><p class="MsoHeading1">wordclass</p><p class="MsoNormal" style="mso-style-name:\'Heading 2\';margin:0">msoname</p>'
+  dt.setData('text/html', '<p class="MsoHeading1">wordclass</p><p class="MsoNormal" style="mso-style-name:\'Heading 2\';margin:0">msoname</p>'
     + '<p class="MsoNormal" style="mso-outline-level:3">outline</p><p class="heading-2">editorclass</p><p style="font-size:2em;font-weight:bold">bigbold</p>'
     + '<p role="heading" aria-level="4">aria</p><p style="font-weight:bold">justbold</p><p class="MsoNormal">body</p>');
   dt.setData('text/plain', 'x');
@@ -540,8 +541,29 @@ const pHeads = await page.evaluate(() => {
   window.odx.view.state.doc.forEach((n) => { if (n.textContent) out.push(`${n.textContent}=${n.attrs.styleId || ''}`); });
   return out.join(' ');
 });
-check(pHeads === 'before= wordclass=Heading1 msoname=Heading2 outline=Heading3 editorclass=Heading2 bigbold=Heading1 aria=Heading4 justbold= body=',
-  `pasted <p> headings arrive as headings (${pHeads})`);
+check(pHeads === 'wordclass=Heading1 msoname=Heading2 outline=Heading3 editorclass=Heading2 bigbold=Heading1 aria=Heading4 justbold= body=',
+  `pasted <p> headings arrive as headings, the first in the empty paragraph it went into (${pHeads})`);
+// Words from one paragraph (no paragraph mark of their own) into an empty heading: it stays a heading; one Undo takes
+// away the paste and its style together.
+const oneP = await page.evaluate(() => {
+  const v = window.odx.view;
+  const end = v.state.doc.content.size;
+  const tr = v.state.tr.insert(end, v.state.schema.nodes.paragraph.create({ styleId: 'Heading2' }));
+  v.dispatch(tr.setSelection(v.state.selection.constructor.create(tr.doc, end + 1)));
+  const dt = new DataTransfer(); dt.setData('text/html', '<p>some words</p>'); dt.setData('text/plain', 'some words');
+  v.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  return v.state.doc.lastChild.textContent + '=' + v.state.doc.lastChild.attrs.styleId;
+});
+await page.keyboard.press('Control+Home');
+await page.evaluate(() => {
+  const v = window.odx.view;
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1)));
+});
+await page.keyboard.press('Control+z'); // (the one-paragraph paste)
+await page.keyboard.press('Control+z'); // (the inserted heading paragraph)
+await page.keyboard.press('Control+z'); // (the first paste, style and all)
+const undone = await page.evaluate(() => `${window.odx.view.state.doc.childCount}:${window.odx.view.state.doc.firstChild.attrs.styleId || ''}:${window.odx.view.state.doc.textContent}`);
+check(oneP === 'some words=Heading2' && undone === '1::', `words from one paragraph keep the heading they go into; Undo takes a paste back whole (${oneP}, ${undone})`);
 
 // Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
 // Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
