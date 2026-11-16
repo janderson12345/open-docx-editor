@@ -39,8 +39,9 @@ function def(text) {
 
 /** The preset definitions by name (all 186 of the standard's), each read on first use. */
 export const PRESETS = new Proxy({}, {
-  get: (memo, name) => (typeof name !== 'string' || !(name in PRESET_SRC) ? undefined : (memo[name] ||= def(PRESET_SRC[name]))),
-  has: (_, name) => name in PRESET_SRC,
+  // (Own keys only: a document's preset name "constructor" or "__proto__" is in every object.)
+  get: (memo, name) => (typeof name !== 'string' || !Object.hasOwn(PRESET_SRC, name) ? undefined : (Object.hasOwn(memo, name) ? memo[name] : (memo[name] = def(PRESET_SRC[name])))),
+  has: (_, name) => typeof name === 'string' && Object.hasOwn(PRESET_SRC, name),
 });
 
 /** Insert > Shapes' gallery, in Word's order: [preset, name, arrow at its end]. Only those defined above are offered. */
