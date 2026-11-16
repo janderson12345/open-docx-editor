@@ -1,7 +1,7 @@
 // Browser check of the smaller things Word draws (test/fixtures/mkfeatures.mjs, mkrtl.mjs, mkstrict.mjs), each laid
 // out as Word's own PDF of it showed: picture bullets, line numbers, watermarks, a section's vertical alignment,
 // emphasis marks and run borders making their lines taller, right-to-left paragraphs, a Strict document.
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -626,6 +626,22 @@ await page.keyboard.press('Control+z'); // (the inserted heading paragraph)
 await page.keyboard.press('Control+z'); // (the first paste, style and all)
 const undone = await page.evaluate(() => `${window.odx.view.state.doc.childCount}:${window.odx.view.state.doc.firstChild.attrs.styleId || ''}:${window.odx.view.state.doc.textContent}`);
 check(oneP === 'some words=Heading2' && undone === '1::', `words from one paragraph keep the heading they go into; Undo takes a paste back whole (${oneP}, ${undone})`);
+// A lone heading (a whole <h2>, Word's MsoHeading3) into an empty paragraph of body text: the heading's style, as in
+// Word, not the paragraph's it went into.
+const lone = await page.evaluate(() => {
+  const v = window.odx.view;
+  const out = [];
+  for (const html of ['<h2>Lone heading</h2>', '<p class="MsoHeading3">Word heading</p>']) {
+    const end = v.state.doc.content.size;
+    const tr = v.state.tr.insert(end, v.state.schema.nodes.paragraph.create());
+    v.dispatch(tr.setSelection(v.state.selection.constructor.create(tr.doc, end + 1)));
+    const dt = new DataTransfer(); dt.setData('text/html', html); dt.setData('text/plain', 'x');
+    v.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    out.push(`${v.state.doc.lastChild.textContent}=${v.state.doc.lastChild.attrs.styleId || ''}`);
+  }
+  return out.join(' ');
+});
+check(lone === 'Lone heading=Heading2 Word heading=Heading3', `a lone pasted heading takes its own heading style in an empty paragraph (${lone})`);
 
 // Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
 // Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
@@ -1013,6 +1029,80 @@ await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.emulateMedia({ media: 'screen' });
 check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.includes('\u00ad') && /<w:suppressAutoHyphens\/>/.test(hySaved) && hyPrinted > 0,
   `automatic hyphenation: break points shown, not saved, printed with hyphens (${JSON.stringify({ ...hy, hyPrinted })})`);
+// The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
+// line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
+// same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
+const hyLines = async (f) => {
+  await open(f);
+  await page.waitForFunction(() => document.querySelectorAll('.odx-content .odx-shy, .odx-content p.odx-hyph').length > 0, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  return page.evaluate(() => {
+    if (document.querySelector('.odx-content p.odx-hyph')) return null;
+    const rectAt = (t, i) => { const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1); return r.getClientRects()[0]; };
+    const near = (s, dir) => {
+      const w = document.createTreeWalker(s.closest('p'), NodeFilter.SHOW_TEXT);
+      w.currentNode = s.firstChild;
+      for (let t = dir > 0 ? w.nextNode() : w.previousNode(); t; t = dir > 0 ? w.nextNode() : w.previousNode()) if (t.data && !t.parentElement.closest('.odx-shy')) return rectAt(t, dir > 0 ? 0 : t.data.length - 1);
+      return null;
+    };
+    let breaks = 0, run = 0, most = 0, last = null;
+    for (const s of document.querySelectorAll('.odx-content .odx-shy')) {
+      const a = near(s, -1), b = near(s, 1);
+      if (!a || !b || Math.abs(a.top - b.top) < a.height / 2) continue;
+      breaks++;
+      run = last && Math.abs(last.top - a.top) < a.height / 2 ? run + 1 : 1;
+      most = Math.max(most, run);
+      last = b;
+    }
+    return { breaks, most };
+  });
+};
+const hyFree = await hyLines('hyphenation-free.docx');
+const hyZone = await hyLines('hyphenation-zone.docx');
+const hyLimit = await hyLines('hyphenation-limit.docx');
+check(!hyFree || (hyFree.most > 1 && hyZone.breaks < hyFree.breaks / 3 && hyLimit.most === 1 && hyLimit.breaks > 0),
+  `hyphenation zone and consecutive-hyphen limit (${JSON.stringify({ hyFree, hyZone, hyLimit })})`);
+// The same in Firefox, which hyphenates itself (hyphens:auto; the words left whole marked hyphens:manual): lines that
+// end inside a word, its letters on two lines. (Where Playwright's Firefox is installed: CI installs only Chromium.)
+{
+  let ff = null;
+  try { ff = await firefox.launch(); } catch { console.log('skip hyphenation zone and limit in Firefox (not installed)'); }
+  if (ff) {
+    const fp = await ff.newPage({ viewport: { width: 1300, height: 950 } });
+    await fp.goto(`http://localhost:${server.address().port}/`);
+    await fp.waitForSelector('.odx-content p');
+    const ffLines = async (f) => {
+      await fp.setInputFiles('input[type=file]', `test/fixtures/${f}`);
+      await fp.waitForFunction((n) => window.odx?.fileName === n, f);
+      await fp.waitForTimeout(1500);
+      return fp.evaluate(() => {
+        const same = (a, b) => Math.abs(a.top - b.top) < a.height / 2;
+        let breaks = 0, most = 0;
+        for (const p of document.querySelectorAll('.odx-content > p')) {
+          let run = 0, last = null;
+          const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+            const rect = (i) => { const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1); return r.getClientRects()[0]; };
+            for (const m of t.data.matchAll(/[A-Za-z]+/g)) {
+              for (let k = 1, prev = rect(m.index); k < m[0].length; k++) {
+                const r = rect(m.index + k);
+                if (prev && r && !same(prev, r)) { breaks++; run = last && same(last, prev) ? run + 1 : 1; most = Math.max(most, run); last = r; break; }
+                prev = r;
+              }
+            }
+          }
+        }
+        return { native: !!document.querySelector('.odx-content p.odx-hyph'), breaks, most };
+      });
+    };
+    const fFree = await ffLines('hyphenation-free.docx');
+    const fZone = await ffLines('hyphenation-zone.docx');
+    const fLimit = await ffLines('hyphenation-limit.docx');
+    check(fFree.native && fFree.most > 1 && fZone.breaks < fFree.breaks / 3 && fLimit.most === 1 && fLimit.breaks > 0,
+      `hyphenation zone and consecutive-hyphen limit in Firefox (${JSON.stringify({ fFree, fZone, fLimit })})`);
+    await ff.close();
+  }
+}
 
 // Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
 // its fields), the next record, Insert Merge Field, a CSV file of recipients, and Finish & Merge's merged document.
