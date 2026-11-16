@@ -10,6 +10,8 @@
 const n = (v) => +(+v).toFixed(3);
 const hex = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.toString(16).padStart(2, '0')).join('')}`;
 const alpha = (v) => ((v >>> 24) & 255) / 255;
+// The most pixels an uncompressed bitmap object may have (as tiff.js: 160 MB of RGBA); a larger one isn't drawn.
+const MAX_PIXELS = 40e6;
 const mul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
   A[4] * B[0] + A[5] * B[2] + B[4], A[4] * B[1] + A[5] * B[3] + B[5]];
 const ID = [1, 0, 0, 1, 0, 0];
@@ -68,6 +70,15 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const tf = () => ` transform="${mat(toDevice())}"`;
   let at = 0;
   const emit = (s) => items.push({ at, s: clip ? `<g clip-path="url(#${clip.id})">${s}</g>` : s });
+  // An image object's picture, put in the definitions the first time it's drawn and drawn by reference after: one drawn
+  // many times (a texture's tiles, a metafile inside another drawn again and again) is in the SVG once, not at each draw.
+  const imageUse = (img, attrs = '') => {
+    if (!img.ref) {
+      img.ref = id('i');
+      defs.push(`<image id="${img.ref}" width="${img.w}" height="${img.h}" preserveAspectRatio="none" href="${img.href}"/>`);
+    }
+    return `<use href="#${img.ref}"${attrs}/>`;
+  };
 
   // ----- reading -----
   const rd = (o) => ({
@@ -143,7 +154,8 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         palette = [];
         for (let i = 0; i < count; i++) palette.push(r.u32());
       }
-      if (!(w > 0 && hh > 0) || r.o + stride * hh > end) return null;
+      // (Its rows must be in the record, each at least as long as its pixels: a stride of 0 would read one row for all.)
+      if (!(w > 0 && hh > 0 && w * hh <= MAX_PIXELS) || stride < Math.ceil((w * bpp) / 8) || r.o + stride * hh > end) return null;
       const rgba = new Uint8Array(w * hh * 4);
       const premul = format === 0x000e200b;
       for (let y = 0; y < hh; y++) {
@@ -343,10 +355,10 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // (Tiled; mirrored at every other tile for the flip modes, a tile of two by two. Clamped as tiled: the same over the
       // picture itself, which is where such a brush fills, and a pattern too big for its scale draws nothing.)
       const g = id('t');
-      const { w, h: ih, href } = brush.img;
+      const { w, h: ih } = brush.img;
       const fx = brush.wrap === 1 || brush.wrap === 3, fy = brush.wrap === 2 || brush.wrap === 3;
       const tw = fx ? 2 * w : w, th = fy ? 2 * ih : ih;
-      const im = (sx, sy) => `<image width="${w}" height="${ih}" href="${href}" transform="matrix(${sx} 0 0 ${sy} ${sx < 0 ? 2 * w : 0} ${sy < 0 ? 2 * ih : 0})"/>`;
+      const im = (sx, sy) => imageUse(brush.img, ` transform="matrix(${sx} 0 0 ${sy} ${sx < 0 ? 2 * w : 0} ${sy < 0 ? 2 * ih : 0})"`);
       const tiles = [im(1, 1), fx && im(-1, 1), fy && im(1, -1), fx && fy && im(-1, -1)].filter(Boolean).join('');
       defs.push(`<pattern id="${g}" width="${tw}" height="${th}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}>${tiles}</pattern>`);
       return [`url(#${g})`, 1];
@@ -540,7 +552,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const M = mul([1, 0, 0, 1, -sx, -sy], mul(A, toDevice()));
     const crop = sx || sy || sw !== img.w || sh !== img.h;
     const smooth = interp === 5 ? ' style="image-rendering:pixelated"' : '';
-    const el = `<image width="${img.w}" height="${img.h}" preserveAspectRatio="none" href="${img.href}"${smooth}/>`;
+    const el = imageUse(img, smooth);
     emit(`<g transform="${mat(M)}">${crop ? `<svg x="${n(sx)}" y="${n(sy)}" width="${n(sw)}" height="${n(sh)}" viewBox="${n(sx)} ${n(sy)} ${n(sw)} ${n(sh)}" overflow="hidden">${el}</svg>` : el}</g>`);
   };
 

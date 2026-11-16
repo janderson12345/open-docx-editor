@@ -138,16 +138,31 @@ function ifWords(doc, f, record, index) {
 const asNumber = (s) => { const t = String(s).replace(/[$,\s]/g, ''); return t !== '' && Number.isFinite(Number(t)) ? Number(t) : null; };
 
 /**
+ * Whether `text` is all of `pattern`, its `*` any run of characters and its `?` any one, in the same case. Without a
+ * regular expression: one built from a document's pattern backtracks without end on a crafted one ("*a*a*a*a*a*a*b"
+ * took seconds on 50 characters), where this goes back only to the last `*`, at most the two lengths multiplied.
+ */
+function wildcard(text, pattern) {
+  // (Operands far longer than any field's: no match, rather than the seconds two of 40,000 characters took.)
+  if (text.length * pattern.length > 1e7) return false;
+  let t = 0, p = 0, star = -1, mark = 0;
+  while (t < text.length) {
+    if (pattern[p] === '*') { star = p++; mark = t; }
+    else if (p < pattern.length && (pattern[p] === '?' || pattern[p] === text[t])) { t++; p++; }
+    else if (star >= 0) { p = star + 1; t = ++mark; }
+    else return false;
+  }
+  while (pattern[p] === '*') p++;
+  return p === pattern.length;
+}
+
+/**
  * An IF comparison as Word's merge makes it (checked against Word's own merge of test/fixtures/mergeif.docx): numbers
  * as numbers, quoted or not ("100.0" = 100); text equal only in the same case, and a `*` or `?` in the second text a
  * pattern, also in the same case ("a*" isn't true for Ada); text ordered ignoring case (alan < "B").
  */
 export function ifCompare(a, op, b) {
-  if ((op === '=' || op === '<>') && /[*?]/.test(b)) {
-    const pattern = b.replace(/[.+^$()|[\]{}\\]/g, '\\$&').replace(/\*/g, '[\\s\\S]*').replace(/\?/g, '[\\s\\S]');
-    const re = new RegExp('^' + pattern + '$');
-    return re.test(a) === (op === '=');
-  }
+  if ((op === '=' || op === '<>') && /[*?]/.test(b)) return wildcard(String(a), b) === (op === '=');
   const x = asNumber(a);
   const y = asNumber(b);
   const c = x != null && y != null ? Math.sign(x - y) : op === '=' || op === '<>' ? (a === b ? 0 : 1) : Math.sign(a.localeCompare(b, 'en'));
