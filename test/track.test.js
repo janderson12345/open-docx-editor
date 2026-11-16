@@ -317,3 +317,34 @@ test('a column inserted with changes tracked is recorded as cell insertions; rej
   assert.equal((back.match(/<w:gridCol\b/g) || []).length, 2);
   assert.doesNotMatch(back, /gridAfter|cellIns/);
 });
+
+// Accept All and Reject All on many changes (track.js resolveAll): past 200 steps the result goes in as one step, the
+// document's content replaced, so pagination's decorations aren't mapped through each of thousands of steps. The text
+// is what the steps gave, nothing tracked is left, and inverting the one step gives the document back.
+test('accept all and reject all on hundreds of changes: one step, the same result', async () => {
+  const { resolveAll } = await import('../src/editor/track.js');
+  const para = (i) => `<w:p><w:r><w:t xml:space="preserve">P${i} </w:t></w:r>`
+    + `<w:ins ${REV.replace('7', String(1000 + 2 * i))}><w:r><w:t xml:space="preserve">in${i} </w:t></w:r></w:ins>`
+    + `<w:del ${REV.replace('7', String(1001 + 2 * i))}><w:r><w:delText xml:space="preserve">out${i} </w:delText></w:r></w:del></w:p>`;
+  const many = Array.from({ length: 300 }, (_, i) => para(i)).join('');
+  for (const accept of [true, false]) {
+    const s = new DocxSession(docx(many));
+    const st = EditorState.create({ doc: s.doc });
+    const steps = resolveChanges(st.tr, 0, st.doc.content.size, accept);
+    assert.ok(steps.steps.length > 200, `${steps.steps.length} steps`);
+    let tr = null;
+    assert.equal(resolveAll(accept)(st, (t) => { tr = t; }), true);
+    assert.equal(tr.steps.length, 1);
+    assert.ok(tr.doc.eq(steps.doc), 'the same document as the steps make');
+    assert.equal(findChange(tr.doc, 0, 1), null);
+    assert.match(text(tr.doc), accept ? /^P0 in0 P1 in1 / : /^P0 out0 P1 out1 /);
+    assert.ok(tr.steps[0].invert(st.doc).apply(tr.doc).doc.eq(st.doc), 'one step back to the document as it was');
+  }
+  // (A few changes: the steps themselves, as before.)
+  const few = new DocxSession(docx(BODY));
+  const st = EditorState.create({ doc: few.doc });
+  let tr = null;
+  resolveAll(true)(st, (t) => { tr = t; });
+  assert.ok(tr.steps.length > 1);
+  assert.equal(text(tr.doc), 'Keep new end');
+});

@@ -141,7 +141,8 @@ export async function withFonts(src) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(out)}`;
 }
 
-function decode(src) {
+/** A data: URL's text (base64 or percent-encoded), or null. */
+export function decode(src) {
   const comma = src.indexOf(',');
   if (comma < 0) return null;
   const head = src.slice(0, comma), body = src.slice(comma + 1);
@@ -195,7 +196,7 @@ function rules(sheet) {
 }
 
 /** Whether a unicode-range takes any of the characters in `text` (no range: every one). */
-function covers(range, text) {
+export function covers(range, text) {
   if (!range) return true;
   const spans = range.split(',').map((r) => {
     const v = r.trim().replace(/^u\+/i, '');

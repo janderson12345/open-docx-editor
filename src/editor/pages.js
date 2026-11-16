@@ -2531,13 +2531,22 @@ export function createPages(view, session, { sheet, scope }) {
   let refsInStories = null;
   let docSeq = 0;
   let seqDoc = null;
+  // Where endnotes start, as drawSheets places them (under the text's end, or the columns balanced before them), for its
+  // key: without it, columns cut a pass after the notes were first drawn, or the text above them grown or shrunk on the
+  // same pages, left the endnotes where they were drawn first (columns-endnotes.docx: at the page's foot, under nothing).
+  const endnotesAt = () => {
+    if (![...notesOn.values()].some((l) => l.some((r) => r.kind === 'endnote'))) return '';
+    const last = view.dom.lastElementChild;
+    const y = cols && colsBal ? colsBal.bottom : last ? last.getBoundingClientRect().bottom - view.dom.getBoundingClientRect().top : 0;
+    return y.toFixed(1);
+  };
   function drawSheets() {
     if (seqDoc !== view.state.doc) { seqDoc = view.state.doc; docSeq++; }
     pageBorder = readPageBorder();
     // (Headers and footers with reference fields are drawn again as the document changes: a running head follows
     // its heading's text.)
     if (refsInStories == null) refsInStories = /\b(?:STYLEREF|PAGEREF|REF)\b/.test(Object.keys(session.pkg.files).filter((k) => /word\/(header|footer)\d*\.xml$/.test(k)).map((k) => session.pkg.text(k)).join(''));
-    const key = `${refsInStories ? view.state.doc.content.size + ':' + docSeq + ':' : ''}${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}`;
+    const key = `${refsInStories ? view.state.doc.content.size + ':' + docSeq + ':' : ''}${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}:${endnotesAt()}`;
     if (drawn === key) return;
     drawn = key;
     const frag = document.createDocumentFragment();

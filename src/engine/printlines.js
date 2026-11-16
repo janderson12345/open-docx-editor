@@ -75,7 +75,9 @@ function lines(el) {
   }
   if (pending) return null;
   // A line goes on past its last text over the textless widgets after it on the same line: a note's reference mark at a
-  // line's (or the paragraph's) end, its number drawn by CSS (::after), had been left out of the printed copy.
+  // line's (or the paragraph's) end, its number drawn by CSS (::after), had been left out of the printed copy. Over the
+  // markers between them too (a comment's end and its reference, the editor's separator picture): find-all.docx's
+  // footnote mark after its comment's end had still been left out.
   for (const ln of out) {
     let [n, o] = ln.end;
     if (n.nodeType !== 3 || o < n.data.length) continue;
@@ -83,10 +85,13 @@ function lines(el) {
       while (n !== el && !n.nextSibling) n = n.parentNode;
       if (n === el) break;
       const s = n.nextSibling;
-      if (s.nodeType !== 1 || s.textContent || !s.matches?.('[data-kind$="Reference"]')) break;
-      const q = s.getBoundingClientRect();
-      if (q.bottom < ln.lo - 1 || q.top > ln.bottom + 1) break;
-      ln.endAfter = s;
+      const marker = s.nodeType === 1 && !s.textContent && (s.classList.contains('odx-opaque-inline') || s.matches('img.ProseMirror-separator'));
+      if (!marker) break;
+      if (s.matches('[data-kind="footnoteReference"], [data-kind="endnoteReference"]')) {
+        const q = s.getBoundingClientRect();
+        if (q.bottom < ln.lo - 1 || q.top > ln.bottom + 1) break;
+        ln.endAfter = s;
+      }
       n = s;
     }
   }
