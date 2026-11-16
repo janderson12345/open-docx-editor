@@ -69,13 +69,20 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   const mat = (M) => `matrix(${M.map((v) => +v.toPrecision(7)).join(' ')})`; // (significant digits: EMU-scaled worlds are tiny)
   const tf = () => ` transform="${mat(toDevice())}"`;
   let at = 0;
-  const emit = (s) => items.push({ at, s: clip ? `<g clip-path="url(#${clip.id})">${s}</g>` : s });
+  // A budget for the SVG: a crafted file drawing one object again and again (a path, a clip, a gradient brush: each
+  // draw writes it out) grew a 125KB file to 414 million characters. Past it nothing more is drawn, and the picture is
+  // marked unsupported (a dual file is then drawn from its GDI records). Real pictures come nowhere near it.
+  const BUDGET = 16e6;
+  let size = 0;
+  const spend = (str) => { if (size > BUDGET) { unsupported = true; return false; } size += str.length; return true; };
+  const addDef = (str) => { if (spend(str)) defs.push(str); };
+  const emit = (str) => { const v = clip ? `<g clip-path="url(#${clip.id})">${str}</g>` : str; if (spend(v)) items.push({ at, s: v }); };
   // An image object's picture, put in the definitions the first time it's drawn and drawn by reference after: one drawn
   // many times (a texture's tiles, a metafile inside another drawn again and again) is in the SVG once, not at each draw.
   const imageUse = (img, attrs = '') => {
     if (!img.ref) {
       img.ref = id('i');
-      defs.push(`<image id="${img.ref}" width="${img.w}" height="${img.h}" preserveAspectRatio="none" href="${img.href}"/>`);
+      addDef(`<image id="${img.ref}" width="${img.w}" height="${img.h}" preserveAspectRatio="none" href="${img.href}"/>`);
     }
     return `<use href="#${img.ref}"${attrs}/>`;
   };
@@ -188,14 +195,24 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       const mtype = r.u32(), size = r.u32();
       if (mtype < 3) return null; // WMF
       const inner = bytes.subarray(r.o, Math.min(end, r.o + size));
-      const svg = h.emfToSvg(inner);
-      if (!svg) return null;
+      if (inner.length < 88) return null;
       // (Its size from its frame, in its reference's pixels: the drawing's rounded bounds came out a pixel short.)
       const iv = new DataView(inner.buffer, inner.byteOffset, inner.byteLength);
       const pxm = iv.getInt32(72, true) / (iv.getInt32(80, true) || 1);
       const fw = ((iv.getInt32(32, true) - iv.getInt32(24, true)) / 100) * pxm, fh = ((iv.getInt32(36, true) - iv.getInt32(28, true)) / 100) * (iv.getInt32(76, true) / (iv.getInt32(84, true) || 1));
-      const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
-      return { kind: 'image', w: fw > 0 ? fw : m ? +m[1] : 1, h: fh > 0 ? fh : m ? +m[2] : 1, href: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}` };
+      // Drawn by the EMF reader when first drawn (imageUse), not when defined: a crafted file defining many image
+      // objects it never draws, each a metafile at the SVG budget, took seconds and gigabytes. (Converted now only when
+      // its frame gives no size, to read the size from the drawing.)
+      let svg;
+      const draw = () => { if (svg === undefined) svg = h.emfToSvg(inner) || ''; return svg; };
+      let w = fw, ih = fh;
+      if (!(fw > 0 && fh > 0)) {
+        const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(draw());
+        if (!svg) return null;
+        w = fw > 0 ? fw : m ? +m[1] : 1;
+        ih = fh > 0 ? fh : m ? +m[2] : 1;
+      }
+      return { kind: 'image', w, h: ih, get href() { return draw() ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(draw())))}` : 'data:,'; } };
     }
     return null;
   };
@@ -348,7 +365,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       else if (pct) ink = cellsOf((x, y) => (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100));
       else if (dots) ink = cellsOf(dots);
       else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
-      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
+      addDef(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'texture') {
@@ -360,7 +377,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       const tw = fx ? 2 * w : w, th = fy ? 2 * ih : ih;
       const im = (sx, sy) => imageUse(brush.img, ` transform="matrix(${sx} 0 0 ${sy} ${sx < 0 ? 2 * w : 0} ${sy < 0 ? 2 * ih : 0})"`);
       const tiles = [im(1, 1), fx && im(-1, 1), fy && im(1, -1), fx && fy && im(-1, -1)].filter(Boolean).join('');
-      defs.push(`<pattern id="${g}" width="${tw}" height="${th}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}>${tiles}</pattern>`);
+      addDef(`<pattern id="${g}" width="${tw}" height="${th}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}>${tiles}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'linear') {
@@ -370,14 +387,14 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // padded only when clamped.)
       const spread = brush.wrap === 4 ? '' : ` spreadMethod="${brush.wrap === 0 ? 'repeat' : 'reflect'}"`;
       const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
-      defs.push(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(x)}" y1="${n(y + hh / 2)}" x2="${n(x + w)}" y2="${n(y + hh / 2)}"${spread}${brush.m ? ` gradientTransform="${mat(brush.m)}"` : ''}>${stops}</linearGradient>`);
+      addDef(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(x)}" y1="${n(y + hh / 2)}" x2="${n(x + w)}" y2="${n(y + hh / 2)}"${spread}${brush.m ? ` gradientTransform="${mat(brush.m)}"` : ''}>${stops}</linearGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'radial') {
       const g = id('g');
       const { cx, cy, rx, ry } = brush;
       const squash = mul(mul([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
-      defs.push(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mul(squash, brush.m) : squash)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
+      addDef(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mul(squash, brush.m) : squash)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'fan') {
@@ -394,12 +411,12 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const fx = a[0] + t * ex, fy = a[1] + t * ey;
         const side = id('g'), fade = id('g'), mask = id('k');
         const d = `M${n(cx)} ${n(cy)}L${n(a[0])} ${n(a[1])}L${n(b[0])} ${n(b[1])}Z`;
-        defs.push(`<linearGradient id="${side}" gradientUnits="userSpaceOnUse" x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}">${stop(0, cols[i])}${stop(1, cols[(i + 1) % pts.length])}</linearGradient>`);
-        defs.push(`<linearGradient id="${fade}" gradientUnits="userSpaceOnUse" x1="${n(cx)}" y1="${n(cy)}" x2="${n(fx)}" y2="${n(fy)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`);
-        defs.push(`<mask id="${mask}" maskUnits="userSpaceOnUse" x="-1e6" y="-1e6" width="2e6" height="2e6"><path d="${d}" fill="url(#${fade})" stroke="url(#${fade})" stroke-width="0.5"/></mask>`);
+        addDef(`<linearGradient id="${side}" gradientUnits="userSpaceOnUse" x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}">${stop(0, cols[i])}${stop(1, cols[(i + 1) % pts.length])}</linearGradient>`);
+        addDef(`<linearGradient id="${fade}" gradientUnits="userSpaceOnUse" x1="${n(cx)}" y1="${n(cy)}" x2="${n(fx)}" y2="${n(fy)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`);
+        addDef(`<mask id="${mask}" maskUnits="userSpaceOnUse" x="-1e6" y="-1e6" width="2e6" height="2e6"><path d="${d}" fill="url(#${fade})" stroke="url(#${fade})" stroke-width="0.5"/></mask>`);
         return `<path d="${d}" fill="${hex(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${hex(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
       }).join('');
-      defs.push(`<pattern id="${g}" x="${n(box[0])}" y="${n(box[1])}" width="${n(box[2] - box[0])}" height="${n(box[3] - box[1])}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><g transform="translate(${n(-box[0])} ${n(-box[1])})">${tris}</g></pattern>`);
+      addDef(`<pattern id="${g}" x="${n(box[0])}" y="${n(box[1])}" width="${n(box[2] - box[0])}" height="${n(box[3] - box[1])}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><g transform="translate(${n(-box[0])} ${n(-box[1])})">${tris}</g></pattern>`);
       return [`url(#${g})`, 1];
     }
     return ['#808080', 1];
@@ -423,7 +440,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         if (c !== 1 && c !== 2) return null;
         const mid = id('m');
         const shapeEl = c === 2 ? '<circle r="0.5"/>' : '<rect x="0" y="-0.5" width="0.5" height="1"/>';
-        defs.push(`<marker id="${mid}" markerUnits="strokeWidth" markerWidth="1" markerHeight="1" viewBox="-0.5 -0.5 1 1" orient="auto-start-reverse" overflow="visible"><g fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''}>${shapeEl}</g></marker>`);
+        addDef(`<marker id="${mid}" markerUnits="strokeWidth" markerWidth="1" markerHeight="1" viewBox="-0.5 -0.5 1 1" orient="auto-start-reverse" overflow="visible"><g fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''}>${shapeEl}</g></marker>`);
         return mid;
       };
       const ms = marker(pen.cap), me = marker(end);
@@ -506,7 +523,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   // before it for an intersection. Inside a container a new clip still lies within the container's.
   const clipPath = (d, M, parent) => {
     const c = { id: id('p'), d, M, parent };
-    defs.push(`<clipPath id="${c.id}"${parent ? ` clip-path="url(#${parent.id})"` : ''}><path d="${d}" clip-rule="nonzero" transform="${mat(M)}"/></clipPath>`);
+    addDef(`<clipPath id="${c.id}"${parent ? ` clip-path="url(#${parent.id})"` : ''}><path d="${d}" clip-rule="nonzero" transform="${mat(M)}"/></clipPath>`);
     return c;
   };
   // A region as clip paths: a shape, shapes joined (union), or one inside another (intersection). (Exclusion, xor and
@@ -558,6 +575,8 @@ export function emfPlusToSvg(input, { bx, by }, h) {
 
   const text = (str, font, brush, fmt, layout) => {
     if (!font || font.kind !== 'font' || !str) return;
+    // (A string longer than any picture shows: a crafted file's hundreds of KB took minutes to lay out.)
+    if (str.length > 10000) str = str.slice(0, 10000);
     const em = fontEm(font);
     const [asc, desc] = h.win(font.face);
     const [x, y, w, hh] = layout;
@@ -570,11 +589,16 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const room = w - lead - trail;
     if (w > 0 && !(flags & 0x1000) && h.measure) {
       const css = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${em}px ${h.fontStack(font.face)}`;
+      // (Each word measured once, a line's width the sum of its words': measuring the line so far at every word took time
+      // growing with the square of the text, seconds for a crafted file's 24KB.)
+      const widths = new Map();
+      const width = (t) => { if (!widths.has(t)) widths.set(t, h.measure(t, css)); return widths.get(t); };
       lines = lines.flatMap((line) => {
         const out = [];
-        let cur = '';
+        let cur = '', curW = 0;
         for (const word of line.split(/(?<= )/)) {
-          if (cur && h.measure(cur + word.trimEnd(), css) > room + 0.5) { out.push(cur.trimEnd()); cur = word; } else cur += word;
+          const bare = word.trimEnd();
+          if (cur && curW + width(bare) > room + 0.5) { out.push(cur.trimEnd()); cur = word; curW = width(word); } else { cur += word; curW += width(word); }
         }
         out.push(cur.trimEnd());
         return out;
@@ -583,7 +607,13 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     // (NoWrap in a box it's cut off at: the characters that don't wholly fit are left out, as GDI+'s character trimming.)
     if (w > 0 && hh > 0 && flags & 0x1000 && !(flags & 0x4000) && h.measure) {
       const css = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${em}px ${h.fontStack(font.face)}`;
-      lines = lines.map((line) => { let t = line; while (t && h.measure(t, css) > room + 0.5) t = t.slice(0, -1); return t; });
+      // (The longest start that fits, found by halves: one character at a time measured the line once a character.)
+      lines = lines.map((line) => {
+        if (h.measure(line, css) <= room + 0.5) return line;
+        let lo = 0, hi = line.length;
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h.measure(line.slice(0, mid), css) <= room + 0.5) lo = mid; else hi = mid - 1; }
+        return line.slice(0, lo);
+      });
     }
     const lh = (LINE[font.face.toLowerCase()] ?? asc + desc) * em;
     // (Drawn at a point, a layout of no size: centred or ended on the point. A centred or bottom block is a little

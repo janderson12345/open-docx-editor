@@ -21,7 +21,9 @@ export function readTheme(pkg) {
   for (const c of scheme ? kids(scheme, null, NS.a) : []) {
     const v = kids(c, null, NS.a)[0];
     const hex = v && (v.getAttribute('val') && v.localName === 'srgbClr' ? v.getAttribute('val') : v.getAttribute('lastClr'));
-    if (hex) theme.colors[c.localName] = hex;
+    // (Six hex digits only: a theme colour goes into styles and into XML as written, where a crafted theme's could
+    // have added CSS of its own or broken the markup.)
+    if (hex && /^[0-9A-Fa-f]{6}$/.test(hex)) theme.colors[c.localName] = hex;
   }
   return theme;
 }

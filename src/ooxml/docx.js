@@ -422,7 +422,10 @@ export class DocxSession {
   /** A header or footer part another editor of a shared document added (src/collab.js), under the same rId. */
   addSharedStory({ rId, kind, name, xml }) {
     if (this.pkg.relById(rId)) return;
-    let file = name;
+    // (From another editor in the room: a header or a footer, named as one, in the main part's folder: a name with "../"
+    // had put a part outside the package's folders.)
+    if (kind !== 'header' && kind !== 'footer') return;
+    let file = /^(header|footer)[0-9]{0,6}\.xml$/.test(String(name || '')) ? name : `${kind}-shared.xml`;
     // (The name may be taken here by a part this editor added at the same time: another one, the rId is what counts.)
     for (let n = 1; this.pkg.files[`${this.pkg.mainDir}${file}`]; n++) file = `${kind}-shared${n}.xml`;
     this.pkg.setText(`${this.pkg.mainDir}${file}`, xml);
@@ -701,8 +704,14 @@ export class DocxSession {
   /** A picture another editor of a shared document added (src/collab.js), under the same rId. */
   addSharedImage({ rId, name, mime, bytes }) {
     if (this.pkg.relById(rId)) return;
-    let file = name;
-    for (let n = 1; this.pkg.files[`${this.pkg.mainDir}media/${file}`]; n++) file = name.replace(/(\.\w+)$/, `-shared${n}$1`);
+    // (From another editor in the room: a plain file name of its own, in media/, of a picture type: a name with "../"
+    // had put a part outside the package's folders, and one without an extension never changed in the loop below.)
+    const MIMES = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/bmp': 'bmp', 'image/svg+xml': 'svg', 'image/tiff': 'tiff', 'image/x-emf': 'emf', 'image/x-wmf': 'wmf', 'image/webp': 'webp' };
+    if (!Object.hasOwn(MIMES, mime)) return; // (own keys only: "__proto__" is in every object)
+    const m = /^([A-Za-z0-9_-]{1,64})\.([A-Za-z0-9]{1,8})$/.exec(String(name || ''));
+    const base = m ? m[1] : 'image', ext = m ? m[2] : MIMES[mime];
+    let file = `${base}.${ext}`;
+    for (let n = 1; this.pkg.files[`${this.pkg.mainDir}media/${file}`]; n++) file = `${base}-shared${n}.${ext}`;
     this.pkg.files[`${this.pkg.mainDir}media/${file}`] = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     this.pkg.addOverride(`${this.pkg.mainDir}media/${file}`, mime);
     this.pkg.addRel(REL_TYPES.image, `media/${file}`, false, this.pkg.mainPath, rId);

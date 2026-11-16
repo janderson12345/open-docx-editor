@@ -100,7 +100,8 @@ export function collaboration(ydoc, { awareness = null, user: who = { name: 'Aut
           if (session.pkg.relById(rId)) { session.story(rId); session.setStory(rId, fromJSON(v)); } // (story() first: it sets up the session's stories)
         } else {
           const [, kind, id] = k.split(':');
-          const map = session.notes?.[kind];
+          // (Only the two kinds of note: the key comes from the room, and "__proto__" or "constructor" are in every object.)
+          const map = kind === 'footnote' || kind === 'endnote' ? session.notes?.[kind] : null;
           if (!map) return;
           const note = map.get(id);
           if (note) { note.doc = fromJSON(v); note.dirty = true; }
