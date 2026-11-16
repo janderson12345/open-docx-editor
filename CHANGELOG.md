@@ -18,7 +18,18 @@
 - **Tables of contents**: `\u` alone lists paragraphs by outline level; `\t` takes entries from named styles at their
   levels; the field keeps its switches when updated.
 - **Pasting**: headings from styled paragraphs (Word's own clipboard HTML, `class="Heading1"`) arrive as headings; a
-  paragraph pasted into an empty one keeps its style.
+  paragraph pasted into an empty one keeps its style, a lone heading too (it took the empty paragraph's style).
+- **Deleting a section break** (Delete or Backspace at it, or a selection across it) takes its section's setup away
+  and joins the text before it to the following section, in that section's columns and page setup, as Word does
+  (columns applied to selected text, the break before or after them deleted). Delete at the end of a paragraph before
+  an empty one that ends a section keeps the break, as in Word. The saved document opens in Word with its sections.
+- **Hyphenation zone and consecutive-hyphen limit**: with automatic hyphenation on, a word is left whole where wrapping
+  it leaves no more room at the line's end than the hyphenation zone (in documents of Word 2010's layout and older:
+  Word 2013's has none), and no more lines in a row end in a hyphen than the document allows, on screen and in print.
+  Checked against Word's print of test documents (a 1in zone, limits of 1 and 2); in Firefox, which hyphenates by
+  itself, too.
+- **Accept All and Reject All on thousands of changes are faster**: on 6,000 tracked changes, from
+  1.9s to 0.5-0.6s each, the result the same.
 - **Home and End on a table of contents entry** (or any paragraph beginning or ending in a linked field) go to the start
   or end of the paragraph; text typed straight after them is no longer misplaced. The find bar keeps its search.
 - **Shapes turned and flipped inside groups**, a turned group's shapes turning with it, as Word draws them; SmartArt
@@ -45,7 +56,7 @@
 - **Text boxes measured before their font arrived are drawn again**: text in shapes, text boxes and WordArt wrapped at
   a fallback font's widths when the document was read before the stand-in font loaded; once it has, those shapes are
   laid out again (on the page only: no undo step, no change to the document).
-- **Accept All and Reject All on thousands of changes are faster** (6,000 changes: 3.5 to 2.2 seconds, the relayout
+- **Accept All on thousands of changes is faster** (6,000 changes: 3.5 to 2.2 seconds, the relayout
   included), one undo step as before.
 - **Long documents with many tracked changes open fast**: 6,000 tracked changes over 177 pages opened in 24 seconds,
   now 1.5; a 118-page document in 0.45 seconds rather than 3.2. The margin's balloons and the print layout read

@@ -86,6 +86,8 @@
 /* Automatic hyphenation (hyphenate.js): the browser's own where it has it, else soft hyphens shown only at a line's end. */
 .odx-content p.odx-hyph { hyphens: auto; }
 .odx-content .odx-shy { hyphens: manual; }
+/* A word the hyphenation zone or the consecutive-hyphen limit leaves whole, where the browser hyphenates itself. */
+.odx-content p.odx-hyph .odx-nohyph { hyphens: manual; }
 /* AI writing's panel (toolbar.js aiPanel): the question box and Ask, the answer, what to do with it. */
 .odx-ai-ask { display: flex; gap: 6px; align-items: center; margin: 4px 0; } .odx-ai-q { flex: 0 0 160px; min-width: 0; } .odx-ai-ask > .odx-item { flex: 0 0 auto; width: auto; }
 .odx-ai-out { max-width: 380px; max-height: 240px; overflow: auto; white-space: pre-wrap; padding: 6px 8px; margin: 4px 0; border: 1px solid #c8c8c8; border-radius: 4px; background: #fafafa; color: #222; }

@@ -4,7 +4,7 @@ import { commentsPlugin, addComment, refresh as refreshComments } from './commen
 import { hfDoubleClick, closeStory, flushStory } from './hfedit.js';
 import { formsPlugin } from './fields.js';
 import { noteClicks, closeNote, flushNote, insertNote } from './notes.js';
-import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
+import { EditorState, Plugin, Selection, TextSelection } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { Fragment, Slice } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
@@ -19,7 +19,7 @@ import { ZERO_WIDTH } from '../ooxml/reader.js';
 import { borderCss } from '../ooxml/props.js';
 import { schema } from './schema.js';
 import { uniformRun } from './runs.js';
-import { columnsIn } from './sections.js';
+import { columnsIn, sectionJoinPlugin } from './sections.js';
 import { frameOf, frameStyle } from './frames.js';
 import { listLabel, lineSize, pictureLine, labelLine, labelFormat, changeClasses, headingRole } from './pararules.js';
 import * as cmd from './commands.js';
@@ -366,29 +366,51 @@ function paragraphPlugin(session) {
     });
   };
   /** Write computed values into paragraphs' `deco` attr where they changed. */
+  // Many paragraphs changed (Accept All on thousands of changes takes their change classes off): one step from the first
+  // to the last, not a step each (every plugin's decorations were mapped through each of thousands: a second).
+  const MANY = 200;
   const sync = (tr) => {
-    for (const { pos, node, deco } of compute(tr.doc)) {
-      if (JSON.stringify(deco) !== JSON.stringify(node.attrs.deco)) tr.setNodeMarkup(pos, null, { ...node.attrs, deco });
+    const changes = changed(tr.doc);
+    if (changes.size > MANY) {
+      const doc = tr.doc;
+      const next = rebuild(doc, changes);
+      const a = doc.content.findDiffStart(next.content);
+      if (a == null) return tr;
+      const { a: e } = doc.content.findDiffEnd(next.content);
+      // (The positions are the same in both documents: only attributes changed. The selection is put back where it was.)
+      const sel = tr.selection.toJSON();
+      tr.replace(a, e, next.slice(a, e));
+      try { tr.setSelection(Selection.fromJSON(tr.doc, sel)); } catch { /* (left as mapped) */ }
+      return tr;
     }
+    for (const [pos, deco] of changes) { const node = tr.doc.nodeAt(pos); tr.setNodeMarkup(pos, null, { ...node.attrs, deco }); }
     return tr;
   };
   // Stored as node attrs rather than view decorations: ProseMirror checks every
   // top-level decoration against every top-level node, which is quadratic on long documents.
-  /** Same as sync, for a whole document in one pass (used when opening). */
-  const initial = (doc) => {
+  /** The paragraphs whose `deco` changed: position to new value. */
+  const changed = (doc) => {
     const changes = new Map();
     for (const { pos, node, deco } of compute(doc)) if (JSON.stringify(deco) !== JSON.stringify(node.attrs.deco)) changes.set(pos, deco);
+    return changes;
+  };
+  /** Same as sync, for a whole document in one pass (used when opening). */
+  const initial = (doc) => {
+    const changes = changed(doc);
     if (!changes.size) return doc;
-    const rebuild = (node, offset) => {
+    return rebuild(doc, changes);
+  };
+  const rebuild = (doc, changes) => {
+    const walk = (node, offset) => {
       const kids = [];
       node.forEach((child, rel) => {
         const pos = offset + rel;
-        const inner = child.isLeaf || child.isTextblock ? child : rebuild(child, pos + 1);
+        const inner = child.isLeaf || child.isTextblock ? child : walk(child, pos + 1);
         kids.push(changes.has(pos) ? child.type.create({ ...child.attrs, deco: changes.get(pos) }, inner === child ? child.content : inner.content, child.marks) : inner);
       });
       return node.copy(Fragment.from(kids));
     };
-    return rebuild(doc, 0);
+    return walk(doc, 0);
   };
   return {
     sync,
@@ -470,8 +492,11 @@ function localStylesPlugin(session) {
         const { selection } = view.state;
         const first = out.content.firstChild;
         into = null;
+        // (Several paragraphs, or a lone heading: Word gives it its heading style. Words from one paragraph of body text
+        // take the paragraph's they go into.)
+        const heading = (n) => { const l = cmd.outlineLevel(session, n); return l != null && l >= 0 && l < 9; };
         if (selection.empty && selection.$from.parent.type === schema.nodes.paragraph && !selection.$from.parent.content.size
-          && out.openStart > 0 && out.content.childCount > 1 && first.type === schema.nodes.paragraph && !tracking(view.state).on) {
+          && out.openStart > 0 && first?.type === schema.nodes.paragraph && (out.content.childCount > 1 || heading(first)) && !tracking(view.state).on) {
           into = { pos: selection.$from.before(), attrs: first.attrs };
         }
         return out;
@@ -540,7 +565,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, wrapBothPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session), mailMergePlugin(session)],
+    plugins: [...formsPlugin(), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, sectionJoinPlugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, wrapBothPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session), mailMergePlugin(session)],
   });
 
   mount.classList.add('odx-canvas');

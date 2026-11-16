@@ -65,11 +65,21 @@ function build(doc) {
   return out;
 }
 
+const MANY_STEPS = 100;
+/** A step replacing more than half of the document (the one step of an Accept All on many changes). */
+function wide(tr) {
+  const half = tr.before.content.size / 2;
+  return tr.steps.some((s) => s.from != null && s.to - s.from > half && (s.slice?.size ?? 0) > tr.doc.content.size / 2);
+}
+
 export const textSpansPlugin = new Plugin({
   state: {
     init: (_, { doc }) => DecorationSet.create(doc, build(doc)),
     apply(tr, set) {
       if (!tr.docChanged) return set;
+      // Many steps (Accept All, a paste of a long document), or one taking in most of the document: made again whole.
+      // (Mapping each step's range through the steps after it is quadratic in their number: 6000 steps took a second.)
+      if (tr.steps.length > MANY_STEPS || wide(tr)) return DecorationSet.create(tr.doc, build(tr.doc));
       set = set.map(tr.mapping, tr.doc);
       // The textblocks a step touched, in the new document: their decorations made again. (A mark step changes no
       // positions but splits text nodes: its range is in its map too.)
