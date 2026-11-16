@@ -10,6 +10,7 @@ import { zoomOf } from './zoom.js';
 import { PRESETS } from '../ooxml/presets.js';
 import { adjustHandles, dragAdjust } from '../ooxml/geometry.js';
 import { padOf } from '../ooxml/place.js';
+import { startTag, startTags, tagAttr } from '../ooxml/xml.js';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN = 8; // px
@@ -29,13 +30,17 @@ export function turnOf(xml) {
 export function shapeInfo(xml) {
   if (!xml || !/<wps:wsp\b/.test(xml) || /<wpg:/.test(xml)) return null;
   const sp = /<wps:spPr\b[^>]*>[\s\S]*?<\/wps:spPr>/.exec(xml)?.[0];
-  const xf = sp && /<a:xfrm\b([^>]*)>[\s\S]*?<a:ext\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(sp);
+  // (Tags and attributes read one pass each, xml.js startTag: a regex reading two attributes of a tag took time growing
+  // with the square of a crafted one's length.)
+  const xfrm = sp && startTag(sp, 'a:xfrm');
+  const ext = xfrm && startTag(sp, 'a:ext', xfrm.end);
+  const cx = ext && tagAttr(ext.tag, 'cx'), cy = ext && tagAttr(ext.tag, 'cy');
   const prst = sp && /<a:prstGeom\b[^>]*\bprst="([^"]+)"/.exec(sp)?.[1];
-  if (!xf || !prst || !PRESETS[prst]) return null;
+  if (!/^\d+$/.test(cx || '') || !/^\d+$/.test(cy || '') || !prst || !PRESETS[prst]) return null;
   const av = /<a:prstGeom\b[^>]*>[\s\S]*?<\/a:prstGeom>/.exec(sp)?.[0] || '';
-  const adjust = Object.fromEntries([...av.matchAll(/<a:gd\b[^>]*\bname="([^"]+)"[^>]*\bfmla="([^"]+)"/g)].map((m) => [m[1], m[2]]));
-  const on = (k) => new RegExp(`\\b${k}="(?:1|true)"`).test(xf[1]);
-  return { prst, def: PRESETS[prst], adjust, cx: Number(xf[2]), cy: Number(xf[3]), flipH: on('flipH'), flipV: on('flipV'), line: LINES.test(prst) };
+  const adjust = Object.fromEntries([...startTags(av, 'a:gd')].map((t) => [tagAttr(t.tag, 'name'), tagAttr(t.tag, 'fmla')]).filter(([k, v]) => k && v));
+  const on = (k) => /^(?:1|true)$/.test(tagAttr(xfrm.tag, k) || '');
+  return { prst, def: PRESETS[prst], adjust, cx: Number(cx), cy: Number(cy), flipH: on('flipH'), flipV: on('flipV'), line: LINES.test(prst) };
 }
 
 export function imageResizePlugin() {

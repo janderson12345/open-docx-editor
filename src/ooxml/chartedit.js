@@ -3,7 +3,7 @@
 // first sheet (and its table, when the data is one), so Word shows the new chart and "Edit Data" opens the same
 // numbers. Column, bar, line and area charts can become one another; a pie or doughnut stays one.
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { parseXml, serializeXml, esc, elementKids as els } from './xml.js';
+import { parseXml, serializeXml, esc, elementKids as els, startTags, tagAttr } from './xml.js';
 import { ck, pts, textIn, seriesName } from './chart.js';
 
 const C = 'http://schemas.openxmlformats.org/drawingml/2006/chart';
@@ -191,12 +191,15 @@ export function updateWorkbook(bytes, data, sheetName = 'Sheet1') {
   try { files = unzipSync(bytes); } catch { return null; }
   const wb = files['xl/workbook.xml'] && strFromU8(files['xl/workbook.xml']);
   if (!wb) return null;
-  const sheets = [...wb.matchAll(/<sheet\b[^>]*name="([^"]*)"[^>]*r:id="([^"]+)"/g)];
-  const pick = sheets.find((m) => m[1] === sheetName) || sheets[0];
+  // (Tag by tag, xml.js startTag: regexes reading two attributes of a tag took time growing with the square of a crafted
+  // one's length, and the sheet's id, the file's own text, had been made part of a regular expression.)
+  const sheets = [...startTags(wb, 'sheet')].map((t) => [tagAttr(t.tag, 'name'), tagAttr(t.tag, 'r:id')]).filter(([n, id]) => n != null && id);
+  const pick = sheets.find((m) => m[0] === sheetName) || sheets[0];
   if (!pick) return null;
   const wbRels = strFromU8(files['xl/_rels/workbook.xml.rels'] || new Uint8Array());
-  const target = new RegExp(`Id="${pick[2]}"[^>]*Target="([^"]+)"|Target="([^"]+)"[^>]*Id="${pick[2]}"`).exec(wbRels);
-  const sheetPath = target ? 'xl/' + (target[1] || target[2]).replace(/^\/?xl\//, '') : null;
+  const rel = [...startTags(wbRels, 'Relationship')].find((t) => tagAttr(t.tag, 'Id') === pick[1]);
+  const target = rel && tagAttr(rel.tag, 'Target');
+  const sheetPath = target ? 'xl/' + target.replace(/^\/?xl\//, '') : null;
   if (!sheetPath || !files[sheetPath]) return null;
   const cols = data.series.length + 1, rows = data.cats.length + 1;
   const last = `${colName(cols - 1)}${rows}`;

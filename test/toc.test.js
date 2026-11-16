@@ -16,7 +16,7 @@ function compare(file) {
   const body = [];
   s.doc.forEach((p) => {
     let instr = '';
-    p.forEach((c) => { if (c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr += unescapeXml(c.attrs.xml.replace(/<[^>]*>/g, '')); });
+    p.forEach((c) => { if (c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr += unescapeXml(/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/.exec(c.attrs.xml)?.[1] ?? ''); }); // (its text, as merge.js reads it)
     const m = /\bTOC\b.*/.exec(instr);
     if (m) tables.push((cur = { instr: m[0], words: [] }));
     const toc = /^TOC(\d)$/.exec(p.attrs.styleId || '');
