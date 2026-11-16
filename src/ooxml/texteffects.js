@@ -33,8 +33,50 @@ export function w14Color(xml) {
   return alpha >= 1 ? `#${hex.toUpperCase()}` : `rgba(${rgb.join(',')},${+Math.max(0, alpha).toFixed(3)})`;
 }
 
-// (EMUs to points: 12700 a point.)
+// (EMUs to points: 12700 a point; to CSS pixels: 9525 a pixel.)
 const pt = (emu) => +(emu / 12700).toFixed(2);
+const px = (emu) => +(emu / 9525).toFixed(2);
+// A CSS colour as an SVG paint and its opacity.
+const solid = (c) => {
+  const m = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(c);
+  return m ? `"#${[m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')}" ` : `"${c}" `;
+};
+const opacity = (c) => /^rgba\(/.exec(c) ? Number(/,([\d.]+)\)$/.exec(c)[1]) : 1;
+
+// An inner shadow's filter primitives: the letters' outside (their alpha inverted) moved by the offset, blurred, in the
+// shadow's colour, and kept only where the letters are. `merge` draws the letters under it (a text box's SVG text);
+// without, it is the shadow alone (body text: laid over the letters, editor.css .odx-is).
+// Word's PDFs of odx-test/mkinnershadow.ps1 (36pt Arial bold, Word's own inner shadows through its Font.TextShadow, in
+// body text and in a text box alike): the shadow lies along the edges the direction points away from (225 degrees, up
+// and left, darkens the letters' left and top edges; 0 their right edges), so the outside is moved against the
+// direction; and it is a third of the size written: the band half dark about a third of the distance in (1.3pt for
+// 4pt, 1pt for 2.83pt unblurred), fading over about a sixth of the blur (a 5pt blur over 0.8pt).
+const innerShadowFx = (dx, dy, blur, c, merge) => `<feComponentTransfer in="SourceAlpha" result="i0"><feFuncA type="table" tableValues="1 0"/></feComponentTransfer><feOffset in="i0" dx="${px(-dx / 3)}" dy="${px(-dy / 3)}" result="i1"/>`
+  + `<feGaussianBlur in="i1" stdDeviation="${px(blur / 6)}" result="i2"/><feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="i2" operator="in" result="i3"/>`
+  + `<feComposite in="i3" in2="SourceAlpha" operator="in" result="i4"/>${merge ? '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="i4"/></feMerge>' : ''}`;
+
+// The inner shadows' filters for body text, defined once each in the page (an SVG of no size at the end of the body,
+// which prints with it): their markup -> id.
+const INNER = new Map();
+/** The id of the page's filter for an inner shadow (offset and blur EMUs, CSS colour), defined in the page if new. */
+export function innerShadowFilter(dx, dy, blur, c) {
+  const fx = innerShadowFx(dx, dy, blur, c, false);
+  if (!INNER.has(fx)) INNER.set(fx, `odx-is${INNER.size}`);
+  const id = INNER.get(fx);
+  if (typeof document !== 'undefined' && document.body && !document.getElementById(id)) {
+    let svg = document.getElementById('odx-is-defs');
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = 'odx-is-defs';
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden');
+      document.body.append(svg);
+    }
+    // (The region round the copy generous enough for its descenders: editor.css trims its box to the baseline.)
+    svg.insertAdjacentHTML('beforeend', `<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">${fx}</filter>`);
+  }
+  return id;
+}
 
 /**
  * The CSS for a run's w14 effects (`items`: [localName, xml] of its unmodelled w:rPr children). Fill: the letters'
@@ -74,9 +116,11 @@ export function textEffectsCss(items) {
     const c = w14Color(sh);
     const dist = num(sh, 'dist') || 0, dir = (num(sh, 'dir') || 0) / 60000, blur = num(sh, 'blurRad') || 0;
     // (A perspective shadow, scaled flat by sx/sy, Word draws as its own shape: drawn as the plain one here. One scaled to
-    // nothing Word draws inside the letters, which CSS can't: not drawn.)
+    // nothing Word draws inside the letters, the letters looking pressed in, which text-shadow can't: an SVG filter on a
+    // copy of each word laid over it, innerShadowFilter.)
     const a = (dir * Math.PI) / 180;
-    if (c && !(num(sh, 'sx') === 0 && num(sh, 'sy') === 0)) shadows.push(`${pt(dist * Math.cos(a))}pt ${pt(dist * Math.sin(a))}pt ${pt(blur)}pt ${c}`);
+    if (c && num(sh, 'sx') === 0 && num(sh, 'sy') === 0) css.push(`--odx-is:url(#${innerShadowFilter(dist * Math.cos(a), dist * Math.sin(a), blur, c)})`);
+    else if (c) shadows.push(`${pt(dist * Math.cos(a))}pt ${pt(dist * Math.sin(a))}pt ${pt(blur)}pt ${c}`);
   }
   const glow = w14('glow');
   if (glow) {
@@ -150,14 +194,8 @@ export function svgTextEffects(rPr, n, serialize) {
   }
   if (!items.length) return null;
   const get = (name) => items.find(([k]) => k === name)?.[1];
-  const px = (emu) => +(emu / 9525).toFixed(2);
   const attrs = [];
   const defs = [];
-  const solid = (c) => {
-    const m = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(c);
-    return m ? `"#${[m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')}" ` : `"${c}" `;
-  };
-  const opacity = (c) => /^rgba\(/.exec(c) ? Number(/,([\d.]+)\)$/.exec(c)[1]) : 1;
   const fill = get('textFill');
   if (fill) {
     if (/<w14:noFill\b/.test(fill)) attrs.push('fill="none"');
@@ -189,11 +227,8 @@ export function svgTextEffects(rPr, n, serialize) {
     const dist = num(sh, 'dist') || 0, a = (((num(sh, 'dir') || 0) / 60000) * Math.PI) / 180, blur = num(sh, 'blurRad') || 0;
     // (Scaled to nothing, sx and sy 0, Word draws it inside the letters: an inner shadow, the letters looking pressed in.)
     const inner = num(sh, 'sx') === 0 && num(sh, 'sy') === 0;
-    if (c && inner) {
-      fx.push(`<feComponentTransfer in="SourceAlpha" result="i0"><feFuncA type="table" tableValues="1 0"/></feComponentTransfer><feOffset in="i0" dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" result="i1"/>`
-        + `<feGaussianBlur in="i1" stdDeviation="${px(blur / 2)}" result="i2"/><feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="i2" operator="in" result="i3"/>`
-        + '<feComposite in="i3" in2="SourceAlpha" operator="in" result="i4"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="i4"/></feMerge>');
-    } else if (c) fx.push(`<feDropShadow dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" stdDeviation="${px(blur / 2)}" flood-color=${solid(c)}flood-opacity="${opacity(c)}"/>`);
+    if (c && inner) fx.push(innerShadowFx(dist * Math.cos(a), dist * Math.sin(a), blur, c, true));
+    else if (c) fx.push(`<feDropShadow dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" stdDeviation="${px(blur / 2)}" flood-color=${solid(c)}flood-opacity="${opacity(c)}"/>`);
   }
   const glow = get('glow');
   if (glow) {

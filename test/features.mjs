@@ -166,6 +166,28 @@ const reflAria = await page.locator('.odx-content > p', { hasText: 'Reflected' }
 check(refl.words.join(',') === 'Reflected,words' && refl.content === '"Reflected" / ""' && /matrix\(1, 0, 0, -1, 0, 0\)/.test(refl.transform) && /linear-gradient/.test(refl.mask)
   && Math.abs(refl.height - 43.4) < 1.5 && Math.abs(refl.base - refl.height) < 1 && refl.text === 'Reflected words and plain after' && !/Reflected.*Reflected/.test(refl.copied) && (reflAria.match(/Reflected/g) || []).length === 1,
   `a reflection: each word mirrored below its baseline, faded, not text (${JSON.stringify({ ...refl, mask: undefined, aria: reflAria })})`);
+// An inner shadow (a w14:shadow scaled to nothing: the gallery's Style 15, 36pt Arial bold): each word drawn again over
+// itself through the page's SVG filter for it, which keeps only the shadow inside the letters (as Word's print of
+// odx-test/mkinnershadow.ps1); not text, and no room: the line as tall as the plain 36pt line after it would be.
+const pressed = await page.evaluate(() => {
+  const p = [...document.querySelectorAll('.odx-content > p')].find((x) => x.textContent.startsWith('Pressed'));
+  const words = [...p.querySelectorAll('.odx-is')];
+  const b = getComputedStyle(words[0], '::before');
+  const id = /url\("?#([\w-]+)"?\)/.exec(b.filter)?.[1];
+  const f = id && document.getElementById(id);
+  const sel = getSelection();
+  sel.selectAllChildren(p);
+  const copied = sel.toString();
+  sel.removeAllRanges();
+  const plain = [...document.querySelectorAll('.odx-content > p')].find((x) => x.textContent.startsWith('Reflected'));
+  return { words: words.map((w) => w.dataset.odxIs), content: b.content, position: b.position, fill: b.webkitTextFillColor, filter: f?.tagName, offset: f?.querySelector('feOffset') && [f.querySelector('feOffset').getAttribute('dx'), f.querySelector('feOffset').getAttribute('dy')], height: p.getBoundingClientRect().height, text: p.textContent, copied, reflectedHeight: plain.getBoundingClientRect().height };
+});
+const pressedAria = await page.locator('.odx-content > p', { hasText: 'Pressed' }).ariaSnapshot();
+// (Moved against the shadow's direction, a third of its 4pt distance: 1.33pt up and left is 1.26px each way.)
+check(pressed.words.join(',') === 'Pressed,words' && pressed.content === '"Pressed" / ""' && pressed.position === 'absolute' && pressed.fill === 'rgb(0, 0, 0)' && pressed.filter === 'filter'
+  && pressed.offset?.join() === '1.26,1.26' && pressed.text === 'Pressed words and plain after' && !/Pressed.*Pressed/.test(pressed.copied) && (pressedAria.match(/Pressed/g) || []).length === 1
+  && pressed.height < pressed.reflectedHeight,
+  `an inner shadow: each word drawn again through its filter, not text, no room (${JSON.stringify({ ...pressed, aria: pressedAria })})`);
 
 await open('notes-long.docx');
 // (Four notes of 45 paragraphs each, from one paragraph: they continue at the foot of the pages after it, as in Word,

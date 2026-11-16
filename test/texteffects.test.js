@@ -1,8 +1,9 @@
 import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { DocxSession } from '../src/ooxml/docx.js';
-import { w14Color, textEffectsCss, setThemeColors } from '../src/ooxml/texteffects.js';
+import { w14Color, textEffectsCss, setThemeColors, innerShadowFilter, svgTextEffects } from '../src/ooxml/texteffects.js';
 import { WORDART, wordArtItems, wordArtRPr } from '../src/ooxml/wordart.js';
 
 // Word 2010's text effects as Word writes them (odx-test/mkeffects14.ps1: Word's own XML for each effect set through
@@ -40,6 +41,26 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   const far = textEffectsCss(items('<w14:reflection w14:blurRad="6350" w14:stA="600000" w14:endA="900" w14:endPos="60000" w14:dist="29997" w14:algn="bl"/>')).join(';');
   assert.match(far, /--odx-rf-a:1;--odx-rf-b:0.009;--odx-rf-pos:60%;--odx-rf-gap:4.22pt/);
   assert.equal(textEffectsCss(items('<w14:textFill><w14:noFill/></w14:textFill>')).join(';'), '-webkit-text-fill-color:transparent');
+});
+
+test('an inner shadow (scaled to nothing) as Word draws it: inside the letters, against its direction, a third its size', () => {
+  // The WordArt gallery's Style 15: half-transparent black, 4pt up and left (225 degrees), blurred 5pt.
+  const xml = '<w14:shadow w14:blurRad="63500" w14:dist="50800" w14:dir="13500000" w14:sx="0" w14:sy="0" w14:kx="0" w14:ky="0" w14:algn="none"><w14:srgbClr w14:val="000000"><w14:alpha w14:val="50000"/></w14:srgbClr></w14:shadow>';
+  const css = textEffectsCss(items(xml)).join(';');
+  // (No text-shadow, which can only draw outside the letters: the page's filter, on the words' copies (editor.css).)
+  assert.doesNotMatch(css, /text-shadow/);
+  const id = /--odx-is:url\(#([\w-]+)\)/.exec(css)?.[1];
+  assert.ok(id, css);
+  // The same shadow again is the same filter; another is another.
+  assert.equal(innerShadowFilter(50800 * Math.cos((225 * Math.PI) / 180), 50800 * Math.sin((225 * Math.PI) / 180), 63500, 'rgba(0,0,0,0.5)'), id);
+  assert.notEqual(innerShadowFilter(38100, 0, 25400, '#000000'), id);
+  // In a text box (SVG text): the letters' outside moved 1.26px down and right (a third of 4pt, against the direction),
+  // blurred by a sixth of 5pt, and drawn over the letters.
+  const rPr = new DOMParser().parseFromString(`<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">${xml}</w:rPr>`, 'application/xml').documentElement;
+  const fx = svgTextEffects(rPr, 1, (n) => new XMLSerializer().serializeToString(n).replace(/ xmlns:w14="[^"]*"/, ''));
+  assert.match(fx.defs, /<feOffset in="i0" dx="1.26" dy="1.26" result="i1"\/><feGaussianBlur in="i1" stdDeviation="1.11"/);
+  assert.match(fx.defs, /flood-color="#000000" flood-opacity="0.5"/);
+  assert.match(fx.defs, /<feMergeNode in="SourceGraphic"\/><feMergeNode in="i4"\/>/);
 });
 
 test('WordArt: a floating text box as wide as its text, its runs in the style\'s effects, read back with them', () => {
