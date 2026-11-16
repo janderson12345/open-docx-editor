@@ -15,6 +15,33 @@
 - **Reflections keep their descenders and blur**: a reflected g, j, p or y's tail is mirrored too (rising into the
   reflection's gap, as in Word's print), and the copy is softened by its blur as Word's print softens it, on the page
   and in text boxes (descenders in PDF export too).
+- **Text beside a float on both sides, justified**: each side of a line split by the shape spreads on its own (the
+  words before it to its edge, those after it to the margin), with Word's squeeze on each side; words had been up to
+  44pt off Word's. Printed, justified lines beside a footer's shape no longer spread across the full width.
+- **A float drawn up and wrapped on its left pushes the lines above it**, as in Word.
+- **Shapes' outlines and floating lines drawn whole**: an inline shape's outline is no longer cut at its box, straight
+  floating lines (arrowheads and all) are drawn, and a floating shape without text sits at its offset, as Word prints
+  it. Drawings behind the text show over the page and under the text (they had been hidden under the page). Outline
+  corners are round or mitred as Word draws them. In Word 2010 documents a drawing aligned across the page sits its
+  effect extent lower, as Word places it.
+- **Footnotes**: a document-wide kerning setting reaches the text and its notes (10pt Calibri notes broke a word later
+  than Word's); a long note cut at a page's foot keeps as many lines as Word's; text above a footnote band keeps its
+  space after clear of it; a new note keeps the space after its number.
+- **Legacy text form fields**: a field whose value runs over several paragraphs is read and filled in (Word writes a
+  multi-line value as paragraphs); a field keeps to its maximum length when filled in, typed into or pasted into (a
+  paste too long is cut to fit).
+- **Pasting** a lone heading into an empty paragraph keeps the heading's style (it took the empty paragraph's).
+- **Deleting a section break** (Delete or Backspace at it, or a selection across it) takes its section's setup away
+  and joins the text before it to the following section, in that section's columns and page setup, as Word does
+  (columns applied to selected text, the break before or after them deleted). Delete at the end of a paragraph before
+  an empty one that ends a section keeps the break, as in Word. The saved document opens in Word with its sections.
+- **Hyphenation zone and consecutive-hyphen limit**: with automatic hyphenation on, a word is left whole where wrapping
+  it leaves no more room at the line's end than the hyphenation zone (in documents of Word 2010's layout and older:
+  Word 2013's has none), and no more lines in a row end in a hyphen than the document allows, on screen and in print.
+  Checked against Word's print of test documents (a 1in zone, limits of 1 and 2); in Firefox, which hyphenates by
+  itself, too.
+- **Accept All and Reject All on thousands of changes are faster again**: on 6,000 tracked changes, from 1.9s to
+  0.5-0.6s each, the result the same.
 
 ## 0.8.0 (2026-11-16)
 
@@ -34,18 +61,7 @@
 - **Tables of contents**: `\u` alone lists paragraphs by outline level; `\t` takes entries from named styles at their
   levels; the field keeps its switches when updated.
 - **Pasting**: headings from styled paragraphs (Word's own clipboard HTML, `class="Heading1"`) arrive as headings; a
-  paragraph pasted into an empty one keeps its style, a lone heading too (it took the empty paragraph's style).
-- **Deleting a section break** (Delete or Backspace at it, or a selection across it) takes its section's setup away
-  and joins the text before it to the following section, in that section's columns and page setup, as Word does
-  (columns applied to selected text, the break before or after them deleted). Delete at the end of a paragraph before
-  an empty one that ends a section keeps the break, as in Word. The saved document opens in Word with its sections.
-- **Hyphenation zone and consecutive-hyphen limit**: with automatic hyphenation on, a word is left whole where wrapping
-  it leaves no more room at the line's end than the hyphenation zone (in documents of Word 2010's layout and older:
-  Word 2013's has none), and no more lines in a row end in a hyphen than the document allows, on screen and in print.
-  Checked against Word's print of test documents (a 1in zone, limits of 1 and 2); in Firefox, which hyphenates by
-  itself, too.
-- **Accept All and Reject All on thousands of changes are faster**: on 6,000 tracked changes, from
-  1.9s to 0.5-0.6s each, the result the same.
+  paragraph pasted into an empty one keeps its style.
 - **Home and End on a table of contents entry** (or any paragraph beginning or ending in a linked field) go to the start
   or end of the paragraph; text typed straight after them is no longer misplaced. The find bar keeps its search.
 - **Shapes turned and flipped inside groups**, a turned group's shapes turning with it, as Word draws them; SmartArt
@@ -72,7 +88,7 @@
 - **Text boxes measured before their font arrived are drawn again**: text in shapes, text boxes and WordArt wrapped at
   a fallback font's widths when the document was read before the stand-in font loaded; once it has, those shapes are
   laid out again (on the page only: no undo step, no change to the document).
-- **Accept All on thousands of changes is faster** (6,000 changes: 3.5 to 2.2 seconds, the relayout
+- **Accept All and Reject All on thousands of changes are faster** (6,000 changes: 3.5 to 2.2 seconds, the relayout
   included), one undo step as before.
 - **Long documents with many tracked changes open fast**: 6,000 tracked changes over 177 pages opened in 24 seconds,
   now 1.5; a 118-page document in 0.45 seconds rather than 3.2. The margin's balloons and the print layout read
