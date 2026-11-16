@@ -95,7 +95,12 @@ function paints(spPr, style, colors) {
     if (ln.getAttribute('w')) width = px(ln.getAttribute('w'));
     stroke = child(ln, 'noFill') ? null : solid(child(ln, 'solidFill')) || (style && child(style, 'lnRef') ? color(els(child(style, 'lnRef'))[0], colors) : null);
   } else if (lnIdx) stroke = color(els(child(style, 'lnRef'))[0], colors);
-  return { fill, stroke, width, ln };
+  // Its corners: the outline's own join; else its theme line style's (Office's are mitred: a styled rectangle's corners
+  // square in Word's print); else round, DrawingML's own (shapeclip-word: a text box with no style, its 8pt outline's
+  // corners round in Word's print).
+  const own = ['round', 'bevel', 'miter'].find((k) => child(ln, k));
+  const join = own || (lnIdx ? 'miter' : 'round');
+  return { fill, stroke, width, ln, join };
 }
 
 /** A gradient fill (a:gradFill) -> its first colour, with { grad: { stops, lin, path, rotWithShape } }, or null. */
@@ -685,7 +690,7 @@ function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   let hh = h;
   if (txbx && child(bodyPr, 'spAutoFit') && tctx.textEnd > h + 0.5) { hh = tctx.textEnd; ctx.grown = Math.max(ctx.grown || 0, hh - h); }
   const paths = geometry(spPr, w, hh);
-  const strokeAttrs = pt.stroke ? ` stroke-width="${+pt.width.toFixed(2)}" stroke-miterlimit="8"` : '';
+  const strokeAttrs = pt.stroke ? ` stroke-width="${+pt.width.toFixed(2)}"${pt.join === 'miter' ? ' stroke-miterlimit="8"' : ` stroke-linejoin="${pt.join}"`}` : '';
   let body = paths.map((q) => {
     const stroke = q.stroke ? paint('stroke', pt.stroke) + strokeAttrs : 'stroke="none"';
     if (pt.fill?.grad && q.fill !== 'none') {
