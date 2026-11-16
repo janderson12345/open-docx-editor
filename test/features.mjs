@@ -896,6 +896,28 @@ const mmXml = strFromU8(unzipSync(new Uint8Array(fs.readFileSync(await download.
 check(pv1 === 'Ada LOVELACE' && pv2 === 'Alan TURING' && /Record 2 of 2/.test(pvStatus) && /MERGEFIELD FirstName/.test(pvSaved) && pvOff === '«FirstName» «Last Name»'
   && inserted === '«FirstName» «Last Name» «City»' && csvCount === 1 && /Grace/.test(mmXml) && /HOPPER, REAR ADM\./.test(mmXml) && !/MERGEFIELD/.test(mmXml) && /download/.test(download.suggestedFilename() + 'download'),
   `mail merge: preview, next record, insert field, CSV recipients, merged document (${JSON.stringify({ pv1, pv2, pvStatus, pvOff, inserted, csvCount, file: download.suggestedFilename() })})`);
+// Preview Results with IF fields and a header's and footer's merge fields (mergeif.docx; Word's merge gives these).
+await open('mergeif.docx');
+await page.evaluate(() => window.odx.setMergeData([{ Name: 'Ada', Amount: '150', City: 'New York' }, { Name: 'alan', Amount: '50', City: 'Boston' }]));
+await page.click('.odx-rtab:text-is("Mailings")');
+await page.click('button[title^="Preview results"]');
+await page.waitForTimeout(500);
+const ifShown = () => page.evaluate(() => ({
+  lines: [...document.querySelectorAll('.odx-content p')].slice(0, 2).map((p) => p.innerText.trim()).concat(document.querySelectorAll('.odx-content p')[15]?.innerText.trim()),
+  header: document.querySelector('.odx-header')?.innerText.trim(),
+  footer: document.querySelector('.odx-footer')?.innerText.trim(),
+}));
+const if1 = await ifShown();
+await page.click('button[title="Next record"]');
+await page.waitForTimeout(500);
+const if2 = await ifShown();
+await page.click('button[title^="Preview results"]');
+await page.waitForTimeout(500);
+const ifOff = await ifShown();
+check(JSON.stringify(if1) === JSON.stringify({ lines: ['gt: big', 'lt: not under', 'nested: big'], header: 'Statement for Ada', footer: 'City: New York / big' })
+  && JSON.stringify(if2) === JSON.stringify({ lines: ['gt: small', 'lt: under', 'nested: mid'], header: 'Statement for alan', footer: 'City: Boston / small' })
+  && ifOff.header === 'Statement for «Name»' && ifOff.lines[0] === 'gt: small',
+  `mail merge preview: IF fields, header and footer per record (${JSON.stringify({ if1, if2, ifOff })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
 // Insert > Shapes: picked from the keyboard, a rectangle in line with the text; with the mouse, drawn on the page by
