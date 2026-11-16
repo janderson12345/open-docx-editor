@@ -4,6 +4,7 @@
 import { announce as say, liveRegion } from './live.js';
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Fragment, Slice } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { fieldInfo } from '../ooxml/reader.js';
 import { legacyInfo } from '../ooxml/ffdata.js';
@@ -56,13 +57,15 @@ export function listFields(doc) {
 
 // Legacy form fields (Word 97-2003: FORMTEXT, FORMCHECKBOX, FORMDROPDOWN): a complex field whose
 // begin fldChar holds w:ffData. A text field's value is its result text; a check box and a drop-down
-// keep their state in ffData and show nothing between separate and end.
+// keep their state in ffData and show nothing between separate and end. A text field's result may run
+// over several paragraphs (Word writes each line of a multi-line value as a paragraph): its value has a
+// line break for each paragraph mark.
 const fldOf = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'fldChar' ? (/fldCharType="(\w+)"/.exec(n.attrs.xml) || [])[1] : null);
 function legacyFields(doc) {
   const out = [];
+  let open = null; // (left open at a paragraph's end when the field goes on into the next)
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true;
-    let open = null;
     node.forEach((c, off) => {
       const at = pos + 1 + off;
       const t = fldOf(c);
@@ -74,7 +77,7 @@ function legacyFields(doc) {
         if (!info) return;
         const from = info.kind === 'text' && sep != null ? sep : begin;
         const to = info.kind === 'text' && sep != null ? at : begin + 1;
-        const text = info.kind === 'text' ? doc.textBetween(from, to) : info.kind === 'dropdown' ? info.text : '';
+        const text = info.kind === 'text' ? doc.textBetween(from, to, '\n') : info.kind === 'dropdown' ? info.text : '';
         const f = { key: `l${out.length}`, tag: info.name || undefined, alias: undefined, kind: info.kind, from, to, text, legacy: true, begin, block: false, pr: '' };
         if (info.kind === 'checkbox') f.value = f.checked = info.checked;
         else if (info.kind === 'dropdown') { f.items = info.items.map((x) => ({ text: x, value: x })); f.value = info.text; }
@@ -107,8 +110,22 @@ function writeLegacy(tr, f, value) {
   let marks = beginNode.marks;
   tr.doc.nodesBetween(f.from, f.to, (n) => { if (n.isText) marks = n.marks; });
   const text = value == null || value === '' ? '\u2002\u2002\u2002\u2002\u2002' : String(value); // Word's empty text field: five en spaces
-  if (f.from === f.to) tr.insert(f.from, schema.text(text, marks));
-  else tr.replaceWith(f.from, f.to, schema.text(text, marks));
+  const lines = text.split(/\r\n|\r|\n/);
+  const $from = tr.doc.resolve(f.from);
+  const $to = tr.doc.resolve(f.to);
+  if (lines.length === 1 && $from.sameParent($to)) {
+    if (f.from === f.to) tr.insert(f.from, schema.text(text, marks));
+    else tr.replaceWith(f.from, f.to, schema.text(text, marks));
+    return;
+  }
+  // Each line a paragraph, as Word writes them: the first goes on in the field's own paragraph, the last ends in the
+  // paragraph the field ends in, and the ones between are split from the first (as Enter would split it).
+  const split = { ...$from.parent.attrs, deco: null };
+  const paras = lines.map((l, i) => {
+    const end = i === lines.length - 1 && !$from.sameParent($to);
+    return (end ? $to : $from).parent.type.create(end ? $to.parent.attrs : split, l ? schema.text(l, marks) : null);
+  });
+  tr.replace(f.from, f.to, new Slice(Fragment.from(paras), 1, 1));
 }
 
 /** Field values as { name: value } (name = tag, else title); repeated names give the first. */
