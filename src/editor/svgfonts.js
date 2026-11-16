@@ -5,12 +5,13 @@
 // once they're fetched; until then it shows as drawn. Only what's shown changes: the node keeps the picture as drawn
 // (schema.js maps the copy back to it for copy and paste).
 import { unescapeXml } from '../ooxml/xml.js';
+import { drawsOwn } from '../ooxml/fontprobe.js';
 
 const done = new Map(); // a picture as drawn -> the copy shown (itself when it needs nothing)
 const pending = new Set();
 const files = new Map(); // font file URL -> Promise of its data: URL (null if it can't be had)
 const installed = new Map();
-const KEEP = 300;
+const KEEP = 300; // pictures remembered (resizing a shape draws it again at each step: only the latest are kept)
 const redrawn = new Map(); // a picture drawn before its stand-in faces loaded -> { src, height } drawn again after
 const waiting = new Set();
 const origin = new Map(); // a picture shown in place of one as drawn -> that one
@@ -214,17 +215,7 @@ export function covers(range, text) {
 /** Whether a font of that name is installed (it draws differently from the generic families it would fall back to). */
 function isInstalled(family) {
   if (installed.has(family)) return installed.get(family);
-  let yes = false;
-  try {
-    const c = document.createElement('canvas').getContext('2d');
-    const probe = 'mmmmmmmmmlliWW@#0O';
-    yes = ['monospace', 'serif', 'sans-serif'].some((g) => {
-      c.font = `72px ${g}`;
-      const w = c.measureText(probe).width;
-      c.font = `72px "${family.replace(/["\\]/g, '')}", ${g}`;
-      return c.measureText(probe).width !== w;
-    });
-  } catch { /* none */ }
+  const yes = drawsOwn(family, { probe: 'mmmmmmmmmlliWW@#0O', size: 72, generics: ['monospace', 'serif', 'sans-serif'] });
   installed.set(family, yes);
   return yes;
 }

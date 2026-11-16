@@ -3,6 +3,7 @@
 // (half-points for size, twips for spacing/indent) until CSS is generated.
 import { kid, kids, attr, onOff } from './xml.js';
 import { OMF } from '../fonts/omf.js';
+import { drawsOwn } from './fontprobe.js';
 
 export function readRPr(rPr) {
   const p = {};
@@ -251,15 +252,9 @@ function measure(key) {
   if (measured.has(key)) return measured.get(key);
   let f = null;
   try {
-    const ctx = document.createElement('canvas').getContext('2d');
-    const probe = 'mmmmmmmmmmlli10WQ';
-    const installed = ['monospace', 'serif'].some((g) => {
-      ctx.font = `100px ${g}`;
-      const base = ctx.measureText(probe).width;
-      ctx.font = `100px "${key}", ${g}`;
-      return ctx.measureText(probe).width !== base;
-    });
-    if (installed) {
+    if (drawsOwn(key, { probe: 'mmmmmmmmmmlli10WQ', size: 100 })) {
+      const ctx = document.createElement('canvas').getContext('2d');
+      ctx.font = `100px "${key}", serif`;
       const m = ctx.measureText('Hg');
       if (m.fontBoundingBoxAscent) f = Math.round((m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) * 100) / 10000;
     }
