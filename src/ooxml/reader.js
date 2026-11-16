@@ -1,7 +1,7 @@
 // word/document.xml -> ProseMirror JSON.
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
-import { shapesPad, shapeTurn, pictureFlip } from './shapes.js';
+import { shapesPad, shapeTurn, pictureFlip, turnedInside } from './shapes.js';
 import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
@@ -552,7 +552,9 @@ function anchorCss(drawing, page) {
   const fx = childNamed(anchor, 'effectExtent');
   // (Not a turned shape's: Word sets that room round the turned outline and draws the shape where its box is, turned
   // about its centre: a rectangle at 60 degrees with 40px of room above it, in Word's PDF, where it was at 30 with none.)
-  const fxT = shapeTurn(drawing) ? 0 : emuToPx(fx?.getAttribute('t') || 0);
+  // Nor a group's with shapes turned inside it: that room is for them (groupturn-word, groups with 4px and 20px of room
+  // above them drawn at their offsets).
+  const fxT = shapeTurn(drawing) || turnedInside(drawing) ? 0 : emuToPx(fx?.getAttribute('t') || 0);
   const y = ['paragraph', 'line'].includes(vRel) ? px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100 : 0;
   let wrap = [...anchor.childNodes].find((n) => n.localName && n.localName.startsWith('wrap'))?.localName || 'wrapNone';
   // Wrapped round, but as wide as the column: no text fits beside it, so it takes its own band, as top-and-bottom (and,

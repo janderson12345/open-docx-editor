@@ -87,7 +87,8 @@ function paints(spPr, style, colors) {
   const lnIdx = Number(style && child(style, 'lnRef')?.getAttribute('idx')) || 0;
   let width = lnIdx ? px([6350, 12700, 19050][lnIdx - 1] || 12700) : 0.75 * (4 / 3);
   const f = els(spPr).find((n) => /Fill$/.test(n.localName));
-  if (f) fill = f.localName === 'solidFill' ? solid(f) : f.localName === 'gradFill' ? color(desc(f, 'gs') && els(desc(f, 'gs'))[0], colors) : null;
+  // (A gradient's first colour stands for it where one colour is wanted; its stops are drawn, gradientFill.)
+  if (f) fill = f.localName === 'solidFill' ? solid(f) : f.localName === 'gradFill' ? gradientOf(f, colors) : null;
   else if (style && child(style, 'fillRef') && child(style, 'fillRef').getAttribute('idx') !== '0') fill = color(els(child(style, 'fillRef'))[0], colors);
   const ln = child(spPr, 'ln');
   if (ln) {
@@ -95,6 +96,113 @@ function paints(spPr, style, colors) {
     stroke = child(ln, 'noFill') ? null : solid(child(ln, 'solidFill')) || (style && child(style, 'lnRef') ? color(els(child(style, 'lnRef'))[0], colors) : null);
   } else if (lnIdx) stroke = color(els(child(style, 'lnRef'))[0], colors);
   return { fill, stroke, width, ln };
+}
+
+/** A gradient fill (a:gradFill) -> its first colour, with { grad: { stops, lin, path, rotWithShape } }, or null. */
+function gradientOf(f, colors) {
+  const stops = els(child(f, 'gsLst')).filter((g) => g.localName === 'gs')
+    .map((g) => ({ pos: Math.min(1, Math.max(0, Number(g.getAttribute('pos')) / 100000 || 0)), c: color(els(g)[0], colors) }))
+    .filter((s) => s.c).sort((a, b) => a.pos - b.pos);
+  if (!stops.length) return null;
+  const lin = child(f, 'lin');
+  const path = child(f, 'path');
+  const inset = (el) => Object.fromEntries(['l', 't', 'r', 'b'].map((k) => [k, Number(el?.getAttribute(k)) / 100000 || 0]));
+  return {
+    ...stops[0].c,
+    grad: {
+      stops,
+      // (No a:lin or a:path: Word draws it top to bottom, as a:lin at 90 degrees.)
+      lin: path ? null : { ang: Number(lin?.getAttribute('ang') || (lin ? 0 : 5400000)) / 60000, scaled: on(lin, 'scaled') },
+      path: path ? { kind: path.getAttribute('path') || 'rect', focus: inset(child(path, 'fillToRect')) } : null,
+      tile: inset(child(f, 'tileRect')),
+      rotWithShape: f.getAttribute('rotWithShape') !== '0',
+    },
+  };
+}
+
+/**
+ * A gradient's stops with stops between them, so a browser's straight sRGB blend comes out as Word's: Word blends in
+ * linear light, easing in and out of each colour (gradients-word, red C02020 to white top to bottom: green 59 a tenth of
+ * the way, 184 halfway, 251 nine tenths; a straight blend has 56, 145, 233). `ease` is that curve, near smoothstep.
+ */
+export function gradientStops(stops, steps = 8) {
+  const out = [];
+  const ease = (t) => t * t * (3 - 2 * t);
+  for (let i = 0; i < stops.length; i++) {
+    const a = stops[i], b = stops[i + 1];
+    out.push(a);
+    if (!b || b.pos - a.pos < 0.02) continue;
+    const ca = [16, 8, 0].map((s) => toLin(((parseInt(a.c.hex, 16) >> s) & 255) / 255));
+    const cb = [16, 8, 0].map((s) => toLin(((parseInt(b.c.hex, 16) >> s) & 255) / 255));
+    for (let k = 1; k < steps; k++) {
+      const t = k / steps, e = ease(t);
+      out.push({ pos: a.pos + (b.pos - a.pos) * t, c: { hex: hexOf(ca.map((v, j) => toSrgb(v + (cb[j] - v) * e))), alpha: a.c.alpha + (b.c.alpha - a.c.alpha) * e } });
+    }
+  }
+  return out;
+}
+
+/**
+ * A gradient fill drawn on a path `d` of a w x h px shape turned `rot` degrees, as Word draws it (gradients-word, made by
+ * Word: two-colour gradients of each kind): { defs, fill } (fill: the path's fill attribute), or { defs, under } (drawn
+ * under the path, clipped to it) for a rectangle's or shape's path gradient. `mode` darkens or lightens it (modeFill).
+ *  - Linear (a:lin): along its angle, clockwise from left to right; "scaled" works it out in a square stretched to the box
+ *    (a 45-degree gradient on a 220 x 60 shape runs corner to corner, its colours level along the other diagonal).
+ *  - Path (a:path): its first colour on the focus rectangle (a:fillToRect, insets of the shape's box: 50% each way is its
+ *    centre), its last on the edge of the tile (a:tileRect, insets of the box, negative ones beyond it: Word's "from the
+ *    corner" puts the focus on a corner and the tile a box's width past it, so the corner's colour reaches the far
+ *    corner). A rectangle's ("rect", and "shape", drawn the same) as concentric rectangles, their corners on the lines from
+ *    the focus to the tile's corners (the X Word's "from the centre" draws); a circle's as rings to the tile's corners.
+ *  - Turned with the shape, unless rotWithShape="0" (SmartArt's): then it keeps its angle on the page.
+ */
+function gradientFill(fill, d, w, h, rot, ctx, mode) {
+  const g = fill.grad;
+  const id = `odxg${(ctx.gradN = (ctx.gradN || 0) + 1)}`;
+  const r = (v) => +v.toFixed(4);
+  const stops = gradientStops(g.stops.map((s) => ({ pos: s.pos, c: modeFill(s.c, mode) })))
+    .map((s) => `<stop offset="${r(s.pos)}" stop-color="#${s.c.hex}"${s.c.alpha < 1 ? ` stop-opacity="${r(s.c.alpha)}"` : ''}/>`).join('');
+  if (g.lin) {
+    const a = ((g.lin.ang - (g.rotWithShape ? 0 : rot)) * Math.PI) / 180;
+    const [cos, sin] = [Math.cos(a), Math.sin(a)];
+    // Through the box's centre, as long as the box is across in that direction (in a unit square when scaled).
+    const [bw, bh] = g.lin.scaled ? [1, 1] : [w, h];
+    const half = (Math.abs(bw * cos) + Math.abs(bh * sin)) / 2;
+    const [x1, y1, x2, y2] = [bw / 2 - cos * half, bh / 2 - sin * half, bw / 2 + cos * half, bh / 2 + sin * half];
+    const tf = g.lin.scaled ? ` gradientTransform="matrix(${r(w)} 0 0 ${r(h)} 0 0)"` : '';
+    return { defs: `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${r(x1)}" y1="${r(y1)}" x2="${r(x2)}" y2="${r(y2)}"${tf}>${stops}</linearGradient>`, fill: `fill="url(#${id})"` };
+  }
+  // The focus rectangle and the tile, in the box's px.
+  const { focus: fo } = g.path, ti = g.tile;
+  let [fl, fr, ft, fb] = [fo.l * w, w - fo.r * w, fo.t * h, h - fo.b * h];
+  if (fl > fr) fl = fr = (fl + fr) / 2;
+  if (ft > fb) ft = fb = (ft + fb) / 2;
+  const [tl, tr, tt, tb] = [ti.l * w, w - ti.r * w, ti.t * h, h - ti.b * h];
+  if (g.path.kind === 'circle') {
+    const cx = (fl + fr) / 2, cy = (ft + fb) / 2;
+    // (Rings stretched to the tile's shape: worked out in a unit square, scaled to it.)
+    const tw = tr - tl || 1, th = tb - tt || 1;
+    const ux = (cx - tl) / tw, uy = (cy - tt) / th;
+    const rad = Math.max(...[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => Math.hypot(x - ux, y - uy)));
+    return { defs: `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${r(ux)}" cy="${r(uy)}" r="${r(rad)}" gradientTransform="matrix(${r(tw)} 0 0 ${r(th)} ${r(tl)} ${r(tt)})">${stops}</radialGradient>`, fill: `fill="url(#${id})"` };
+  }
+  // Four sides (top, right, bottom, left), each from the focus rectangle's edge to the tile's, and the focus rectangle in
+  // the first colour. (Each side drawn a hair wider, with its own gradient as its outline, so no seam shows between them.)
+  const sides = [
+    [[tl, tt], [tr, tt], [fr, ft], [fl, ft], [0, ft, 0, tt]],
+    [[fr, ft], [tr, tt], [tr, tb], [fr, fb], [fr, 0, tr, 0]],
+    [[fl, fb], [fr, fb], [tr, tb], [tl, tb], [0, fb, 0, tb]],
+    [[tl, tt], [fl, ft], [fl, fb], [tl, tb], [fl, 0, tl, 0]],
+  ];
+  let defs = `<clipPath id="${id}c"><path d="${d}"/></clipPath>`;
+  let under = '';
+  sides.forEach((s, i) => {
+    const [x1, y1, x2, y2] = s[4];
+    if (x1 === x2 && y1 === y2) return;
+    defs += `<linearGradient id="${id}s${i}" gradientUnits="userSpaceOnUse" x1="${r(x1)}" y1="${r(y1)}" x2="${r(x2)}" y2="${r(y2)}">${stops}</linearGradient>`;
+    under += `<path d="M${s.slice(0, 4).map(([x, y]) => `${r(x)} ${r(y)}`).join(' L')} Z" fill="url(#${id}s${i})" stroke="url(#${id}s${i})" stroke-width="0.5"/>`;
+  });
+  if (fr > fl && fb > ft) under += `<rect x="${r(fl)}" y="${r(ft)}" width="${r(fr - fl)}" height="${r(fb - ft)}" ${paint('fill', modeFill(g.stops[0].c, mode))}/>`;
+  return { defs, under: `<g clip-path="url(#${id}c)">${under}</g>` };
 }
 
 /** SVG paint attributes: `kind` (fill or stroke) in colour `c` (none without one). */
@@ -483,33 +591,72 @@ function dmlText(txBody, box, ctx) {
 /** A text run's (a:r, a:fld) text. */
 const textOfRun = (run) => els(run).filter((n) => n.localName === 't').map((n) => n.textContent).join('');
 
-function shapeSvg(el, ctx, top = false) {
+const GROUPS = ['wgp', 'grpSp', 'spTree'];
+const NO_MAP = { sx: 1, sy: 1, tx: 0, ty: 0 };
+const on = (xfrm, k) => /^(1|true)$/.test(xfrm?.getAttribute(k) || '');
+
+/**
+ * Where a shape or group (its a:xfrm) is drawn: its box in the drawing's px, mapped there by `m` (a group's child
+ * coordinates, chOff/chExt, to the drawing: a scale and a move, never a turn), and how it's turned (degrees clockwise)
+ * and flipped about the box's centre. A group's own map for its children comes too: its box is mapped first and only
+ * then turned, as Word draws a group (a group stretched to 1.8 times its height keeps its turned rectangles square-
+ * cornered, groupturn-word), so a child turned inside a stretched group isn't skewed.
+ */
+function frameOf(xfrm, m = NO_MAP, top = false) {
+  const off = child(xfrm, 'off');
+  const ext = child(xfrm, 'ext');
+  const n = (el, k) => px(el?.getAttribute(k));
+  // (The drawing's own group's frame is the drawing itself, wherever its a:off says.)
+  const turn = Number(xfrm?.getAttribute('rot') || 0) / 60000;
+  // A shape turned nearer upright than level (45 to 135 degrees, or 225 to 315) is stretched along its other side: its
+  // width by the group's height scale (a right arrow at 60 degrees in a group stretched to 1.8 times its height comes out
+  // 1.8 times as long, groupturn-word). Its centre is mapped as it is.
+  const q = ((turn % 180) + 180) % 180;
+  const swap = !top && q >= 45 && q < 135;
+  const w = (swap ? m.sy : m.sx) * n(ext, 'cx');
+  const h = (swap ? m.sx : m.sy) * n(ext, 'cy');
+  const cx = m.tx + m.sx * ((top ? 0 : n(off, 'x')) + n(ext, 'cx') / 2);
+  const cy = m.ty + m.sy * ((top ? 0 : n(off, 'y')) + n(ext, 'cy') / 2);
+  const x = cx - w / 2, y = cy - h / 2;
+  // (The drawing's own shape or group is turned by the page, not here: its picture is turned whole, shapeTurn.)
+  const f = { x, y, w, h, rot: top ? 0 : turn, fh: on(xfrm, 'flipH'), fv: on(xfrm, 'flipV') };
+  const chOff = child(xfrm, 'chOff');
+  const chExt = child(xfrm, 'chExt');
+  if (chOff || chExt) {
+    const sx = n(chExt, 'cx') ? w / n(chExt, 'cx') : m.sx;
+    const sy = n(chExt, 'cy') ? h / n(chExt, 'cy') : m.sy;
+    f.map = { sx, sy, tx: x - sx * n(chOff, 'x'), ty: y - sy * n(chOff, 'y') };
+  }
+  return f;
+}
+
+/** An SVG transform turning and flipping frame `f` about its centre, in the drawing's coordinates ('' for none). */
+function turnAbout(f) {
+  const cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+  const r = (v) => +v.toFixed(2);
+  return [f.rot ? `rotate(${r(f.rot)} ${r(cx)} ${r(cy)})` : '', f.fh || f.fv ? `matrix(${f.fh ? -1 : 1} 0 0 ${f.fv ? -1 : 1} ${f.fh ? r(2 * cx) : 0} ${f.fv ? r(2 * cy) : 0})` : ''].filter(Boolean).join(' ');
+}
+
+function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   const name = el.localName;
-  if (name === 'wgp' || name === 'grpSp' || name === 'spTree') {
+  if (GROUPS.includes(name)) {
     const xfrm = child(child(el, 'grpSpPr'), 'xfrm');
-    const inner = els(el).filter((n) => ['wsp', 'sp', 'pic', 'grpSp'].includes(n.localName)).map((n) => shapeSvg(n, ctx)).join('');
-    if (!xfrm) return inner;
-    const [ext, chOff, chExt] = ['ext', 'chOff', 'chExt'].map((k) => child(xfrm, k));
-    const off = name === 'wgp' ? null : child(xfrm, 'off'); // the outer group's frame is the drawing itself
-    const sx = chExt && Number(chExt.getAttribute('cx')) ? Number(ext.getAttribute('cx')) / Number(chExt.getAttribute('cx')) : 1;
-    const sy = chExt && Number(chExt.getAttribute('cy')) ? Number(ext.getAttribute('cy')) / Number(chExt.getAttribute('cy')) : 1;
-    const tx = px(off?.getAttribute('x')) - px(chOff?.getAttribute('x')) * sx;
-    const ty = px(off?.getAttribute('y')) - px(chOff?.getAttribute('y')) * sy;
-    return `<g transform="matrix(${sx} 0 0 ${sy} ${tx.toFixed(2)} ${ty.toFixed(2)})">${inner}</g>`;
+    const f = xfrm ? frameOf(xfrm, m, name === 'wgp' || top) : null;
+    const inner = els(el).filter((n) => ['wsp', 'sp', 'pic', 'grpSp'].includes(n.localName)).map((n) => shapeSvg(n, ctx, false, f?.map || m)).join('');
+    // A group turned or flipped inside another turns its shapes with it, about its own centre.
+    const t = f ? turnAbout(f) : '';
+    return t && inner ? `<g transform="${t}">${inner}</g>` : inner;
   }
   const spPr = child(el, 'spPr');
   const xfrm = child(spPr, 'xfrm');
   if (!xfrm) return '';
-  const off = child(xfrm, 'off');
-  const ext = child(xfrm, 'ext');
-  const x = px(off?.getAttribute('x'));
-  const y = px(off?.getAttribute('y'));
-  const w = px(ext?.getAttribute('cx'));
-  const h = px(ext?.getAttribute('cy'));
-  // (The drawing's own shape turned by the page, not here: its picture is turned whole, shapeTurn.)
-  const rot = top ? 0 : Number(xfrm.getAttribute('rot') || 0) / 60000;
-  const flip = `${xfrm.getAttribute('flipH') === '1' ? -1 : 1} 0 0 ${xfrm.getAttribute('flipV') === '1' ? -1 : 1}`;
-  const t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${flip !== '1 0 0 1' ? ` matrix(${flip} ${xfrm.getAttribute('flipH') === '1' ? w : 0} ${xfrm.getAttribute('flipV') === '1' ? h : 0})` : ''}`;
+  const { x, y, w, h, rot, fh, fv } = frameOf(xfrm, m, top);
+  const t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${fh || fv ? ` matrix(${fh ? -1 : 1} 0 0 ${fv ? -1 : 1} ${fh ? w : 0} ${fv ? h : 0})` : ''}`;
+  // A flipped shape's text isn't mirrored: Word keeps it readable, turned with the shape, and upside down when the
+  // shape is flipped top to bottom (groupturn-word: "Text" in a rectangle flipped both ways and in one flipped
+  // vertically, turned 15 degrees, reads upside down; in one flipped left to right, as it was).
+  const textTurn = (rot + (fv ? 180 : 0)) % 360;
+  const tt = `translate(${x.toFixed(2)} ${y.toFixed(2)})${textTurn ? ` rotate(${textTurn} ${w / 2} ${h / 2})` : ''}`;
   if (name === 'pic') {
     const blip = desc(el, 'blip');
     const href = blip && ctx.image(blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed'));
@@ -533,7 +680,14 @@ function shapeSvg(el, ctx, top = false) {
   if (txbx && child(bodyPr, 'spAutoFit') && tctx.textEnd > h + 0.5) { hh = tctx.textEnd; ctx.grown = Math.max(ctx.grown || 0, hh - h); }
   const paths = geometry(spPr, w, hh);
   const strokeAttrs = pt.stroke ? ` stroke-width="${+pt.width.toFixed(2)}" stroke-miterlimit="8"` : '';
-  let body = paths.map((q) => `<path d="${q.d}" ${paint('fill', modeFill(pt.fill, q.fill))} ${q.stroke ? paint('stroke', pt.stroke) + strokeAttrs : 'stroke="none"'} vector-effect="non-scaling-stroke"/>`).join('');
+  let body = paths.map((q) => {
+    const stroke = q.stroke ? paint('stroke', pt.stroke) + strokeAttrs : 'stroke="none"';
+    if (pt.fill?.grad && q.fill !== 'none') {
+      const gf = gradientFill(pt.fill, q.d, w, hh, Number(xfrm.getAttribute('rot') || 0) / 60000, ctx, q.fill);
+      return `<defs>${gf.defs}</defs>${gf.under || ''}<path d="${q.d}" ${gf.fill || 'fill="none"'} ${stroke} vector-effect="non-scaling-stroke"/>`;
+    }
+    return `<path d="${q.d}" ${paint('fill', modeFill(pt.fill, q.fill))} ${stroke} vector-effect="non-scaling-stroke"/>`;
+  }).join('');
   // Arrowheads, where the outline has them (on a line, or any open path).
   const open = paths.find((q) => q.ends && !/Z$/.test(q.d));
   if (pt.stroke && open && pt.ln) body += arrowhead(child(pt.ln, 'headEnd'), open.ends[0], pt.width, pt.stroke) + arrowhead(child(pt.ln, 'tailEnd'), open.ends[1], pt.width, pt.stroke);
@@ -542,10 +696,11 @@ function shapeSvg(el, ctx, top = false) {
   let dml = '';
   if (txBody) {
     const tx = child(child(el, 'txXfrm'), 'off') ? child(el, 'txXfrm') : null;
-    const box = tx ? { x: px(child(tx, 'off').getAttribute('x')) - x, y: px(child(tx, 'off').getAttribute('y')) - y, w: px(child(tx, 'ext').getAttribute('cx')), h: px(child(tx, 'ext').getAttribute('cy')) } : { x: 0, y: 0, w, h };
+    const tf = tx && frameOf(tx, m);
+    const box = tf ? { x: tf.x - x, y: tf.y - y, w: tf.w, h: tf.h } : { x: 0, y: 0, w, h };
     dml = `<g transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">${dmlText(txBody, box, tctx)}</g>`;
   }
-  return `<g transform="${t}">${body}${text}</g>${dml}`;
+  return `<g transform="${t}">${body}</g>${text ? `<g transform="${tt}">${text}</g>` : ''}${dml}`;
 }
 
 /**
@@ -602,9 +757,19 @@ export function shapesPad(drawing, { outline = false } = {}) {
     const k = { sm: 2, med: 3, lg: 5 };
     pad = Math.max(pad, w / 2 + Math.max(...ends.map((e) => Math.max(w, 8 / 3) * Math.max(k[e.getAttribute('w')] || 3, k[e.getAttribute('len')] || 3))));
   }
+  const data = desc(drawing, 'graphicData');
+  // A group whose shapes, turned, reach past its box (a 30-degree rectangle at its edge; groupturn-word): room for them,
+  // which Word draws past the box too, and their outlines.
+  const group = data && [...data.childNodes].find((n) => n.localName === 'wgp');
+  const gx = group && child(child(group, 'grpSpPr'), 'xfrm');
+  if (gx) {
+    const f = frameOf(gx, NO_MAP, true);
+    const b = groupReach(group, f.map || NO_MAP, [1, 0, 0, 1, 0, 0]);
+    const out = Math.max(-b[0], -b[1], b[2] - f.w, b[3] - f.h);
+    if (out > 1) pad = Math.max(pad, out + 1.33 / 2 + 1);
+  }
   // A single shape drawn past its box (a callout's pointer, or one dragged out by its adjust handle): room for that
   // too, only when it's more than a pixel out (outlines just inside or on the box keep none, as above).
-  const data = desc(drawing, 'graphicData');
   const sp = data && [...data.childNodes].find((n) => n.localName === 'wsp');
   const spPr = sp && child(sp, 'spPr');
   const ext = spPr && desc(spPr, 'ext');
@@ -623,6 +788,42 @@ export function shapesPad(drawing, { outline = false } = {}) {
     }
   }
   return Math.ceil(pad);
+}
+
+/**
+ * The box [minX, minY, maxX, maxY] (px, in the drawing) a group's shapes cover, turned and flipped as shapeSvg draws
+ * them: each shape's box mapped by `m` (frameOf), its corners turned about its centre, then by `a` (the turns of the
+ * groups it's in, an SVG matrix [a b c d e f]).
+ */
+export function groupReach(group, m, a) {
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
+  const turn = (f) => {
+    const t = ((f.rot || 0) * Math.PI) / 180, cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+    const [cos, sin] = [Math.cos(t), Math.sin(t)];
+    return [cos, sin, -sin, cos, cx - cos * cx + sin * cy, cy - sin * cx - cos * cy]; // (a flip about the centre moves no corner)
+  };
+  const mul = (p, q) => [p[0] * q[0] + p[2] * q[1], p[1] * q[0] + p[3] * q[1], p[0] * q[2] + p[2] * q[3], p[1] * q[2] + p[3] * q[3], p[0] * q[4] + p[2] * q[5] + p[4], p[1] * q[4] + p[3] * q[5] + p[5]];
+  const walk = (g, m, a) => {
+    for (const n of els(g)) {
+      if (n.localName === 'grpSp') {
+        const x = child(child(n, 'grpSpPr'), 'xfrm');
+        if (!x) { walk(n, m, a); continue; }
+        const f = frameOf(x, m);
+        walk(n, f.map || m, mul(a, turn(f)));
+      } else if (['wsp', 'sp', 'pic'].includes(n.localName)) {
+        const x = child(child(n, 'spPr'), 'xfrm');
+        if (!x) continue;
+        const f = frameOf(x, m);
+        const k = mul(a, turn(f));
+        for (const [px0, py0] of [[f.x, f.y], [f.x + f.w, f.y], [f.x, f.y + f.h], [f.x + f.w, f.y + f.h]]) {
+          const X = k[0] * px0 + k[2] * py0 + k[4], Y = k[1] * px0 + k[3] * py0 + k[5];
+          box[0] = Math.min(box[0], X); box[1] = Math.min(box[1], Y); box[2] = Math.max(box[2], X); box[3] = Math.max(box[3], Y);
+        }
+      }
+    }
+  };
+  walk(group, m, a);
+  return box[0] === Infinity ? [0, 0, 0, 0] : box;
 }
 
 /** How far an SVG path (as geometry.js writes them) goes outside a w x h box, by its points (an arc by its ends). */
@@ -644,6 +845,13 @@ function overflow(d, w, h) {
 export function shapeTurn(drawing) {
   const deg = Number(ownXfrm(drawing)?.getAttribute('rot') || 0) / 60000;
   return ((deg % 360) + 360) % 360;
+}
+
+/** Whether a drawing's group has a shape or group turned inside it (any a:xfrm rot under its wpg:wgp but its own). */
+export function turnedInside(drawing) {
+  const data = desc(drawing, 'graphicData');
+  const group = data && [...data.childNodes].find((n) => n.localName === 'wgp');
+  return !!group && [...group.getElementsByTagName('*')].some((n) => n.localName === 'xfrm' && n.parentNode?.parentNode !== group && Number(n.getAttribute('rot')) % 21600000 !== 0);
 }
 
 /** A picture's flips (its pic:spPr a:xfrm flipH, flipV): drawn mirrored by the page, as Word draws it. */
