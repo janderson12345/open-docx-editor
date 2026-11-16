@@ -96,7 +96,8 @@ export function bevelFx(props3d, out = 'odxbev', box = false) {
   // (Its tags read one pass each, xml.js startTag. A bevel's size defaults to 6pt by 6pt, its shape to a circle.)
   const bt = props3d ? [...startTags(props3d, 'w14:bevelT')][0]?.tag : null;
   if (!bt) return '';
-  const size = (k) => { const v = tagAttr(bt, k); return /^\d+$/.test(v || '') ? px(Number(v)) : px(76200); };
+  // (At most 64px: a file's huge bevel would make every repaint of its filters' erosions and blurs crawl.)
+  const size = (k) => { const v = tagAttr(bt, k); return Math.min(64, /^\d{1,12}$/.test(v || '') ? px(Number(v)) : px(76200)); };
   const w = size('w14:w'), h = size('w14:h');
   const prst = tagAttr(bt, 'w14:prst') || 'circle';
   if (!(w > 0) || !(h > 0)) return '';
@@ -267,7 +268,7 @@ export function textEffectsCss(items) {
     const gap = Math.max(0, 2 * pt(num(refl, 'dist') || 0) - pt(num(refl, 'blurRad') || 0));
     const k = Math.max(0, (num(refl, 'endPos') || 0) / 100000);
     css.push(`--odx-rf-a:${a('stA')}`, `--odx-rf-b:${a('endA')}`, `--odx-rf-pos:${+(k * 100).toFixed(2)}%`, `--odx-rf-k:${+k.toFixed(4)}`, `--odx-rf-gap:${+gap.toFixed(2)}pt`);
-    const blur = pt(num(refl, 'blurRad') || 0) / 5;
+    const blur = Math.min(100, pt(num(refl, 'blurRad') || 0)) / 5; // (bounded: a huge blur on every word crawls)
     if (blur > 0) css.push(`--odx-rf-blur:${+blur.toFixed(3)}pt`);
   }
   if (up) css.push(`--odx-grow-up:${+up.toFixed(4)}em`);
@@ -364,6 +365,6 @@ export function svgTextEffects(rPr, n, serialize) {
   // (A reflection: its start and end opacities, how far down it fades out (a share of the text's height), and its
   // distance below the text, px.)
   const rf = get('reflection');
-  const reflection = rf ? { stA: Math.min(1, (num(rf, 'stA') || 0) / 100000), endA: Math.min(1, (num(rf, 'endA') || 0) / 100000), endPos: (num(rf, 'endPos') || 0) / 100000, dist: px(num(rf, 'dist') || 0), blur: px(num(rf, 'blurRad') || 0) } : null;
+  const reflection = rf ? { stA: Math.min(1, (num(rf, 'stA') || 0) / 100000), endA: Math.min(1, (num(rf, 'endA') || 0) / 100000), endPos: (num(rf, 'endPos') || 0) / 100000, dist: px(num(rf, 'dist') || 0), blur: Math.min(133, px(num(rf, 'blurRad') || 0)) } : null;
   return { paint: attrs.length ? attrs.join(' ') : null, filter: fx.length ? `url(#odx-tx${n})` : null, defs: defs.join(''), reflection };
 }
