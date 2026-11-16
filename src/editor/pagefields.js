@@ -1,7 +1,7 @@
 // Fields in drawn headers and footers: PAGE, NUMPAGES and the like get their live values, and the document's
 // properties (TITLE, AUTHOR, DOCPROPERTY ...), which Word evaluates again there.
 import { formatNumber } from '../ooxml/styles.js';
-import { unescapeXml } from '../ooxml/xml.js';
+import { unescapeXml, startTags, tagAttr } from '../ooxml/xml.js';
 
 // A field's value styled like the text before it (for a field saved with no result).
 function styledLike(el, text) {
@@ -34,7 +34,14 @@ export function docProps(pkg) {
   }
   for (const [k, t] of [['company', 'Company'], ['manager', 'Manager']]) { const v = tag(app, t); if (v != null) out.set(k, v); }
   const custom = (pkg && pkg.text('docProps/custom.xml')) || '';
-  for (const m of custom.matchAll(/<property\b[^>]*\bname="([^"]+)"[^>]*>\s*<vt:\w+>([^<]*)<\/vt:\w+>/g)) out.set(unescapeXml(m[1]).toLowerCase(), unescapeXml(m[2]));
+  // (Each property's tag read in one pass, xml.js startTag, then its value right after it.)
+  const value = /\s*<vt:\w+>([^<]*)<\/vt:\w+>/y;
+  for (const t of startTags(custom, 'property')) {
+    const name = tagAttr(t.tag, 'name');
+    value.lastIndex = t.end;
+    const v = !t.selfClosing && value.exec(custom);
+    if (name && v) out.set(unescapeXml(name).toLowerCase(), unescapeXml(v[1]));
+  }
   return out;
 }
 

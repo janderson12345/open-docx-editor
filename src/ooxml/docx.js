@@ -2,7 +2,7 @@
 // original package so every part we don't edit is written back unchanged.
 import { Node } from 'prosemirror-model';
 import { DocxPackage } from './package.js';
-import { REL_TYPES, NS, kids, parseXml, serializeXml, esc } from './xml.js';
+import { REL_TYPES, NS, kids, parseXml, serializeXml, esc, startTag, startTags, tagAttr as attrOf, setTagAttr, elementText } from './xml.js';
 import { readDocument, readStory } from './reader.js';
 import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
 import { chunkKind } from './altchunk.js';
@@ -28,6 +28,20 @@ import { TWIPS_PER_PX, emuToPx, pxToEmu, twipsToPx } from './units.js';
 // A text box's text (its opening tag, then its contents).
 const TXBX = /(<w:txbxContent\b[^>]*?(?<!\/)>)([\s\S]*?)<\/w:txbxContent>/g;
 
+// A drawing's wp:extent: [its tag's text, cx, cy] (EMU, as written) and the tag `t` (xml.js startTag), or null.
+function extentOf(xml) {
+  const t = startTag(xml, 'wp:extent');
+  const cx = t && attrOf(t.tag, 'cx'), cy = t && attrOf(t.tag, 'cy');
+  if (!/^\d+$/.test(cx || '') || !/^\d+$/.test(cy || '')) return null;
+  const out = [t.tag, cx, cy]; // (as the regex match it replaces: its text, then cx and cy)
+  out.t = t;
+  return out;
+}
+// The XML with a tag `t` (startTag) given cx and cy.
+const setSize = (xml, t, cx, cy) => xml.slice(0, t.at) + setTagAttr(setTagAttr(t.tag, 'cx', String(cx)), 'cy', String(cy)) + xml.slice(t.end);
+// An a:xfrm right after a tag (only space between).
+const XFRM_NEXT = /\s*<a:xfrm(?=[\s/>])/y;
+
 export class DocxSession {
   /**
    * @param {ArrayBuffer|Uint8Array} bytes
@@ -44,8 +58,12 @@ export class DocxSession {
     this.lang = (/<w:rPrDefault>[\s\S]*?<w:lang\b[^>]*w:val="([^"]+)"/.exec(this.pkg.text("word/styles.xml") || "") || [])[1] || null;
     // Word version the layout follows (15 = Word 2013+); older modes lay some things out differently.
     const settings = this.pkg.partByType(REL_TYPES.settings);
-    const mode = settings && /<w:compatSetting\b[^>]*w:name="compatibilityMode"[^>]*w:val="(\d+)"|<w:compatSetting\b[^>]*w:val="(\d+)"[^>]*w:name="compatibilityMode"/.exec(this.pkg.text(settings) || '');
-    this.compatMode = mode ? Number(mode[1] || mode[2]) : 12;
+    // (Tag by tag, xml.js startTag: a regex reading its two attributes took seconds on a crafted settings part.)
+    let mode = null;
+    for (const t of startTags(settings ? this.pkg.text(settings) || '' : '', 'w:compatSetting')) {
+      if (attrOf(t.tag, 'w:name') === 'compatibilityMode' && /^\d+$/.test(attrOf(t.tag, 'w:val') || '')) { mode = Number(attrOf(t.tag, 'w:val')); break; }
+    }
+    this.compatMode = mode ?? 12;
     // The compatibility rules it names (w:compat's children, by their names: splitPgBreakAndParaMark...), each a
     // Word version's layout the document asks for; the layout follows those it knows (docs/LAYOUT.md).
     const compat = settings && /<w:compat>([\s\S]*?)<\/w:compat>/.exec(this.pkg.text(settings) || '')?.[1];
@@ -122,7 +140,7 @@ export class DocxSession {
       if (!/^\d+$/.test(num || '') || !raw || raw.length > 512 * 1024) continue;
       // Its size: the VML shape's style (points), or the drawing's extent (EMU); else 9pt, Word's default. At most 72pt.
       const pt = (k) => Number(new RegExp(`${k}:([\\d.]+)pt`).exec(xml)?.[1]);
-      const ext = /<wp:extent\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(xml);
+      const ext = extentOf(xml);
       const fit = (v) => Math.min(72, Math.max(1, v || 9));
       const w = fit(pt('width') || (ext ? Number(ext[1]) / 12700 : 9)), h = fit(pt('height') || (ext ? Number(ext[2]) / 12700 : 9));
       const [bytes, mime] = shown(raw, /\.jpe?g$/i.test(rel.target) ? 'image/jpeg' : /\.gif$/i.test(rel.target) ? 'image/gif' : 'image/png');
@@ -807,16 +825,19 @@ export class DocxSession {
    * Returns { xml, src, width, height }.
    */
   resizeShape(runXml, width, height) {
-    const ext = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(runXml);
+    const ext = extentOf(runXml);
     if (!ext) return null;
     const [cx, cy] = [pxToEmu(width), pxToEmu(height)];
     const kx = cx / Number(ext[1]), ky = cy / Number(ext[2]);
-    let xml = runXml.replace(/(<wp:extent\b[^>]*\bcx=")\d+("[^>]*\bcy=")\d+"/, `$1${cx}$2${cy}"`);
+    let xml = setSize(runXml, ext.t, cx, cy);
     // The shape takes the size; a group's frame (wpg:grpSpPr) is scaled with it, its children following through
-    // chOff/chExt.
+    // chOff/chExt. (Its frame: the first shape or group properties whose a:xfrm comes first in them.)
     const group = /<wpg:grpSpPr\b/.test(xml);
-    xml = xml.replace(/(<(?:wps:spPr|wpg:grpSpPr)\b[^>]*>\s*<a:xfrm\b[^>]*>[\s\S]*?<a:ext\b[^>]*\bcx=")(\d+)("[^>]*\bcy=")(\d+)"/, (m, a, x, b, y) => (group
-      ? `${a}${Math.round(Number(x) * kx)}${b}${Math.round(Number(y) * ky)}"` : `${a}${cx}${b}${cy}"`));
+    const frame = [...startTags(xml, 'wps:spPr'), ...startTags(xml, 'wpg:grpSpPr')].sort((p, q) => p.at - q.at)
+      .map((t) => { XFRM_NEXT.lastIndex = t.end; return XFRM_NEXT.test(xml) ? startTag(xml, 'a:xfrm', t.end) : null; }).find(Boolean);
+    const fext = frame && startTag(xml, 'a:ext', frame.end);
+    const fx = fext && attrOf(fext.tag, 'cx'), fy = fext && attrOf(fext.tag, 'cy');
+    if (/^\d+$/.test(fx || '') && /^\d+$/.test(fy || '')) xml = setSize(xml, fext, group ? Math.round(Number(fx) * kx) : cx, group ? Math.round(Number(fy) * ky) : cy);
     // The VML copy: its style's width and height (points).
     const pt = (px) => +(px * 0.75).toFixed(2);
     xml = xml.replace(/(<v:(?:shape|group|rect|roundrect)\b[^>]*\bstyle="[^"]*?)width:([\d.]+)pt;height:([\d.]+)pt/, (m, a, w, h) => (group
@@ -865,14 +886,16 @@ export class DocxSession {
    * has only some of them), the others as they were or their defaults. Returns { xml, src, width, height, place }.
    */
   adjustShape(runXml, values) {
-    const at = /<a:prstGeom\b[^>]*?\bprst="([^"]+)"[^>]*?(?:\/>|>[\s\S]*?<\/a:prstGeom>)/.exec(runXml);
-    const def = at && PRESETS[at[1]];
+    // (Its a:prstGeom and their a:gd read tag by tag, xml.js startTag.)
+    const t = [...startTags(runXml, 'a:prstGeom')].find((x) => attrOf(x.tag, 'prst'));
+    const text = t && elementText(runXml, t, 'a:prstGeom');
+    const def = text && PRESETS[attrOf(t.tag, 'prst')];
     if (!def) return null;
-    const own = Object.fromEntries([...at[0].matchAll(/<a:gd\b[^>]*\bname="([^"]+)"[^>]*\bfmla="([^"]+)"/g)].map((m) => [m[1], m[2]]));
+    const own = Object.fromEntries([...startTags(text, 'a:gd')].map((g) => [attrOf(g.tag, 'name'), attrOf(g.tag, 'fmla')]).filter(([k, v]) => k && v));
     const all = { ...own, ...values };
     const gds = def.av.map(([name, fmla]) => `<a:gd name="${esc(name)}" fmla="${esc(all[name] ?? fmla)}"/>`).join('');
-    const geom = `${/^<a:prstGeom\b[^>]*?(?=\/?>)/.exec(at[0])[0]}><a:avLst>${gds}</a:avLst></a:prstGeom>`;
-    return this._shapeNode(runXml.slice(0, at.index) + geom + runXml.slice(at.index + at[0].length));
+    const geom = `${t.tag.replace(/\/?>$/, '')}><a:avLst>${gds}</a:avLst></a:prstGeom>`;
+    return this._shapeNode(runXml.slice(0, t.at) + geom + runXml.slice(t.at + text.length));
   }
 
   /**
@@ -1130,7 +1153,7 @@ function base64(bytes) {
 function turnRoom(xml, reset = false) {
   if (!/<wp:(?:inline|anchor)\b/.test(xml)) return xml;
   let deg = Number(/<(?:wps:spPr|wpg:grpSpPr|pic:spPr)\b[^>]*>\s*<a:xfrm\b[^>]*\brot="(-?\d+)"/.exec(xml)?.[1] || 0) / 60000;
-  const ext = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(xml);
+  const ext = extentOf(xml);
   if (!ext || (!(deg % 360) && !reset)) return xml;
   let w = Number(ext[1]), h = Number(ext[2]);
   // A picture turned a quarter (45 to 135 degrees, or 225 to 315) takes its turned box's room (reader.js turned): the room

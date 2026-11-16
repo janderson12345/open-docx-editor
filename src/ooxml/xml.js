@@ -123,3 +123,72 @@ export const childrenNamed = (el, name) => elementKids(el).filter((n) => n.local
 const codePoint = (n) => (n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '\uFFFD');
 export const unescapeXml = (s) => (s == null ? s : s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&#(\d+);/g, (m, d) => codePoint(Number(d))).replace(/&#x([\da-f]+);/gi, (m, h) => codePoint(parseInt(h, 16))).replace(/&amp;/g, '&'));
+
+// Start tags and their attributes read from XML text in one pass each, for the places that read a part or a run's XML
+// as text. A regex reading two attributes of one tag, <x\b[^>]*a="..."[^>]*b="...", tries the second [^>]* at every
+// place the first could stop: a crafted tag repeating a="1" inside another attribute's single-quoted value (valid XML)
+// took seconds (140KB: 2s; a 300KB styles.xml: 3s), growing with the square of its length.
+
+const NAME_END = /[\s/>]/;
+
+/**
+ * The first start tag named `name` (its qualified name, as written) at or after `from`: { tag (its text, to its '>'),
+ * at, end (just past it), selfClosing }, or null. Quoted attribute values may hold '>'.
+ */
+export function startTag(xml, name, from = 0) {
+  const open = `<${name}`;
+  for (let i = xml.indexOf(open, from); i >= 0; i = xml.indexOf(open, i + 1)) {
+    const after = xml[i + open.length];
+    if (after !== undefined && !NAME_END.test(after)) continue; // (a longer name: <w:styles for <w:style)
+    let q = null, j = i + open.length;
+    for (; j < xml.length; j++) {
+      const c = xml[j];
+      if (q) { if (c === q) q = null; } else if (c === '"' || c === "'") q = c; else if (c === '>') break;
+    }
+    if (j >= xml.length) return null;
+    return { tag: xml.slice(i, j + 1), at: i, end: j + 1, selfClosing: xml[j - 1] === '/' };
+  }
+  return null;
+}
+
+/** Every start tag named `name` in `xml`, in order (startTag's results). */
+export function* startTags(xml, name) {
+  for (let t = startTag(xml, name); t; t = startTag(xml, name, t.end)) yield t;
+}
+
+/** Where attribute `name` (its qualified name) is in a start tag's text: [value start, value end], or null. */
+function attrSpan(tag, name) {
+  let i = tag.search(NAME_END);
+  if (i < 0) return null;
+  while (i < tag.length) {
+    while (i < tag.length && /\s/.test(tag[i])) i++;
+    let k = i;
+    while (k < tag.length && !/[\s=/>]/.test(tag[k])) k++;
+    if (k === i) return null;
+    const attr = tag.slice(i, k);
+    while (k < tag.length && /\s/.test(tag[k])) k++;
+    if (tag[k] !== '=') return null;
+    k++;
+    while (k < tag.length && /\s/.test(tag[k])) k++;
+    const q = tag[k];
+    if (q !== '"' && q !== "'") return null;
+    const end = tag.indexOf(q, k + 1);
+    if (end < 0) return null;
+    if (attr === name) return [k + 1, end];
+    i = end + 1;
+  }
+  return null;
+}
+
+/** Attribute `name`'s value in a start tag's text, as written (entities not decoded), or null. */
+export const tagAttr = (tag, name) => { const s = tag && attrSpan(tag, name); return s ? tag.slice(s[0], s[1]) : null; };
+
+/** The start tag with attribute `name`'s value replaced by `value` (written as given), or as it was without one. */
+export const setTagAttr = (tag, name, value) => { const s = attrSpan(tag, name); return s ? tag.slice(0, s[0]) + value + tag.slice(s[1]) : tag; };
+
+/** A start tag's element as text: itself when self-closing, else to the first `</name>` after it (null when none). */
+export const elementText = (xml, t, name) => {
+  if (t.selfClosing) return t.tag;
+  const close = xml.indexOf(`</${name}>`, t.end);
+  return close < 0 ? null : xml.slice(t.at, close + name.length + 3);
+};
