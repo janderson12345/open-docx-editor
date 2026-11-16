@@ -155,8 +155,12 @@ export function createPages(view, session, { sheet, scope }) {
   // (With notes at its foot, the body's text keeps clear of the separator by a few px more: Word's separator is a line
   // of its own, and a line of body text ending 4px above our note box went to the next page in Word.)
   const bandH = (p) => { const b = bandOf(p); return Math.max(notesH.get(b) || 0, colGeo(p) ? notesHPrev.get(b) || 0 : 0); };
-  // In columns over a band of notes, a paragraph's last line keeps its space after above the band, as in Word.
-  const bandAfter = (p, node) => (colGeo(p) && bandH(p) ? spaceAfter(node) : 0);
+  // Footnotes at the foot of page p (not endnotes, which follow the text).
+  const footBand = (p) => !!bandH(p) && !!noteFlow.get(bandOf(p))?.items.some((r) => r.kind === 'footnote');
+  // Over a band of notes, a paragraph's last line keeps its space after above the band, as in Word: in columns, and over
+  // footnotes in one, where multiple spacing's extra under a line doesn't pass the band's top either, as it may the
+  // margin (longfn-word2 fnhuge page 2, where Word moves Text 6's last two lines on; longfn-word fnlate's third page).
+  const bandAfter = (p, node) => (bandH(p) && (colGeo(p) || footBand(p)) ? spaceAfter(node) : 0);
   const contentBottom = (p) => {
     const h = bandH(p);
     return Math.min(pageTop(p) + pageH(p) - marginsAt(p).bottom - (h ? h + NOTE_BODY_GAP : 0), cuts.get(p) ?? Infinity);
@@ -1153,22 +1157,24 @@ export function createPages(view, session, { sheet, scope }) {
       const top = lines[n].top + shift + extra;
       const bottom = lines[n].bottom + shift + extra - (n < lines.length - 1 ? inset : 0);
       const pg = pageOf(top);
+      // (Its last line's space after above a band of notes: bandAfter.)
+      const fitBottom = bottom + (n === lines.length - 1 ? bandAfter(pg, b.node) : 0) + (footBand(pg) ? Math.max(0, slack) : 0);
       // (Only asked for a line that wouldn't fit with all of them.)
-      const room = (k) => (bottom > contentBottom(pg) + slack && ownNotes.length ? bottomFor(pg, k) : contentBottom(pg));
+      const room = (k) => (fitBottom > contentBottom(pg) + slack && ownNotes.length ? bottomFor(pg, k) : contentBottom(pg));
       let at = -1;
       if (lines[n].forced) {
         // A paragraph that starts a page with a page break: the break already happened (Word doesn't add a blank page).
         if (n === 1 && moved && pushes.length === 0 && leadingBreak(b.el)) continue;
         at = n;
       }
-      else if (bottom > room(n) + slack && n > pageStart && !(ownNotes.length && partialFits(pg, n, bottom))) {
+      else if (fitBottom > room(n) + slack && n > pageStart && !(ownNotes.length && partialFits(pg, n, bottom))) {
         if (keepLines(b.node) && pushes.length === 0) return blockFirstOnPage ? { pushes, total: 0 } : null;
         at = n;
         if (widow) {
           at = widowCut(at, lines.length, blockFirstOnPage, pageStart);
           if (at < 0) return null;
         }
-      } else if (bottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
+      } else if (fitBottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
       // (A first line that only holds a page break stays at the bottom of its page, as in Word: the text after it starts the next.)
       if (at < 0) continue;
       const lineTop = lines[at].top + shift + extra;
@@ -2231,7 +2237,7 @@ export function createPages(view, session, { sheet, scope }) {
           overflow = true;
         }
       }
-      else if (lineSplits && !inCols && b.node.type === schema.nodes.paragraph && (hasPageBreak(b.node) || b.bottom + shift > contentBottom(p) + lineSlack(b.el) - 1 - tie(b.el))) {
+      else if (lineSplits && !inCols && b.node.type === schema.nodes.paragraph && (hasPageBreak(b.node) || b.bottom + shift + bandAfter(p, b.node) > contentBottom(p) + (footBand(p) ? 0 : lineSlack(b.el) - 1) - tie(b.el))) {
         // Paragraphs continue on the next page line by line (and after a page break), as in Word.
         const split = splitParagraph(b, shift, firstOnPage);
         if (split && split.pushes.length) {
