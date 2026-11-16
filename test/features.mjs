@@ -1426,6 +1426,17 @@ const cdXml = strFromU8(unzipSync(new Uint8Array(cdBytes))['word/document.xml'])
 check(cdTracked.cells === cellsBefore && cdTracked.del === 1 && cdPlain.cells === cellsBefore - 1 && cdPlain.del === 0 && /<w:gridAfter w:val="\d+"\/>/.test(cdXml), // (the first row's second cell spans two columns: gridAfter 2)
   `Delete Cells: tracked, the cell recorded as deleted; not tracked, it goes and its row ends in a gridAfter (${JSON.stringify({ cellsBefore, cdTracked, cdPlain })})`);
 
+// A line holding a picture beside text (picfix.js): Word's is the picture (36pt), the font's descent and all of the
+// "multiple" extra (picline.docx, Word-made: ..\picline-word). The advance to the next paragraph, each 0 apart.
+await open('picline.docx');
+const picAdv = await page.evaluate(() => {
+  const ps = [...document.querySelectorAll('.odx-content > p')];
+  return ps.filter((p) => /picture line/.test(p.textContent)).map((p) => [p.textContent.trim().slice(0, 24), +(ps[ps.indexOf(p) + 1].getBoundingClientRect().top - p.getBoundingClientRect().top).toFixed(2)]);
+});
+// (descent: Aptos 0.2817em, Calibri 0.2686em (its Windows descent), Times New Roman 0.2163em; extra: (multiple - 1) x line)
+const picWant = [48 + 4.507 + 3.093, 48 + 4.507, 48 + 4.507 + 9.766, 48 + 4.507 + 19.531, 48 + 3.939 + 1.418, 48 + 3.939, 48 + 3.461, 48 + 3.461 + 9.199];
+check(picAdv.length === 8 && picAdv.every((a, i) => Math.abs(a[1] - picWant[i]) < 0.75), `picture lines as tall as Word's: ${JSON.stringify(picAdv.map((a, i) => [a[0], a[1], +picWant[i].toFixed(2)]))}`);
+
 await open('strict.docx');
 const strictText = await page.evaluate(() => document.querySelector('.odx-content td')?.textContent);
 check(strictText === 'Half the page wide', 'a Strict document opens');
