@@ -107,17 +107,28 @@ function writeLegacy(tr, f, value) {
     tr.setNodeMarkup(f.begin, null, { ...beginNode.attrs, xml });
     return;
   }
-  let marks = beginNode.marks;
-  tr.doc.nodesBetween(f.from, f.to, (n) => { if (n.isText) marks = n.marks; });
   let text = value == null || value === '' ? '\u2002\u2002\u2002\u2002\u2002' : String(value).replace(/\r\n?/g, '\n'); // Word's empty text field: five en spaces
   // A value longer than the field's maximum length is cut to it, as Word does (a line break counts as one character).
   if (f.maxLength && value != null && value !== '') text = [...text].slice(0, f.maxLength).join('');
+  replaceLines(tr, f.from, f.to, text, legacyMarks(tr.doc, f));
+}
+
+/** The run formatting of a legacy text field's result: its (last) text's, else its begin's. */
+function legacyMarks(doc, f) {
+  let marks = doc.nodeAt(f.begin).marks;
+  doc.nodesBetween(f.from, f.to, (n) => { if (n.isText) marks = n.marks; });
+  return marks;
+}
+
+/** Replace from..to (within a legacy text field) with `text`, its lines as paragraphs. */
+function replaceLines(tr, from, to, text, marks) {
   const lines = text.split('\n');
-  const $from = tr.doc.resolve(f.from);
-  const $to = tr.doc.resolve(f.to);
+  const $from = tr.doc.resolve(from);
+  const $to = tr.doc.resolve(to);
   if (lines.length === 1 && $from.sameParent($to)) {
-    if (f.from === f.to) tr.insert(f.from, schema.text(text, marks));
-    else tr.replaceWith(f.from, f.to, schema.text(text, marks));
+    if (!text) tr.delete(from, to);
+    else if (from === to) tr.insert(from, schema.text(text, marks));
+    else tr.replaceWith(from, to, schema.text(text, marks));
     return;
   }
   // Each line a paragraph, as Word writes them: the first goes on in the field's own paragraph, the last ends in the
@@ -127,7 +138,7 @@ function writeLegacy(tr, f, value) {
     const end = i === lines.length - 1 && !$from.sameParent($to);
     return (end ? $to : $from).parent.type.create(end ? $to.parent.attrs : split, l ? schema.text(l, marks) : null);
   });
-  tr.replace(f.from, f.to, new Slice(Fragment.from(paras), 1, 1));
+  tr.replace(from, to, new Slice(Fragment.from(paras), 1, 1));
 }
 
 /** Field values as { name: value } (name = tag, else title); repeated names give the first. */
@@ -229,14 +240,37 @@ export const formsKey = new PluginKey('odx-forms');
 const inField = (fields, from, to) => fields.some((f) => from >= f.from && to <= f.to);
 
 // A legacy text field's length as Word counts it: its characters, a paragraph mark one, its blank (en spaces) none.
-const ffLength = (f) => [...f.text.replace(/\u2002/g, '')].length;
+const ffLength = (s) => [...s.replace(/\u2002/g, '')].length;
 /** Whether an edit takes a legacy text field past its maximum length (typing there is refused, as in Word). */
 function overLength(before, after) {
   const now = legacyFields(after);
   if (!now.some((f) => f.maxLength)) return false;
   const was = legacyFields(before);
   if (was.length !== now.length) return false;
-  return now.some((f, i) => f.maxLength && ffLength(f) > f.maxLength && ffLength(f) > ffLength(was[i]));
+  return now.some((f, i) => f.maxLength && ffLength(f.text) > f.maxLength && ffLength(f.text) > ffLength(was[i].text));
+}
+
+/**
+ * A paste into a legacy text field that would take it past its maximum length: its text, cut to the room left, goes in
+ * instead (true), in the field's formatting. A paste that fits is left to the editor (false).
+ */
+function pasteToFit(view, slice) {
+  const { state } = view;
+  const { from, to } = state.selection;
+  const f = legacyFields(state.doc).find((x) => x.kind === 'text' && x.maxLength && from >= x.from && to <= x.to);
+  if (!f) return false;
+  const text = slice.content.textBetween(0, slice.content.size, '\n', (leaf) => (leaf.type === schema.nodes.hard_break ? '\n' : '')).replace(/\r\n?/g, '\n');
+  const room = f.maxLength - (ffLength(f.text) - ffLength(state.doc.textBetween(from, to, '\n')));
+  if (ffLength(text) <= room) return false;
+  // (Word's blank, the en spaces, goes when the field is pasted into.)
+  const cut = [...text.replace(/\u2002/g, '')].slice(0, Math.max(0, room)).join('');
+  const tr = state.tr;
+  const blank = !f.value;
+  const end = blank ? f.to : to;
+  replaceLines(tr, blank ? f.from : from, end, cut, legacyMarks(state.doc, f));
+  // (The caret after what was pasted, as a paste leaves it.)
+  if (tr.docChanged) view.dispatch(tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(end))).setMeta('uiEvent', 'paste').scrollIntoView());
+  return true;
 }
 
 const shadeKey = new PluginKey('odx-ff-shade');
@@ -331,6 +365,8 @@ export function formsPlugin() {
       return tr.docChanged ? tr.setMeta(formsKey, { allow: true }) : null;
     },
     props: {
+      // A paste too long for a legacy text field is cut to fit (typing past its maximum length is refused).
+      handlePaste: (view, event, slice) => formsKey.getState(view.state) && pasteToFit(view, slice),
       // Tab and Shift+Tab move between fields, as in a protected Word form.
       handleKeyDown(view, e) {
         if (!formsKey.getState(view.state)) return false;

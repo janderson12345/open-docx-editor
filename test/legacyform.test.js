@@ -2,7 +2,8 @@ import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { EditorState } from 'prosemirror-state';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import { Fragment, Slice } from 'prosemirror-model';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { blankDocxBytes } from '../src/ooxml/template.js';
 import { listFields, fieldValues, setFieldValues, formsPlugin, formsKey } from '../src/editor/fields.js';
@@ -85,6 +86,39 @@ test('a legacy text field keeps to its maximum length, filled in or typed into',
   state = state.applyTransaction(state.tr.delete(end() - 1, end())).state;
   assert.equal(type('z'), true);
   assert.equal(fieldValues(state.doc).Short, 'abcdz');
+});
+
+test('a paste too long for a legacy text field is cut to fit, in forms mode', () => {
+  const s = open(`<w:p>${fld(['Short', '<w:textInput><w:maxLength w:val="5"/></w:textInput>'], 'FORMTEXT', t('ab'))}</w:p>`
+    + `<w:p>${fld(['Blank', '<w:textInput><w:maxLength w:val="4"/></w:textInput>'], 'FORMTEXT', t('     '))}</w:p>`);
+  const plugins = [formsPlugin()].flat();
+  let state = EditorState.create({ doc: s.doc, plugins });
+  state = state.apply(state.tr.setMeta(formsKey, { on: true }));
+  const view = { get state() { return state; }, dispatch(tr) { state = state.applyTransaction(tr).state; } };
+  const paste = (from, to, slice) => {
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from, to)));
+    return plugins.find((p) => p.spec.key === formsKey).props.handlePaste(view, null, slice);
+  };
+  const field = (name) => listFields(state.doc).find((f) => f.tag === name);
+  const text = (str) => new Slice(Fragment.from(schema.text(str)), 0, 0);
+  // After "ab": room for 3 of "XYZW".
+  assert.equal(paste(field('Short').to, field('Short').to, text('XYZW')), true);
+  assert.equal(fieldValues(state.doc).Short, 'abXYZ');
+  assert.equal(state.selection.from, field('Short').to);
+  // Over a selection: what's selected makes room ("bX" selected: room for "12" of "12345").
+  const f = field('Short');
+  assert.equal(paste(f.from + 1, f.from + 3, text('12345')), true);
+  assert.equal(fieldValues(state.doc).Short, 'a12YZ');
+  // A full field takes nothing more.
+  assert.equal(paste(field('Short').to, field('Short').to, text('Q')), true);
+  assert.equal(fieldValues(state.doc).Short, 'a12YZ');
+  // A paste that fits is left to the editor.
+  assert.equal(paste(field('Short').from, field('Short').from + 2, text('hi')), false);
+  // Into the blank field, its en spaces replaced; a line break counts one.
+  const two = new Slice(Fragment.from([schema.nodes.paragraph.create(null, schema.text('ab')), schema.nodes.paragraph.create(null, schema.text('cdef'))]), 1, 1);
+  assert.equal(paste(field('Blank').from + 1, field('Blank').from + 1, two), true);
+  assert.equal(fieldValues(state.doc).Blank, 'ab\nc');
+  assert.equal(fieldValues(state.doc).Short, 'a12YZ');
 });
 
 test('a one-line value written into a two-paragraph text field joins it into one paragraph', () => {
