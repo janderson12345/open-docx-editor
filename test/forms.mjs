@@ -2,13 +2,17 @@
 // a person filling the form would: Tab into the first field and type; typing outside a field changes nothing; Space
 // ticks the check box; Enter opens the drop-down's list and the date's calendar; Shift+Tab goes back; the rich-text
 // field takes text. Then the values read back through the API, survive saving (read again from the saved bytes), and
-// the saved file is sound (tools/check-ooxml.mjs). The saved file is left in test/out/form.filled.docx.
+// the saved file is sound (tools/check-ooxml.mjs). The saved file is left in test/out/form.filled.docx. Last, a legacy
+// text field with a maximum length: a paste too long for it is cut to fit.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import './setup.js';
 import { readFieldValues } from '../src/fieldsNode.js';
 import { serveDemo, launchOptions } from './browser.mjs';
+import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
+import { DocxSession } from '../src/ooxml/docx.js';
+import { blankDocxBytes } from '../src/ooxml/template.js';
 
 const { server } = serveDemo();
 const launch = launchOptions();
@@ -88,6 +92,38 @@ const live = await values();
 check(JSON.stringify(back) === JSON.stringify(live), `saved file has the same values ${JSON.stringify(back)}`);
 try { execFileSync(process.execPath, ['tools/check-ooxml.mjs', 'test/out/form.filled.docx'], { stdio: 'pipe' }); check(true, 'saved file is sound'); }
 catch (e) { check(false, `saved file: ${e.stdout}`); }
+
+// A legacy text field (FORMTEXT) with a maximum length of 5, blank as Word leaves it (five en spaces): a paste too long
+// for it goes in cut to fit, a paste into a full field adds nothing, typing there is refused. (A paste event of our
+// own, so the system clipboard is left alone.)
+{
+  const files = unzipSync(blankDocxBytes());
+  const mainPath = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  const fld = '<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Short"/><w:enabled/><w:calcOnExit w:val="0"/><w:textInput><w:maxLength w:val="5"/></w:textInput></w:ffData></w:fldChar></w:r>'
+    + '<w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+    + '<w:r><w:t xml:space="preserve">     </w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+  files[mainPath] = strToU8(strFromU8(files[mainPath]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body><w:p><w:r><w:t xml:space="preserve">Code: </w:t></w:r>${fld}</w:p>$1`));
+  fs.writeFileSync('test/out/legacyform.docx', zipSync(files));
+  await page.setInputFiles('input[type=file]', 'test/out/legacyform.docx');
+  await page.waitForFunction(() => window.odx?.fileName === 'legacyform.docx');
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.odx.setForms(true));
+  await page.click('.odx-content p', { position: { x: 5, y: 5 } }); // (the caret goes to the field, its blank selected)
+  const paste = (text) => page.evaluate((t) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', t);
+    document.querySelector('.odx-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+  await paste('Bartholomew');
+  check((await values()).Short === 'Barth', `a paste too long for a legacy field is cut to fit (${(await values()).Short})`);
+  check(await page.evaluate(() => document.querySelector('.odx-content').textContent.includes('Code: Barth')), '... and shows on the page');
+  await paste('XYZ');
+  await page.keyboard.type('Q');
+  check((await values()).Short === 'Barth', `a full legacy field takes no more, pasted or typed (${(await values()).Short})`);
+  await page.keyboard.press('Backspace');
+  await paste('ZZZ');
+  check((await values()).Short === 'BartZ', `room made, a paste fills it (${(await values()).Short})`);
+}
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 
 await browser.close();
