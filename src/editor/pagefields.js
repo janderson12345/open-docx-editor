@@ -65,7 +65,7 @@ export function fillFields(root, values) {
     const v = values[name];
     if (name !== 'PAGE' || v == null) return v;
     const sw = /\\\*\s*(\w+)/.exec(instr || '');
-    return formatNumber(Number(v), sw && sw[1] in FMT ? FMT[sw[1]] : values.PAGEFMT);
+    return formatNumber(Number(v), sw && Object.hasOwn(FMT, sw[1]) ? FMT[sw[1]] : values.PAGEFMT); // (own keys only: the switch is the document's)
   };
   root.querySelectorAll('[data-kind="fldSimple"][data-instr]').forEach((f) => {
     const v = valueOf(f.dataset.instr);
