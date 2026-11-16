@@ -9,6 +9,7 @@ import { editChart, chartXmlAt } from './charts.js';
 import { zoomOf } from './zoom.js';
 import { PRESETS } from '../ooxml/presets.js';
 import { adjustHandles, dragAdjust } from '../ooxml/geometry.js';
+import { padOf } from '../ooxml/place.js';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN = 8; // px
@@ -59,14 +60,13 @@ export function imageResizePlugin() {
       // The drawing's own box (px), in the page's own px whatever the zoom: its picture less the room drawn around it
       // for arrowheads (--odx-pad), unturned, where it's drawn (a turned shape's picture is turned about its centre, and
       // moved as Word draws it: reader.js turned), with its centre (cx, cy) and turn.
-      const padOf = (node) => Number(/--odx-pad:([\d.]+)px/.exec(node.attrs.place || '')?.[1]) || 0;
       const boxOf = () => {
         const z = zoomOf(view);
         const { img, node } = target;
         const r = img.getBoundingClientRect();
         const t = getComputedStyle(img).transform;
         const m = t && t !== 'none' ? new DOMMatrix(t) : null;
-        const pad = padOf(node);
+        const pad = padOf(node.attrs.place);
         const w = m ? parseFloat(img.style.width) || node.attrs.width + 2 * pad : r.width / z;
         const h = m ? parseFloat(img.style.height) || node.attrs.height + 2 * pad : r.height / z;
         const cx = (r.left + r.right) / 2 / z, cy = (r.top + r.bottom) / 2 / z;
@@ -131,7 +131,7 @@ export function imageResizePlugin() {
       // The drawing redrawn while a handle is dragged (its picture and size), and the step that keeps the result.
       const preview = (r) => {
         const { img, node } = target;
-        const pad = padOf({ attrs: { place: r.place ?? node.attrs.place } });
+        const pad = padOf(r.place ?? node.attrs.place);
         if (r.src) img.src = r.src;
         img.style.width = `${r.width + 2 * pad}px`;
         img.style.height = `${r.height + 2 * pad}px`;
@@ -167,7 +167,7 @@ export function imageResizePlugin() {
         const h0 = b0.height;
         const x0 = e.clientX;
         const y0 = e.clientY;
-        const pad = padOf(node);
+        const pad = padOf(node.attrs.place);
         // Proportions kept: a picture's always (Word locks them), a shape's when it's locked to them or with Shift.
         const locked = !isShape(node) || /\bnoChangeAspect="(?:1|true)"/.test(node.attrs.xml || '');
         let w = w0;

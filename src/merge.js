@@ -8,9 +8,9 @@ import { DocxSession } from './ooxml/docx.js';
 import { schema } from './editor/schema.js';
 import { marksFromRPr } from './ooxml/reader.js';
 import { withSectType } from './editor/commands.js';
+import { unescapeXml } from './ooxml/xml.js';
 
 const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'fldChar' ? (/fldCharType="(\w+)"/.exec(n.attrs.xml) || [])[1] : null);
-const unescapeXml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const instrOf = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'instrText' ? unescapeXml((/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/.exec(n.attrs.xml) || [])[1] || '') : null);
 
 /** A field instruction's name and its merge field's name: ` MERGEFIELD "First Name" \* Upper ` -> MERGEFIELD, First Name. */

@@ -11,6 +11,7 @@ import { TWIPS_PER_PX } from '../ooxml/units.js';
 import { textEffectsCss, hasTextEffects } from '../ooxml/texteffects.js';
 import { wordDate } from './util.js';
 import { shownSrc, redrawOf, drawnSrc } from './svgfonts.js';
+import { padOf } from '../ooxml/place.js';
 
 /** A link's address as the page may follow it: web, mail and phone links only (a document's javascript: or data: link
  * would run in the page when clicked in read-only mode). The document keeps its address as it was. */
@@ -227,7 +228,7 @@ export const schema = new Schema({
         if (n.attrs.src && n.attrs.xml) shownImages.set(n.attrs.src, n.attrs);
         const link = n.attrs.href && safeHref(n.attrs.href);
         // (A shape drawn with room around its box for its outline: reader.js readDrawing's --odx-pad.)
-        const pad = Number(/--odx-pad:([\d.]+)px/.exec(n.attrs.place || '')?.[1]) || 0;
+        const pad = padOf(n.attrs.place);
         // (A shape's picture with the stand-in fonts its text needs embedded, svgfonts.js: copy and paste find the node by it too.)
         const shown = shownSrc(n.attrs.src, (copy, src) => { if (shownImages.has(src)) shownImages.set(copy, shownImages.get(src)); });
         if (shown !== n.attrs.src && n.attrs.xml) shownImages.set(shown, n.attrs);

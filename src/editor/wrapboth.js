@@ -9,6 +9,7 @@
 // edits (mapped) and checked again on each pass.
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { padOf } from '../ooxml/place.js';
 
 const key = new PluginKey('odx-wrapboth');
 const spacer = (w) => () => {
@@ -83,7 +84,7 @@ function zones(view, stories) {
     const [t, rt, b, l] = v.length === 4 ? v : [0, 0, 0, 0];
     // (Its own box: less the room drawn round its outline, reader.js padPlace's --odx-pad. floatshapes-word's 6pt-outlined
     // rectangle by Text 2, its lines' words otherwise kept that much further off each side.)
-    const pad = Number(/--odx-pad:\s*([\d.]+)px/.exec(img.getAttribute('style') || '')?.[1]) || 0;
+    const pad = padOf(img.getAttribute('style'));
     out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + pad - t, bottom: r.bottom - pad + b });
   }
   // A float drawn up to end at its page's edge (pages.js floatsPast) over lines of paragraphs above its own: Word lays

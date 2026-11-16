@@ -4,6 +4,7 @@
 // (data: URLs of the files the page's own @font-face rules load: fonts.css, open-metric-fonts, the host's substitutes),
 // once they're fetched; until then it shows as drawn. Only what's shown changes: the node keeps the picture as drawn
 // (schema.js maps the copy back to it for copy and paste).
+import { unescapeXml } from '../ooxml/xml.js';
 
 const done = new Map(); // a picture as drawn -> the copy shown (itself when it needs nothing)
 const pending = new Set();
@@ -99,11 +100,11 @@ export async function withFonts(src) {
   const svg = decode(src);
   if (!svg || !/<text\b|<tspan\b/.test(svg)) return null;
   const stacks = new Set();
-  for (const m of svg.matchAll(/font-family(?:="([^"]*)"|='([^']*)'|\s*:\s*([^;"'>]+))/g)) stacks.add(unescape(m[1] ?? m[2] ?? m[3]));
+  for (const m of svg.matchAll(/font-family(?:="([^"]*)"|='([^']*)'|\s*:\s*([^;"'>]+))/g)) stacks.add(unescapeXml(m[1] ?? m[2] ?? m[3]));
   if (!stacks.size) return null;
   const bold = /font-weight(?:=["']|\s*:\s*)(bold|[6-9]00)/.test(svg);
   const italic = /font-style(?:=["']|\s*:\s*)(italic|oblique)/.test(svg);
-  const text = unescape([...svg.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(''));
+  const text = unescapeXml([...svg.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(''));
   const rules = faceRules();
   const want = new Set();
   for (const stack of stacks) {
@@ -157,7 +158,6 @@ function decode(src) {
   }
 }
 
-const unescape = (s) => s.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d)).replace(/&#x([\da-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, '&');
 
 /** The page's @font-face rules: { family (lower case), url, format, weight, italic, range, distance(w) }. */
 function faceRules() {
