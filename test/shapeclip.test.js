@@ -58,3 +58,10 @@ test('a floating shape wrapped round keeps the text clear of its effect extent p
   const fx = /<wp:effectExtent l="(\d+)" t="(\d+)" r="(\d+)" b="(\d+)"/.exec(rect.xml).slice(1).map(px);
   assert.deepEqual([t, r, b, l], [fx[1], 12 + fx[2], fx[3], 12 + fx[0]].map((v) => +v.toFixed(2)), rect.place);
 });
+
+test('an outline\'s corners: round on a shape with no style (a text box), mitred on one taking its theme line style', () => {
+  const svgOf = (a) => decodeURIComponent(a.src.replace(/^data:image\/svg\+xml[^,]*,/, ''));
+  assert.match(svgOf(named('Text Box 8')), /<path d="[^"]*Z?"[^>]*stroke-linejoin="round"/);
+  assert.match(svgOf(named('Rectangle 3')), /stroke-miterlimit="8"/);
+  assert.doesNotMatch(svgOf(named('Rectangle 3')), /stroke-linejoin="round"/);
+});
