@@ -483,7 +483,13 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   }
   layBlocks(desc(txbx, 'txbxContent'), l, w - r, null);
   ctx.textEnd = y + ins('bIns', 4.8); // (where the text ends, for a box that grows to fit it: shapeSvg)
-  return out.join('');
+  // The text's place top to bottom (wps:bodyPr anchor): Word's own shapes centre theirs ("ctr"; groupturn-word's
+  // "Text" in the middle of each shape). Only text shorter than its room moves: more stays at the top, where a box that
+  // grows to fit it has it.
+  const anchor = bodyPr?.getAttribute('anchor');
+  const room = h - ins('bIns', 4.8) - y;
+  const dy = room > 0 ? (anchor === 'ctr' ? room / 2 : anchor === 'b' ? room : 0) : 0;
+  return dy ? `<g transform="translate(0 ${+dy.toFixed(2)})">${out.join('')}</g>` : out.join('');
 }
 
 /**

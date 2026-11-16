@@ -97,3 +97,13 @@ test('a group with shapes turned inside it is known, so its room for them doesn\
   assert.equal(turnedInside(drawing(group(200, 100, 200, 100, sp(0, 0, 80, 50, ' flipH="1"')))), false);
   assert.equal(turnedInside(drawing(sp(0, 0, 80, 50, ' rot="1800000"'))), false);
 });
+
+test('a shape\'s text placed top to bottom as its bodyPr anchor says: centred (Word\'s own shapes), at the bottom, at the top', () => {
+  const svg = (anchor) => shapesSvg(drawing(sp(0, 0, 200, 110, '', `<wps:txbx><w:txbxContent><w:p><w:r><w:t>One line</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr${anchor ? ` anchor="${anchor}"` : ''}/>`)), ctx, 200, 110);
+  const dy = (s) => Number((s.match(/<g transform="translate\(0 ([\d.]+)\)"><text/) || [])[1] || 0);
+  // (anchor.docx, made by Word: one line in a 200 x 110 shape, within 0.12pt of Word's centred, 0.5pt of its bottom.)
+  assert.ok(dy(svg('ctr')) > 30, String(dy(svg('ctr'))));
+  assert.ok(Math.abs(dy(svg('b')) - 2 * dy(svg('ctr'))) < 0.02);
+  assert.equal(dy(svg('t')), 0);
+  assert.equal(dy(svg('')), 0);
+});
