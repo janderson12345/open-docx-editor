@@ -204,6 +204,13 @@
    text: no alternative text for screen readers, no selection or clicks. */
 .odx-rf { position: relative; }
 .odx-rf::after { content: attr(data-odx-rf) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; transform-origin: 0 100%; transform: translateY(var(--odx-rf-gap, 0)) scaleY(-1); -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); background-image: var(--odx-fill-bg, none); -webkit-background-clip: text; background-clip: text; pointer-events: none; user-select: none; }
+/* An inner shadow (a w14:shadow scaled to nothing, texteffects.js): each word of the run drawn again over itself
+   (textspans.js), placed as a reflection's copy is, through the shadow's SVG filter, which keeps only the shadow inside
+   the letters (the copy's own paint is only its letters' shape, so solid black, no outline or other effects). The words
+   under it stay the text: selected, copied, found and read out as ever; the copy takes no room and no clicks. (A
+   browser without CSS filters on HTML draws no shadow.) */
+.odx-is { position: relative; }
+.odx-is::before { content: attr(data-odx-is) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; color: #000; -webkit-text-fill-color: #000; -webkit-text-stroke: 0; text-shadow: none; text-emphasis: none; background: none; filter: var(--odx-is, none); pointer-events: none; user-select: none; }
 .odx-content p.odx-li.odx-picbullet::before { content: var(--odx-picbullet); } /* a picture bullet, its foot on the baseline as in Word */
 .odx-content p.odx-li.odx-contlines::before { content: none; } /* a paragraph's lines going on in a column of another width (pages.js) */
 /* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the
