@@ -21,12 +21,15 @@ const SHARE_WEIGHT = 0.3;
 /**
  * Whether Word squeezes a word of width `w` on to a line it sticks out of by `over` px, its `n` spaces (`spaceW` px
  * wide in all, of fonts `em` px in all) narrowed to take it. Also for each side of a line split beside a shape
- * (wrapboth.js; wrap-word2 wj-both: the words after the shape squeezed as a line's are).
+ * (wrapboth.js, `side`; wrap-word2 wj-both: the words after the shape squeezed as a line's are): there by the spaces'
+ * limits alone, however far the word sticks out (wrap-word3, Word's print of six documents with a rectangle beside
+ * each paragraph: of 128 sides it squeezed, the most by 24.9% of their spaces' width, of those it left a word off the
+ * least by 25.4%; "a" squeezed on to a side it stuck out of by 44% of its width, past MAX_OUT).
  */
-export function squeezeFits(over, n, spaceW, em, w) {
+export function squeezeFits(over, n, spaceW, em, w, side = false) {
   if (!n) return false;
   const per = Math.min(MAX_SQUEEZE * spaceW, MAX_SQUEEZE_EM * em) / n; // the most each space may lose
-  return over / n <= per && over / w + SHARE_WEIGHT * over / spaceW <= MAX_OUT;
+  return over / n <= per && (side || over / w + SHARE_WEIGHT * over / spaceW <= MAX_OUT);
 }
 
 const key = new PluginKey('odx-justify');

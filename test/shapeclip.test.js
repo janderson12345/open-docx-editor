@@ -80,9 +80,11 @@ test('in a Word 2010 document (compatibility mode 14), one centred across the pa
 
 test('a floating shape wrapped round keeps the text clear of its effect extent past its wrap distance', () => {
   const rect = named('Rectangle 3');
-  const [t, r, b, l] = placeVar(rect.place, 'odx-both').split(' ').map(parseFloat);
+  const [t, r, b, l, fxT] = placeVar(rect.place, 'odx-both').split(' ').map(parseFloat);
   const fx = /<wp:effectExtent l="(\d+)" t="(\d+)" r="(\d+)" b="(\d+)"/.exec(rect.xml).slice(1).map(px);
   assert.deepEqual([t, r, b, l], [fx[1], 12 + fx[2], fx[3], 12 + fx[0]].map((v) => +v.toFixed(2)), rect.place);
+  // (And the extent's share of the top apart: a paragraph above, its space after, doesn't reach into it: wrapboth.js.)
+  assert.equal(fxT, +fx[1].toFixed(2), rect.place);
 });
 
 test('an outline\'s corners: round on a shape with no style (a text box), mitred on one taking its theme line style', () => {
