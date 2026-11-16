@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Mail merge: NEXT, NEXTIF and SKIPIF**, as in Word's merge: NEXT and NEXTIF move on to the next record within the
+  same document (several records to a page), and SKIPIF leaves a document out. Headers and footers are filled from the
+  record the document ended on, MERGESEQ counts the merged documents, and Preview Results shows them as Word's preview
+  does.
+- **Footnotes and endnotes in columns**: a band of footnotes taller than its page stays in the section's columns,
+  carried on to the next page's band, as Word lays it out (it fell back to one band the text's width). Endnotes in
+  columns, right to left too, go under the text's end in the section's direction, and on a page of their own from the
+  top, as Word prints them; the text's columns are no longer cut short for them. Note heights are worked out again only
+  from the first band that changed (400 notes in two columns: 0.8s to 0.14s).
+- **Lines holding an inline picture are as tall as Word makes them** in every font and line spacing: the picture, the
+  font's descent and all of multiple spacing's extra under it; at-least lines the larger of their length and the
+  picture, exact lines their length with the picture cut to it, a picture alone on its line no shorter than a line of
+  its font. Aptos picture lines were about 0.5pt short each. Text beside a floating picture prints on Word's baseline.
+- **Text on both sides of a shape**: the line after the shape's foot is measured from its own top, as Word does; each
+  side of a split justified line squeezes by Word's limit for its spaces; a side too narrow for a word stays empty;
+  long documents with many such shapes now settle, where their lines had kept changing and words were left under the
+  shapes.
+- **Borders of two or three lines** (thick-thin, thin-thick-thin, triple, with small, medium or large gaps) take the
+  full width Word gives them, so text below them starts where Word puts it. A text box's text is inset from the inside
+  of its outline (half the outline's width), as Word does.
+- **Accept All and Reject All on long documents are linear** (4 times the changes took 11 times as long), and opening
+  one builds its text spans a block at a time (6,400 paragraphs: 0.35s to 6ms). A scaling test of stress documents
+  fails on a return to quadratic behaviour, whatever the machine's speed.
 - **WordArt wider than the column wraps**, as Word's: its box (not wrapped, resized to fit its text) is as wide as its
   text but never wider than the column, its lines wrapping there (a word longer than that letter by letter), centred
   in it, while typing and when drawn; Word's own files print as in Word (checked against Word's print at 36 and 54pt,
