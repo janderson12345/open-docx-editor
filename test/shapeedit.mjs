@@ -249,6 +249,21 @@ const atOffset = await page.evaluate(() => {
   return { top: img.getBoundingClientRect().top + pad - para.getBoundingClientRect().top, off };
 });
 check(Math.abs(atOffset.top - atOffset.off) <= 1, `a floating line at its offset, its arrowheads' room not added (${atOffset.top.toFixed(1)} vs ${atOffset.off.toFixed(1)})`);
+// The line behind the text: drawn over its page's sheet, under the text (it had been under the sheet, unseen). (What's
+// hit at a point is what's drawn on top there: the sheets, made hit-testable for the moment, by their order.)
+const behind = await page.evaluate(() => {
+  const img = [...document.querySelectorAll('.odx-content img')].find((e) => /z-index:\s*-1/.test(e.getAttribute('style') || ''));
+  const r = img.getBoundingClientRect();
+  const layer = document.querySelector('.odx-sheets');
+  layer.style.pointerEvents = 'auto';
+  for (const s of layer.querySelectorAll('.odx-sheet')) s.style.pointerEvents = 'auto';
+  const hits = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  layer.style.pointerEvents = '';
+  for (const s of layer.querySelectorAll('.odx-sheet')) s.style.pointerEvents = '';
+  const sheet = hits.findIndex((e) => e.classList.contains('odx-sheet'));
+  return { img: hits.indexOf(img), sheet, content: hits.findIndex((e) => e.classList.contains('odx-content')) };
+});
+check(behind.img >= 0 && behind.sheet > behind.img && behind.content < behind.img, `a line behind the text drawn over its sheet, under the text (${JSON.stringify(behind)})`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();
