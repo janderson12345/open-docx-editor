@@ -85,6 +85,13 @@ function lines(el) {
       while (n !== el && !n.nextSibling) n = n.parentNode;
       if (n === el) break;
       const s = n.nextSibling;
+      // (And over a spacer ending the line beside a shape taking text on its left only (wrapboth.js): without it the
+      // copy, justified, spread its words to the line's end, past the shape (footwrap-word fw-justify).)
+      if (s.nodeType === 1 && s.classList.contains('odx-wb')) {
+        const q = s.getBoundingClientRect();
+        if (q.top >= ln.lo - 1 && q.top <= ln.bottom + 1) ln.endAfter = s;
+        break;
+      }
       const marker = s.nodeType === 1 && !s.textContent && (s.classList.contains('odx-opaque-inline') || s.matches('img.ProseMirror-separator'));
       if (!marker) break;
       if (s.matches('[data-kind="footnoteReference"], [data-kind="endnoteReference"]')) {

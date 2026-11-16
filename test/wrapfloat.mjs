@@ -132,6 +132,85 @@ const moved = await page.evaluate(() => {
   return { lift: lift ? sheetOf(lift.getBoundingClientRect().top + 2) : null, anchor: first ? sheetOf(first.top) : null };
 });
 check(moved.lift === 1 && moved.anchor === 1, `a page-placed float whose paragraph it pushes on goes on with it, as Word (picture on sheet ${moved.lift}, its paragraph on sheet ${moved.anchor})`);
+
+// Justified lines beside floats, Word-made (wrap-word2 wj-both2, wl-upj, footwrap-word fw-justify), checked against
+// Word's print: each side of a line split beside a both-sides shape justified on its own (its words before the shape
+// ending at its room, those after it at the margin); the lines above a float drawn up to the page's edge and wrapped on
+// its left only kept to its left, justified to its room; and printed, the lines beside a footer's shape so too.
+const load = async (file) => {
+  await page.setInputFiles('input[type=file]', `test/fixtures/${file}`);
+  await page.waitForFunction((f) => window.odx?.fileName === f, file);
+  await page.waitForTimeout(3500);
+};
+// The lines of the paragraphs under `root` (or the print layer's copies) beside the room [left, right] x [top, bottom]:
+// each with its words' left and right edges, the paragraph's right edge and whether it's the paragraph's last line.
+const linesBeside = (sel, room) => page.evaluate(([s, z]) => {
+  const out = [];
+  const range = document.createRange();
+  for (const p of document.querySelectorAll(s)) {
+    const pr = p.getBoundingClientRect();
+    const words = [];
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      for (const m of t.data.matchAll(/\S+/g)) {
+        range.setStart(t, m.index); range.setEnd(t, m.index + m[0].length);
+        const w = range.getBoundingClientRect();
+        if (w.width) words.push({ l: w.left, r: w.right, top: w.top, bottom: w.bottom });
+      }
+    }
+    const lines = [];
+    for (const w of words) {
+      const ln = lines.find((x) => Math.abs(x.top - w.top) < 3);
+      if (ln) ln.words.push(w); else lines.push({ top: w.top, bottom: w.bottom, words: [w] });
+    }
+    lines.forEach((ln, i) => {
+      if (ln.bottom <= z.top || ln.top >= z.bottom) return;
+      out.push({ left: ln.words.filter((w) => w.r <= z.left + 0.5).map((w) => w.r), right: ln.words.filter((w) => w.l >= z.right - 0.5).map((w) => w.r), inside: ln.words.filter((w) => w.r > z.left + 0.5 && w.l < z.right - 0.5).length, end: pr.right, last: i === lines.length - 1 });
+    });
+  }
+  return out;
+}, [sel, room]);
+
+await load('wrap-justified.docx');
+const rooms = await page.evaluate(() => [...document.querySelectorAll('.odx-content img[style*="--odx-both"]')].map((img) => {
+  const r = img.getBoundingClientRect();
+  const [, dr, , dl] = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map(parseFloat);
+  return { left: r.left - dl, right: r.right + dr, top: r.top, bottom: r.bottom };
+}));
+let split = 0, off = 0, inRoom = 0;
+for (const z of rooms) {
+  for (const ln of await linesBeside('.odx-content > p', z)) {
+    inRoom += ln.inside;
+    if (ln.last || ln.left.length < 2 || ln.right.length < 2) continue;
+    split++;
+    // (The left side's last word at the room's left side, the right side's at the margin.)
+    off = Math.max(off, Math.abs(ln.left[ln.left.length - 1] - z.left), Math.abs(ln.right[ln.right.length - 1] - ln.end));
+  }
+}
+check(rooms.length === 2 && split > 6 && off < 2 && !inRoom, `justified beside both-sides shapes, each side justified on its own (${split} lines split, sides' ends ${off.toFixed(1)}px off, ${inRoom} words in a room)`);
+
+await load('wrap-up-left.docx');
+const upRoom = await page.evaluate(() => {
+  const img = [...document.querySelectorAll('.odx-content img')].find((i) => getComputedStyle(i).float === 'right');
+  const r = img.getBoundingClientRect();
+  return { left: r.left - (parseFloat(getComputedStyle(img).marginLeft) || 0), right: r.right, top: r.top, bottom: r.bottom, translate: img.style.translate };
+});
+const above = await linesBeside('.odx-content > p:has(~ p img[style*="translate"])', upRoom);
+const upOff = Math.max(0, ...above.filter((ln) => !ln.last && ln.left.length > 1).map((ln) => Math.abs(ln.left[ln.left.length - 1] - upRoom.left)));
+check(/-/.test(upRoom.translate) && above.length > 2 && above.every((ln) => !ln.inside && !ln.right.length) && upOff < 2, `a float drawn up to the page's edge, wrapped on its left only: the lines above it kept to its left, justified to it (${above.length} lines, ${above.reduce((a, ln) => a + ln.inside + ln.right.length, 0)} words in or past its room, ends ${upOff.toFixed(1)}px off; ${upRoom.translate})`);
+
+await load('footer-wrap-justified.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+const footRoom = await page.evaluate(() => {
+  const r = document.querySelector('.odx-footer img').getBoundingClientRect();
+  return { left: r.left - 12, right: r.right + 12, top: r.top, bottom: r.bottom };
+});
+const printed = await linesBeside('.odx-printlines p', footRoom);
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+const footOff = Math.max(0, ...printed.filter((ln) => !ln.last && ln.left.length > 1).map((ln) => Math.abs(ln.left[ln.left.length - 1] - footRoom.left)));
+check(printed.length > 2 && printed.every((ln) => !ln.inside && !ln.right.length) && footOff < 2, `printed, justified lines beside a footer's shape wrapped on its left only end at its room (${printed.length} lines, ${printed.reduce((a, ln) => a + ln.inside + ln.right.length, 0)} words in or past it, ends ${footOff.toFixed(1)}px off)`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();
