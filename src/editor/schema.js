@@ -92,7 +92,9 @@ export function pastedHeading(d) {
   const level = (m) => (m ? `Heading${m[1]}` : null);
   const cls = (d.getAttribute('class') || '').split(/\s+/).map((c) => /^(?:Mso)?Heading-?([1-9])$/i.exec(c)).find(Boolean);
   if (cls) return level(cls);
-  const named = /mso-style-name\s*:\s*["']?\s*heading\s*([1-9])\s*["']?\s*(?:;|$)/i.exec(css) || /mso-outline-level\s*:\s*([1-9])\b/i.exec(css);
+  // (A quote, if any, always between two runs of spaces: as \s*["']?\s* a long run with no heading after it was split
+  // every way first, 2.4s for 40,000 spaces of pasted style.)
+  const named = /mso-style-name\s*:\s*(?:["']\s*)?heading\s*([1-9])(?:\s*["'])?\s*(?:;|$)/i.exec(css) || /mso-outline-level\s*:\s*([1-9])\b/i.exec(css);
   if (named) return level(named);
   if (d.getAttribute('role') === 'heading') return level(/^([1-9])$/.exec(d.getAttribute('aria-level') || '2') || ['', '2']);
   const em = /^([\d.]+)r?em$/.exec(d.style.fontSize || '');
