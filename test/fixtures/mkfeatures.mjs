@@ -57,6 +57,9 @@ build('effects', [
   // Word 2010's reflection (Text Effects > Reflection, its first: "Tight Reflection: Touching"), last so the
   // paragraphs above keep their places.
   para(run('Reflected words', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="72"/><w14:reflection xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:blurRad="6350" w14:stA="55000" w14:stPos="0" w14:endA="300" w14:endPos="45500" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>') + run(' and plain after')),
+  // An inner shadow (the WordArt gallery's Style 15: a w14:shadow scaled to nothing, half-transparent black, up and
+  // left), after the reflection for the same reason.
+  para(run('Pressed words', '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:color w:val="E8E8E8"/><w:sz w:val="72"/><w14:shadow xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:blurRad="63500" w14:dist="50800" w14:dir="13500000" w14:sx="0" w14:sy="0" w14:kx="0" w14:ky="0" w14:algn="none"><w14:srgbClr w14:val="000000"><w14:alpha w14:val="50000"/></w14:srgbClr></w14:shadow>') + run(' and plain after')),
   SECT(),
 ].join(''));
 
