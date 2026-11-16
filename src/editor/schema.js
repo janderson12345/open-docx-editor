@@ -242,7 +242,7 @@ export const schema = new Schema({
         const place = typeof n.attrs.place === 'string' && !/url\s*\(|image\s*\(|image-set|@|\\|expression|javascript|[<>"]/i.test(n.attrs.place) ? n.attrs.place : '';
         const src = typeof shown === 'string' && /^(data:|blob:|https?:|$)/i.test(shown) ? shown : '';
         const w = Number(n.attrs.width) || 0;
-        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [w ? `width:${w + 2 * pad}px;height:${h + 2 * pad}px` : '', place].filter(Boolean).join(';') }];
+        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [w || h ? `width:${w + 2 * pad}px;height:${h + 2 * pad}px` : '', place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).

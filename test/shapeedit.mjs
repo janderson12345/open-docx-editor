@@ -205,6 +205,65 @@ await dragTo(0, 'End.', 'Control');
 const w2 = await where();
 check(w2.split(',').length === w0.split(',').length + 1, `with Ctrl, a copy (${w0} -> ${w2})`);
 await page.keyboard.press('Control+z');
+
+// 9. Thick outlines and arrowheads drawn whole (test/fixtures/shapeclip-word.docx, made in Word, its print checked): each
+// shape's picture, in line with the text or floating, has nothing drawn on its outermost pixels (nothing cut off at its
+// edge); straight lines, as tall or as wide as nothing, are drawn; a floating line sits at its offset, as Word prints it.
+await page.setInputFiles('input[type=file]', 'test/fixtures/shapeclip-word.docx');
+await page.waitForFunction(() => window.odx?.fileName === 'shapeclip-word.docx');
+await page.waitForTimeout(800);
+const clip = await page.evaluate(async () => {
+  const out = [];
+  for (const img of document.querySelectorAll('.odx-content img[src^="data:image/svg"]')) {
+    const w = Math.round(img.getBoundingClientRect().width), h = Math.round(img.getBoundingClientRect().height);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const pic = new Image();
+    pic.src = img.src;
+    await pic.decode();
+    g.drawImage(pic, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    let edge = 0, inked = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (d[(y * w + x) * 4 + 3] < 40) continue;
+      inked++;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge++;
+    }
+    out.push({ w, h, edge, inked, style: img.getAttribute('style') || '' });
+  }
+  return out;
+});
+check(clip.length === 8, `all eight shapes drawn, the straight lines too (${clip.length})`);
+check(clip.every((q) => q.inked > 0), 'each has something drawn');
+check(clip.every((q) => q.edge === 0), `none cut off at its picture's edge (${clip.map((q) => `${q.w}x${q.h}:${q.edge}`).join(' ')})`);
+check(clip.filter((q) => /position:\s*absolute|float:/.test(q.style)).length === 6 && clip.filter((q) => /--odx-fx:/.test(q.style)).length === 2, 'six floating, two in line with the text');
+// The line in front of the text with large arrowheads, 14px of room above it (wp:effectExtent): at its offset all the same.
+const atOffset = await page.evaluate(() => {
+  let a = null;
+  window.odx.view.state.doc.descendants((n, pos) => { if (!a && n.type.name === 'image' && n.attrs.xml.includes('name="Straight Connector 4"')) a = { n, pos }; });
+  const img = window.odx.view.nodeDOM(a.pos);
+  const para = img.closest('.odx-content > p');
+  const pad = parseFloat(/--odx-pad:\s*([\d.]+)px/.exec(img.getAttribute('style'))[1]);
+  const off = Number(/<wp:positionV relativeFrom="paragraph"><wp:posOffset>(-?\d+)/.exec(a.n.attrs.xml)[1]) / 9525;
+  return { top: img.getBoundingClientRect().top + pad - para.getBoundingClientRect().top, off };
+});
+check(Math.abs(atOffset.top - atOffset.off) <= 1, `a floating line at its offset, its arrowheads' room not added (${atOffset.top.toFixed(1)} vs ${atOffset.off.toFixed(1)})`);
+// The line behind the text: drawn over its page's sheet, under the text (it had been under the sheet, unseen). (What's
+// hit at a point is what's drawn on top there: the sheets, made hit-testable for the moment, by their order.)
+const behind = await page.evaluate(() => {
+  const img = [...document.querySelectorAll('.odx-content img')].find((e) => /z-index:\s*-1/.test(e.getAttribute('style') || ''));
+  const r = img.getBoundingClientRect();
+  const layer = document.querySelector('.odx-sheets');
+  layer.style.pointerEvents = 'auto';
+  for (const s of layer.querySelectorAll('.odx-sheet')) s.style.pointerEvents = 'auto';
+  const hits = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  layer.style.pointerEvents = '';
+  for (const s of layer.querySelectorAll('.odx-sheet')) s.style.pointerEvents = '';
+  const sheet = hits.findIndex((e) => e.classList.contains('odx-sheet'));
+  return { img: hits.indexOf(img), sheet, content: hits.findIndex((e) => e.classList.contains('odx-content')) };
+});
+check(behind.img >= 0 && behind.sheet > behind.img && behind.content < behind.img, `a line behind the text drawn over its sheet, under the text (${JSON.stringify(behind)})`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();
