@@ -1,7 +1,7 @@
 // Browser check of the smaller things Word draws (test/fixtures/mkfeatures.mjs, mkrtl.mjs, mkstrict.mjs), each laid
 // out as Word's own PDF of it showed: picture bullets, line numbers, watermarks, a section's vertical alignment,
 // emphasis marks and run borders making their lines taller, right-to-left paragraphs, a Strict document.
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 import fs from 'node:fs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { serveDemo, launchOptions } from './browser.mjs';
@@ -1060,6 +1060,47 @@ const hyZone = await hyLines('hyphenation-zone.docx');
 const hyLimit = await hyLines('hyphenation-limit.docx');
 check(!hyFree || (hyFree.most > 1 && hyZone.breaks < hyFree.breaks / 3 && hyLimit.most === 1 && hyLimit.breaks > 0),
   `hyphenation zone and consecutive-hyphen limit (${JSON.stringify({ hyFree, hyZone, hyLimit })})`);
+// The same in Firefox, which hyphenates itself (hyphens:auto; the words left whole marked hyphens:manual): lines that
+// end inside a word, its letters on two lines. (Where Playwright's Firefox is installed: CI installs only Chromium.)
+{
+  let ff = null;
+  try { ff = await firefox.launch(); } catch { console.log('skip hyphenation zone and limit in Firefox (not installed)'); }
+  if (ff) {
+    const fp = await ff.newPage({ viewport: { width: 1300, height: 950 } });
+    await fp.goto(`http://localhost:${server.address().port}/`);
+    await fp.waitForSelector('.odx-content p');
+    const ffLines = async (f) => {
+      await fp.setInputFiles('input[type=file]', `test/fixtures/${f}`);
+      await fp.waitForFunction((n) => window.odx?.fileName === n, f);
+      await fp.waitForTimeout(1500);
+      return fp.evaluate(() => {
+        const same = (a, b) => Math.abs(a.top - b.top) < a.height / 2;
+        let breaks = 0, most = 0;
+        for (const p of document.querySelectorAll('.odx-content > p')) {
+          let run = 0, last = null;
+          const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+            const rect = (i) => { const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1); return r.getClientRects()[0]; };
+            for (const m of t.data.matchAll(/[A-Za-z]+/g)) {
+              for (let k = 1, prev = rect(m.index); k < m[0].length; k++) {
+                const r = rect(m.index + k);
+                if (prev && r && !same(prev, r)) { breaks++; run = last && same(last, prev) ? run + 1 : 1; most = Math.max(most, run); last = r; break; }
+                prev = r;
+              }
+            }
+          }
+        }
+        return { native: !!document.querySelector('.odx-content p.odx-hyph'), breaks, most };
+      });
+    };
+    const fFree = await ffLines('hyphenation-free.docx');
+    const fZone = await ffLines('hyphenation-zone.docx');
+    const fLimit = await ffLines('hyphenation-limit.docx');
+    check(fFree.native && fFree.most > 1 && fZone.breaks < fFree.breaks / 3 && fLimit.most === 1 && fLimit.breaks > 0,
+      `hyphenation zone and consecutive-hyphen limit in Firefox (${JSON.stringify({ fFree, fZone, fLimit })})`);
+    await ff.close();
+  }
+}
 
 // Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
 // its fields), the next record, Insert Merge Field, a CSV file of recipients, and Finish & Merge's merged document.
