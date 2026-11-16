@@ -130,14 +130,23 @@
 :where(.odx-content, .odx-repeat) td .odx-page-break > br { display: none; }
 .odx-content img { max-width: 100%; vertical-align: bottom; }
 /* A picture's line: Word adds only the extra space of "multiple" line spacing below the picture (no font descent). */
-.odx-content p > img:not(.ProseMirror-separator):not([style*="position"]) { margin-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 1em + var(--odx-fx, 0px)); margin-top: var(--odx-fxt, 0px); margin-left: var(--odx-fxl, 0px); margin-right: var(--odx-fxr, 0px); } /* --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr: room for the picture's effect extent */
+.odx-content p > img:not(.ProseMirror-separator):not([style*="position"]) { margin-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 1em + var(--odx-fx, 0px)); margin-top: calc(var(--odx-fxt, 0px) + var(--odx-picmt, 0px)); margin-left: var(--odx-fxl, 0px); margin-right: var(--odx-fxr, 0px); } /* --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr: room for the picture's effect extent */
 /* On a line with text (editor.js odx-pictext): on the baseline (not raised by half the "multiple" extra, which put each
    such line 0.7px low in Word terms once the print layer drew it exactly); the text's
    descent and its share of the extra (the browser centres the leading) come under it, the print shift takes the half back. */
-.odx-content p.odx-pictext > img:not(.ProseMirror-separator):not([style*="position"]) { vertical-align: baseline; margin-bottom: var(--odx-fx, 0px); }
+.odx-content p.odx-pictext > img:not(.ProseMirror-separator):not([style*="position"]) { vertical-align: baseline; margin-bottom: var(--odx-fx, 0px); margin-top: calc(var(--odx-fxt, 0px) + var(--odx-picmt, 0px)); }
 /* Its picture's line the paragraph's last (pararules.js pictureLine): Word puts all of "multiple" spacing's extra under it, the
-   browser half (the other half above the text, which the print shift takes back): the rest under the paragraph. */
-.odx-content p.odx-pictext-end { padding-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 0.5em); }
+   browser half (the other half above the text, which the print shift takes back): the rest under the paragraph. (Until
+   measured: picfix.js.) */
+.odx-content p.odx-pictext-end:not([style*="--odx-picb"]) { padding-bottom: calc((var(--odx-mult, 1) - 1) * var(--odx-lh, 1.17) * 0.5em); }
+/* Measured (picfix.js, by lhfix.js): what Word's lines holding a picture beside text take more (or less) than the
+   browser's, under the paragraph: Word's room under such a line is the font's descent and all of the "multiple" extra,
+   the browser's the descent and half the leading; a line of only a picture too. (--odx-picmt: at-least and exact lines'
+   pictures, their line's top.) */
+.odx-content p[style*="--odx-picb"]:not(.odx-mark, .odx-endbreak)::after { content: ''; display: block; height: max(0px, var(--odx-picb)); margin-top: min(0px, var(--odx-picb)); }
+.odx-content p[style*="--odx-picb"]:is(.odx-mark, .odx-endbreak) { padding-bottom: max(0px, var(--odx-picb)); }
+/* (A picture on an exact line taller than it: cut to the line, as Word draws it.) */
+.odx-content p > img[style*="--odx-picclip"] { clip-path: inset(var(--odx-picclip) 0 0 0); }
 .odx-hf img, .odx-content img[style*="position: absolute"] { max-width: none; }
 /* A horizontal rule sits on its line's baseline; the zero-width text gives that line its height (a line of only a picture gets no height from its paragraph: textspans.js). */
 .odx-content p:has(> img[style*="vertical-align: baseline"]) { white-space: nowrap; }

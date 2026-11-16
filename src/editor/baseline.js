@@ -130,12 +130,18 @@ export function shiftFor(el, host, anchored = false) {
   // printed 8px high: the generated documents, tools/doc-generator).
   // (Measured only where there's a picture: reading a paragraph's text box lays it out, and a long document skips laying
   // out paragraphs far off screen, content-visibility: 6000 tracked changes' paragraphs took 8s to open.)
+  // (Trebuchet's offset was fitted on body text; its small header labels, 7.5pt in the sample S108/sample S109, sit right
+  // without it.)
+  // (Segoe UI's only in list paragraphs, where it was fitted: corpus 2's plain 9pt Segoe UI sat right without it,
+  // 25 lines 1.4px low with it.)
+  const off = (family === 'trebuchet ms' && fs < 12) || (family === 'segoe ui' && !el.classList.contains('odx-li')) ? 0 : OFFSET[family] || 0;
   const imgs = el.querySelectorAll('img');
   const tr = imgs.length ? text.parentElement.getBoundingClientRect() : null;
   for (const img of imgs) {
     if (/position:\s*absolute|float:/.test(img.getAttribute('style') || '')) continue;
     const r = img.getBoundingClientRect();
-    if (r.height > tr.height + 1 && r.bottom > tr.top && r.top < tr.bottom) return 0;
+    // (Its text still drawn the font's offset high, as every line's: picmatrix-word's picture lines 0.2pt high in Aptos.)
+    if (r.height > tr.height + 1 && r.bottom > tr.top && r.top < tr.bottom) return el.classList.contains('odx-pictext') && Math.abs(off) >= 0.05 ? off : 0;
   }
   const ncs = fs === parseFloat(rcs.fontSize) && family === known(rcs) ? rcs : pcs;
   const natural = (parseFloat(ncs.getPropertyValue('--odx-lh')) || 1.17) * fs;
@@ -144,11 +150,6 @@ export function shiftFor(el, host, anchored = false) {
   // (A line on a document grid has its text centred, as the browser sets it: lhfix.js.)
   const grid = el.dataset?.odxGrid === '1';
   const extra = atLeast ? room : grid ? room / 2 : 0;
-  // (Trebuchet's offset was fitted on body text; its small header labels, 7.5pt in the sample S108/sample S109, sit right
-  // without it.)
-  // (Segoe UI's only in list paragraphs, where it was fitted: corpus 2's plain 9pt Segoe UI sat right without it,
-  // 25 lines 1.4px low with it.)
-  const off = (family === 'trebuchet ms' && fs < 12) || (family === 'segoe ui' && !el.classList.contains('odx-li')) ? 0 : OFFSET[family] || 0;
   const d = Math.round((asc * fs + extra - browserOffset(pcs, rcs, host) + off) * 100) / 100;
   // (A shift far from the expected half of the extra means something else is going on: left alone.)
   return Math.abs(d) < 0.05 || (!grid && Math.abs(d - (atLeast ? room / 2 : -room / 2)) > 3) || (grid && Math.abs(d) > 3) ? 0 : d;
@@ -164,9 +165,13 @@ export function baselineCss(blocks, scope, host) {
   // took 80ms a keystroke in a 750-page document.)
   if (blockEpoch !== fontLoads) { blockMemo = new WeakMap(); blockEpoch = fontLoads; }
   for (const { el, i, node } of blocks) {
+    // One holding anchored pictures: its text moved, not the paragraph (position:relative would make it their containing
+    // block, and move them): rotpic-word's text beside a floating picture at 1.16 printed 0.7px low, unshifted.
+    const anchored = el.tagName === 'P' && !!el.querySelector(':scope > [style*="position: absolute"], :scope > [style*="position:absolute"]');
     let d = node ? blockMemo.get(node) : undefined;
-    if (d === undefined) { d = shiftFor(el, host); if (node) blockMemo.set(node, d); }
-    if (d) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
+    if (d === undefined) { d = shiftFor(el, host, anchored); if (node) blockMemo.set(node, d); }
+    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"]){position:relative;top:${d}px}`);
+    else if (d) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
   }
   // Paragraphs in table cells carry their shift as --odx-bl (see cellShifts), headers' and footers' too (hfShifts).
   rules.push(`.${scope}:not(.odx-bl-off) td > p[style*="--odx-bl"]{position:relative;top:var(--odx-bl)}`);
