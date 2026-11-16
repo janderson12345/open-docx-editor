@@ -586,7 +586,7 @@ const { bytes: filled, missing } = fillFields(bytes, values); // merge values in
 ## Mail merge
 
 Word's merge fields (Mailings > Insert Merge Field: `MERGEFIELD`, with its `\*`, `\#`, `\@`, `\b` and `\f` switches,
-and `MERGEREC`) filled from your records, as Word's Finish & Merge > Edit Individual Documents: one document with each
+`MERGEREC` and `MERGESEQ`) filled from your records, as Word's Finish & Merge > Edit Individual Documents: one document with each
 record starting on a new page, or one document per record. The fields become plain text in their own formatting.
 
 ```js
@@ -608,8 +608,10 @@ mergeFieldNames(template);                                  // ['FirstName', 'La
 const { bytes, missing } = mailMerge(template, records);    // missing: fields no record has a value for
 ```
 
-`IF` fields around merge fields keep their saved result (not worked out per record yet); merge fields in headers and
-footers aren't filled yet.
+`IF` fields around merge fields are worked out per record, and merge fields in headers and footers filled for each
+record, as Word's merge does. `NEXT` and `NEXTIF` move on to the next record within the same document (several records
+to a page, the fields after them from the next record), and `SKIPIF` leaves a document out when its comparison is
+true, as in Word's merge; Preview Results shows them as Word's does (`SKIPIF` has no effect there).
 
 ## Accessibility (Section 508 / WCAG 2.1 AA)
 

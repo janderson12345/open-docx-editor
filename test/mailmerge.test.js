@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { mailMerge, mergeFieldNames, formatMergeValue, ifCompare } from '../src/index.js';
+import { mergeRecord, mergeCursor } from '../src/merge.js';
+import { mailMergePlugin, previewStory } from '../src/editor/mailmerge.js';
+import { DocxSession } from '../src/ooxml/docx.js';
+import { EditorState } from 'prosemirror-state';
 
 const bytes = new Uint8Array(fs.readFileSync(new URL('./fixtures/mailmerge.docx', import.meta.url)));
 const records = [
@@ -119,4 +123,80 @@ test('headers and footers filled for each record, each record its own', () => {
   // One document per record: its own header filled in place.
   const one = mailMerge(ifBytes, people, { combine: false }).files[2];
   assert.equal(text(strFromU8(unzipSync(one)['word/header1.xml'])), 'Statement for Bea');
+});
+
+// NEXT, NEXTIF and SKIPIF (test/fixtures/mkmergenext.mjs), against Word's own merge of the same documents with these
+// records (Finish & Merge through Word, a CSV data source) and its Preview Results at each record: each document's
+// lines, its header (the record it ended on), MERGEREC the record's number, MERGESEQ the merged document's.
+const group = [['Ada', 'x', '5'], ['Bob', 'x', '20'], ['Cy', 'y', '30'], ['Di', 'x', '2'], ['Ed', 'y', '40'], ['Flo', 'x', '50'], ['Gus', 'y', '60']]
+  .map(([Name, Group, Amount]) => ({ Name, Group, Amount }));
+const fixture = (name) => new Uint8Array(fs.readFileSync(new URL(`./fixtures/${name}.docx`, import.meta.url)));
+const norm = (s) => s.replace(/\s+/g, ' ').trim();
+const WORD_NEXT = {
+  mergenext: [
+    ['a: 1 1 Ada|n1: .|b: 2 1 Bob|n2: .|c: 3 1 Cy|if: big', 'H: Cy'],
+    ['a: 4 2 Di|n1: .|b: 5 2 Ed|n2: .|c: 6 2 Flo|if: big', 'H: Flo'],
+    // (NEXT past the last record: every field after it empty, MERGEREC and MERGESEQ too.)
+    ['a: 7 3 Gus|n1: .|b: 7 3 Gus|n2: .|c:|if: small', 'H:'],
+  ],
+  // (Ada and Di left out by the first SKIPIF, Ed by the second after its NEXTIF stayed on it.)
+  mergeskip: [['a: 2 1 Bob|s1: .|b: 2 1 Bob|n: .|c: 3 1 Cy|s2: .|d: 3 1 Cy', 'H: Cy'], ['a: 6 2 Flo|s1: .|b: 6 2 Flo|n: .|c: 7 2 Gus|s2: .|d: 7 2 Gus', 'H: Gus']],
+  // (Ada's document, moved on to Bob, left out: the next starts after Bob.)
+  mergeskip2: [['a: 3 1 Cy|n: .|b: 3 1 Cy|s: .', 'H: Cy'], ['a: 4 2 Di|n: .|b: 5 2 Ed|s: .', 'H: Ed'], ['a: 6 3 Flo|n: .|b: 7 3 Gus|s: .', 'H: Gus']],
+};
+
+test('NEXT, NEXTIF and SKIPIF as Word merges them', () => {
+  for (const [name, want] of Object.entries(WORD_NEXT)) {
+    const { bytes: out } = mailMerge(fixture(name), group);
+    const files = unzipSync(out);
+    const xml = docXml(out);
+    assert.doesNotMatch(xml, /fldChar|instrText|fldSimple/, name);
+    const rels = strFromU8(files['word/_rels/document.xml.rels']);
+    const part = (id) => strFromU8(files[`word/${new RegExp(`Id="${id}"[^>]*Target="([^"]+)"`).exec(rels)[1]}`]);
+    // Each document's paragraphs, up to and with the one holding its section break.
+    const docs = [[]];
+    for (const p of xml.split('</w:p>')) {
+      if (norm(text(p))) docs[docs.length - 1].push(norm(text(p)));
+      if (/<w:sectPr\b/.test(p)) docs.push([]);
+    }
+    docs.splice(-1, 1);
+    for (let i = 0; i < docs.length; i++) docs[i] = docs[i].join('|');
+    const heads = [...xml.matchAll(/headerReference w:type="default" r:id="([^"]+)"/g)].map((m) => norm(text(part(m[1]))));
+    assert.deepEqual(docs.map((d, i) => [d, heads[i]]), want, name);
+    // One document per merged document.
+    assert.equal(mailMerge(fixture(name), group, { combine: false }).files.length, want.length, name);
+  }
+});
+
+const WORD_PREVIEW = {
+  mergenext: [
+    ['a: 1 Ada|n1: .|b: 2 Bob|n2: .|c: 3 Cy|if: big', 'H: Cy'], ['a: 2 Bob|n1: .|b: 3 Cy|n2: .|c: 4 Di|if: small', 'H: Di'],
+    ['a: 3 Cy|n1: .|b: 3 Cy|n2: .|c: 4 Di|if: small', 'H: Di'], ['a: 4 Di|n1: .|b: 5 Ed|n2: .|c: 6 Flo|if: big', 'H: Flo'],
+    ['a: 5 Ed|n1: .|b: 5 Ed|n2: .|c: 6 Flo|if: big', 'H: Flo'], ['a: 6 Flo|n1: .|b: 7 Gus|n2: .|c:|if: small', 'H:'],
+    ['a: 7 Gus|n1: .|b: 7 Gus|n2: .|c:|if: small', 'H:'],
+  ],
+  // (SKIPIF has no effect in the preview: Ada's record shown.)
+  mergeskip: [
+    ['a: 1 Ada|s1: .|b: 1 Ada|n: .|c: 2 Bob|s2: .|d: 2 Bob', 'H: Bob'], ['a: 2 Bob|s1: .|b: 2 Bob|n: .|c: 3 Cy|s2: .|d: 3 Cy', 'H: Cy'],
+    ['a: 3 Cy|s1: .|b: 3 Cy|n: .|c: 3 Cy|s2: .|d: 3 Cy', 'H: Cy'], ['a: 4 Di|s1: .|b: 4 Di|n: .|c: 5 Ed|s2: .|d: 5 Ed', 'H: Ed'],
+    ['a: 5 Ed|s1: .|b: 5 Ed|n: .|c: 5 Ed|s2: .|d: 5 Ed', 'H: Ed'], ['a: 6 Flo|s1: .|b: 6 Flo|n: .|c: 7 Gus|s2: .|d: 7 Gus', 'H: Gus'],
+    ['a: 7 Gus|s1: .|b: 7 Gus|n: .|c: 7 Gus|s2: .|d: 7 Gus', 'H: Gus'],
+  ],
+};
+
+test('Preview Results with NEXT, NEXTIF and SKIPIF, as Word previews them', () => {
+  for (const [name, want] of Object.entries(WORD_PREVIEW)) {
+    const session = new DocxSession(fixture(name));
+    const got = group.map((_, i) => {
+      // (What the preview's decorations show: mailmerge.js previewDecos, the plugin run on a document change.)
+      session.merge = { records: group, fields: [], index: i, preview: true };
+      const state = EditorState.create({ doc: session.doc, plugins: [mailMergePlugin(session)] });
+      state.apply(state.tr.insertText(' ', 1));
+      const body = mergeRecord(session.doc, mergeCursor(group, i, { preview: true }));
+      const lines = [];
+      body.forEach((p) => lines.push(norm(p.textContent)));
+      return [lines.filter(Boolean).join('|'), norm(previewStory(session, session.story('rIdMmH')).textContent)];
+    });
+    assert.deepEqual(got, want, name);
+  }
 });
