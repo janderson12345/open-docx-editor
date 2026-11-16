@@ -28,8 +28,8 @@ const beside = (n) => page.evaluate((k) => {
   const r = img.getBoundingClientRect();
   const cs = getComputedStyle(img);
   const room = cs.getPropertyValue('--odx-both').trim().split(/\s+/).map(parseFloat);
-  const [, dr, , dl] = room.length === 4 ? room : [0, parseFloat(cs.marginRight) || 0, 0, parseFloat(cs.marginLeft) || 0];
-  const zone = { left: r.left - (room.length === 4 ? dl : 12), right: r.right + (room.length === 4 ? dr : 12), top: r.top, bottom: r.bottom };
+  const [, dr, , dl] = room.length >= 4 ? room : [0, parseFloat(cs.marginRight) || 0, 0, parseFloat(cs.marginLeft) || 0];
+  const zone = { left: r.left - (room.length >= 4 ? dl : 12), right: r.right + (room.length >= 4 ? dr : 12), top: r.top, bottom: r.bottom };
   const p = img.closest('p');
   const out = { left: 0, right: 0, inside: [], lines: 0, float: cs.float, centre: (r.left + r.right) / 2 };
   const range = document.createRange();
@@ -188,6 +188,36 @@ for (const z of rooms) {
   }
 }
 check(rooms.length === 2 && split > 6 && off < 2 && !inRoom, `justified beside both-sides shapes, each side justified on its own (${split} lines split, sides' ends ${off.toFixed(1)}px off, ${inRoom} words in a room)`);
+
+// (wrap-squeeze.docx, Word's own: a rectangle beside each of 24 justified paragraphs, stepped across the column; some
+// leave a side too narrow for a word, or one word, and some sit above their paragraph's text, under the one before.
+// The spacers had come and gone until their passes ran out, words left in the rooms and the pages never laid out.)
+await load('wrap-squeeze.docx');
+await page.waitForFunction(() => document.querySelectorAll('.odx-sheet').length > 1, null, { timeout: 30000 }).catch(() => {});
+const squeeze = await page.evaluate(() => {
+  const v = window.odx.view;
+  const st = v.state.plugins.find((pl) => pl.key.startsWith('odx-wrapboth'))?.getState(v.state);
+  const rooms = [...document.querySelectorAll('.odx-content img[style*="--odx-both"]')].map((img) => {
+    const r = img.getBoundingClientRect();
+    const [, dr, , dl] = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map(parseFloat);
+    return { left: r.left - dl, right: r.right + dr, top: r.top, bottom: r.bottom };
+  });
+  let inside = 0;
+  const range = document.createRange();
+  for (const p of document.querySelectorAll('.odx-content > p')) {
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      for (const m of t.data.matchAll(/\S+/g)) {
+        range.setStart(t, m.index); range.setEnd(t, m.index + m[0].length);
+        const w = range.getBoundingClientRect();
+        const y = (w.top + w.bottom) / 2;
+        if (rooms.some((z) => w.right > z.left + 1 && w.left < z.right - 1 && y > z.top && y < z.bottom)) inside++;
+      }
+    }
+  }
+  return { passes: st?.passes, spacers: st?.list.length, rooms: rooms.length, inside, sheets: document.querySelectorAll('.odx-sheet').length };
+});
+check(squeeze.rooms > 18 && squeeze.passes < 40 && squeeze.spacers > 60 && !squeeze.inside && squeeze.sheets > 1, `justified paragraphs beside 24 rectangles across the column (${squeeze.rooms} with text on both sides): the spacers settle (${squeeze.passes} passes, ${squeeze.spacers} spacers), no word in a room (${squeeze.inside}), the pages laid out (${squeeze.sheets})`);
 
 await load('wrap-up-left.docx');
 const upRoom = await page.evaluate(() => {

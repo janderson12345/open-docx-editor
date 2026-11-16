@@ -631,10 +631,11 @@ function anchorCss(drawing, page, compatMode = 15) {
     side = wrapText === 'left' ? 'left' : wrapText === 'right' ? 'right' : gapL > gapR ? 'left' : 'right';
   }
   if (side === 'both') {
-    // (Set where it is, as one not wrapped; the room kept clear round it in --odx-both: top, right, bottom and left.)
+    // (Set where it is, as one not wrapped; the room kept clear round it in --odx-both: top, right, bottom and left, then
+    // the effect extent's share of the top, which a paragraph's space after above it doesn't reach: wrapboth.js.)
     const dT = px(anchor.getAttribute('distT')) + shapeFx('t'), dB = px(anchor.getAttribute('distB')) + shapeFx('b');
     const r2 = (v) => +v.toFixed(2);
-    return `position:absolute;left:calc(var(--odx-page-left, 96px) + ${+xCol.toFixed(2)}px);margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1};--odx-both:${r2(dT)}px ${r2(dR + shapeFx('r'))}px ${r2(dB)}px ${r2(dL + shapeFx('l'))}px`;
+    return `position:absolute;left:calc(var(--odx-page-left, 96px) + ${+xCol.toFixed(2)}px);margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1};--odx-both:${r2(dT)}px ${r2(dR + shapeFx('r'))}px ${r2(dB)}px ${r2(dL + shapeFx('l'))}px ${r2(shapeFx('t'))}px`;
   }
   const right = hAlign === 'right' || hAlign === 'outside' || side === 'left';
   // (Text on its left only, placed by an offset or aligned left or centred: a float on the right, as far in from the
