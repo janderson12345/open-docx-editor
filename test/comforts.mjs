@@ -3,6 +3,8 @@
 // changes kept in the browser, offered back on opening the file again: Restore and Discard).
 import { chromium } from 'playwright';
 import { serveDemo, launchOptions } from './browser.mjs';
+import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
+import { blankDocxBytes } from '../src/ooxml/template.js';
 
 const { server } = serveDemo();
 const launch = launchOptions();
@@ -89,6 +91,39 @@ check(await page.waitForSelector('.odx-draftnote', { timeout: 8000 }).then(() =>
 await page.click('.odx-draftnote button:has-text("Discard")');
 await page.waitForTimeout(300);
 check(await page.evaluate(() => window.odx.draft()) === null && !(await page.evaluate(() => window.odx.view.state.doc.textContent)).includes('AGAIN'), 'Discard forgets them');
+
+// Accept All on many changes (past 200 paragraphs changed, the paragraphs' styles and the text spans are made again in
+// one step, not one a paragraph): the same text, no change left, every run still in its span, and one Undo back.
+{
+  const files = unzipSync(blankDocxBytes());
+  const main = Object.keys(files).find((k) => /word\/document\.xml$/.test(k));
+  const rev = (k) => `w:id="${k}" w:author="Ann" w:date="2024-01-02T03:04:05Z"`;
+  let body = '';
+  for (let i = 0; i < 300; i++) body += `<w:p><w:r><w:t xml:space="preserve">Kept ${i} </w:t></w:r><w:ins ${rev(2 * i + 1)}><w:r><w:t xml:space="preserve">added </w:t></w:r></w:ins><w:del ${rev(2 * i + 2)}><w:r><w:delText>gone</w:delText></w:r></w:del><w:r><w:t>end</w:t></w:r></w:p>`;
+  files[main] = strToU8(strFromU8(files[main]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`));
+  await page.setInputFiles('input[type=file]', { name: 'many-changes.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from(zipSync(files)) });
+  await page.waitForFunction(() => window.odx?.fileName === 'many-changes.docx');
+  await page.waitForTimeout(1500);
+  await page.click('.odx-rtab:text-is("Review")');
+  await page.click('button[title^="Accept"]');
+  await page.click('.odx-pop >> text=Accept all changes');
+  await page.waitForTimeout(800);
+  const after = await page.evaluate(() => {
+    const doc = window.odx.view.state.doc;
+    let texts = 0, spanned = 0;
+    for (const p of document.querySelectorAll('.odx-content p')) for (const n of p.childNodes) if (n.nodeType === 3 && n.data) texts++;
+    spanned = document.querySelectorAll('.odx-content p .odx-t').length;
+    let marks = 0;
+    doc.descendants((n) => { if (n.marks.some((m) => m.type.name === 'ins' || m.type.name === 'del')) marks++; });
+    return { first: doc.firstChild.textContent, last: doc.lastChild.textContent, marks, texts, spanned, classes: document.querySelectorAll('.odx-content ins, .odx-content del, .odx-content [data-rev], .odx-content [class*="odx-rev"]').length };
+  });
+  check(after.first === 'Kept 0 added end' && after.marks === 0 && after.classes === 0, `Accept All on 600 changes keeps the insertions and drops the deletions (${after.first}; ${after.marks} marks)`);
+  check(after.texts === 0 && after.spanned > 0, `every run is in its text span after it (${after.texts} loose)`);
+  await page.click('.odx-content p >> nth=0');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(500);
+  check(await page.evaluate(() => window.odx.view.state.doc.firstChild.textContent) === 'Kept 0 added goneend', 'one Undo brings every change back');
+}
 
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
