@@ -189,6 +189,27 @@ const endnoteTop = await page.evaluate(() => {
 });
 check(rightCol.length > 0 && Math.abs(leftBottom - rightBottom) < 80 && endnoteTop != null && endnoteTop >= Math.max(leftBottom, rightBottom) - 1 && endnoteTop < Math.max(leftBottom, rightBottom) + 40,
   `columns before an endnote end level and the endnote goes under them (${JSON.stringify({ leftBottom: Math.round(leftBottom), rightBottom: Math.round(rightBottom), endnoteTop: endnoteTop && Math.round(endnoteTop) })})`);
+// Endnotes in right-to-left columns (fncols-word, Word's prints): on a page of their own after the text, at its top
+// and in columns left to right (the first endnote in the left one), their separator at the right as its paragraph is
+// right to left; the text before them not cut short for them. Going on onto a page of their own: a continuation
+// separator over the first (left) column, the width of a column.
+const endPage = () => page.evaluate(() => {
+  const ss = [...document.querySelectorAll('.odx-sheets > .odx-sheet')];
+  const s = ss[ss.length - 1], sr = s.getBoundingClientRect();
+  const box = s.querySelector('.odx-notes');
+  if (!box) return null;
+  const sep = box.querySelector('.odx-note-sep').getBoundingClientRect();
+  const cols = [...box.querySelectorAll('.odx-note-band > div:not(.odx-note-sep)')].map((c) => ({ x: Math.round(c.getBoundingClientRect().left - sr.left), ids: [...c.querySelectorAll('.odx-note')].map((n) => n.dataset.id) }));
+  return { sheets: ss.length, sep: [Math.round(sep.left - sr.left), Math.round(sep.right - sr.left), Math.round(sep.top - sr.top)], cols, text: [...document.querySelectorAll('.odx-content > p')].filter((p) => p.getBoundingClientRect().top > sr.top).length };
+});
+await open('endnotes-columns-rtl.docx');
+await page.waitForTimeout(1500);
+const er = await endPage();
+check(er && er.sheets === 3 && er.text === 0 && er.cols[0]?.x === 96 && er.cols[0].ids[0] === '1' && er.sep[0] === 528 && er.sep[2] < 120, `endnotes on a page of their own: at its top, left to right, the separator at the right (${JSON.stringify(er)})`);
+await open('endnotes-columns-long-rtl.docx');
+await page.waitForTimeout(1500);
+const el = await endPage();
+check(el && el.sheets === 3 && el.text === 0 && el.cols[0]?.x === 96 && el.sep[0] === 96 && el.sep[1] === 384 && el.sep[2] < 120, `endnotes going on onto a page of their own: a continuation separator a column wide over the left column (${JSON.stringify(el)})`);
 // Odd- and even-page section breaks (parityPage): page 2 left blank, the second section on page 3, the third on 4.
 await open('odd-even-breaks.docx');
 const oe = (await sheetPlaces()).filter((x) => x.text.trim()).map((x) => x.sheet + 1);
