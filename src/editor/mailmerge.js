@@ -6,7 +6,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { Node, Slice, Fragment } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { blocksFromXml } from '../ooxml/reader.js';
-import { mergeFieldsIn, formatMergeValue, recordValue } from '../merge.js';
+import { mergeTargets, fieldMarks, mergeRecord } from '../merge.js';
 import { announce } from './live.js';
 
 const key = new PluginKey('odx-mailmerge');
@@ -80,16 +80,24 @@ export function setPreview(view, on, index) {
 function refresh(view) {
   const main = view.odx?.main || view;
   main.dispatch(main.state.tr.setMeta(key, true).setMeta('addToHistory', false));
+  // Headers and footers are drawn again too, with the record's values (previewStory).
+  main.odx?.pages?.restory();
+}
+
+/** A header or footer as Preview Results shows it: its merge and IF fields filled for the record (else as it is). */
+export function previewStory(session, doc) {
+  const m = session.merge;
+  return doc && m?.preview && m.records.length ? mergeRecord(doc, m.records[m.index], m.index) : doc;
 }
 
 /** Each field shown as the record's value: its own content hidden, the value drawn in its place in its formatting. */
 function previewDecos(doc, m) {
   const record = m.records[m.index];
   const decos = [];
-  for (const f of mergeFieldsIn(doc)) {
-    const value = f.kind === 'MERGEFIELD' ? formatMergeValue(recordValue(record, f.name), f.instr) : String(m.index + 1);
-    let marks = f.simple ? f.simple.marks : null;
-    if (!marks) doc.nodesBetween(f.resultFrom ?? f.from, f.resultTo ?? f.to, (n) => { if (!marks && n.isText) marks = n.marks; return !marks; });
+  // (IF fields too, their text for the record as in the merged document: merge.js mergeTargets.)
+  for (const { field: f, value } of mergeTargets(doc, record, m.index)) {
+    if (doc.resolve(f.from).parent !== doc.resolve(f.to).parent) continue;
+    const marks = fieldMarks(doc, f);
     decos.push(Decoration.inline(f.from, f.to, { class: 'odx-mm-hide' }));
     decos.push(Decoration.widget(f.from, () => { const s = document.createElement('span'); s.className = 'odx-mm-val'; s.textContent = value; return s; },
       { side: -1, marks: marks || [], key: `mm:${m.index}:${f.from}:${value}` }));
