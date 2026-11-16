@@ -274,7 +274,7 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
    * A reflected word's mirrored copy (w14:reflection; editor.css draws it as the word's ::after, textspans.js marks the
    * words): its letters' outlines, not text, so it isn't found, copied or read out twice; flipped about the baseline
    * `y`, the gap below it, faded by a soft mask from the start opacity to the end one over the end position's share of
-   * the ascent, and cut at the ascent's depth as on the page. Fonts without outlines (the standard fonts) have none.
+   * the ascent, cut at the ascent's depth, its descenders kept above its top, as on the page. Fonts without outlines (the standard fonts) have none.
    */
   function reflect(page, font, text, x, y, size, hs, fill, cs) {
     const fk = font.embedder?.font;
@@ -293,7 +293,8 @@ async function draw(pageEl, { title, author, sources, fallbackFonts }) {
     const { width: pw, height: ph } = page.getSize();
     const form = ctxt.register(ctxt.stream('/Sh0 sh', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, pw, ph], Group: { Type: 'Group', S: 'Transparency', CS: 'DeviceGray' }, Resources: { Shading: { Sh0: shading } } }));
     const gs = page.node.newExtGState('GSrf', ctxt.register(ctxt.obj({ Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: form } })));
-    const ops = [pushGraphicsState(), op('gs', gs), op('re', x - size * 0.1, top - depth, width + size * 0.2, depth), op('W'), op('n'), setFillingRgbColor(fill.red, fill.green, fill.blue)];
+    // (Its descenders too, mirrored above its top, as on the page: a quarter of the size up. pdf-lib has no blur.)
+    const ops = [pushGraphicsState(), op('gs', gs), op('re', x - size * 0.1, top - depth, width + size * 0.2, depth + size * 0.25), op('W'), op('n'), setFillingRgbColor(fill.red, fill.green, fill.blue)];
     // The letters in font units, mirrored: x scaled as the run is to its laid-out width, y flipped down from the top.
     ops.push(op('cm', k * hs, 0, 0, -k, x, top), ...outline(glyphs), op('f'), popGraphicsState());
     page.pushOperators(...ops);
