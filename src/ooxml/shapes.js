@@ -296,9 +296,10 @@ function textWidth(text, sizePx, bold, font) {
  */
 function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
   const font0 = ctx.font;
-  // The insets are from the inside of the box's outline (sample S078's cover box: its text 1px lower in Word's
-  // PDF than from the shape's edge, under a 0.75pt line).
-  const ins = (k, d) => (bodyPr && bodyPr.getAttribute(k) != null ? px(bodyPr.getAttribute(k)) : d) + line;
+  // The insets are from the inside of the box's outline, which is centred on its edge: half the line in
+  // (shapeclip-word: under an 8pt outline, the text 4pt in from where the insets alone put it, in Word's print, across
+  // and down; tbox-word, under 0.75pt and 8pt ones, its lines where Word prints them; the whole line had put it 4pt further).
+  const ins = (k, d) => (bodyPr && bodyPr.getAttribute(k) != null ? px(bodyPr.getAttribute(k)) : d) + line / 2;
   const l = ins('lIns', 9.6);
   const t = ins('tIns', 4.8);
   const r = ins('rIns', 9.6);

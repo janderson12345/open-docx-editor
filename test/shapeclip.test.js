@@ -56,6 +56,14 @@ test('a floating shape sits at its offset, its effect extent not added: a line w
   }
 });
 
+test('a text box\'s text is inset from the inside of its outline: half the outline in, past the insets', () => {
+  const svg = decodeURIComponent(named('Text Box 8').src.replace(/^data:image\/svg\+xml[^,]*,/, ''));
+  // (The default insets, 0.1in and 0.05in, and half its 8pt outline: 5.33px.)
+  const [x, y] = /<text x="([\d.]+)" y="([\d.]+)"/.exec(svg).slice(1).map(Number);
+  assert.ok(Math.abs(x - (9.6 + 5.33)) < 0.1, `x ${x}`);
+  assert.ok(y > 4.8 + 5.33 && y < 4.8 + 5.33 + 16, `y ${y}`);
+});
+
 test('in a Word 2010 document (compatibility mode 14), one centred across the page sits its effect extent lower', () => {
   // (The fixture in mode 14, its line and text box centred: Word's print has them that much lower, sample S078's box
   // too. Mode 14 with an offset across, or centred in mode 15, as above: at the offset.)
