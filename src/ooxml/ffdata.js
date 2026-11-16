@@ -1,7 +1,7 @@
 // Legacy form fields (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN): what a begin fldChar's w:ffData says.
 import { unescapeXml } from './xml.js';
 
-/** { name, kind: 'text' | 'checkbox' | 'dropdown', checked?, items?, index?, text? }, or null when it isn't a form field. */
+/** { name, kind: 'text' | 'checkbox' | 'dropdown', checked?, items?, index?, text?, maxLength? }, or null when it isn't a form field. */
 export function legacyInfo(xml) {
   if (!/<w:ffData\b/.test(xml)) return null;
   const name = unescapeXml((/<w:name\b[^>]*w:val="([^"]*)"/.exec(xml) || [])[1] || '');
@@ -15,5 +15,7 @@ export function legacyInfo(xml) {
     const i = +((/<w:result\b[^>]*w:val="(\d+)"/.exec(xml) || /<w:ddList>[\s\S]*?<w:default\b[^>]*w:val="(\d+)"/.exec(xml) || [])[1] || 0);
     return { name, kind: 'dropdown', items, index: i, text: items[i] ?? '' };
   }
-  return { name, kind: 'text' };
+  // (Maximum length 0, or none: unlimited.)
+  const maxLength = +((/<w:maxLength\b[^>]*w:val="(\d+)"/.exec(xml) || [])[1] || 0) || null;
+  return { name, kind: 'text', maxLength };
 }
