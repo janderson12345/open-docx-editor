@@ -4,14 +4,17 @@ Open, edit and save Word documents (`.docx`) in the browser. 100% JavaScript, no
 Microsoft Office or SharePoint, MIT licensed.
 
 [![Latest release](https://img.shields.io/github/v/release/janderson12345/open-docx-editor)](https://github.com/janderson12345/open-docx-editor/releases)
+[![npm](https://img.shields.io/npm/v/open-docx-editor)](https://www.npmjs.com/package/open-docx-editor)
+[![CI](https://github.com/janderson12345/open-docx-editor/actions/workflows/ci.yml/badge.svg)](https://github.com/janderson12345/open-docx-editor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[Live demo](https://janderson12345.github.io/open-docx-editor/)**: a sample document opens; open your own with File >
+Open or drop a .docx on the page (it stays in your browser, nothing is uploaded).
 
 It opens and saves real documents without losing what it doesn't understand, and lays them out on pages as Word
 does, line for line, checked against Word's own PDFs. Text, tables, lists, pictures and shapes (with their text
 wrapping), text boxes, frames, columns, headers and footers, footnotes, fields, equations and charts; tracked changes
 and comments; page setup, Find and Replace through every part of the document, printing and PDF export. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and roadmap.
-
-**Try it:** [live demo](https://janderson12345.github.io/open-docx-editor/), the editor with a sample document; open your own
-with File > Open or by dragging a .docx onto the page. (It runs entirely in your browser: nothing is uploaded.)
 
 ## Install
 
