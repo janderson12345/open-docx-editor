@@ -91,6 +91,7 @@ export class DocxSession {
       resolveChart: (rId, w, h) => this.chartUrl(this.pkg.relById(rId), w, h),
       resolveShape: (el, w, h, pad) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h, pad),
       padShapes: true,
+      compatMode: this.compatMode,
       resolveChunk: (rId) => this.chunkPart(rId),
       chunkList: (kind) => this.chunkList(kind),
       styleId: (id) => this.builtInId(id),
@@ -394,6 +395,7 @@ export class DocxSession {
         resolveLink: (id) => relOf(id)?.rawTarget ?? null,
         resolveChart: (id, w, h) => this.chartUrl(relOf(id), w, h),
         resolveShape: (el, w, h) => this.shapeUrl(el, relOf, w, h),
+        compatMode: this.compatMode,
       }));
     }
     this._stories.set(rId, doc);

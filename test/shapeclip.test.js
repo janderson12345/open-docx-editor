@@ -2,6 +2,7 @@ import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { shapesSvg } from '../src/ooxml/shapes.js';
 import { parseXml } from '../src/ooxml/xml.js';
@@ -43,13 +44,38 @@ test('a shape in line with the text: room drawn round its outline, its line\'s r
   }
 });
 
-test('a floating shape without text sits at its offset (its effect extent not added); a text box with it', () => {
-  // (Floating in front of the text: its picture's top margin is its offset, to the px, less the room drawn round it.)
-  const line = named('Straight Connector 4');
-  assert.ok(Math.abs(parseFloat(/margin-top:(-?[\d.]+)px/.exec(line.place)[1]) + padOf(line.place) - offsetV(line)) <= 0.5, line.place);
-  const box = named('Text Box 8');
-  const fxT = px(/<wp:effectExtent l="\d+" t="(\d+)"/.exec(box.xml)[1]);
-  assert.ok(Math.abs(parseFloat(/margin-top:(-?[\d.]+)px/.exec(box.place)[1]) + padOf(box.place) - offsetV(box) - fxT) <= 0.5, box.place);
+// (Floating in front of the text: its picture's top margin is its offset, to the px, less the room drawn round it.)
+const top = (a) => parseFloat(/margin-top:(-?[\d.]+)px/.exec(a.place)[1]) + padOf(a.place);
+const roomAbove = (a) => px(/<wp:effectExtent l="\d+" t="(\d+)"/.exec(a.xml)[1]);
+
+test('a floating shape sits at its offset, its effect extent not added: a line with arrowheads, a text box', () => {
+  for (const name of ['Straight Connector 4', 'Text Box 8']) {
+    const a = named(name);
+    assert.ok(roomAbove(a) > 0, name);
+    assert.ok(Math.abs(top(a) - offsetV(a)) <= 0.5, `${name}: ${a.place}`);
+  }
+});
+
+test('in a Word 2010 document (compatibility mode 14), one centred across the page sits its effect extent lower', () => {
+  // (The fixture in mode 14, its line and text box centred: Word's print has them that much lower, sample S078's box
+  // too. Mode 14 with an offset across, or centred in mode 15, as above: at the offset.)
+  const files = unzipSync(new Uint8Array(fs.readFileSync(new URL('./fixtures/shapeclip-word.docx', import.meta.url))));
+  const centre = (xml) => xml.replace(/<wp:positionH relativeFrom="column"><wp:posOffset>-?\d+<\/wp:posOffset><\/wp:positionH>((?:(?!<\/wp:anchor>)[\s\S])*?name="(?:Straight Connector 4|Text Box 8)")/g, '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>$1');
+  const read = (mode, centred) => {
+    const f = { ...files };
+    f['word/settings.xml'] = strToU8(strFromU8(files['word/settings.xml']).replace(/(w:name="compatibilityMode" w:uri="[^"]*" w:val=")\d+/, `$1${mode}`));
+    if (centred) f['word/document.xml'] = strToU8(centre(strFromU8(files['word/document.xml'])));
+    const out = [];
+    new DocxSession(zipSync(f)).doc.descendants((n) => { if (n.type.name === 'image' && /name="(Straight Connector 4|Text Box 8)"/.test(n.attrs.xml)) out.push(n.attrs); });
+    return out;
+  };
+  const centred14 = read(14, true);
+  assert.equal(centred14.length, 2);
+  for (const a of centred14) {
+    assert.match(a.xml, /<wp:align>center<\/wp:align>/);
+    assert.ok(Math.abs(top(a) - offsetV(a) - roomAbove(a)) <= 0.5, a.place);
+  }
+  for (const a of [...read(14, false), ...read(15, true)]) assert.ok(Math.abs(top(a) - offsetV(a)) <= 0.5, a.place);
 });
 
 test('a floating shape wrapped round keeps the text clear of its effect extent past its wrap distance', () => {
