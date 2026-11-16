@@ -93,7 +93,9 @@ export function pastedHeading(d) {
   const level = (m) => (m ? `Heading${m[1]}` : null);
   const cls = (d.getAttribute('class') || '').split(/\s+/).map((c) => /^(?:Mso)?Heading-?([1-9])$/i.exec(c)).find(Boolean);
   if (cls) return level(cls);
-  const named = /mso-style-name\s*:\s*["']?\s*heading\s*([1-9])\s*["']?\s*(?:;|$)/i.exec(css) || /mso-outline-level\s*:\s*([1-9])\b/i.exec(css);
+  // (A quote, if any, always between two runs of spaces: as \s*["']?\s* a long run with no heading after it was split
+  // every way first, 2.4s for 40,000 spaces of pasted style.)
+  const named = /mso-style-name\s*:\s*(?:["']\s*)?heading\s*([1-9])(?:\s*["'])?\s*(?:;|$)/i.exec(css) || /mso-outline-level\s*:\s*([1-9])\b/i.exec(css);
   if (named) return level(named);
   if (d.getAttribute('role') === 'heading') return level(/^([1-9])$/.exec(d.getAttribute('aria-level') || '2') || ['', '2']);
   const em = /^([\d.]+)r?em$/.exec(d.style.fontSize || '');
@@ -233,8 +235,14 @@ export const schema = new Schema({
         const shown = shownSrc(n.attrs.src, (copy, src) => { if (shownImages.has(src)) shownImages.set(copy, shownImages.get(src)); });
         if (shown !== n.attrs.src && n.attrs.xml) shownImages.set(shown, n.attrs);
         // (Drawn again once its fonts loaded, a text box grown to fit its text may be taller or shorter: svgfonts.js.)
-        const h = redrawOf(n.attrs.src)?.height ?? n.attrs.height;
-        return ['img', { src: shown || '', alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(n.attrs.place || '') ? 'odx-wrap-block' : null, style: [n.attrs.width ? `width:${n.attrs.width + 2 * pad}px;height:${h + 2 * pad}px` : '', n.attrs.place].filter(Boolean).join(';') }];
+        const h = Number(redrawOf(n.attrs.src)?.height ?? n.attrs.height) || 0;
+        // (The node's attributes come from a co-editor's steps as well as from the reader: a place only of the CSS the
+        // reader writes, sizes as numbers, a picture only from the document, the page or the web. Anything else had put
+        // another site's address, or any CSS, into the page.)
+        const place = typeof n.attrs.place === 'string' && !/url\s*\(|image\s*\(|image-set|@|\\|expression|javascript|[<>"]/i.test(n.attrs.place) ? n.attrs.place : '';
+        const src = typeof shown === 'string' && /^(data:|blob:|https?:|$)/i.test(shown) ? shown : '';
+        const w = Number(n.attrs.width) || 0;
+        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [w ? `width:${w + 2 * pad}px;height:${h + 2 * pad}px` : '', place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).

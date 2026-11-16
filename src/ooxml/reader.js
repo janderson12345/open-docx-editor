@@ -559,6 +559,9 @@ function anchorCss(drawing, page) {
   // above them drawn at their offsets).
   const fxT = shapeTurn(drawing) || turnedInside(drawing) ? 0 : emuToPx(fx?.getAttribute('t') || 0);
   const y = ['paragraph', 'line'].includes(vRel) ? px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100 : 0;
+  // (Only the values ST_AlignV allows: the text goes into the picture's style, where a crafted document's could have
+  // added any CSS, a request to another site or a picture over the page.)
+  const vAlign = ['top', 'center', 'bottom', 'inside', 'outside'].find((v) => v === childNamed(posV, 'align')?.textContent) || 'none';
   let wrap = [...anchor.childNodes].find((n) => n.localName && n.localName.startsWith('wrap'))?.localName || 'wrapNone';
   // Wrapped round, but as wide as the column: no text fits beside it, so it takes its own band, as top-and-bottom (and,
   // a block, it can overlap another float, as Word lets it: sample S095's full-width picture under the text box beside it).
@@ -589,7 +592,7 @@ function anchorCss(drawing, page) {
     // Placed against the page or its margins vertically: pagination puts it at that height on its paragraph's page
     // (pages.js placeOnPage).
     const onPage = ['page', 'margin', 'topMargin', 'bottomMargin'].includes(vRel)
-      ? `;--odx-arel:${vRel};--odx-ay:${px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100}px;--odx-ayalign:${childNamed(posV, 'align')?.textContent || 'none'}` : '';
+      ? `;--odx-arel:${vRel};--odx-ay:${px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100}px;--odx-ayalign:${vAlign}` : '';
     return `position:absolute;${left}margin-top:${y}px;z-index:${anchor.getAttribute('behindDoc') === '1' ? -1 : 1}${onPage}`;
   }
   // Which side the text goes (w:wrapSquare/Tight/Through wrapText): both sides, the left or right only, or the larger
@@ -598,7 +601,8 @@ function anchorCss(drawing, page) {
   // 30px in from the margin, none to its left; 60px in, "The"). One side: a float on the other, as the browser wraps.
   // Both: the shape set where it is and each line beside it split there by a spacer (wrapboth.js).
   const wrapEl = [...anchor.childNodes].find((n) => n.localName === wrap);
-  const wrapText = wrapEl?.getAttribute('wrapText') || 'bothSides';
+  // (Only ST_WrapText's values: it goes into the picture's style too, --odx-hfwrap.)
+  const wrapText = ['bothSides', 'left', 'right', 'largest'].find((v) => v === wrapEl?.getAttribute('wrapText')) || 'bothSides';
   const colW = page ? page.w - page.left - page.right : 0;
   const xCol = !colW ? null : hAlign
     ? (['column', 'margin'].includes(hRel) ? { left: 0, center: (colW - extW) / 2, right: colW - extW }[hAlign] : hRel === 'page' ? { left: -page.left, center: (page.w - extW) / 2 - page.left, right: page.w - page.left - extW }[hAlign] : null)
@@ -630,7 +634,7 @@ function anchorCss(drawing, page) {
   // that height (pages.js liftFloats). sample S125's arrows, at the top corners of the margins of the page their
   // paragraph is on, with that page's first lines wrapping between them.
   const lift = ['page', 'margin', 'topMargin'].includes(vRel)
-    ? `;--odx-lrel:${vRel};--odx-ly:${px(childNamed(posV, 'posOffset')?.textContent)}px;--odx-lyalign:${childNamed(posV, 'align')?.textContent || 'none'}` : '';
+    ? `;--odx-lrel:${vRel};--odx-ly:${px(childNamed(posV, 'posOffset')?.textContent)}px;--odx-lyalign:${vAlign}` : '';
   // (Aligned right, its own edge is at the margin: its wrap distance is on the text's side only. sample S125's arrow 12px
   // in from the margin otherwise.)
   // Tight and through wrapping go round the wrap polygon (in 21600ths of the picture), not the picture's box: the text

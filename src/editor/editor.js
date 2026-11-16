@@ -4,7 +4,7 @@ import { commentsPlugin, addComment, refresh as refreshComments } from './commen
 import { hfDoubleClick, closeStory, flushStory } from './hfedit.js';
 import { formsPlugin } from './fields.js';
 import { noteClicks, closeNote, flushNote, insertNote } from './notes.js';
-import { EditorState, Plugin } from 'prosemirror-state';
+import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { Fragment, Slice } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
@@ -420,6 +420,33 @@ const activeBlock = new Plugin({
 });
 
 /**
+ * Home and End (with Shift too) on a paragraph's first or last line when the paragraph begins or ends in a marker inside
+ * a link or other mark, such as the field end after a Word TOC entry's page number (toc-u-only.docx: the hyperlink holds
+ * the entry, its tab, and the PAGEREF field to its end). The browser's own End stopped before that uneditable marker, or
+ * went to the end of the document; its Home from there went to after the entry's tab, or out of the paragraph; and what
+ * was typed next went there. They go to the paragraph's start or end, as Word's do. (Other lines, and other paragraphs,
+ * keep the browser's.)
+ */
+export const lineEdge = (dir, extend) => (state0, dispatch, view) => {
+  if (!view) return false;
+  // (A click just before: the browser's caret read first, or the key acted on where the caret had been.)
+  view.domObserver?.flush?.();
+  const { state } = view;
+  const { $head, empty } = state.selection;
+  if ((!empty && !extend) || !$head.parent.isTextblock) return false;
+  const marker = (n) => n && !n.isText && n.marks.length > 0;
+  if (!marker($head.parent.firstChild) && !marker($head.parent.lastChild)) return false;
+  const to = dir < 0 ? $head.start() : $head.end();
+  if (to === $head.pos) return true;
+  try {
+    const here = view.coordsAtPos($head.pos, dir < 0 ? -1 : 1), there = view.coordsAtPos(to, dir < 0 ? 1 : -1);
+    if (Math.abs(here.top - there.top) > Math.max(2, (here.bottom - here.top) / 2)) return false; // (not that line)
+  } catch { return false; }
+  if (dispatch) dispatch(state.tr.setSelection(TextSelection.create(state.doc, extend ? state.selection.anchor : to, to)).scrollIntoView());
+  return true;
+};
+
+/**
  * Pasted paragraphs' built-in styles by the document's own ids (Word's English ids, as a pasted <h1> gets, are another
  * language's in a document from a localised Word: Heading1 is "Ttulo1" from Spanish Word).
  *
@@ -481,6 +508,10 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Mod-z': doUndo,
     'Mod-y': doRedo,
     'Mod-Shift-z': doRedo,
+    Home: lineEdge(-1, false),
+    'Shift-Home': lineEdge(-1, true),
+    End: lineEdge(1, false),
+    'Shift-End': lineEdge(1, true),
     'Mod-b': spoken('bold', 'Bold'),
     'Mod-i': spoken('italic', 'Italic'),
     'Mod-u': spoken('underline', 'Underline'),
