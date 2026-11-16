@@ -101,13 +101,30 @@ const codeOf = (f) => f.parts.filter((p) => typeof p === 'string').join('');
 const nested = (f) => f.parts.filter((p) => typeof p !== 'string');
 const isIf = (f) => /^\s*IF\b/i.test(codeOf(f));
 const usesMerge = (f) => !!parseMergeField(codeOf(f)) || nested(f).some(usesMerge);
+/** NEXT, NEXTIF or SKIPIF: the fields that move a merge on to the next record or leave the record out. */
+const stepOf = (f) => /^\s*(NEXTIF|SKIPIF|NEXT)\b/i.exec(codeOf(f))?.[1].toUpperCase() ?? null;
+
+/**
+ * Where a merge is in its records, as one merged document is filled: `records`, the current one (`i`, moved on by
+ * NEXT and NEXTIF; past the last, every field is empty, as in Word), `seq` (MERGESEQ: the merged documents so far,
+ * this one included) and `skip` (a SKIPIF was true: the document is left out). `preview`: Preview Results, where Word
+ * leaves MERGESEQ empty and SKIPIF has no effect.
+ */
+export function mergeCursor(records, i = 0, { seq = i + 1, preview = false } = {}) {
+  return { records, i, seq, preview, skip: false };
+}
+const current = (ctx) => ctx.records[ctx.i];
 
 /** A field's value for the record: a merge field's, an IF's text, any other field's shown result. */
-function fieldValue(doc, f, record, index) {
+function fieldValue(doc, f, ctx) {
   const code = codeOf(f);
   const m = parseMergeField(code);
-  if (m) return m.kind === 'MERGEFIELD' ? formatMergeValue(recordValue(record, m.name), code) : String(index + 1);
-  if (isIf(f)) return ifValue(doc, f, record, index);
+  if (m) {
+    if (m.kind === 'MERGEFIELD') return formatMergeValue(recordValue(current(ctx), m.name), code);
+    if (!current(ctx)) return '';
+    return m.kind === 'MERGEREC' ? String(ctx.i + 1) : ctx.preview ? '' : String(ctx.seq);
+  }
+  if (isIf(f)) return ifValue(doc, f, ctx);
   return f.resultFrom != null && f.resultTo > f.resultFrom ? doc.textBetween(f.resultFrom, f.resultTo, '', '') : '';
 }
 
@@ -115,13 +132,13 @@ function fieldValue(doc, f, record, index) {
  * An IF field's code in words, as Word reads it: split at spaces outside quotes, \" a quote in quotes, a nested
  * field's value one word however many spaces it has ({ MERGEFIELD City } = "New York" is true for New York in Word).
  */
-function ifWords(doc, f, record, index) {
+function ifWords(doc, f, ctx) {
   const words = [];
   let cur = null;
   let q = false;
   const end = () => { if (cur) words.push(cur); cur = null; };
   for (const p of f.parts) {
-    if (typeof p !== 'string') { (cur ||= { t: '', quoted: q }).t += fieldValue(doc, p, record, index); continue; }
+    if (typeof p !== 'string') { (cur ||= { t: '', quoted: q }).t += fieldValue(doc, p, ctx); continue; }
     for (let i = 0; i < p.length; i++) {
       const c = p[i];
       if (q) {
@@ -170,8 +187,8 @@ export function ifCompare(a, op, b) {
 }
 
 /** An IF field's text for the record: { IF a op b "true text" "false text" }, with its own \* switches. */
-function ifValue(doc, f, record, index) {
-  const all = ifWords(doc, f, record, index).slice(1);
+function ifValue(doc, f, ctx) {
+  const all = ifWords(doc, f, ctx).slice(1);
   const words = [];
   let sw = '';
   for (let i = 0; i < all.length; i++) {
@@ -186,14 +203,31 @@ function ifValue(doc, f, record, index) {
 }
 
 /**
- * The fields merging a record fills, outermost first: merge fields, and IF fields testing or showing one, each with its
- * value for the record: [{ field, value }]. (Fields nested in other fields are filled within them.)
+ * NEXT, NEXTIF or SKIPIF at the cursor, as Word's merge takes them (checked against Word's own merge of
+ * test/fixtures/mergenext.docx and mergeskip*.docx): NEXT moves on to the next record, NEXTIF when its comparison
+ * (IF's) is true, the fields after it filled from that record; SKIPIF, when true, leaves the whole document out.
  */
-export function mergeTargets(doc, record, index = 0) {
+function step(doc, f, kind, ctx) {
+  if (kind === 'NEXT') { ctx.i++; return; }
+  if (kind === 'SKIPIF' && ctx.preview) return;
+  const [a, op, b] = ifWords(doc, f, ctx).slice(1).map((w) => w.t);
+  if (a == null || op == null || b == null || !ifCompare(a, op, b)) return;
+  if (kind === 'NEXTIF') ctx.i++; else ctx.skip = true;
+}
+
+/**
+ * The fields merging a record fills, outermost first: merge fields, IF fields testing or showing one, and NEXT, NEXTIF
+ * and SKIPIF (their text nothing), each with its value: [{ field, value }]. `ctx` a mergeCursor, moved on as the
+ * fields in order say. (Fields nested in other fields are filled within them.)
+ */
+export function mergeTargets(doc, ctx) {
   const out = [];
   const walk = (list) => {
     for (const f of list) {
-      if (parseMergeField(codeOf(f)) || (isIf(f) && usesMerge(f))) out.push({ field: f, value: fieldValue(doc, f, record, index) });
+      // (Once a SKIPIF leaves the document out, nothing after it moves the merge on: the next starts after this record.)
+      if (ctx.skip) return;
+      const kind = stepOf(f);
+      if (kind) { step(doc, f, kind, ctx); out.push({ field: f, value: '' }); } else if (parseMergeField(codeOf(f)) || (isIf(f) && usesMerge(f))) out.push({ field: f, value: fieldValue(doc, f, ctx) });
       else { walk(nested(f)); walk(f.kids); }
     }
   };
@@ -284,11 +318,14 @@ export function recordValue(record, name) {
 
 // --- Merging ----------------------------------------------------------------------------------------------------------
 
-/** The document with its merge fields replaced by `record`'s values (as plain text in the results' formatting). */
-export function mergeRecord(doc, record, index = 0) {
+/**
+ * The document with its merge fields replaced by the cursor's records' values (as plain text in the results'
+ * formatting); the cursor is left where the document's NEXT and NEXTIF fields moved it.
+ */
+export function mergeRecord(doc, ctx) {
   let out = doc;
-  // (IF fields too: Word's merged document has their text, the field gone.)
-  for (const { field: f, value } of mergeTargets(doc, record, index).reverse()) {
+  // (IF fields too: Word's merged document has their text, the field gone; NEXT, NEXTIF and SKIPIF leave nothing.)
+  for (const { field: f, value } of mergeTargets(doc, ctx).reverse()) {
     const marks = fieldMarks(out, f);
     const $from = out.resolve(f.from);
     const $to = out.resolve(f.to);
@@ -362,16 +399,32 @@ function copyStory(session, rId) {
 }
 
 /**
- * The headers and footers with merge fields, each record's own: { stories: rId -> [merged story per record] }, empty
- * when none has any.
+ * The headers and footers with merge fields, each merged document's own: rId -> [merged story per document], empty
+ * when none has any. Each is filled from the record its document ended on (after its NEXT fields), as in Word.
  */
-function mergedStories(session, records) {
+function mergedStories(session, records, units) {
   const stories = new Map();
   for (const id of storyIds(session)) {
     const doc = session.story(id);
-    if (doc && mergeTargets(doc, records[0]).length) stories.set(id, records.map((r, i) => mergeRecord(doc, r, i)));
+    if (doc && mergeTargets(doc, mergeCursor(records)).length) stories.set(id, units.map((u) => mergeRecord(doc, mergeCursor(records, u.last, { seq: u.seq }))));
   }
   return stories;
+}
+
+/**
+ * The merged documents, as Word's merge makes them: each starting at the record after the one the document before
+ * ended on (NEXT and NEXTIF moving on within one), those a SKIPIF left out dropped: [{ doc, first, last, seq }].
+ */
+export function mergeUnits(doc, records) {
+  const units = [];
+  for (let i = 0; i < records.length;) {
+    const ctx = mergeCursor(records, i, { seq: units.length + 1 });
+    const merged = mergeRecord(doc, ctx);
+    if (!ctx.skip) units.push({ doc: merged, first: i, last: ctx.i, seq: ctx.seq });
+    // (ctx.i is never before i: the loop ends.)
+    i = ctx.i + 1;
+  }
+  return units;
 }
 
 /**
@@ -409,17 +462,21 @@ function withRecordStories(session, doc, stories, i) {
 /**
  * Mail merge: `records` (objects, field name -> value) into the .docx's merge fields. With `combine` (the default) one
  * .docx of all of them, each record starting on a new page, as Word's Edit Individual Documents; without, one .docx per
- * record. Returns { bytes } or { files: [bytes...] }, and `fields` (the document's merge field names) and `missing`
- * (those no record has a value for).
+ * record. (A document with NEXT or NEXTIF fields takes several records each; one a SKIPIF leaves out is dropped.)
+ * Returns { bytes } or { files: [bytes...] }, and `fields` (the document's merge field names) and `missing` (those no
+ * record has a value for).
  */
 export function mailMerge(bytes, records, { combine = true } = {}) {
   if (!Array.isArray(records) || !records.length) throw new Error('mailMerge: no records');
   const session = new DocxSession(bytes);
   const fields = mergeFieldNames(session);
   const missing = fields.filter((name) => !records.some((r) => recordValue(r, name) !== ''));
-  const docs = records.map((r, i) => mergeRecord(session.doc, r, i));
-  // Merge fields in headers and footers are filled for each record too, as in Word.
-  const stories = mergedStories(session, records);
+  const units = mergeUnits(session.doc, records);
+  // (Every record left out by SKIPIF: one empty document, its headers' and footers' merge fields empty.)
+  if (!units.length) units.push({ doc: session.doc.type.create(session.doc.attrs, schema.nodes.paragraph.create()), first: records.length, last: records.length, seq: 1 });
+  const docs = units.map((u) => u.doc);
+  // Merge fields in headers and footers are filled for each document too, as in Word.
+  const stories = mergedStories(session, records, units);
   if (combine) return { bytes: session.save(joinRecords(docs.map((d, i) => withRecordStories(session, d, stories, i)))), fields, missing };
   return {
     files: docs.map((d, i) => {

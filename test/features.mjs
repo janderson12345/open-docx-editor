@@ -1172,6 +1172,25 @@ check(JSON.stringify(if1) === JSON.stringify({ lines: ['gt: big', 'lt: not under
   && JSON.stringify(if2) === JSON.stringify({ lines: ['gt: small', 'lt: under', 'nested: mid'], header: 'Statement for alan', footer: 'City: Boston / small' })
   && ifOff.header === 'Statement for «Name»' && ifOff.lines[0] === 'gt: small',
   `mail merge preview: IF fields, header and footer per record (${JSON.stringify({ if1, if2, ifOff })})`);
+// NEXTIF and NEXT in the preview (mergenext.docx; Word's preview shows these): the fields after them from the records
+// after the one shown, the header from the record the body ended on.
+await open('mergenext.docx');
+await page.evaluate(() => window.odx.setMergeData([['Ada', 'x', '5'], ['Bob', 'x', '20'], ['Cy', 'y', '30'], ['Di', 'x', '2'], ['Ed', 'y', '40']].map(([Name, Group, Amount]) => ({ Name, Group, Amount }))));
+await page.click('.odx-rtab:text-is("Mailings")');
+await page.click('button[title^="Preview results"]');
+await page.waitForTimeout(500);
+const nextShown = () => page.evaluate(() => ({
+  lines: [0, 2, 4].map((i) => document.querySelectorAll('.odx-content p')[i]?.innerText.replace(/\s+/g, ' ').trim()),
+  header: document.querySelector('.odx-header')?.innerText.trim(),
+}));
+const nx1 = await nextShown();
+await page.click('button[title="Next record"]');
+await page.waitForTimeout(500);
+const nx2 = await nextShown();
+await page.click('button[title^="Preview results"]');
+check(JSON.stringify(nx1) === JSON.stringify({ lines: ['a: 1 Ada', 'b: 2 Bob', 'c: 3 Cy'], header: 'H: Cy' })
+  && JSON.stringify(nx2) === JSON.stringify({ lines: ['a: 2 Bob', 'b: 3 Cy', 'c: 4 Di'], header: 'H: Di' }),
+  `mail merge preview: NEXTIF and NEXT moving on to the next records (${JSON.stringify({ nx1, nx2 })})`);
 await page.click('.odx-rtab:text-is("Home")');
 
 // Insert > Shapes: picked from the keyboard, a rectangle in line with the text; with the mouse, drawn on the page by

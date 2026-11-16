@@ -6,7 +6,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { Node, Slice, Fragment } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { blocksFromXml } from '../ooxml/reader.js';
-import { mergeTargets, fieldMarks, mergeRecord } from '../merge.js';
+import { mergeTargets, fieldMarks, mergeRecord, mergeCursor } from '../merge.js';
 import { announce } from './live.js';
 
 const key = new PluginKey('odx-mailmerge');
@@ -84,24 +84,33 @@ function refresh(view) {
   main.odx?.pages?.restory();
 }
 
-/** A header or footer as Preview Results shows it: its merge and IF fields filled for the record (else as it is). */
+/**
+ * A header or footer as Preview Results shows it: its merge and IF fields filled for the record the body's NEXT and
+ * NEXTIF fields moved on to, as Word's preview (else as it is).
+ */
 export function previewStory(session, doc) {
   const m = session.merge;
-  return doc && m?.preview && m.records.length ? mergeRecord(doc, m.records[m.index], m.index) : doc;
+  return doc && m?.preview && m.records.length ? mergeRecord(doc, mergeCursor(m.records, m.last ?? m.index, { preview: true })) : doc;
 }
 
-/** Each field shown as the record's value: its own content hidden, the value drawn in its place in its formatting. */
+/**
+ * Each field shown as the record's value: its own content hidden, the value drawn in its place in its formatting. As
+ * Word's preview: from the record shown on, NEXT and NEXTIF moving on to the records after it, SKIPIF and MERGESEQ
+ * ignored (they count only in the merge).
+ */
 function previewDecos(doc, m) {
-  const record = m.records[m.index];
   const decos = [];
+  const ctx = mergeCursor(m.records, m.index, { preview: true });
   // (IF fields too, their text for the record as in the merged document: merge.js mergeTargets.)
-  for (const { field: f, value } of mergeTargets(doc, record, m.index)) {
+  for (const { field: f, value } of mergeTargets(doc, ctx)) {
     if (doc.resolve(f.from).parent !== doc.resolve(f.to).parent) continue;
     const marks = fieldMarks(doc, f);
     decos.push(Decoration.inline(f.from, f.to, { class: 'odx-mm-hide' }));
     decos.push(Decoration.widget(f.from, () => { const s = document.createElement('span'); s.className = 'odx-mm-val'; s.textContent = value; return s; },
       { side: -1, marks: marks || [], key: `mm:${m.index}:${f.from}:${value}` }));
   }
+  // (The record the body ended on, for the headers and footers: previewStory.)
+  m.last = ctx.i;
   return DecorationSet.create(doc, decos);
 }
 
