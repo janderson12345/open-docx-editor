@@ -28,8 +28,8 @@
   Word 2013's has none), and no more lines in a row end in a hyphen than the document allows, on screen and in print.
   Checked against Word's print of test documents (a 1in zone, limits of 1 and 2). Not where the browser hyphenates by
   itself (Firefox).
-- **Accept All on thousands of changes is faster**: 6,000 tracked changes went from 1.9s to 0.5s, the
-  result the same.
+- **Accept All and Reject All on thousands of changes are faster**: on 6,000 tracked changes, from
+  1.9s to 0.5-0.6s each, the result the same.
 - **Home and End on a table of contents entry** (or any paragraph beginning or ending in a linked field) go to the start
   or end of the paragraph; text typed straight after them is no longer misplaced. The find bar keeps its search.
 - **Shapes turned and flipped inside groups**, a turned group's shapes turning with it, as Word draws them; SmartArt
