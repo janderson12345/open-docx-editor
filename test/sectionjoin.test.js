@@ -83,7 +83,8 @@ test('a document with a section break deleted saves with one section fewer, each
   const sects = xml.match(/<w:sectPr\b/g) || [];
   assert.equal(sects.length, 2, 'the two-column section and the document\'s last');
   const paras = xml.split('</w:p>');
-  const k = paras.findIndex((p) => p.replace(/<[^>]+>/g, '') === 'P2P3');
+  const textOf = (p) => [...p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+  const k = paras.findIndex((p) => textOf(p) === 'P2P3');
   assert.ok(k > 0 && !/<w:sectPr/.test(paras[k]), 'P2 and P3 joined, ending no section');
   assert.match(paras[k + 1], /<w:cols w:num="2".*P4/, 'P4 still ends the two-column section they are in');
 });
