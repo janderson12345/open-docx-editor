@@ -359,15 +359,30 @@ check(visits.join(' ') === 'body:apple body:apple box:apple header:apple footer:
   `Find goes through the body, text box, header, footer, notes and comments (${visits.join(' ')}; ${info})`);
 await page.keyboard.press('Control+h');
 await page.fill('.odx-findbar input[aria-label="Replace with"]', 'pear');
+const findFor = await page.inputValue('.odx-findbar input[aria-label="Find"]'); // (what Replace All looks for: said if it fails)
 await page.click('.odx-findbar button:has-text("Replace all")');
-await page.waitForTimeout(500);
+await page.waitForFunction(() => /results?$/.test(document.querySelector('.odx-findinfo').textContent));
 const replaced = await page.textContent('.odx-findinfo');
 const saved = unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))));
 const partText = (f) => strFromU8(saved[f]).replace(/<w:t\b[^>]*>([^<]*)<\/w:t>|<[^>]+>/g, '$1');
 const parts = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml', 'word/endnotes.xml', 'word/comments.xml'];
 const pears = parts.map((f) => (partText(f).match(/pear/g) || []).length);
 check(replaced === '8 results' && parts.every((f) => !partText(f).includes('apple')) && pears.join() === '4,1,1,1,1,1',
-  `Replace All in every part, saved (${replaced}; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy)`);
+  `Replace All in every part, saved (${replaced} for "${findFor}"; pears per part ${pears.join()}, the text box's twice: its shape and fallback copy; apples left ${parts.map((f) => (partText(f).match(/apple/g) || []).length).join()})`);
+await page.keyboard.press('Escape');
+// The find bar closed with Escape, then Ctrl+H with the text box selected: the search typed before stays, as in Word.
+// (The browser's Escape in a search box emptied it; and a picture has no text to search for, where taking its "" did
+// too: Replace All then found nothing.)
+await page.evaluate(() => {
+  const v = window.odx.view;
+  let at = null;
+  v.state.doc.descendants((n, pos) => { if (at == null && n.type.name === 'image') at = pos; });
+  v.focus();
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, at, at + 1)));
+});
+await page.keyboard.press('Control+h');
+const kept = await page.inputValue('.odx-findbar input[aria-label="Find"]');
+check(kept === 'apple', `Escape, then Ctrl+H with a picture selected: the search stays (${JSON.stringify(kept)})`);
 await page.keyboard.press('Escape');
 
 // Columns of their own widths (mkcolumns.mjs: 1.5in, 3in and 1.25in), laid out as Word's PDF of the file has them: each
