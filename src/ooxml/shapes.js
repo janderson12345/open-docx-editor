@@ -261,6 +261,12 @@ export function unmeasured() {
   return out;
 }
 
+/** Whether text is measured (in a browser), not estimated: WordArt's box is fitted to it only then (shapeSvg). */
+function measures() {
+  if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
+  return !!canvas;
+}
+
 /** Width of `text` in px: measured in a browser, else estimated at half an em per character. */
 function textWidth(text, sizePx, bold, font) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
@@ -283,7 +289,7 @@ function textWidth(text, sizePx, bold, font) {
  * paragraph, size, colour and weight per run. Lines wrap at the box's inner width (unless the box
  * says wrap="none"), word by word as in Word; a tab that would pass the right edge starts a new line.
  */
-function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
+function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
   const font0 = ctx.font;
   // The insets are from the inside of the box's outline (sample S078's cover box: its text 1px lower in Word's
   // PDF than from the shape's edge, under a 0.75pt line).
@@ -291,13 +297,15 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
   const l = ins('lIns', 9.6);
   const t = ins('tIns', 4.8);
   const r = ins('rIns', 9.6);
-  const wrap = bodyPr?.getAttribute('wrap') !== 'none';
+  // (`fit`: wrapped at the box's width all the same: WordArt's box as wide as the column, shapeSvg.)
+  const wrap = fit || bodyPr?.getAttribute('wrap') !== 'none';
   // Not wrapped and resized to fit (WordArt's box): Word makes the box as wide as its text, from its left edge, so
   // centred or right-aligned lines line up against the widest line, not the box's saved width (Word's PDF of its
   // gallery's styles: each at the box's left, in a box saved 2in wide).
   const shrink = !wrap && !!child(bodyPr, 'spAutoFit');
   const out = [];
   let y = t;
+  let inkRight = 0; // (where the widest line's last letter ends, for a box as wide as its text: shapeSvg)
   // One paragraph between x = L and R (`tbl`: the table style round it, whose paragraph settings beat Normal's).
   const layPara = (p, L, R, tbl) => {
     const l = L; // (tab stops count from the paragraph's box)
@@ -359,8 +367,19 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
         } else if (n.localName === 't' && n.textContent) {
           if (sizePx * lineFactor(font) > maxSize * lineF) lineF = lineFactor(font);
           maxSize = Math.max(maxSize, sizePx);
-          // Words keep their trailing spaces; a word that doesn't fit starts the next line.
+          // Words keep their trailing spaces; a word that doesn't fit starts the next line (one wider than a whole line in
+          // a box fitted to the column, WordArt's, broken letter by letter, as Word breaks it).
+          const words = [];
           for (const word of n.textContent.match(/\S*\s*/g).filter(Boolean)) {
+            if (!fit || textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
+            let part = '';
+            for (const ch of word) {
+              if (part && /\S/.test(ch) && textWidth(part + ch, sizePx, bold, font) + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; }
+              part += ch;
+            }
+            if (part) words.push(part);
+          }
+          for (const word of words) {
             let cur = lines[lines.length - 1];
             const width = textWidth(word, sizePx, bold, font) + word.length * letter;
             const inked = textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter;
@@ -388,6 +407,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     const contextual = child(pPr, 'contextualSpacing') ? !/^(0|false|off)$/.test(ctx2 || '') : !!st.pPr.contextualSpacing;
     if (contextual && prevStyle === (sid || '')) { y -= prevAfter; }
     else y += Math.max(0, before - prevAfter);
+    for (const q of lines) if (q.pieces.length) inkRight = Math.max(inkRight, q.pieces[q.pieces.length - 1].ink);
     const widest = Math.max(0, ...lines.filter((q) => q.pieces.length).map((q) => q.pieces[q.pieces.length - 1].ink - (q === lines[0] ? first : left)));
     for (const ln of lines) {
       const one = ln.one || sizePx * lineF;
@@ -407,14 +427,18 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
         const text = `<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
         out.push(text);
         // A reflection (w14:reflection): the text mirrored about its baseline (where Word starts it), that far
-        // below it, fading from its start opacity to its end one over its end position's share of the text's height.
+        // below it, fading from its start opacity to its end one over its end position's share of the text's height,
+        // softened as Word's (its print: a fifth of the blur, texteffects.js). Its descenders, mirrored, rise above
+        // its top (Word's print of wordart-leftovers/refl.docx), so the mask starts a quarter of the size higher.
         if (pc.refl) {
-          const { stA, endA, endPos, dist } = pc.refl;
+          const { stA, endA, endPos, dist, blur } = pc.refl;
           const h = pc.size * 1.2, bottom = base + pc.size * 0.02, top = bottom + dist;
+          const up = pc.size * 0.25, len = h * endPos + up;
           const id = `odx-rf${pc.n}-${out.length}`;
-          out.push(`<defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="${stA}"/><stop offset="1" stop-color="#fff" stop-opacity="${endA}"/></linearGradient>`
-            + `<mask id="${id}" maskUnits="userSpaceOnUse" x="-10000" y="${top.toFixed(1)}" width="20000" height="${(h * endPos).toFixed(1)}"><rect x="-10000" y="${top.toFixed(1)}" width="20000" height="${(h * endPos).toFixed(1)}" fill="url(#${id}g)"/></mask></defs>`
-            + `<g mask="url(#${id})"><g transform="translate(0 ${(bottom + top).toFixed(1)}) scale(1 -1)">${text}</g></g>`);
+          const soft = blur > 0 ? `<filter id="${id}b" x="-10%" y="-50%" width="120%" height="200%"><feGaussianBlur stdDeviation="${+(blur / 5).toFixed(2)}"/></filter>` : '';
+          out.push(`<defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="${stA}"/><stop offset="${+(up / len).toFixed(3)}" stop-color="#fff" stop-opacity="${stA}"/><stop offset="1" stop-color="#fff" stop-opacity="${endA}"/></linearGradient>`
+            + `<mask id="${id}" maskUnits="userSpaceOnUse" x="-10000" y="${(top - up).toFixed(1)}" width="20000" height="${len.toFixed(1)}"><rect x="-10000" y="${(top - up).toFixed(1)}" width="20000" height="${len.toFixed(1)}" fill="url(#${id}g)"/></mask>${soft}</defs>`
+            + `<g mask="url(#${id})"><g${soft ? ` filter="url(#${id}b)"` : ''}><g transform="translate(0 ${(bottom + top).toFixed(1)}) scale(1 -1)">${text}</g></g></g>`);
         }
       }
     }
@@ -482,6 +506,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0) {
     }
   }
   layBlocks(desc(txbx, 'txbxContent'), l, w - r, null);
+  ctx.textRight = inkRight + r;
   ctx.textEnd = y + ins('bIns', 4.8); // (where the text ends, for a box that grows to fit it: shapeSvg)
   // The text's place top to bottom (wps:bodyPr anchor): Word's own shapes centre theirs ("ctr"; groupturn-word's
   // "Text" in the middle of each shape). Only text shorter than its room moves: more stays at the top, where a box that
@@ -656,13 +681,14 @@ function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   const spPr = child(el, 'spPr');
   const xfrm = child(spPr, 'xfrm');
   if (!xfrm) return '';
-  const { x, y, w, h, rot, fh, fv } = frameOf(xfrm, m, top);
-  const t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${fh || fv ? ` matrix(${fh ? -1 : 1} 0 0 ${fv ? -1 : 1} ${fh ? w : 0} ${fv ? h : 0})` : ''}`;
+  const { x, y, h, rot, fh, fv } = frameOf(xfrm, m, top);
+  let { w } = frameOf(xfrm, m, top);
+  let t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${fh || fv ? ` matrix(${fh ? -1 : 1} 0 0 ${fv ? -1 : 1} ${fh ? w : 0} ${fv ? h : 0})` : ''}`;
   // A flipped shape's text isn't mirrored: Word keeps it readable, turned with the shape, and upside down when the
   // shape is flipped top to bottom (groupturn-word: "Text" in a rectangle flipped both ways and in one flipped
   // vertically, turned 15 degrees, reads upside down; in one flipped left to right, as it was).
   const textTurn = (rot + (fv ? 180 : 0)) % 360;
-  const tt = `translate(${x.toFixed(2)} ${y.toFixed(2)})${textTurn ? ` rotate(${textTurn} ${w / 2} ${h / 2})` : ''}`;
+  let tt = `translate(${x.toFixed(2)} ${y.toFixed(2)})${textTurn ? ` rotate(${textTurn} ${w / 2} ${h / 2})` : ''}`;
   if (name === 'pic') {
     const blip = desc(el, 'blip');
     const href = blip && ctx.image(blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed'));
@@ -679,7 +705,23 @@ function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   const textColor = fontRef && els(fontRef)[0] ? color(els(fontRef)[0], ctx.colors)?.hex : null;
   const tctx = textColor ? { ...ctx, textColor } : ctx;
   const bodyPr = child(el, 'bodyPr');
-  const text = txbx ? textBox(txbx, bodyPr, w, h, tctx, line) : '';
+  let text = txbx ? textBox(txbx, bodyPr, w, h, tctx, line) : '';
+  // WordArt's box (not wrapped and resized to fit its text: wrap="none", spAutoFit) as Word lays it out: as wide as its
+  // widest line, but never wider than the column (ctx.colW), where its lines wrap instead, word by word, a word wider
+  // than that letter by letter (Word's PDF of wordart-leftovers/wide.docx: Style 1 at 36 and 54pt saved 2in and 9in wide,
+  // at the column's edge, 2in in and against the page: each box 6.5in wide, a 6.5in column's, its lines wrapped there
+  // and centred in it, the box running past the page's edge when moved in). One narrower than its box is left as saved:
+  // its lines are lined up against the widest (textBox `shrink`).
+  if (txbx && top && ctx.colW > 0 && bodyPr?.getAttribute('wrap') === 'none' && child(bodyPr, 'spAutoFit') && measures()) {
+    const natural = tctx.textRight + 0.5;
+    if (natural > w + 0.5 || w > ctx.colW + 0.5) {
+      w = Math.round(Math.min(ctx.colW, natural) * 100) / 100;
+      text = textBox(txbx, bodyPr, w, h, tctx, line, true);
+      ctx.widened = w;
+      t = `translate(${x.toFixed(2)} ${y.toFixed(2)})${rot ? ` rotate(${rot} ${w / 2} ${h / 2})` : ''}${fh || fv ? ` matrix(${fh ? -1 : 1} 0 0 ${fv ? -1 : 1} ${fh ? w : 0} ${fv ? h : 0})` : ''}`;
+      tt = `translate(${x.toFixed(2)} ${y.toFixed(2)})${textTurn ? ` rotate(${textTurn} ${w / 2} ${h / 2})` : ''}`;
+    }
+  }
   // "Resize shape to fit text" (a:spAutoFit): Word makes the box as tall as its text when it lays the page out, whatever
   // height the file gives it (a text box of four paragraphs in 4.2in: Word's body text wraps beside it to its end).
   let hh = h;
@@ -723,6 +765,8 @@ export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   if (!inner) return null;
   // A single text box that grows to fit its text (shapeSvg) is that much taller; ctx.grown tells the caller.
   if (root.localName === 'wsp' && c.grown) { height = Math.round((height + c.grown) * 100) / 100; ctx.grownTo = height; }
+  // (And WordArt's box as wide as its text or the column, ctx.colW: its new width, ctx.widenedTo.)
+  if (root.localName === 'wsp' && c.widened) { width = c.widened; ctx.widenedTo = width; }
   const W = width + 2 * pad, H = height + 2 * pad;
   // (No ligatures or kerning, as Word sets text and the body has it: a text box's "ti" came out as one glyph.)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${-pad} ${-pad} ${W} ${H}" overflow="visible" style="font-variant-ligatures:none;font-kerning:none">${inner}</svg>`;

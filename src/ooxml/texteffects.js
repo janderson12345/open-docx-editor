@@ -82,13 +82,51 @@ const innerShadowFx = (dx, dy, blur, c, merge) => `<feComponentTransfer in="Sour
   + `<feGaussianBlur in="i1" stdDeviation="${px(blur / 6)}" result="i2"/><feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="i2" operator="in" result="i3"/>`
   + `<feComposite in="i3" in2="SourceAlpha" operator="in" result="i4"/>${merge ? '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="i4"/></feMerge>' : ''}`;
 
-// The inner shadows' filters for body text, defined once each in the page (an SVG of no size at the end of the body,
-// which prints with it): their markup -> id.
+// A bevel (w14:props3d's w14:bevelT: Word 2010's 3-D format on text) as filter primitives on the letters
+// (SourceGraphic), its result `out`: the letters lit from above and a little to the left, as Word's default lighting
+// lights them, over a bevel as wide as it says (w), as steep as its height (h) to that: their outline blurred into a
+// slope that wide, its light and shade added to the letters' own colour, which stays as it was where they're flat; a
+// shiny material (not matte or flat) also gets a highlight where the slope faces the light. Word's print of
+// wordart-leftovers/bevel.docx (gallery Styles 5 and 10, 36 and 72pt, in the text and in text boxes): the soft bevel
+// (circle, 2pt by 3pt, softEdge) a rounded rim, bright along edges facing up, dark along those facing down; the sharp
+// one (angle, 5pt by 1pt, matte) flat facets, a little lighter above, darker below. The bevel is as wide at 72pt as at
+// 36pt, so it's in points, not ems. Word's extrusion (extrusionH) and contour, seen face on, don't show: not drawn.
+// (An approximation: Word renders the letters in 3-D; a lit relief of their outline is what can be drawn here.)
+export function bevelFx(props3d, out = 'odxbev') {
+  // (Its tags read one pass each, xml.js startTag. A bevel's size defaults to 6pt by 6pt, its shape to a circle.)
+  const bt = props3d ? [...startTags(props3d, 'w14:bevelT')][0]?.tag : null;
+  if (!bt) return '';
+  const size = (k) => { const v = tagAttr(bt, k); return /^\d+$/.test(v || '') ? px(Number(v)) : px(76200); };
+  const w = size('w14:w'), h = size('w14:h');
+  const prst = tagAttr(bt, 'w14:prst') || 'circle';
+  if (!(w > 0) || !(h > 0)) return '';
+  const material = tagAttr([...startTags(props3d, 'w14:props3d')][0]?.tag || '', 'w14:prstMaterial') || 'warmMatte';
+  // (The slope a third of the bevel's width each side of the edge; an angle's, flat and low, made steeper to show.)
+  const angled = ['angle', 'coolSlant', 'slope', 'divot'].includes(prst);
+  const sd = +(w / 3).toFixed(2);
+  const scale = +Math.min(12, (angled ? 2 : 1) * h).toFixed(2);
+  // (The light's height, and what it gives a flat face, subtracted so that stays the letters' own colour.)
+  const el = 55, rad = (el * Math.PI) / 180, flat = Math.sin(rad);
+  const k = material === 'matte' || material === 'flat' ? 0.4 : 0.45;
+  const shiny = !['matte', 'flat', 'dkEdge', 'warmMatte', 'legacyMatte'].includes(material);
+  const exp = 40, flatSpec = 0.9 * ((1 + flat) / Math.hypot(Math.cos(rad), 1 + flat)) ** exp;
+  const spec = shiny
+    ? `<feSpecularLighting in="bv0" surfaceScale="${scale}" specularConstant="0.9" specularExponent="${exp}" lighting-color="#fff" result="bv3"><feDistantLight azimuth="240" elevation="${el}"/></feSpecularLighting>`
+      + `<feComposite in="bv3" in2="SourceAlpha" operator="in" result="bv4"/><feComposite in="bv2" in2="bv4" operator="arithmetic" k2="1" k3="0.7" k4="${+(-0.7 * flatSpec).toFixed(4)}" result="bv5"/>`
+    : '';
+  return `<feGaussianBlur in="SourceAlpha" stdDeviation="${sd}" result="bv0"/>`
+    + `<feDiffuseLighting in="bv0" surfaceScale="${scale}" diffuseConstant="1" lighting-color="#fff" result="bv1"><feDistantLight azimuth="240" elevation="${el}"/></feDiffuseLighting>`
+    + `<feComposite in="SourceGraphic" in2="bv1" operator="arithmetic" k2="1" k3="${k}" k4="${+(-k * flat).toFixed(4)}" result="bv2"/>`
+    + spec
+    + `<feComposite in="${shiny ? 'bv5' : 'bv2'}" in2="SourceAlpha" operator="in" result="${out}"/>`;
+}
+
+// Filters for body text, defined once each in the page (an SVG of no size at the end of the body, which prints with
+// it): their markup -> id.
 const INNER = new Map();
-/** The id of the page's filter for an inner shadow (offset and blur EMUs, CSS colour), defined in the page if new. */
-export function innerShadowFilter(dx, dy, blur, c) {
-  const fx = innerShadowFx(dx, dy, blur, c, false);
-  if (!INNER.has(fx)) INNER.set(fx, `odx-is${INNER.size}`);
+/** The id of the page's filter of primitives `fx` (named `odx-{prefix}N`), defined in the page if new. */
+function pageFilter(fx, prefix) {
+  if (!INNER.has(fx)) INNER.set(fx, `odx-${prefix}${INNER.size}`);
   const id = INNER.get(fx);
   if (typeof document !== 'undefined' && document.body && !document.getElementById(id)) {
     let svg = document.getElementById('odx-is-defs');
@@ -104,6 +142,8 @@ export function innerShadowFilter(dx, dy, blur, c) {
   }
   return id;
 }
+/** The id of the page's filter for an inner shadow (offset and blur EMUs, CSS colour), defined in the page if new. */
+export const innerShadowFilter = (dx, dy, blur, c) => pageFilter(innerShadowFx(dx, dy, blur, c, false), 'is');
 
 /**
  * The CSS for a run's w14 effects (`items`: [localName, xml] of its unmodelled w:rPr children). Fill: the letters'
@@ -161,6 +201,9 @@ export function textEffectsCss(items) {
     if (c && r) css.push(`--odx-glow:${pt(r)}pt ${rgbOf(c)}`);
   }
   if (shadows.length) css.push(`text-shadow:${shadows.join(',')}`);
+  // A bevel (w14:props3d): the run through the page's filter for it (bevelFx).
+  const bevel = bevelFx(w14('props3d'));
+  if (bevel) css.push(`filter:url(#${pageFilter(bevel, 'bv')})`);
   // The room Word gives them: a glow's line is taller above and below, a reflection's below (Word's PDFs of
   // mkeffects14c.ps1: 36pt Arial with glows of 2 to 30pt, the line 0.46 of the radius higher and 0.62 lower; at other
   // sizes in proportion, near enough: 12 to 72pt with a 10pt glow). A shadow takes none.
@@ -179,10 +222,15 @@ export function textEffectsCss(items) {
     // to the mirrored letters' foot; 0.905em (Arial's ascent) times each. Its gap below the baseline is twice the
     // distance less the blur, near enough: 3.8pt for a 2.36pt distance and 0.5pt blur (Reflection 4), 8.25pt for
     // 4.72pt (Reflection 7), none for none. (Word's copy keeps the round letters' overshoot below the baseline,
-    // which starts it a little higher; ours is cut at the baseline, so the gap is fitted to where each starts.)
+    // which starts it a little higher; ours is cut at the baseline, so the gap is fitted to where each starts.) Its blur:
+    // Word's print softens the copy's edges far less than a shadow of that blur, over about 0.3pt for the gallery's
+    // 0.5pt (wordart-leftovers/refl.pdf), so a fifth of it is the spread.
     const a = (k) => +Math.min(1, Math.max(0, (num(refl, k) || 0) / 100000)).toFixed(4);
     const gap = Math.max(0, 2 * pt(num(refl, 'dist') || 0) - pt(num(refl, 'blurRad') || 0));
-    css.push(`--odx-rf-a:${a('stA')}`, `--odx-rf-b:${a('endA')}`, `--odx-rf-pos:${+((num(refl, 'endPos') || 0) / 1000).toFixed(2)}%`, `--odx-rf-gap:${+gap.toFixed(2)}pt`);
+    const k = Math.max(0, (num(refl, 'endPos') || 0) / 100000);
+    css.push(`--odx-rf-a:${a('stA')}`, `--odx-rf-b:${a('endA')}`, `--odx-rf-pos:${+(k * 100).toFixed(2)}%`, `--odx-rf-k:${+k.toFixed(4)}`, `--odx-rf-gap:${+gap.toFixed(2)}pt`);
+    const blur = pt(num(refl, 'blurRad') || 0) / 5;
+    if (blur > 0) css.push(`--odx-rf-blur:${+blur.toFixed(3)}pt`);
   }
   if (up) css.push(`--odx-grow-up:${+up.toFixed(4)}em`);
   if (down) css.push(`--odx-grow-down:${+down.toFixed(4)}em`);
@@ -208,7 +256,7 @@ function reflectionRoom(endPos, dist) {
 }
 
 /** Whether a run's items have any w14 effect (which then stands instead of the old w:outline/w:shadow). */
-export const hasTextEffects = (items) => items.some(([n, x]) => ['textFill', 'textOutline', 'shadow', 'glow', 'reflection'].includes(n) && x.startsWith('<w14:'));
+export const hasTextEffects = (items) => items.some(([n, x]) => ['textFill', 'textOutline', 'shadow', 'glow', 'reflection', 'props3d'].includes(n) && x.startsWith('<w14:'));
 
 /**
  * A text box run's w14 effects for its SVG text (shapes.js): `paint`, the tspan's fill and stroke attributes (or null
@@ -218,7 +266,7 @@ export const hasTextEffects = (items) => items.some(([n, x]) => ['textFill', 'te
 export function svgTextEffects(rPr, n, serialize) {
   const items = [];
   for (const c of rPr ? [...rPr.childNodes].filter((k) => k.nodeType === 1) : []) {
-    if (['textFill', 'textOutline', 'shadow', 'glow', 'reflection'].includes(c.localName)) {
+    if (['textFill', 'textOutline', 'shadow', 'glow', 'reflection', 'props3d'].includes(c.localName)) {
       const x = serialize(c);
       if (x.startsWith('<w14:')) items.push([c.localName, x]);
     }
@@ -252,13 +300,17 @@ export function svgTextEffects(rPr, n, serialize) {
     if (c) attrs.push(`stroke=${solid(c).trim()}`, `stroke-width="${Number.isFinite(w) ? px(w) : 1}"`, ...(opacity(c) < 1 ? [`stroke-opacity="${opacity(c)}"`] : []));
   }
   const fx = [];
+  // A bevel first, on the letters; the shadow and glow then take the bevelled letters for theirs.
+  const bevel = bevelFx(get('props3d'));
+  if (bevel) fx.push(bevel);
+  const src = bevel ? 'odxbev' : 'SourceGraphic';
   const sh = get('shadow');
   if (sh) {
     const c = w14Color(sh);
     const dist = num(sh, 'dist') || 0, a = (((num(sh, 'dir') || 0) / 60000) * Math.PI) / 180, blur = num(sh, 'blurRad') || 0;
     // (Scaled to nothing, sx and sy 0, Word draws it inside the letters: an inner shadow, the letters looking pressed in.)
     const inner = num(sh, 'sx') === 0 && num(sh, 'sy') === 0;
-    if (c && inner) fx.push(innerShadowFx(dist * Math.cos(a), dist * Math.sin(a), blur, c, true));
+    if (c && inner) fx.push(innerShadowFx(dist * Math.cos(a), dist * Math.sin(a), blur, c, true).replace(/"SourceGraphic"/g, `"${src}"`));
     else if (c) fx.push(`<feDropShadow dx="${px(dist * Math.cos(a))}" dy="${px(dist * Math.sin(a))}" stdDeviation="${px(blur / 2)}" flood-color=${solid(c)}flood-opacity="${opacity(c)}"/>`);
   }
   const glow = get('glow');
@@ -267,13 +319,13 @@ export function svgTextEffects(rPr, n, serialize) {
     const r = px(num(glow, 'rad') || 0);
     if (c && r) {
       fx.push(`<feMorphology in="SourceAlpha" operator="dilate" radius="${+(r / 2).toFixed(2)}" result="g1"/><feGaussianBlur in="g1" stdDeviation="${+(r / 3).toFixed(2)}" result="g2"/>`
-        + `<feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="g2" operator="in" result="glow"/><feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>`);
+        + `<feFlood flood-color=${solid(c)}flood-opacity="${opacity(c)}"/><feComposite in2="g2" operator="in" result="glow"/><feMerge><feMergeNode in="glow"/><feMergeNode in="${src}"/></feMerge>`);
     }
   }
-  if (fx.length) defs.push(`<filter id="odx-tx${n}" x="-50%" y="-50%" width="200%" height="200%">${fx.join('')}</filter>`);
+  if (fx.length) defs.push(`<filter id="odx-tx${n}" x="-50%" y="-50%" width="200%" height="200%"${bevel ? ' color-interpolation-filters="sRGB"' : ''}>${fx.join('')}</filter>`);
   // (A reflection: its start and end opacities, how far down it fades out (a share of the text's height), and its
   // distance below the text, px.)
   const rf = get('reflection');
-  const reflection = rf ? { stA: Math.min(1, (num(rf, 'stA') || 0) / 100000), endA: Math.min(1, (num(rf, 'endA') || 0) / 100000), endPos: (num(rf, 'endPos') || 0) / 100000, dist: px(num(rf, 'dist') || 0) } : null;
+  const reflection = rf ? { stA: Math.min(1, (num(rf, 'stA') || 0) / 100000), endA: Math.min(1, (num(rf, 'endA') || 0) / 100000), endPos: (num(rf, 'endPos') || 0) / 100000, dist: px(num(rf, 'dist') || 0), blur: px(num(rf, 'blurRad') || 0) } : null;
   return { paint: attrs.length ? attrs.join(' ') : null, filter: fx.length ? `url(#odx-tx${n})` : null, defs: defs.join(''), reflection };
 }

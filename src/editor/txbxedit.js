@@ -34,8 +34,9 @@ export function closeTextBox() {
       r.selectNodeContents(p);
       w = Math.max(w, r.getBoundingClientRect().width / z);
     }
-    // (With room to spare: Word wraps a line that only just fits, 1pt over in its print.)
-    fit = Math.ceil(w * 1.02 + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + 4);
+    // (With room to spare: Word wraps a line that only just fits, 1pt over in its print. No wider than the column, where
+    // Word wraps its lines: shapes.js draws them so.)
+    fit = Math.min(colWidth(main), Math.ceil(w * 1.02 + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + 4));
   }
   tv.destroy();
   el.remove();
@@ -83,8 +84,9 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   el.className = 'odx-hfedit odx-txbxedit';
   const z = zoomOf(main); // (in the page's own px, whatever the zoom)
   el.style.cssText = `left:${(a.left - o.left) / z}px;top:${(a.top - o.top) / z}px;width:${a.width / z}px;min-height:${a.height / z}px;padding:${t}px ${rr}px ${b}px ${l}px;box-sizing:border-box`;
-  // A box as wide as its text (WordArt: wrap="none", resized to fit): its lines don't wrap, the box widening as it's typed.
-  if (fitsText(node.attrs.xml)) el.style.cssText += `;width:max-content;min-width:${a.width / z}px;white-space:pre`;
+  // A box as wide as its text (WordArt: wrap="none", resized to fit): the box widening as it's typed, up to the column's
+  // width, where its lines wrap, as Word wraps them.
+  if (fitsText(node.attrs.xml)) el.style.cssText += `;width:max-content;min-width:${Math.min(a.width / z, colWidth(main))}px;max-width:${colWidth(main)}px;white-space:pre-wrap;overflow-wrap:anywhere`;
   const tag = document.createElement('div');
   tag.className = 'odx-hfedit-tag';
   const done = document.createElement('button');
@@ -122,6 +124,12 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   open = { main, tv, el, pos, node, k, doc0, outside };
   tv.focus();
   return tv;
+}
+
+/** The body's column width (px, the page's less its margins), which WordArt's box is no wider than. */
+function colWidth(main) {
+  const cs = getComputedStyle(main.dom);
+  return main.dom.clientWidth - (parseFloat(cs.getPropertyValue('--odx-page-left')) || 96) - (parseFloat(cs.getPropertyValue('--odx-page-right')) || 96);
 }
 
 // A text box as wide as its text: not wrapped (wrap="none"), resized to fit it (spAutoFit), as WordArt's.
