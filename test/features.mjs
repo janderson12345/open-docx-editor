@@ -3,6 +3,8 @@
 // emphasis marks and run borders making their lines taller, right-to-left paragraphs, a Strict document.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
 import { serveDemo, launchOptions } from './browser.mjs';
 
@@ -1198,6 +1200,85 @@ const fnLong = await page.evaluate(() => {
   return { first: sheetOf(rects[0].top), ref: sheetOf((ref.top + ref.bottom) / 2), pages: sheets.length };
 });
 check(fnLong.first === 0 && fnLong.ref === 1, `a long note's paragraph split above its reference, as Word (${JSON.stringify(fnLong)})`);
+
+// A footnote inserted in 14pt Georgia text (notes-georgia14.docx, mknotes.mjs), typed in, then typed after: the caret
+// stays after the reference, the note is drawn under the text of its reference's page (the text making room), the
+// typed text after it is the body's 14pt Georgia, and the note keeps the space after its number ("¹Typed": collapsed,
+// the browser dropped it with the first letter).
+await open('notes-georgia14.docx');
+const g14 = () => page.evaluate(() => {
+  const v = window.odx.view;
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const sheetOf = (y) => sheets.findIndex((r) => y >= r.top && y < r.bottom);
+  const ref = document.querySelector('.odx-content [data-kind="footnoteReference"]');
+  const rr = ref?.getBoundingClientRect();
+  const s0 = rr ? sheetOf((rr.top + rr.bottom) / 2) : 0;
+  const lines = [];
+  const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+  for (let n; (n = w.nextNode());) { const rg = document.createRange(); rg.selectNodeContents(n); lines.push(...[...rg.getClientRects()].filter((r) => r.height > 0 && sheetOf(r.top) === s0)); }
+  const note = document.querySelector('.odx-note[data-kind="footnote"]');
+  const nr = note?.getBoundingClientRect();
+  const ed = document.querySelector('.odx-noteedit');
+  const nv = v.odx.hfView;
+  const c = v.coordsAtPos(v.state.selection.from);
+  const top = sheets[s0].top;
+  return {
+    sel: v.state.selection.from, refAt: (() => { let at = null; v.state.doc.descendants((n, pos) => { if (n.attrs?.kind === 'footnoteReference') at = pos; }); return at; })(),
+    before: v.state.doc.textBetween(Math.max(0, v.state.selection.from - 12), v.state.selection.from),
+    caret: { sheet: sheetOf(c.top), onRefLine: !!rr && c.top < rr.bottom && c.bottom > rr.top, dx: rr ? Math.round(c.left - rr.right) : null },
+    ref: rr && { sheet: s0, font: getComputedStyle(ref).fontFamily.split(',')[0], size: parseFloat(getComputedStyle(ref).fontSize) },
+    textBottom: Math.round(Math.max(...lines.map((r) => r.bottom)) - top),
+    note: nr && { sheet: sheetOf(nr.top), top: Math.round(nr.top - top), bottom: Math.round(nr.bottom - top), text: note.textContent, size: parseFloat(getComputedStyle(note.querySelector('.odx-t') || note).fontSize), lines: new Set([...note.querySelectorAll('.odx-t')].flatMap((t) => { const rg = document.createRange(); rg.selectNodeContents(t); return [...rg.getClientRects()].map((r) => Math.round(r.top)); })).size },
+    editor: ed && nv && { top: Math.round(ed.getBoundingClientRect().top - top), atEnd: nv.state.selection.from === nv.state.doc.content.size - 1, focused: nv.hasFocus() },
+    focus: v.hasFocus(), pages: sheets.length,
+  };
+});
+await page.evaluate(() => {
+  const v = window.odx.view; let at = null;
+  v.state.doc.descendants((n, pos) => { if (at == null && n.isText && n.text.startsWith('Paragraph 2.')) at = pos + n.text.indexOf('orchard') + 'orchard'.length; });
+  v.focus();
+  v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(at))));
+});
+const g14Before = await g14();
+await page.keyboard.press('Control+Alt+f');
+await page.waitForSelector('.odx-noteedit');
+await page.waitForTimeout(300);
+const g14New = await g14();
+await page.keyboard.type('Typed in the note: a note long enough to take three lines of its own at the foot of the page, under the text of the page its reference is on, as Word draws a note of this length there, the text above it making room for it. One more sentence of the note, so that it runs on to a third line of its own.');
+await page.waitForTimeout(300);
+const g14Typing = await g14();
+await page.keyboard.press('Escape');
+await page.waitForTimeout(600);
+const g14Closed = await g14();
+await page.keyboard.type(' typed after');
+await page.waitForTimeout(800);
+const g14After = await g14();
+const g14Run = await page.evaluate(() => { const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT); for (let n; (n = w.nextNode());) if (n.textContent.startsWith(' typed after')) { const cs = getComputedStyle(n.parentElement); return { font: cs.fontFamily.split(',')[0], size: parseFloat(cs.fontSize), va: cs.verticalAlign }; } return null; });
+const g14Bytes = new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save())));
+const g14Xml = strFromU8(unzipSync(g14Bytes)['word/footnotes.xml']);
+// (The pages as typed against the saved file's pages laid out afresh.)
+const g14File = path.join(os.tmpdir(), 'odx-notes-georgia14-typed.docx');
+fs.writeFileSync(g14File, g14Bytes);
+await page.setInputFiles('input[type=file]', g14File);
+await page.waitForFunction(() => window.odx?.fileName === 'odx-notes-georgia14-typed.docx');
+await page.waitForTimeout(1200);
+const g14Fresh = await g14();
+fs.rmSync(g14File, { force: true });
+const PAGE_FOOT = 1056 - 96; // (a Letter page's 1in bottom margin)
+check(g14New.refAt === g14Before.sel && g14New.sel === g14Before.sel + 1 && g14New.ref.font === 'Georgia' && Math.abs(g14New.ref.size - 18.67 * 0.66) < 0.2 && g14New.editor?.focused && g14New.editor.atEnd && g14New.editor.top === g14New.note.top,
+  `a footnote inserted in 14pt Georgia: its reference at the cursor in Georgia, raised, its note open for typing over its drawn copy (${JSON.stringify({ before: g14Before.sel, ...g14New })})`);
+check(g14Typing.editor?.atEnd && g14Typing.editor.top === g14Typing.note.top && g14Typing.sel === g14New.sel,
+  `typing in the new note: its caret at the end of what's typed, the editor where the note is, the text's cursor still after the reference (${JSON.stringify(g14Typing)})`);
+check(g14Closed.focus && g14Closed.sel === g14New.sel && g14Closed.note.sheet === g14Closed.ref.sheet && g14Closed.note.text.startsWith('1 Typed in the note') && Math.abs(g14Closed.note.size - 13.33) < 0.1
+  && g14Closed.note.lines === 3 && g14Closed.textBottom < g14Closed.note.top - 10 && g14Closed.note.bottom <= PAGE_FOOT + 1 && g14Closed.textBottom < g14Before.textBottom,
+  `the typed note under its reference's page's text, which made room for its three lines; the caret back after the reference (${JSON.stringify(g14Closed)})`);
+check(g14After.sel === g14New.sel + 12 && g14After.before.endsWith(' typed after') && g14After.caret.sheet === g14After.ref.sheet && g14After.caret.onRefLine && g14After.caret.dx > 40
+  && g14Run?.font === 'Georgia' && Math.abs(g14Run.size - 18.67) < 0.1 && g14Run.va === 'baseline'
+  && g14After.note.sheet === g14After.ref.sheet && g14After.textBottom < g14After.note.top - 10 && g14After.note.bottom <= PAGE_FOOT + 1 && g14After.pages === g14Before.pages,
+  `typed after the reference: 14pt Georgia on its line, the caret after it, the note still under the page's text (${JSON.stringify({ g14After, g14Run })})`);
+check(g14Fresh.textBottom === g14After.textBottom && g14Fresh.note?.top === g14After.note.top && g14Fresh.note.bottom === g14After.note.bottom && g14Fresh.note.lines === g14After.note.lines && g14Fresh.pages === g14After.pages,
+  `the pages as typed are the saved file's pages laid out afresh (${JSON.stringify({ typed: [g14After.textBottom, g14After.note], fresh: [g14Fresh.textBottom, g14Fresh.note] })})`);
+check(/<w:footnoteRef\/><\/w:r><w:r><w:t xml:space="preserve"> Typed in the note/.test(g14Xml), `the new note saved with the space after its number (${/<w:footnote w:id="1">[\s\S]*?<\/w:footnote>/.exec(g14Xml)?.[0].slice(0, 260)})`);
 
 // Delete Cells ("shift cells left") with Track Changes on: the cell recorded as deleted (w:cellDel), still shown; with it
 // off, the cell goes and the row ends in a grid column of its own (w:gridAfter), as Word's dialog does.
