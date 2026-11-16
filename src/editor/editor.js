@@ -420,24 +420,29 @@ const activeBlock = new Plugin({
 });
 
 /**
- * End (Shift+End) on a paragraph's last line when the paragraph ends in a marker inside a link or other mark, such as
- * the field end after a Word TOC entry's page number (toc-u-only.docx: the hyperlink holds the entry, its tab, and the
- * PAGEREF field to its end). The browser's own End stops before that uneditable marker, or goes to the end of the
- * document, and what's typed next goes there: the paragraph's end, as Word's End does. (Other lines, and other
- * paragraphs, keep the browser's.)
+ * Home and End (with Shift too) on a paragraph's first or last line when the paragraph begins or ends in a marker inside
+ * a link or other mark, such as the field end after a Word TOC entry's page number (toc-u-only.docx: the hyperlink holds
+ * the entry, its tab, and the PAGEREF field to its end). The browser's own End stopped before that uneditable marker, or
+ * went to the end of the document; its Home from there went to after the entry's tab, or out of the paragraph; and what
+ * was typed next went there. They go to the paragraph's start or end, as Word's do. (Other lines, and other paragraphs,
+ * keep the browser's.)
  */
-export const lineEnd = (extend) => (state, dispatch, view) => {
+export const lineEdge = (dir, extend) => (state0, dispatch, view) => {
+  if (!view) return false;
+  // (A click just before: the browser's caret read first, or the key acted on where the caret had been.)
+  view.domObserver?.flush?.();
+  const { state } = view;
   const { $head, empty } = state.selection;
-  if (!view || (!empty && !extend) || !$head.parent.isTextblock) return false;
-  const last = $head.parent.lastChild;
-  if (!last || last.isText || !last.marks.length) return false;
-  const end = $head.end();
-  if (end === $head.pos) return true;
+  if ((!empty && !extend) || !$head.parent.isTextblock) return false;
+  const marker = (n) => n && !n.isText && n.marks.length > 0;
+  if (!marker($head.parent.firstChild) && !marker($head.parent.lastChild)) return false;
+  const to = dir < 0 ? $head.start() : $head.end();
+  if (to === $head.pos) return true;
   try {
-    const here = view.coordsAtPos($head.pos, 1), there = view.coordsAtPos(end, -1);
-    if (Math.abs(here.top - there.top) > Math.max(2, (here.bottom - here.top) / 2)) return false; // (not the last line)
+    const here = view.coordsAtPos($head.pos, dir < 0 ? -1 : 1), there = view.coordsAtPos(to, dir < 0 ? 1 : -1);
+    if (Math.abs(here.top - there.top) > Math.max(2, (here.bottom - here.top) / 2)) return false; // (not that line)
   } catch { return false; }
-  if (dispatch) dispatch(state.tr.setSelection(extend ? TextSelection.create(state.doc, state.selection.anchor, end) : TextSelection.create(state.doc, end)).scrollIntoView());
+  if (dispatch) dispatch(state.tr.setSelection(TextSelection.create(state.doc, extend ? state.selection.anchor : to, to)).scrollIntoView());
   return true;
 };
 
@@ -503,8 +508,10 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Mod-z': doUndo,
     'Mod-y': doRedo,
     'Mod-Shift-z': doRedo,
-    End: lineEnd(false),
-    'Shift-End': lineEnd(true),
+    Home: lineEdge(-1, false),
+    'Shift-Home': lineEdge(-1, true),
+    End: lineEdge(1, false),
+    'Shift-End': lineEdge(1, true),
     'Mod-b': spoken('bold', 'Bold'),
     'Mod-i': spoken('italic', 'Italic'),
     'Mod-u': spoken('underline', 'Underline'),

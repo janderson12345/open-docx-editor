@@ -866,6 +866,15 @@ await page.keyboard.type(' typed');
 await page.waitForTimeout(300);
 const endTyped = await page.evaluate(() => `${window.odx.view.state.doc.firstChild.textContent}|${window.odx.view.state.doc.lastChild.textContent}`);
 check(endTyped === 'H1 styled1 typed|Body text', `End on a TOC entry and typing: all at the entry's end (${endTyped})`);
+// And End then Home on the next entry: at its start (the browser's Home from the end went to after the entry's tab, or
+// out of the paragraph).
+await page.click('.odx-content > p >> nth=1');
+await page.keyboard.press('End');
+await page.keyboard.press('Home');
+await page.keyboard.type('Z!');
+await page.waitForTimeout(300);
+const homeTyped = await page.evaluate(() => `${window.odx.view.state.doc.child(1).textContent}|${window.odx.view.state.doc.textContent.split('Z!').length - 1}`);
+check(homeTyped === 'Z!H2 styled1|1', `End, Home on a TOC entry and typing: all at the entry's start (${homeTyped})`);
 
 // Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
 // cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
