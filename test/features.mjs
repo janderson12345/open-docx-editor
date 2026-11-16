@@ -119,6 +119,24 @@ check(fnr[0] && fnr[0].sep[0] === 96 && fnr[0].sep[1] === 288, `the separator 2i
 await open('footnotes-columns-one-band.docx');
 const f1 = await bands();
 check(f1[0] && f1[0].parts.length === 1 && f1[0].parts[0].ids.join() === '1,2,3', `w15:footnoteColumns 1: one band, notes 1-3 on page 1 (${JSON.stringify(f1.map((b) => b && b.parts))})`);
+// A note far too long for its page (fncols-word tall2a): the band stays in columns, under the text up to the reference
+// evened out across them (paragraph 2, holding it, beside paragraph 1, not under it), each column filled, and the rest
+// of the note in the next page's band, in columns again.
+await open('footnotes-columns-tall.docx');
+// (Its band is worked out over a few layout passes: until the first page's separator is above the middle.)
+await page.waitForFunction(() => { const s = document.querySelector('.odx-sheets > .odx-sheet'); const sep = s?.querySelector('.odx-note-sep'); return sep && sep.getBoundingClientRect().top - s.getBoundingClientRect().top < s.getBoundingClientRect().height / 2; }, null, { timeout: 8000 }).catch(() => {});
+await page.waitForTimeout(500);
+const ft = (await page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].slice(0, 2).map((s) => [...s.querySelectorAll('.odx-note-band > div')].map((c) => [...c.querySelectorAll('.odx-note')].map((n) => n.dataset.id)))));
+const ftp = await page.evaluate(() => {
+  const sh = document.querySelector('.odx-sheets > .odx-sheet');
+  const s = sh.getBoundingClientRect();
+  const sep = sh.querySelector('.odx-notes .odx-note-sep').getBoundingClientRect();
+  const ps = [...document.querySelectorAll('.odx-content > p')].slice(0, 2).map((p) => { const r = p.getBoundingClientRect(); return { x: Math.round(r.left - s.left), y: Math.round(r.top - s.top) }; });
+  return { sep: Math.round(sep.top - s.top), h: Math.round(s.height), ps };
+});
+const huge = ft[0]?.[0]?.[0];
+check(!!huge && ft.length === 2 && ft.every((cs) => cs.length === 2 && cs.every((ids) => ids.includes(huge))), `a note too long for its page: in both band columns, going on in columns on page 2 (${JSON.stringify(ft)})`);
+check(ftp.ps[0].x === 96 && ftp.ps[1].x === 432 && Math.abs(ftp.ps[0].y - ftp.ps[1].y) < 4 && ftp.sep < ftp.h / 2, `its reference's paragraph beside the one before, the band from under them (${JSON.stringify(ftp)})`);
 await open('footnotes-separator-rtl.docx');
 const fs2 = await bands();
 check(fs2[0] && fs2[0].sep[0] === 528 && fs2[0].sep[1] === 720, `a right-to-left separator at the right (${fs2[0]?.sep})`);
