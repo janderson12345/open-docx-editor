@@ -9,9 +9,11 @@
 
 import { reader, points, rects, utf16, lerp, readObject, n } from './emfplus-read.js';
 
-const hex = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.toString(16).padStart(2, '0')).join('')}`;
+// An EMF+ ARGB colour (0xAARRGGBB) as #rrggbb, and its alpha; emf.js colorref is GDI's 0x00BBGGRR.
+const argb = (v) => `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((k) => k.toString(16).padStart(2, '0')).join('')}`;
 const alpha = (v) => ((v >>> 24) & 255) / 255;
-const mul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
+// Matrices as GDI+ keeps them, [m11 m12 m21 m22 dx dy] applied to row vectors: A then B (shapes.js composes SVG's).
+const mulRow = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3],
   A[4] * B[0] + A[5] * B[2] + B[4], A[4] * B[1] + A[5] * B[3] + B[5]];
 const ID = [1, 0, 0, 1, 0, 0];
 const inverse = ([a, b, c, d, e, f]) => { const k = a * d - b * c || 1; return [d / k, -b / k, -c / k, a / k, (c * f - d * e) / k, (b * e - a * f) / k]; };
@@ -73,8 +75,8 @@ export function emfPlusToSvg(input, { bx, by }, h) {
   // ----- painting -----
   const paint = (brush) => { // [paint, opacity] for fill or stroke, in the current world units
     if (!brush) return ['none', 1];
-    if (typeof brush === 'number') return [hex(brush), alpha(brush)];
-    if (brush.type === 'solid') return [hex(brush.color), alpha(brush.color)];
+    if (typeof brush === 'number') return [argb(brush), alpha(brush)];
+    if (brush.type === 'solid') return [argb(brush.color), alpha(brush.color)];
     if (brush.type === 'hatch') {
       // An 8 x 8 tile of the picture's pixels, upright and unscaled whatever the world and page (as GDI+ draws them):
       // its lines, or for the percent styles that share of its pixels.
@@ -98,12 +100,12 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         45: (x, y) => y === 0 || (y < 4 && x === 0) || (y === 4) || (y > 4 && x === 4), 47: (x, y) => x % 2 === 0 && y % 2 === 0,
       }[brush.style];
       let ink = '';
-      const cellsOf = (on) => { const c = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (on(x, y)) c.push(`M${x} ${y}h1v1h-1Z`); return `<path d="${c.join('')}" fill="${hex(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`; };
-      if (lines || more) ink = `<path d="${lines || more[0]}" fill="none" stroke="${hex(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="${lines ? 1 : more[1]}"/>`;
+      const cellsOf = (on) => { const c = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (on(x, y)) c.push(`M${x} ${y}h1v1h-1Z`); return `<path d="${c.join('')}" fill="${argb(brush.fore)}" fill-opacity="${n(alpha(brush.fore))}"/>`; };
+      if (lines || more) ink = `<path d="${lines || more[0]}" fill="none" stroke="${argb(brush.fore)}" stroke-opacity="${n(alpha(brush.fore))}" stroke-width="${lines ? 1 : more[1]}"/>`;
       else if (pct) ink = cellsOf((x, y) => (pct === 50 ? (x + y) % 2 === 0 : ((x * 37 + y * 21) % 64) < (pct * 64) / 100));
       else if (dots) ink = cellsOf(dots);
-      else return [hex(lerp(brush.fore, brush.back, 0.5)), 1];
-      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${hex(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
+      else return [argb(lerp(brush.fore, brush.back, 0.5)), 1];
+      defs.push(`<pattern id="${g}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="${mat(inverse(toDevice()))}" shape-rendering="crispEdges" overflow="hidden"><rect width="8" height="8" fill="${argb(brush.back)}" fill-opacity="${n(alpha(brush.back))}"/>${ink}</pattern>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'texture') {
@@ -124,15 +126,15 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // (Across its rectangle, through the brush's matrix; repeated past it as GDI+ tiles by default, mirrored, or
       // padded only when clamped.)
       const spread = brush.wrap === 4 ? '' : ` spreadMethod="${brush.wrap === 0 ? 'repeat' : 'reflect'}"`;
-      const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
+      const stops = brush.stops.map(([o, c]) => `<stop offset="${n(o)}" stop-color="${argb(c)}" stop-opacity="${n(alpha(c))}"/>`).join('');
       defs.push(`<linearGradient id="${g}" gradientUnits="userSpaceOnUse" x1="${n(x)}" y1="${n(y + hh / 2)}" x2="${n(x + w)}" y2="${n(y + hh / 2)}"${spread}${brush.m ? ` gradientTransform="${mat(brush.m)}"` : ''}>${stops}</linearGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'radial') {
       const g = id('g');
       const { cx, cy, rx, ry } = brush;
-      const squash = mul(mul([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
-      defs.push(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mul(squash, brush.m) : squash)}"><stop offset="0" stop-color="${hex(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${hex(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
+      const squash = mulRow(mulRow([1, 0, 0, 1, -cx, -cy], [1, 0, 0, ry / rx, 0, 0]), [1, 0, 0, 1, cx, cy]);
+      defs.push(`<radialGradient id="${g}" gradientUnits="userSpaceOnUse" cx="${n(cx)}" cy="${n(cy)}" r="${n(rx)}" gradientTransform="${mat(brush.m ? mulRow(squash, brush.m) : squash)}"><stop offset="0" stop-color="${argb(brush.c1)}" stop-opacity="${n(alpha(brush.c1))}"/><stop offset="1" stop-color="${argb(brush.c2)}" stop-opacity="${n(alpha(brush.c2))}"/></radialGradient>`);
       return [`url(#${g})`, 1];
     }
     if (brush.type === 'fan') {
@@ -141,7 +143,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       // colour, and the colours meet along the lines to the corners, as GDI+ blends them.)
       const g = id('f');
       const { cx, cy, pts, box, c1, cols } = brush;
-      const stop = (o, c) => `<stop offset="${o}" stop-color="${hex(c)}" stop-opacity="${n(alpha(c))}"/>`;
+      const stop = (o, c) => `<stop offset="${o}" stop-color="${argb(c)}" stop-opacity="${n(alpha(c))}"/>`;
       const tris = pts.map((a, i) => {
         const b = pts[(i + 1) % pts.length];
         const ex = b[0] - a[0], ey = b[1] - a[1], len2 = ex * ex + ey * ey || 1;
@@ -152,7 +154,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         defs.push(`<linearGradient id="${side}" gradientUnits="userSpaceOnUse" x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}">${stop(0, cols[i])}${stop(1, cols[(i + 1) % pts.length])}</linearGradient>`);
         defs.push(`<linearGradient id="${fade}" gradientUnits="userSpaceOnUse" x1="${n(cx)}" y1="${n(cy)}" x2="${n(fx)}" y2="${n(fy)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>`);
         defs.push(`<mask id="${mask}" maskUnits="userSpaceOnUse" x="-1e6" y="-1e6" width="2e6" height="2e6"><path d="${d}" fill="url(#${fade})" stroke="url(#${fade})" stroke-width="0.5"/></mask>`);
-        return `<path d="${d}" fill="${hex(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${hex(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
+        return `<path d="${d}" fill="${argb(c1)}" fill-opacity="${n(alpha(c1))}" stroke="${argb(c1)}" stroke-width="0.5"/><path d="${d}" fill="url(#${side})" stroke="url(#${side})" stroke-width="0.5" mask="url(#${mask})"/>`;
       }).join('');
       defs.push(`<pattern id="${g}" x="${n(box[0])}" y="${n(box[1])}" width="${n(box[2] - box[0])}" height="${n(box[3] - box[1])}" patternUnits="userSpaceOnUse"${brush.m ? ` patternTransform="${mat(brush.m)}"` : ''}><g transform="translate(${n(-box[0])} ${n(-box[1])})">${tris}</g></pattern>`);
       return [`url(#${g})`, 1];
@@ -211,7 +213,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
       const src = plain || d;
       if (!/[aA]/.test(src)) {
         const Pm = [pen.m[0], pen.m[1], pen.m[2], pen.m[3], 0, 0];
-        emit(`<path d="${mapD(src, inverse(Pm))}" ${strokeAttr(pen)} transform="${mat(mul(Pm, toDevice()))}"/>`);
+        emit(`<path d="${mapD(src, inverse(Pm))}" ${strokeAttr(pen)} transform="${mat(mulRow(Pm, toDevice()))}"/>`);
         return;
       }
     }
@@ -304,7 +306,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
     const [p0, p1, p2] = dest;
     const [sx, sy, sw, sh] = src[2] > 0 && src[3] > 0 ? src : [0, 0, img.w, img.h];
     const A = [(p1[0] - p0[0]) / sw, (p1[1] - p0[1]) / sw, (p2[0] - p0[0]) / sh, (p2[1] - p0[1]) / sh, p0[0], p0[1]];
-    const M = mul([1, 0, 0, 1, -sx, -sy], mul(A, toDevice()));
+    const M = mulRow([1, 0, 0, 1, -sx, -sy], mulRow(A, toDevice()));
     const crop = sx || sy || sw !== img.w || sh !== img.h;
     const smooth = interp === 5 ? ' style="image-rendering:pixelated"' : '';
     const el = `<image width="${img.w}" height="${img.h}" preserveAspectRatio="none" href="${img.href}"${smooth}/>`;
@@ -386,7 +388,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         objects[lo] = readObject(otype, r, end, h);
         break;
       }
-      case 0x4009: { const c = r.u32(); emit(`<rect x="-1e5" y="-1e5" width="2e5" height="2e5" fill="${hex(c)}"${alpha(c) < 1 ? ` fill-opacity="${n(alpha(c))}"` : ''}/>`); break; } // clear
+      case 0x4009: { const c = r.u32(); emit(`<rect x="-1e5" y="-1e5" width="2e5" height="2e5" fill="${argb(c)}"${alpha(c) < 1 ? ` fill-opacity="${n(alpha(c))}"` : ''}/>`); break; } // clear
       case 0x400a: { const b = r.u32(), c = r.u32(); shape(rects(r, c, flags & 0x4000).map(rectD).join(''), fillAttr(brushOf(flags, b))); break; } // FillRects
       case 0x400b: { const c = r.u32(); for (const q of rects(r, c, flags & 0x4000)) outline(rectD(q), objects[lo]); break; } // DrawRects
       case 0x400c: { const b = r.u32(), c = r.u32(); shape(polyD(points(r, c, flags), true), fillAttr(brushOf(flags, b))); break; } // FillPolygon
@@ -453,7 +455,7 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const [p, o] = paint(brushOf(flags, b));
         // (With realized advances only the first position counts: the font's own advances place the rest.)
         const xy = opts & 4 ? [pts[0]] : pts;
-        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${xy.map(([x]) => n(x)).join(' ')}" y="${xy.map(([, y]) => n(y)).join(' ')}" transform="${mat(m ? mul(m, toDevice()) : toDevice())}">${h.esc(s)}</text>`);
+        emit(`<text font-family="${h.esc(h.fontStack(font.face))}" font-size="${n(em)}"${font.bold ? ' font-weight="bold"' : ''}${font.italic ? ' font-style="italic"' : ''} fill="${p}"${o < 1 ? ` fill-opacity="${n(o)}"` : ''} xml:space="preserve" x="${xy.map(([x]) => n(x)).join(' ')}" y="${xy.map(([, y]) => n(y)).join(' ')}" transform="${mat(m ? mulRow(m, toDevice()) : toDevice())}">${h.esc(s)}</text>`);
         break;
       }
       case 0x4021: interp = lo; break; // SetInterpolationMode
@@ -467,17 +469,17 @@ export function emfPlusToSvg(input, { bx, by }, h) {
         const dst = [r.f32(), r.f32(), r.f32(), r.f32()], src = [r.f32(), r.f32(), r.f32(), r.f32()].map((v) => (v * unitPx(lo)) / k());
         saved.set(r.u32(), { world: world.slice(), base, pageUnit, pageScale, clip, cClip });
         const sx = src[2] ? dst[2] / src[2] : 1, sy = src[3] ? dst[3] / src[3] : 1;
-        world = mul([sx, 0, 0, sy, dst[0] - src[0] * sx, dst[1] - src[1] * sy], world);
+        world = mulRow([sx, 0, 0, sy, dst[0] - src[0] * sx, dst[1] - src[1] * sy], world);
         base = world.slice(); cClip = clip;
         break;
       }
       case 0x4026: case 0x4029: { const s = saved.get(r.u32()); if (s) ({ world, base, pageUnit, pageScale, clip, cClip } = { ...s, world: s.world.slice() }); break; } // Restore, EndContainer
-      case 0x402a: world = mul(r.m(), base); break; // (relative to the container)
+      case 0x402a: world = mulRow(r.m(), base); break; // (relative to the container)
       case 0x402b: world = base.slice(); break;
-      case 0x402c: { const m = r.m(); world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402d: { const m = [1, 0, 0, 1, r.f32(), r.f32()]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402e: { const sx = r.f32(), sy = r.f32(); const m = [sx, 0, 0, sy, 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
-      case 0x402f: { const a = (r.f32() * Math.PI) / 180; const m = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]; world = flags & 0x2000 ? mul(world, m) : mul(m, world); break; }
+      case 0x402c: { const m = r.m(); world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402d: { const m = [1, 0, 0, 1, r.f32(), r.f32()]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402e: { const sx = r.f32(), sy = r.f32(); const m = [sx, 0, 0, sy, 0, 0]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
+      case 0x402f: { const a = (r.f32() * Math.PI) / 180; const m = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]; world = flags & 0x2000 ? mulRow(world, m) : mulRow(m, world); break; }
       case 0x4030: pageUnit = lo; pageScale = r.f32() || 1; break; // SetPageTransform
       case 0x4031: clip = cClip; break; // ResetClip (to the container's clip)
       case 0x4032: setClip(rectD([r.f32(), r.f32(), r.f32(), r.f32()]), (flags >> 8) & 15); break; // SetClipRect

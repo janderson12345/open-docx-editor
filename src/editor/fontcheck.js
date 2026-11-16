@@ -2,8 +2,9 @@
 // differently from Word's. (document.fonts.check() says yes for a font that isn't there at all, so availability is
 // found the usual way: text set in the font is measured against the same text in two generic families.)
 
+import { drawsOwn } from '../ooxml/fontprobe.js';
+
 const SAMPLE = 'mmmmmmmmmmlli1WQ@#';
-let ctx = null;
 const known = new Map();
 
 /**
@@ -16,10 +17,7 @@ export const fontsSettled = (ms = 3000) => Promise.race([document.fonts?.ready, 
 export async function hasFont(family) {
   if (known.has(family)) return known.get(family);
   try { await Promise.race([document.fonts.load(`40px "${family.replace(/"/g, '')}"`, SAMPLE), new Promise((r) => setTimeout(r, 3000))]); } catch { /* no such face: measured below */ }
-  if (!ctx) ctx = document.createElement('canvas').getContext('2d');
-  const width = (stack) => { ctx.font = `40px ${stack}`; return ctx.measureText(SAMPLE).width; };
-  const quoted = `"${family.replace(/"/g, '')}"`;
-  const ok = ['monospace', 'serif'].some((g) => width(`${quoted}, ${g}`) !== width(g));
+  const ok = drawsOwn(family, { probe: SAMPLE, size: 40 });
   known.set(family, ok);
   return ok;
 }

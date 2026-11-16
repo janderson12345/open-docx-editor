@@ -117,6 +117,10 @@ function sinceMapper(tr, start) {
   };
 }
 
+// Accept or Reject All with more steps than this goes in as one step (resolveAll): 6,000 changes took seconds as steps,
+// a few hundred are quick either way (b3052d7).
+const ONE_STEP_PAST = 200;
+
 let idSeq = 0;
 function nextId(doc) {
   if (!idSeq) {
@@ -618,7 +622,7 @@ export const resolveAll = (accept) => (state, dispatch) => {
     // Many changes: the result as one step, its content in place of the document's. Every decoration (pagination's,
     // line heights') was mapped through each of thousands of steps: 6000 changes took seconds. (Unchanged paragraphs
     // are the same nodes, so the view keeps their DOM; it's one undo step either way.)
-    if (tr.steps.length > 200) {
+    if (tr.steps.length > ONE_STEP_PAST) {
       const one = state.tr.setMeta('odx-untracked', true).setMeta('odx-resolve', true);
       one.replaceWith(0, state.doc.content.size, tr.doc.content);
       tr = one;
