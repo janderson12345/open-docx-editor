@@ -97,7 +97,7 @@ export class DocxSession {
         return rel && rel.external ? rel.rawTarget : null;
       },
       resolveChart: (rId, w, h) => this.chartUrl(this.pkg.relById(rId), w, h),
-      resolveShape: (el, w, h, pad) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h, pad),
+      resolveShape: (el, w, h, pad, colW) => this.shapeUrl(el, (rId) => this.pkg.relById(rId), w, h, pad, colW),
       padShapes: true,
       resolveChunk: (rId) => this.chunkPart(rId),
       chunkList: (kind) => this.chunkList(kind),
@@ -190,20 +190,21 @@ export class DocxSession {
   }
 
   /** Shapes and groups drawn as an SVG data URL; their pictures are inlined as data URLs. */
-  shapeUrl(drawing, relOf, width, height, pad = 0) {
+  shapeUrl(drawing, relOf, width, height, pad = 0, colW = 0) {
     unmeasured(); // (a drawing before that stopped part way)
-    const out = this._shapeUrl(drawing, relOf, width, height, pad);
+    const out = this._shapeUrl(drawing, relOf, width, height, pad, colW);
     // Text measured in a fallback while the stand-in font was still loading: drawn again once it has, on the page only.
     const fonts = unmeasured();
     const src = typeof out === 'string' ? out : out?.src;
     if (fonts && src) {
       const tall = (o) => (o && typeof o === 'object' ? o.height : height);
-      redrawLater(src, fonts, tall(out), () => { const again = this._shapeUrl(drawing, relOf, width, height, pad); unmeasured(); return again && { src: typeof again === 'string' ? again : again.src, height: tall(again) }; });
+      const wide = (o) => (o && typeof o === 'object' && o.width != null ? o.width : width);
+      redrawLater(src, fonts, tall(out), () => { const again = this._shapeUrl(drawing, relOf, width, height, pad, colW); unmeasured(); return again && { src: typeof again === 'string' ? again : again.src, height: tall(again), width: wide(again) }; }, wide(out));
     }
     return out;
   }
 
-  _shapeUrl(drawing, relOf, width, height, pad) {
+  _shapeUrl(drawing, relOf, width, height, pad, colW = 0) {
     this._dataUrls ||= new Map();
     const image = (rId) => {
       const rel = rId && relOf(rId);
@@ -228,7 +229,7 @@ export class DocxSession {
       // Tables in text boxes: their style's borders, cell margins and paragraph settings (the default table style when
       // they name none).
       const tableStyle = (id) => { const sid = id || this.styles.defaultTable; return (sid && resolveTableStyle(this.styles.styles, sid)) || null; };
-      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph };
+      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph, colW };
       // SmartArt: the drawing Word saves beside the diagram's data (its data part's dsp:dataModelExt names it).
       const ids = [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'relIds');
       if (ids) {
@@ -242,7 +243,9 @@ export class DocxSession {
       }
       const svg = shapesSvg(drawing, sctx, width, height, pad);
       const src = svg && 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-      // (A text box grown to fit its text: its new height too.)
+      // (A text box grown to fit its text: its new height too; WordArt's box made as wide as its text or the column: its
+      // new width.)
+      if (src && sctx.widenedTo) return { src, height: sctx.grownTo || height, width: sctx.widenedTo };
       return src && sctx.grownTo ? { src, height: sctx.grownTo } : src;
     } catch {
       return null;

@@ -200,12 +200,16 @@
 .odx-cs { font-weight: var(--odx-bcs, normal); font-style: var(--odx-ics, normal); font-size: var(--odx-szcs); font-family: var(--odx-fcs); }
 :where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-grow-up, 0); padding-bottom: var(--odx-grow-down, 0); }
 /* A reflection (w14:reflection, texteffects.js): each word of the run drawn again (textspans.js), flipped about its
-   baseline as Word does (algn="bl"), its gap below, fading from its start opacity to its end one. Placed at the word's
-   top (its font's ascent above the baseline) and trimmed to exactly that ascent (text-box), so the flip's origin, the
-   box's foot, is the baseline whatever the font. It takes no room (the line already has it: --odx-grow-down) and isn't
-   text: no alternative text for screen readers, no selection or clicks. */
+   baseline as Word does (algn="bl"), its gap below, fading from its start opacity to its end one, blurred as Word's.
+   Placed at the word's top (its font's ascent above the baseline) and trimmed to exactly that ascent (text-box), with
+   room below for its descenders (0.25em, past any font's 0.22em), so the flip's origin, that far above the box's foot,
+   is the baseline whatever the font. The descenders, flipped, rise above the copy's top, into its gap, as opaque as
+   its top (Word's print of wordart-leftovers/refl.docx, Reflections 1 to 9 on "Gypsy jig" at 36pt: a p's mirrored tail
+   fills the gap of Reflection 7; the copy's top as opaque as without descenders, within 0.06); the fade runs from the
+   baseline's mirror over the end position's share of the ascent. It takes no room (the line already has it:
+   --odx-grow-down) and isn't text: no alternative text for screen readers, no selection or clicks. */
 .odx-rf { position: relative; }
-.odx-rf::after { content: attr(data-odx-rf) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; transform-origin: 0 100%; transform: translateY(var(--odx-rf-gap, 0)) scaleY(-1); -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)), rgb(0 0 0 / var(--odx-rf-b, 0)) var(--odx-rf-pos, 50%)); background-image: var(--odx-fill-bg, none); -webkit-background-clip: text; background-clip: text; pointer-events: none; user-select: none; }
+.odx-rf::after { content: attr(data-odx-rf) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; padding-bottom: 0.25em; transform-origin: 0 calc(100% - 0.25em); transform: translateY(var(--odx-rf-gap, 0)) scaleY(-1); filter: blur(var(--odx-rf-blur, 0)); -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)) 0.25em, rgb(0 0 0 / var(--odx-rf-b, 0)) calc(0.25em + (100% - 0.25em) * var(--odx-rf-k, 0.5))); mask-image: linear-gradient(to top, rgb(0 0 0 / var(--odx-rf-a, 0.5)) 0.25em, rgb(0 0 0 / var(--odx-rf-b, 0)) calc(0.25em + (100% - 0.25em) * var(--odx-rf-k, 0.5))); background-image: var(--odx-fill-bg, none); -webkit-background-clip: text; background-clip: text; pointer-events: none; user-select: none; }
 /* An inner shadow (a w14:shadow scaled to nothing, texteffects.js): each word of the run drawn again over itself
    (textspans.js), placed as a reflection's copy is, through the shadow's SVG filter, which keeps only the shadow inside
    the letters (the copy's own paint is only its letters' shape, so solid black, no outline or other effects). The words

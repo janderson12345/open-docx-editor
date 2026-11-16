@@ -706,7 +706,14 @@ function pageBox(sectPr) {
   const at = (el, k, d) => { const v = el && el.getAttributeNS(NS.w, k); return v ? twipsToPx(v) : d; };
   const sz = kid(sectPr, 'pgSz');
   const mar = kid(sectPr, 'pgMar');
-  return { w: at(sz, 'w', 816), h: at(sz, 'h', 1056), left: at(mar, 'left', 96) + at(mar, 'gutter', 0), right: at(mar, 'right', 96), top: Math.abs(at(mar, 'top', 96)), bottom: Math.abs(at(mar, 'bottom', 96)) };
+  const box = { w: at(sz, 'w', 816), h: at(sz, 'h', 1056), left: at(mar, 'left', 96) + at(mar, 'gutter', 0), right: at(mar, 'right', 96), top: Math.abs(at(mar, 'top', 96)), bottom: Math.abs(at(mar, 'bottom', 96)) };
+  // (Its first column's width: equal columns share the room less the space between them; others give their own.)
+  const cols = kid(sectPr, 'cols');
+  const n = Math.max(1, Number(cols?.getAttributeNS(NS.w, 'num')) || 1);
+  const col1 = cols && kid(cols, 'col');
+  const room = box.w - box.left - box.right;
+  box.colW = col1 && !/^(1|true|on)$/.test(cols.getAttributeNS(NS.w, 'equalWidth') || '') ? at(col1, 'w', room) : (room - (n - 1) * at(cols, 'space', 48)) / n;
+  return box;
 }
 
 /**
@@ -759,7 +766,7 @@ function readDrawing(drawing, ctx, rPrXml) {
   // (To a hundredth of a pixel: sample4's 688.4px picture, rounded to 688, put page 87's last line on it, where Word
   // has it on the next. +30 lines within 1px over the samples; rounding anchored ones still gave 6 fewer.)
   const emu = (v) => Math.round(emuToPx(v || 0) * 100) / 100;
-  const width = extent ? emu(extent.getAttribute('cx')) : null;
+  let width = extent ? emu(extent.getAttribute('cx')) : null;
   let height = extent ? emu(extent.getAttribute('cy')) : null;
   // An inline picture's effect extent (room for a shadow or glow) also takes space on its line, as in Word.
   const fx = extent?.parentNode?.localName === 'inline' && [...extent.parentNode.childNodes].find((n) => n.localName === 'effectExtent');
@@ -782,8 +789,10 @@ function readDrawing(drawing, ctx, rPrXml) {
     // round (schema.js: --odx-pad), its effect-extent margins that much smaller, so it takes the same room on its line.
     // (Floating ones too: drawn that much larger, their margins that much in, so they wrap the text as before.)
     const pad = ctx.padShapes ? shapesPad(drawing, { outline: extent?.parentNode?.localName !== 'inline' }) : 0;
-    src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height, pad) : null;
-    if (src && typeof src === 'object') { ({ src, height } = src); grown = true; } // (a text box grown to fit its text)
+    const page = ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)];
+    src = ctx.resolveShape ? ctx.resolveShape(drawing, width, height, pad, page?.colW) : null;
+    // (A text box grown to fit its text; WordArt's made as wide as its text or the column, shapes.js.)
+    if (src && typeof src === 'object') { width = src.width ?? width; ({ src, height } = src); grown = true; }
     if (!src) return null;
     if (pad && extent?.parentNode?.localName === 'inline') effect = `--odx-fx:${below - pad}px;--odx-fxt:${above - pad}px;--odx-fxl:${left - pad}px;--odx-fxr:${right - pad}px;--odx-pad:${pad}px`;
     else floatPad = pad;
