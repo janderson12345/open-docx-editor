@@ -258,16 +258,21 @@ export function createPages(view, session, { sheet, scope }) {
       const ats = (notesOn.get(p) || []).map((r) => r.at).filter((v) => v != null);
       if (ats.length && !part.length) { const at0 = Math.max(...ats), pv = pageOf(at0); room = Math.max(MIN_ROOM, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
       // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
+      // (A line fits when its text ends above the margin: the half leading the browser puts under it is above it in Word,
+      // longfn-word2 fnland page 4. Half a px for rounding.)
       let at = 0, cut = 0;
       for (const r of items) {
-        for (const b of notes.boundsOf(r.note?.doc, r.wKey ?? '') || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
+        const bs = notes.boundsOf(r.note?.doc, r.wKey ?? '') || [r.h];
+        const inks = notes.inksOf(r.note?.doc, r.wKey ?? '') || bs;
+        bs.forEach((b, i) => { if (at + Math.min(b, inks[i] ?? b) - skip <= room + 0.5 && at + b - skip > 0) cut = at + b - skip; });
         at += r.h;
       }
       if (!cut) cut = room;
       noteFlow.set(p, { items, skip, h: cut });
       // (Under its reference's text, cut at a line's end: the band starts at the text's end, the room left below the cut, as in
       // Word (longfn-word fnhuge: not at the foot with the room above it).)
-      notesH.set(p, (ats.length ? Math.max(cut, room) : cut) + NOTE_SEP);
+      // (A cut past the room by its last line's half leading: the band still starts under the text.)
+      notesH.set(p, (ats.length ? room : Math.min(cut, room)) + NOTE_SEP);
       const rest = [];
       let acc = 0, next = 0;
       for (const r of items) {
