@@ -12,22 +12,21 @@
 // Paragraphs split line by line and tables row by row (rows inside their cells),
 // with spacers inserted as view decorations. Each section's margins and page
 // size apply from the page it starts on (setMargins).
-import { DOMSerializer } from 'prosemirror-model';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
-import { storyDrawer, hfNodes, styleStoryTables, settleStoryShapes } from './hfstory.js';
+import { storyDrawer, hfNodes, settleStoryShapes } from './hfstory.js';
 import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
 import { fontsSettled } from './fontcheck.js';
 import { referenceValue, updateFields } from './refs.js';
 import { lineHeightOf, layoutRect } from './util.js';
-import { wrapText } from './textspans.js';
 import { drawBalloons } from './balloons.js';
-import { noteRefs, noteLabel } from './notes.js';
+import { noteRefs } from './notes.js';
+import { createNoteBoxes } from './notebox.js';
 import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
@@ -67,9 +66,8 @@ const alignedY = (align, top0, bottom0, h, off) => (align === 'top' ? top0 : ali
 /** Adds `d` to a map's number at `k` (0 when it has none): the pushes the layout pass adds up per block. */
 const addTo = (map, k, d) => map.set(k, (map.get(k) || 0) + d);
 // A block's table: the element itself, or the table inside its wrapper (prosemirror-tables' tableWrapper, a floating
-// table's frame); a note's table, a direct child only; a table in a cell, only as a child or in a tableWrapper.
+// table's frame); a table in a cell, only as a child or in a tableWrapper (a note's: notebox.js ownTable).
 const tableOf = (el) => (el.tagName === 'TABLE' ? el : el.querySelector('table'));
-const ownTable = (el) => (el.tagName === 'TABLE' ? el : el.querySelector(':scope > table'));
 const cellTable = (el) => (el.tagName === 'TABLE' ? el : el.classList.contains('tableWrapper') ? el.querySelector(':scope > table') : null);
 
 const GAP = 24; // px between sheets
@@ -215,160 +213,8 @@ export function createPages(view, session, { sheet, scope }) {
   let sheetBand = null; // sheet -> its band (columns), or null: the same
   const NOTE_SEP = 14; // separator line and the space around it
   const ENDNOTE_LEAD = 4; // Word's separator under the text is a line of the Normal style, a little taller than NOTE_SEP
-  const noteHeights = new Map(); // note doc -> px
-  const noteEl = (note, kind, n) => {
-    const el = document.createElement('div');
-    el.className = 'odx-note';
-    el.dataset.kind = kind;
-    el.dataset.id = note.id;
-    el.append(serializer.serializeFragment(note.doc.content));
-    styleStoryTables(session, note.doc, el, { note: true }); // (a table in a note: its columns, borders and shading, as in the body)
-    wrapText(el);
-    el.querySelectorAll(`[data-kind="${kind}Ref"]`).forEach((m) => { m.textContent = noteLabel(kind, n); });
-    return el;
-  };
-  // The footnote separator goes at the text's right edge when its paragraph is right to left (its own w:bidi, or the
-  // document's default paragraph's), as in Word; at the left otherwise, whatever the section's direction.
-  let sepRtl = null;
-  const noteSepRtl = () => {
-    if (sepRtl == null) {
-      const bidi = (x) => /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(x || '');
-      const part = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes');
-      const sep = part && /<w:footnote\b[^>]*w:type="separator"[\s\S]*?<\/w:footnote>/.exec(session.pkg.text(part) || '')?.[0];
-      const ppr = sep && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(sep)?.[0];
-      const stylesPart = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
-      const styles = stylesPart ? session.pkg.text(stylesPart) || '' : '';
-      const defaults = /<w:pPrDefault>[\s\S]*?<\/w:pPrDefault>/.exec(styles)?.[0];
-      const normal = /<w:style\b[^>]*w:type="paragraph"[^>]*w:default="1"[\s\S]*?<\/w:style>/.exec(styles)?.[0];
-      const normalPpr = normal && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(normal)?.[0];
-      sepRtl = !!sep && (ppr && /<w:bidi\b/.test(ppr) ? bidi(ppr) : normalPpr && /<w:bidi\b/.test(normalPpr) ? bidi(normalPpr) : bidi(defaults));
-    }
-    return sepRtl;
-  };
-  const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
-  // (At `w`, a page's text width when it isn't the first section's: a landscape page's notes are wider, so shorter,
-  // longfn-word2 fnland.)
-  const noteHeight = (note, kind, n, w = null) => {
-    const key = w == null ? '' : String(Math.round(w));
-    if (!noteHeights.has(note.doc)) { noteHeights.set(note.doc, new Map()); noteBounds.set(note.doc, new Map()); }
-    if (!noteHeights.get(note.doc).has(key)) {
-      const box = document.createElement('div');
-      box.className = 'odx-notes';
-      box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;${w == null ? `right:${page.right}px` : `width:${w}px`}`;
-      const el = noteEl(note, kind, n);
-      box.append(el);
-      sheet.append(box);
-      const top = box.getBoundingClientRect().top;
-      noteHeights.get(note.doc).set(key, box.getBoundingClientRect().height);
-      // (A table's rows each end a place it can be cut too: a note holding a long table goes on on the next page from
-      // the row that doesn't fit, as in Word.)
-      noteBounds.get(note.doc).set(key, [...el.children].flatMap((c) => {
-        const t = ownTable(c);
-        const rows = t && t.tBodies[0] ? [...t.tBodies[0].rows] : [];
-        if (rows.length) return rows.map((e) => e.getBoundingClientRect().bottom - top);
-        // (And a paragraph's every line: a note longer than its page goes on on the next from the first line that doesn't
-        // fit, as in Word, not from mid-line (longfn-word fnhuge).)
-        const rg = document.createRange();
-        rg.selectNodeContents(c);
-        const tops = [];
-        for (const q of rg.getClientRects()) if (q.height > 0 && !tops.some((t) => Math.abs(t - q.top) < 2)) tops.push(q.top);
-        tops.sort((x, y) => x - y);
-        return [...tops.slice(1).map((t) => t - top), c.getBoundingClientRect().bottom - top];
-      }).filter((b) => b > 0));
-      box.remove();
-    }
-    return noteHeights.get(note.doc).get(key);
-  };
-  // A band's notes in its columns, balanced as Word balances them: the lowest band that holds them, the first column
-  // taking the extra, a note split between columns only where each part keeps two lines (so a note of three lines
-  // never is). The notes are laid out once at the column's width, one under another; each column shows its stretch of
-  // that. (The browser's own balanced columns ignore widows and orphans.) { h, w, spans: [[from, to] px] }.
-  const bandLays = new Map(); // key -> layout
-  const noteDocIds = new WeakMap();
-  let noteDocSeq = 0;
-  const bandWidth = (bc) => bc.w ?? (page.width - page.left - page.right - bc.gap * (bc.m - 1)) / bc.m;
-  const bandLayout = (items, bc) => {
-    const key = `${bc.m}/${bc.gap}/${bc.w ?? ''}/${page.width - page.left - page.right}:${items.map((r) => { if (!noteDocIds.has(r.note.doc)) noteDocIds.set(r.note.doc, ++noteDocSeq); return `${noteDocIds.get(r.note.doc)}.${r.n}`; }).join(',')}`;
-    if (bandLays.has(key)) return bandLays.get(key);
-    const w = bandWidth(bc);
-    const box = document.createElement('div');
-    box.className = 'odx-notes';
-    box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;width:${w}px`;
-    const els = items.map((r) => noteEl(r.note, r.kind, r.n));
-    box.append(...els);
-    sheet.append(box);
-    const top0 = box.getBoundingClientRect().top;
-    const total = box.getBoundingClientRect().height;
-    const range = document.createRange();
-    // Where a column may end: between notes and between a note's paragraphs, at a table's rows, and inside a paragraph
-    // of n lines after its line i when 2 <= i <= n - 2.
-    const breaks = [];
-    const spans = []; // each note's [top, bottom]
-    els.forEach((el, j) => {
-      const r = el.getBoundingClientRect();
-      spans.push([r.top - top0, r.bottom - top0]);
-      if (j) breaks.push(r.top - top0);
-      [...el.children].forEach((c, ci) => {
-        if (ci) breaks.push(c.getBoundingClientRect().top - top0);
-        const t = ownTable(c);
-        if (t && t.tBodies[0]) { [...t.tBodies[0].rows].slice(1).forEach((row) => breaks.push(row.getBoundingClientRect().top - top0)); return; }
-        const tops = [];
-        const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
-        for (let tn = walk.nextNode(); tn; tn = walk.nextNode()) {
-          if (!tn.data.length) continue;
-          range.selectNodeContents(tn);
-          for (const q of range.getClientRects()) if (q.height && !tops.some((y) => Math.abs(y - q.top) < 2)) tops.push(q.top);
-        }
-        tops.sort((x, y) => x - y);
-        for (let i = 2; i <= tops.length - 2; i++) breaks.push(tops[i] - top0);
-      });
-    });
-    box.remove();
-    breaks.sort((x, y) => x - y);
-    const fill = (H) => { // the columns' stretches at height H, or null when they don't hold it all
-      const spans = [];
-      let from = 0;
-      for (let c = 0; c < bc.m; c++) {
-        if (total - from <= H + 0.5) { spans.push([from, total]); return spans; }
-        let to = null;
-        for (const y of breaks) if (y > from + 0.5 && y - from <= H + 0.5) to = y;
-        if (to == null) return null;
-        spans.push([from, to]);
-        from = to;
-      }
-      return null;
-    };
-    // The heights a column can come to: from any place it can start (the top, a break) to any place it can end.
-    const starts = [0, ...breaks], ends = [...breaks, total];
-    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).map((y) => +(y - x).toFixed(2))))].filter((h) => h >= total / bc.m - 1).sort((x, y) => x - y);
-    let cols = null;
-    for (const H of cands) if ((cols = fill(H))) break;
-    if (!cols) cols = [[0, total]];
-    const lay = { h: Math.max(...cols.map(([x, y]) => y - x)), w, spans: cols, notes: spans };
-    bandLays.set(key, lay);
-    return lay;
-  };
-  // The band drawn: each column its stretch of the notes (right to left in a right-to-left section).
-  const bandBox = (items, bc, lay) => {
-    const out = document.createElement('div');
-    out.className = 'odx-note-band';
-    out.style.cssText = `position:relative;height:${lay.h}px`;
-    const inner = page.width - page.left - page.right;
-    lay.spans.forEach(([from, to], c) => {
-      const x = c * (lay.w + bc.gap);
-      const col = document.createElement('div');
-      col.style.cssText = `position:absolute;top:0;left:${bc.rtl ? inner - x - lay.w : x}px;width:${lay.w}px;height:${to - from}px;overflow:hidden`;
-      // Only the notes it shows (a note split between columns in both): copies hidden above or below had taken clicks
-      // on the body text and been found by Find and screen readers.
-      const shown = items.map((r, j) => [r, j]).filter(([, j]) => lay.notes[j][0] < to - 0.5 && lay.notes[j][1] > from + 0.5);
-      const run = document.createElement('div');
-      run.style.marginTop = `${-(from - (shown.length ? lay.notes[shown[0][1]][0] : from))}px`;
-      run.append(...shown.map(([r]) => noteEl(r.note, r.kind, r.n)));
-      col.append(run);
-      out.append(col);
-    });
-    return out;
-  };
+  const notes = createNoteBoxes({ page, sheet, session });
+  const { noteEl, noteSepRtl, noteHeight, bandLayout, bandBox } = notes;
   // The notes drawn at each page's foot: those carried on from the pages before (a note longer than the room a page has
   // for it continues at the foot of the next, as in Word), then the page's own; `skip` px of the first already shown.
   let noteFlow = new Map(); // page -> { items, skip, h }
@@ -414,7 +260,7 @@ export function createPages(view, session, { sheet, scope }) {
       // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
       let at = 0, cut = 0;
       for (const r of items) {
-        for (const b of noteBounds.get(r.note?.doc)?.get(r.wKey ?? '') || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
+        for (const b of notes.boundsOf(r.note?.doc, r.wKey ?? '') || [r.h]) if (at + b - skip <= room && at + b - skip > 0) cut = at + b - skip;
         at += r.h;
       }
       if (!cut) cut = room;
@@ -585,7 +431,6 @@ export function createPages(view, session, { sheet, scope }) {
   const rules = document.createElement('style');
   document.head.appendChild(rules);
 
-  const serializer = DOMSerializer.fromSchema(schema);
   const story = storyDrawer(session);
 
   // Repeated table header rows are drawn here, behind the text, in the gap the split leaves.
@@ -1288,7 +1133,7 @@ export function createPages(view, session, { sheet, scope }) {
       const under = pageTop(pg) + pageH(pg) - marginsAt(pg).bottom - at - NOTE_SEP;
       // (Its first two lines: a note's paragraph keeps two lines together at a page's foot, as body text does, longfn-word2
       // fn4long's page 1, where Word moves the reference line on rather than leave one line of its note.)
-      const bounds = noteBounds.get(inLine[0].note?.doc)?.get(inLine[0].wKey ?? '') || [];
+      const bounds = notes.boundsOf(inLine[0].note?.doc, inLine[0].wKey ?? '') || [];
       const first = bounds[1] ?? inLine[0].h;
       // (And what of a note goes on from the page before: it comes first in the band, longfn-word2 fnhuge page 2.)
       const flow = noteFlow.get(band);
@@ -1776,11 +1621,15 @@ export function createPages(view, session, { sheet, scope }) {
     if (bal) for (let c = 0; c < rs.num - 1; c++) { const v = P + bal.sheet * rs.num + c; cuts.set(v, (v === P ? y0 : contentTop(v)) + bal.h); }
   }
 
-  // Columns: each block moved up beside the column before it (CSS), the lines a block carries into the next column
-  // (drawn again there), and the page count, sections and page setup counted in sheets.
+  // Columns: each block moved up beside the column before it, the lines a block carries into the next column (drawn
+  // again there), and the page count, sections and page setup counted in sheets. Each block's move, cut and column width
+  // go on the block itself (`blockAttrs`: block index -> { cls, style }, node decorations, applyPushes), not as rules by
+  // its place among its siblings (:nth-child): those made the browser restyle every block after one added.
   function placeColumns(blocks, regs, starts, colSplits, paraSplits, splits) {
     const colCss = [];
     const contHeads = [];
+    const blockAttrs = new Map();
+    const attrsOf = (i) => { if (!blockAttrs.has(i)) blockAttrs.set(i, { cls: [], style: [] }); return blockAttrs.get(i); };
     sheetBand = null;
     blockCols = new WeakMap();
     const live = regs.filter((r) => r.P != null);
@@ -1808,11 +1657,13 @@ export function createPages(view, session, { sheet, scope }) {
         if (cw) blockCols.set(b.el, { x, w: cw }); // (its column's text edges, for its line numbers)
         const up = v - s; // pages of flow above this column's sheet
         // Its column's width (measured with it too, so a block that lands in another column is measured again there).
-        if (narrow) { narrowNow.set(b.i, narrow); colCss.push(`.${scope} > .odx-content > :nth-child(${b.i + 1}){--odx-coln:${narrow.toFixed(2)}px}`); }
-        if (up || x) colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){transform:translate(${x.toFixed(1)}px,${-(up * pitch)}px)}`);
+        if (narrow) { narrowNow.set(b.i, narrow); attrsOf(b.i).style.push(`--odx-coln:${narrow.toFixed(2)}px`); }
+        if (up || x) { const a = attrsOf(b.i); a.cls.push('odx-colmv'); a.style.push(`--odx-colt:translate(${x.toFixed(1)}px,${-(up * pitch)}px)`); }
         const cs = colSplits.get(b.i);
         if (cs) {
-          colCss.push(`.${scope} > .odx-content:not(.odx-measure) > :nth-child(${b.i + 1}){clip-path:inset(${-CLIP_TOP}px ${-CLIP_SIDE}px ${(cs.height - cs.cut).toFixed(2)}px ${-CLIP_SIDE}px)}`);
+          const a = attrsOf(b.i);
+          a.cls.push('odx-colclip');
+          a.style.push(`--odx-colclip:inset(${-CLIP_TOP}px ${-CLIP_SIDE}px ${(cs.height - cs.cut).toFixed(2)}px ${-CLIP_SIDE}px)`);
           const head = cs.head || 0;
           for (const part of carriedOf(cs)) {
             const v2 = v + part.off, q = place(k, v2), up2 = v2 - q.s;
@@ -1846,12 +1697,14 @@ export function createPages(view, session, { sheet, scope }) {
         margins = bySheet;
       }
       colCss.push(`.${scope} > .odx-content{height:${pageTop(pages) - gap}px;overflow:visible}`);
+      // (Not while the flow is measured: odx-measure. As specific as the rules by position were.)
+      colCss.push(`.${scope} > .odx-content:not(.odx-measure) > .odx-colmv{transform:var(--odx-colt)}`, `.${scope} > .odx-content:not(.odx-measure) > .odx-colclip{clip-path:var(--odx-colclip)}`);
       // Blocks that changed column width: lay out again at the new widths.
       const moved = narrowNow.size !== narrowed.size || [...narrowNow].some(([i, n]) => Math.abs((narrowed.get(i) ?? 0) - n) > 0.01);
       narrowed = narrowNow;
       if (moved) colsAgain = true;
     }
-    return { colCss, contHeads };
+    return { colCss, contHeads, blockAttrs };
   }
 
   /**
@@ -1973,7 +1826,7 @@ export function createPages(view, session, { sheet, scope }) {
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
   const outOfFlow = (el) => { const cs = getComputedStyle(el); return cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed'; };
-  function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits) {
+  function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
     // Set on the blocks themselves (node decorations), not by rules on their place among their siblings
@@ -1984,6 +1837,11 @@ export function createPages(view, session, { sheet, scope }) {
     const blockDecos = [];
     const onBlock = (i, attrs, key) => { const r = posOf.get(i); if (r) blockDecos.push(Decoration.node(r[0], r[1], attrs, { key })); };
     doc.forEach((node, pos, i) => { if (unfloated.has(node)) onBlock(i, { style: 'float:none !important' }, 'nf'); });
+    // (Columns' moves, cuts and widths, and frames' drops: placeColumns, the walk's frameDy.)
+    for (const [i, a] of blockAttrs) {
+      const style = a.style.join(';'), cls = a.cls.join(' ');
+      onBlock(i, cls ? { class: cls, style } : { style }, `ca:${cls}:${style}`);
+    }
     const css = [];
     applied = new Map();
     const index = new Map(blocks.map((b, k) => [b.i, k]));
@@ -2154,6 +2012,74 @@ export function createPages(view, session, { sheet, scope }) {
     floatUp.clear();
     placed.clear();
     assignNotes(doc);
+    // The steps of the walk below that have names of their own (closures: they move `shift` and the walk's maps).
+    // What follows a block split into the next column moves down by the split's delta.
+    const carryOn = (k, cs) => { const nb = blocks[k + 1]; if (nb) { addTo(starts, nb.i, cs.delta); shift += cs.delta; } };
+    // A paragraph in a frame (frames.js), out of the flow.
+    const placeFrame = (k, b, top, p, frame) => {
+      if (frame === 'page' || frame === 'margin') {
+        const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-fdy')) || 0;
+        const natural = top - now;
+        const pg = pageOf(natural);
+        const base = frame === 'page' ? pageTop(pg) : contentTop(pg);
+        const room = frame === 'page' ? pageH(pg) : contentBottom(pg) - contentTop(pg);
+        const h = b.bottom - b.top;
+        const al = b.el.dataset.fyalign;
+        const y = alignedY(al, base, base + room, h, Number(b.el.dataset.fy || 0));
+        frameDy.set(b.i, y - natural);
+        if (Math.abs(y - natural - now) > 0.5) colsAgain = true; // (the text beside it moves: lay out again)
+      } else if (frame !== 'cont') { // (the frame's first paragraph; the rest are 'cont')
+        // A frame in the text that doesn't fit in what's left of its page goes to the next page whole, and the text
+        // after it with it, as in Word (four headings in a frame below a title: the page holds only the title).
+        let k2 = k;
+        let bottom = b.bottom + shift;
+        while (k2 + 1 < blocks.length && blocks[k2 + 1].el.dataset?.frame === 'cont') bottom = Math.max(bottom, blocks[++k2].bottom + shift);
+        if (bottom > contentBottom(p) + 1 && top > contentTop(p) + 1) { // (even one taller than a page: it starts the next)
+          const d = contentTop(p + 1) - top;
+          addTo(starts, b.i, d);
+          const nb = blocks[k2 + 1];
+          if (nb) { addTo(starts, nb.i, d); carried.add(nb.i); } // (the text after it: a float's margin doesn't move it)
+          shift += d;
+        }
+      }
+    };
+    // A table set down at its place on its page (floatAt).
+    const placeSetDown = (k, b, top, p, fy) => {
+      const y0 = (fy.rel === 'page' ? pageTop(p) : contentTop(p)) + fy.y;
+      const nb = blocks[k + 1];
+      const d1 = y0 - top;
+      const d2 = nb ? top + (nb.top - b.bottom) - (nb.top + shift + d1) : 0;
+      pulls.set(b.i, nb ? [[b.i, d1], [nb.i, d2]] : [[b.i, d1]]);
+      shift += d1 + d2;
+      band = { k, p, y0: y0 - fy.above, y1: y0 + (b.bottom - b.top) + fy.below };
+      // With less than two lines' room under it, the page's text ends above it: a table reaching into it splits there
+      // and goes on on the next page (the contingency plan's page 4), rather than all of it moving under the band.
+      if (band.y1 > contentBottom(p) - MIN_ROOM) { cuts.set(p, band.y0); band.cut = true; }
+    };
+    // A picture or text box floating from the paragraph (wrapped square) past the page's foot (floatsPast): taller than
+    // the page, it goes to the next one with its paragraph (true); else drawn up to end at the page's edge (floatUp).
+    const floatsMoveOn = (b, p) => {
+      const f = floatsPast(b, shift, p);
+      if (f.up?.size) floatUp.set(b.i, { el: b.el, up: f.up });
+      return f.past;
+    };
+    // A page or column break inside a paragraph in newspaper columns: its lines from the break go on at the top of the
+    // next page's first column, or of the next column, as in Word (its text after a page break had stayed in the
+    // column, and what followed went on in the next column of the same page). True when it was split there.
+    const splitAtBreak = (k, b, p, top, inReg) => {
+      const lines = paragraphLines(b);
+      const at = lines ? lines.findIndex((l, n) => n > 0 && l.forced) : -1;
+      if (at <= 0) return false;
+      const g = cols ? { P: 0, num: cols.num } : inReg;
+      const to = breakKindOf(b.node) === 'page' ? g.num - ((p - (g.P ?? 0)) % g.num) : 1;
+      const cs = { cut: lines[at].top - b.top, height: b.bottom - b.top, delta: contentTop(p + to) - (lines[at].top + shift), to };
+      colSplits.set(b.i, cs);
+      notesByCol(b, p, cs);
+      if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut });
+      carryOn(k, cs);
+      breakPending = false;
+      return true;
+    };
     for (let k = 0; k < blocks.length; k++) {
       const b = blocks[k];
       if (pulls.has(b.i)) { for (const [, d] of pulls.get(b.i)) shift -= d; pulls.delete(b.i); }
@@ -2164,47 +2090,14 @@ export function createPages(view, session, { sheet, scope }) {
       // margins is set down at its place on the page where it comes: how far below that its float is moved (--odx-fdy).
       const frame = b.el.dataset?.frame;
       if (frame && b.node.type === schema.nodes.paragraph && getComputedStyle(b.el).float !== 'none') {
-        if (frame === 'page' || frame === 'margin') {
-          const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-fdy')) || 0;
-          const natural = top - now;
-          const pg = pageOf(natural);
-          const base = frame === 'page' ? pageTop(pg) : contentTop(pg);
-          const room = frame === 'page' ? pageH(pg) : contentBottom(pg) - contentTop(pg);
-          const h = b.bottom - b.top;
-          const al = b.el.dataset.fyalign;
-          const y = alignedY(al, base, base + room, h, Number(b.el.dataset.fy || 0));
-          frameDy.set(b.i, y - natural);
-          if (Math.abs(y - natural - now) > 0.5) colsAgain = true; // (the text beside it moves: lay out again)
-        } else if (frame !== 'cont') { // (the frame's first paragraph; the rest are 'cont')
-          // A frame in the text that doesn't fit in what's left of its page goes to the next page whole, and the text
-          // after it with it, as in Word (four headings in a frame below a title: the page holds only the title).
-          let k2 = k;
-          let bottom = b.bottom + shift;
-          while (k2 + 1 < blocks.length && blocks[k2 + 1].el.dataset?.frame === 'cont') bottom = Math.max(bottom, blocks[++k2].bottom + shift);
-          if (bottom > contentBottom(p) + 1 && top > contentTop(p) + 1) { // (even one taller than a page: it starts the next)
-            const d = contentTop(p + 1) - top;
-            addTo(starts, b.i, d);
-            const nb = blocks[k2 + 1];
-            if (nb) { addTo(starts, nb.i, d); carried.add(nb.i); } // (the text after it: a float's margin doesn't move it)
-            shift += d;
-          }
-        }
+        placeFrame(k, b, top, p, frame);
         continue;
       }
       // A table set down on its page: there, out of the flow. What follows it starts where it would have (the page above
       // it fills first), and a block reaching into its band goes below it, as in Word.
       const fy = floatAt(b);
       if (fy) {
-        const y0 = (fy.rel === 'page' ? pageTop(p) : contentTop(p)) + fy.y;
-        const nb = blocks[k + 1];
-        const d1 = y0 - top;
-        const d2 = nb ? top + (nb.top - b.bottom) - (nb.top + shift + d1) : 0;
-        pulls.set(b.i, nb ? [[b.i, d1], [nb.i, d2]] : [[b.i, d1]]);
-        shift += d1 + d2;
-        band = { k, p, y0: y0 - fy.above, y1: y0 + (b.bottom - b.top) + fy.below };
-        // With less than two lines' room under it, the page's text ends above it: a table reaching into it splits there
-        // and goes on on the next page (the contingency plan's page 4), rather than all of it moving under the band.
-        if (band.y1 > contentBottom(p) - MIN_ROOM) { cuts.set(p, band.y0); band.cut = true; }
+        placeSetDown(k, b, top, p, fy);
         continue;
       }
       if (band && !band.cut && band.p === p && top < band.y1 && b.bottom + shift > band.y0) {
@@ -2279,34 +2172,11 @@ export function createPages(view, session, { sheet, scope }) {
       }
       else if (k > 0 && !firstOnPage && b.node.type === schema.nodes.paragraph && liftedPage(b.node) > p) target = liftedPage(b.node); // (its float's page: liftFloats)
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
-      else if (!firstOnPage && b.node.type === schema.nodes.paragraph && (() => {
-        // A picture or text box floating from the paragraph (wrapped square) past the page's foot (floatsPast): taller
-        // than the page, it goes to the next one with its paragraph; else drawn up to end at the page's edge.
-        const f = floatsPast(b, shift, p);
-        if (f.up?.size) floatUp.set(b.i, { el: b.el, up: f.up });
-        return f.past;
-      })()) {
+      else if (!firstOnPage && b.node.type === schema.nodes.paragraph && floatsMoveOn(b, p)) {
         target = p + 1;
         overflow = true;
       }
-      else if (((cols && !lineSplits) || inReg) && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && (() => {
-        // A page or column break inside a paragraph in newspaper columns: its lines from the break go on at the top of the
-        // next page's first column, or of the next column, as in Word (its text after a page break had stayed in the
-        // column, and what followed went on in the next column of the same page).
-        const lines = paragraphLines(b);
-        const at = lines ? lines.findIndex((l, n) => n > 0 && l.forced) : -1;
-        if (at <= 0) return false;
-        const g = cols ? { P: 0, num: cols.num } : inReg;
-        const to = breakKindOf(b.node) === 'page' ? g.num - ((p - (g.P ?? 0)) % g.num) : 1;
-        const cs = { cut: lines[at].top - b.top, height: b.bottom - b.top, delta: contentTop(p + to) - (lines[at].top + shift), to };
-        colSplits.set(b.i, cs);
-        notesByCol(b, p, cs);
-        if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut });
-        const nb = blocks[k + 1];
-        if (nb) { addTo(starts, nb.i, cs.delta); shift += cs.delta; }
-        breakPending = false;
-        return true;
-      })()) continue;
+      else if (((cols && !lineSplits) || inReg) && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && splitAtBreak(k, b, p, top, inReg)) continue;
       else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift + bandAfter(p, b.node) > contentBottom(p) + lineSlack(b.el) - 1) {
         // In columns a paragraph goes on in the next column line by line, as in Word: it stays put, cut at the column's
         // bottom, and its lines from there are drawn again at the next column's top (drawHeads); what follows it moves
@@ -2334,8 +2204,7 @@ export function createPages(view, session, { sheet, scope }) {
           colSplits.set(b.i, cs);
           notesByCol(b, p, cs);
           if (inReg) rec.set(k, { top, bottom: top + cs.cut - (cs.lift || 0), carry: (cs.rewrap ? cs.rewrap.h : cs.height - cs.cut + (cs.lift || 0)) + (cs.head || 0), parts: cs.parts ? carriedOf(cs) : null });
-          const nb = blocks[k + 1];
-          if (nb) { addTo(starts, nb.i, cs.delta); shift += cs.delta; }
+          carryOn(k, cs);
           continue;
         }
         if (!firstOnPage && b.bottom - b.top <= pageHeight(p + 1)) {
@@ -2349,8 +2218,7 @@ export function createPages(view, session, { sheet, scope }) {
           colSplits.set(b.i, cs);
           notesByCol(b, p, cs);
           if (inReg) rec.set(k, { top, bottom: top + cs.cut, carry: cs.height - cs.cut + (cs.head || 0), parts: cs.parts ? carriedOf(cs) : null });
-          const nb = blocks[k + 1];
-          if (nb) { addTo(starts, nb.i, cs.delta); shift += cs.delta; }
+          carryOn(k, cs);
           continue;
         }
         if (!firstOnPage) {
@@ -2463,13 +2331,13 @@ export function createPages(view, session, { sheet, scope }) {
     notesHPrev = nextH;
     // (Notes continued past the body's last page: pages of their own, as Word adds.)
     if (noteFlow.size) pages = Math.max(pages, Math.max(...noteFlow.keys()) + 1);
-    const { colCss, contHeads } = placeColumns(blocks, regs, starts, colSplits, paraSplits, splits);
+    const { colCss, contHeads, blockAttrs } = placeColumns(blocks, regs, starts, colSplits, paraSplits, splits);
+    for (const [i, dy] of frameDy) { if (!blockAttrs.has(i)) blockAttrs.set(i, { cls: [], style: [] }); blockAttrs.get(i).style.push(`--odx-fdy:${dy.toFixed(2)}px`); }
 
-    const { css, heads } = applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits);
+    const { css, heads } = applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs);
     css.push(`.${scope} > .odx-content{min-height:${pageTop(pages) - gap}px}`);
     if (cols || colRegs.length) dom.classList.remove('odx-measure');
     sheet.classList.remove('odx-bl-off');
-    const frameCss = [...frameDy].map(([i, dy]) => `.${scope} > .odx-content > :nth-child(${i + 1}){--odx-fdy:${dy.toFixed(2)}px}`);
     // Floats drawn up to end at their page's edge (floatsPast); those no longer drawn up, put back.
     const upNow = new Map();
     for (const [, { el, up }] of floatUp) {
@@ -2484,7 +2352,7 @@ export function createPages(view, session, { sheet, scope }) {
       });
       drawnUp = new Set(upNow.keys());
     }
-    let text = css.concat(colCss, frameCss, baselineCss(blocks, scope, sheet)).join('\n');
+    let text = css.concat(colCss, baselineCss(blocks, scope, sheet)).join('\n');
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
@@ -2747,9 +2615,7 @@ export function createPages(view, session, { sheet, scope }) {
     restory() {
       sectCache = { doc: null, ends: new Map(), first: page };
       heights.clear();
-      noteHeights.clear();
-      bandLays.clear();
-      sepRtl = null;
+      notes.clear();
       drawn = '';
       schedule();
     },
