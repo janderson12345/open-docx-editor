@@ -245,6 +245,9 @@
 .odx-content [data-kind="footnoteReference"], .odx-content [data-kind="endnoteReference"],
 [data-kind="footnoteRef"], [data-kind="endnoteRef"] { vertical-align: super; font-size: .66em; line-height: 0; }
 .odx-notes { position: absolute; }
+/* Spaces kept as typed, as in the text and in Word: collapsed, a new note's space after its number had no width, and the
+   browser dropped it with the first letter typed ("¹Typed"). */
+.odx-notes, .odx-noteedit { white-space: pre-wrap; word-wrap: break-word; }
 .odx-note-sep { width: 192px; border-top: 1px solid currentColor; opacity: .6; margin: 3.6px 0 9.4px; } /* Word's: 2in, whatever the text's width, 17.1pt above the first note's baseline */
 .odx-note-sep-rtl { margin-left: auto; } /* at the right, its paragraph right to left */
 .odx-note-cols-rtl { direction: rtl; } .odx-note-cols-rtl > * { direction: ltr; } /* endnotes in right-to-left columns: the first column on the right, each note in its own direction */
