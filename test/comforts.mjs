@@ -19,7 +19,7 @@ const url = `http://localhost:${server.address().port}/`;
 const open = async (f) => {
   await page.setInputFiles('input[type=file]', `test/fixtures/${f}`);
   await page.waitForFunction((n) => window.odx?.fileName === n, f);
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1200);
 };
 const firstPara = () => page.evaluate(() => window.odx.view.state.doc.firstChild.textContent);
 await page.goto(url);
@@ -28,9 +28,15 @@ await page.waitForSelector('.odx-content p');
 // AutoCorrect.
 await open('word-template.docx');
 await page.click('.odx-content p >> nth=0');
-await page.keyboard.press('Control+Home');
-await page.keyboard.press('Enter');
-await page.keyboard.press('ArrowUp');
+// (An empty first paragraph with the caret in it before typing: on a loaded machine, late in the full suite, the file
+// could still be settling and the keys went to its old first paragraph. Tried again until it's so.)
+const emptyFirst = () => page.evaluate(() => window.odx.view.state.doc.firstChild.textContent === '' && window.odx.view.state.selection.from === 1);
+for (let i = 0; i < 4 && !(await emptyFirst()); i++) {
+  if (i) await page.waitForTimeout(1000);
+  await page.keyboard.press('Control+Home');
+  if (!(await page.evaluate(() => window.odx.view.state.doc.firstChild.textContent === ''))) await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+Home');
+}
 await page.keyboard.type('he said "it\'s fine" -- well(c)... teh end. so ');
 check(await firstPara() === 'He said “it’s fine” – well©… the end. So ', `AutoCorrect as you type: ${await firstPara()}`);
 await page.keyboard.type('x--');
