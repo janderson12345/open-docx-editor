@@ -102,10 +102,9 @@ export function createNoteBoxes({ page, sheet, session }) {
     }
     return noteHeights.get(note.doc).get(key);
   };
-  // A band's notes in its columns, balanced as Word balances them: the lowest band that holds them, the first column
-  // taking the extra, a note split between columns only where each part keeps two lines (so a note of three lines
-  // never is). The notes are laid out once at the column's width, one under another; each column shows its stretch of
-  // that. (The browser's own balanced columns ignore widows and orphans.) { h, w, spans: [[from, to] px] }.
+  // A band's notes in its columns: laid out once at the column's width, one under another, with where a column may end
+  // (bandFill takes the columns' stretches of that). (The browser's own balanced columns ignore widows and orphans.)
+  // { total, w, breaks: [px], inks: [px], notes: [[top, bottom] px] }.
   const bandLays = new Map(); // key -> layout
   const noteDocIds = new WeakMap();
   let noteDocSeq = 0;
@@ -127,6 +126,7 @@ export function createNoteBoxes({ page, sheet, session }) {
     // of n lines after its line i when 2 <= i <= n - 2.
     const breaks = [];
     const spans = []; // each note's [top, bottom]
+    const lines = []; // every line's text, [mid, bottom]: where the text above a break ends (its ink)
     els.forEach((el, j) => {
       const r = el.getBoundingClientRect();
       spans.push([r.top - top0, r.bottom - top0]);
@@ -134,13 +134,20 @@ export function createNoteBoxes({ page, sheet, session }) {
       [...el.children].forEach((c, ci) => {
         if (ci) breaks.push(c.getBoundingClientRect().top - top0);
         const t = ownTable(c);
-        if (t && t.tBodies[0]) { [...t.tBodies[0].rows].slice(1).forEach((row) => breaks.push(row.getBoundingClientRect().top - top0)); return; }
+        if (t && t.tBodies[0]) {
+          [...t.tBodies[0].rows].forEach((row, ri) => { const q = row.getBoundingClientRect(); if (ri) breaks.push(q.top - top0); lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]); });
+          return;
+        }
         const tops = [];
         const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
         for (let tn = walk.nextNode(); tn; tn = walk.nextNode()) {
           if (!tn.data.length) continue;
           range.selectNodeContents(tn);
-          for (const q of range.getClientRects()) if (q.height && !tops.some((y) => Math.abs(y - q.top) < 2)) tops.push(q.top);
+          for (const q of range.getClientRects()) {
+            if (!q.height) continue;
+            lines.push([(q.top + q.bottom) / 2 - top0, q.bottom - top0]);
+            if (!tops.some((y) => Math.abs(y - q.top) < 2)) tops.push(q.top);
+          }
         }
         tops.sort((x, y) => x - y);
         for (let i = 2; i <= tops.length - 2; i++) breaks.push(tops[i] - top0);
@@ -148,36 +155,58 @@ export function createNoteBoxes({ page, sheet, session }) {
     });
     box.remove();
     breaks.sort((x, y) => x - y);
-    const fill = (H) => { // the columns' stretches at height H, or null when they don't hold it all
-      const spans = [];
-      let from = 0;
-      for (let c = 0; c < bc.m; c++) {
-        if (total - from <= H + 0.5) { spans.push([from, total]); return spans; }
-        let to = null;
-        for (const y of breaks) if (y > from + 0.5 && y - from <= H + 0.5) to = y;
-        if (to == null) return null;
-        spans.push([from, to]);
-        from = to;
-      }
-      return null;
-    };
-    // The heights a column can come to: from any place it can start (the top, a break) to any place it can end.
-    const starts = [0, ...breaks], ends = [...breaks, total];
-    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).map((y) => +(y - x).toFixed(2))))].filter((h) => h >= total / bc.m - 1).sort((x, y) => x - y);
-    let cols = null;
-    for (const H of cands) if ((cols = fill(H))) break;
-    if (!cols) cols = [[0, total]];
-    const lay = { h: Math.max(...cols.map(([x, y]) => y - x)), w, spans: cols, notes: spans };
+    // (Each break's ink: the lowest text above it. Swept once, lines and breaks in order.)
+    lines.sort((x, y) => x[0] - y[0]);
+    const ink = (ys) => { let k = 0, hi = 0; return ys.map((y) => { for (; k < lines.length && lines[k][0] < y; k++) hi = Math.max(hi, lines[k][1]); return Math.min(y, hi || y); }); };
+    const [inks, totalInk] = [ink(breaks), ink([total])[0]];
+    const lay = { total, totalInk, w, breaks, inks, notes: spans, fills: new Map() };
     bandLays.set(key, lay);
     return lay;
   };
-  // The band drawn: each column its stretch of the notes (right to left in a right-to-left section).
-  const bandBox = (items, bc, lay) => {
+  // The band's columns from `from` px into its notes (where a note carried on from the page before goes on), as Word
+  // fills them: balanced, the lowest band that holds them all, the first column taking the extra, a note split between
+  // columns only where each part keeps two lines (so a note of three lines never is); or, when that is taller than
+  // `room`, each column filled to the room and the rest left for the next page's band (a column fits when its text ends
+  // in the room: the browser puts half a line's leading under it, Word above). { h, spans: [[from, to] px], end }.
+  const bandFill = (lay, m, from = 0, room = Infinity) => {
+    const fkey = `${m}:${from.toFixed(2)}:${room === Infinity ? '' : room.toFixed(2)}`;
+    if (lay.fills.has(fkey)) return lay.fills.get(fkey);
+    const { total, breaks, inks } = lay;
+    const fill = (H, part) => { // the columns' stretches at height H; part: as far as they go, else null when they don't hold it all
+      // (Whether break k, -1 the end, ends a column from x: held to the room, by its text's end.)
+      const fits = (x, k) => (k < 0 ? (part ? lay.totalInk : total) : part ? inks[k] : breaks[k]) - x <= H + 0.5;
+      const spans = [];
+      let at = from;
+      for (let c = 0; c < m; c++) {
+        if (fits(at, -1)) { spans.push([at, total]); return spans; }
+        let to = null;
+        for (let k = 0; k < breaks.length; k++) if (breaks[k] > at + 0.5 && fits(at, k)) to = breaks[k];
+        // (Nowhere to end in the room, the first column: cut at the room, as one column cuts a paragraph taller than it.)
+        if (to == null && part && !c) to = Math.min(total, at + H);
+        if (to == null) return part ? spans : null;
+        spans.push([at, to]);
+        at = to;
+      }
+      return part ? spans : null;
+    };
+    // The heights a column can come to: from any place it can start (`from`, a break) to any place it can end.
+    const starts = [from, ...breaks.filter((y) => y > from + 0.5)], ends = [...breaks, total].filter((y) => y > from + 0.5);
+    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).map((y) => +(y - x).toFixed(2))))].filter((h) => h >= (total - from) / m - 1 && h <= room + 0.5).sort((x, y) => x - y);
+    let cols = null;
+    for (const H of cands) if ((cols = fill(H))) break;
+    if (!cols) cols = room === Infinity ? [[from, total]] : fill(room, true);
+    if (!cols.length) cols = [[from, from]];
+    const out = { h: Math.max(...cols.map(([x, y]) => y - x)), spans: cols, end: cols[cols.length - 1][1] };
+    lay.fills.set(fkey, out);
+    return out;
+  };
+  // The band drawn: each column its stretch of the notes (bandFill; right to left in a right-to-left section).
+  const bandBox = (items, bc, lay, fit) => {
     const out = document.createElement('div');
     out.className = 'odx-note-band';
-    out.style.cssText = `position:relative;height:${lay.h}px`;
+    out.style.cssText = `position:relative;height:${fit.h}px`;
     const inner = page.width - page.left - page.right;
-    lay.spans.forEach(([from, to], c) => {
+    fit.spans.forEach(([from, to], c) => {
       const x = c * (lay.w + bc.gap);
       const col = document.createElement('div');
       col.style.cssText = `position:absolute;top:0;left:${bc.rtl ? inner - x - lay.w : x}px;width:${lay.w}px;height:${to - from}px;overflow:hidden`;
@@ -194,7 +223,7 @@ export function createNoteBoxes({ page, sheet, session }) {
   };
 
   return {
-    noteEl, noteSepRtl, noteHeight, bandLayout, bandBox,
+    noteEl, noteSepRtl, noteHeight, bandLayout, bandFill, bandBox,
     /** Where a note measured at width key `key` may be cut (px from its top), or undefined before it's measured. */
     boundsOf: (doc, key) => noteBounds.get(doc)?.get(key),
     /** Where the text of the line ending at each of those cuts ends (px from the note's top). */
