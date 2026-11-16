@@ -26,7 +26,7 @@ import { referenceValue, updateFields } from './refs.js';
 import { lineHeightOf, layoutRect } from './util.js';
 import { drawBalloons } from './balloons.js';
 import { noteRefs } from './notes.js';
-import { createNoteBoxes } from './notebox.js';
+import { createNoteBoxes, CONT_LEAD } from './notebox.js';
 import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
@@ -104,6 +104,7 @@ export function createPages(view, session, { sheet, scope }) {
   const setMargins = (from, v, fresh) => {
     while (margins.length > 1 && margins[margins.length - 1][0] >= from) margins.pop();
     if (margins[margins.length - 1][1] !== v) margins.push([from, v, fresh]);
+    touchNotes(Math.max(0, from - 1)); // (the notes' bands from there on: their pages' room changed)
   };
   // The margins entry in force on page p: the last section start at or before it.
   const entryAt = (p) => {
@@ -155,7 +156,12 @@ export function createPages(view, session, { sheet, scope }) {
   const contentTop = (p) => colTops.get(p) ?? pageTop(p) + marginsAt(p).top;
   // (With notes at its foot, the body's text keeps clear of the separator by a few px more: Word's separator is a line
   // of its own, and a line of body text ending 4px above our note box went to the next page in Word.)
-  const bandH = (p) => { const b = bandOf(p); return Math.max(notesH.get(b) || 0, colGeo(p) ? notesHPrev.get(b) || 0 : 0); };
+  // (In columns, not for endnotes: they come after the text, under its columns as they end, or on the next page.)
+  const bandH = (p) => {
+    const b = bandOf(p);
+    if (colGeo(p) && noteFlow.get(b)?.items.every((r) => r.kind === 'endnote')) return 0;
+    return Math.max(notesH.get(b) || 0, colGeo(p) ? notesHPrev.get(b) || 0 : 0);
+  };
   // Footnotes at the foot of page p (not endnotes, which follow the text).
   const footBand = (p) => !!bandH(p) && !!noteFlow.get(bandOf(p))?.items.some((r) => r.kind === 'footnote');
   // Over a band of notes, a paragraph's last line keeps its space after above the band, as in Word: in columns, and over
@@ -177,6 +183,9 @@ export function createPages(view, session, { sheet, scope }) {
   let curRegs = []; // this pass's columns sections (colRegions), as laid out so far
   let notesHPrev = new Map(); // band -> px, as the last pass ended: a column laid out before a note further on in its sheet
   let notesHPrev2 = new Map(); // and the pass before
+  // Bands of footnotes in columns too tall for their page, as the last pass ended: band -> { cut (px from the columns'
+  // top: the sheet's text up to the reference evened out across them), top (where the notes start, the same) }.
+  let heldPrev = new Map();
   const colGeo = (v) => (cols ? { P: 0, ...cols } : curRegs.find((r) => r.P != null && v >= r.P && (r.vEnd == null || v <= r.vEnd)));
   // The sheet a flow page is on (columns sections take several flow pages a sheet), and the first flow page from `v`
   // on whose sheet has the parity an odd- or even-page section break asks for (sheets counted from 1).
@@ -218,22 +227,46 @@ export function createPages(view, session, { sheet, scope }) {
   let sheetBand = null; // sheet -> its band (columns), or null: the same
   const NOTE_SEP = 14; // separator line and the space around it
   const ENDNOTE_LEAD = 4; // Word's separator under the text is a line of the Normal style, a little taller than NOTE_SEP
+  // Endnotes starting a page of their own: their separator 7pt under the top margin, as Word prints it (fncols-word end2-ltr).
+  const ENDNOTE_TOP = 6;
   const notes = createNoteBoxes({ page, sheet, session });
   const { noteEl, noteSepRtl, noteHeight, bandLayout, bandBox } = notes;
   // The notes drawn at each page's foot: those carried on from the pages before (a note longer than the room a page has
   // for it continues at the foot of the next, as in Word), then the page's own; `skip` px of the first already shown.
   let noteFlow = new Map(); // page -> { items, skip, h }
   const NOTE_MIN_BODY = 48; // the room a page keeps for its body text (its reference's line, at least)
+  // Worked out again from the first band whose notes changed since the last time (touchNotes), not from the first band
+  // of all: a band's result depends only on the bands before it, through the notes they carry on. Every reservation in
+  // the layout pass works the bands out, so a long document with a note on every page had paid for all its pages on
+  // each one (fncols-word many1, 400 notes: see the commit). `sumSteps`: each band worked out, in order, with what it
+  // carries on.
+  let sumSteps = [];
+  let sumFrom = -Infinity; // the first band to work out again (Infinity: none)
+  const touchNotes = (p) => { if (p < sumFrom) sumFrom = p; };
   const sumNotes = () => {
-    notesH = new Map();
-    noteFlow = new Map();
+    if (sumFrom === Infinity) return;
+    let k = 0;
+    while (k < sumSteps.length && sumSteps[k].p < sumFrom) k++;
+    for (let j = k; j < sumSteps.length; j++) { noteFlow.delete(sumSteps[j].p); notesH.delete(sumSteps[j].p); }
+    sumSteps.length = k;
+    if (!k) { notesH = new Map(); noteFlow = new Map(); }
+    sumFrom = Infinity;
     const withNotes = [...notesOn.keys()].filter((p) => notesOn.get(p).length).sort((a, b) => a - b);
     if (!withNotes.length) return;
     const last = withNotes[withNotes.length - 1];
-    let carry = [], skip = 0;
-    for (let p = withNotes[0]; carry.length || p <= last; p = nextBand(p)) {
+    const was = k ? sumSteps[k - 1] : null;
+    let { carry, skip, skipKey, skipH, endShown } = was ? was.out : { carry: [], skip: 0, skipKey: '', skipH: 0, endShown: false };
+    // (skipKey: the width `skip` was measured at (a band's columns: c<px>), skipH its note's height there; endShown:
+    // endnotes in columns drawn on a page before.)
+    const start = !was ? withNotes[0] : carry.length ? nextBand(was.p) : withNotes.find((q) => q > was.p);
+    if (start == null) return;
+    // (Each band's step recorded as it ends, whichever way: what it carries on.)
+    let stepP = null;
+    const done = () => { if (stepP != null) sumSteps.push({ p: stepP, out: { carry, skip, skipKey, skipH, endShown } }); stepP = null; };
+    for (let p = start; carry.length || p <= last; done(), p = nextBand(p)) {
       const items = [...carry, ...(notesOn.get(p) || [])];
       if (!items.length) continue;
+      stepP = p;
       // (Measured at this page's text width, out of columns: a landscape section's among portrait ones.)
       if (!colGeo(p)) {
         const m = marginsAt(p);
@@ -245,23 +278,81 @@ export function createPages(view, session, { sheet, scope }) {
           r.wKey = wide ? String(Math.round(tw)) : '';
         }
       }
-      const total = items.reduce((t, r) => t + r.h, 0) - skip;
       let room = Math.max(MIN_ROOM, pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_MIN_BODY - NOTE_SEP);
-      // In columns of its own: the band's balanced height. (Too tall for the page, it's laid out as one, below.)
-      // (Endnotes in a one-section document of columns are in its columns too, balanced the same way.)
-      const allEnd = items.every((r) => r.note && r.kind === 'endnote');
-      const bc = !skip && (items.every((r) => r.note && r.kind === 'footnote') ? bandCols(p, items[0])
-        : allEnd && cols && !cols.unequal && cols.num > 1 ? { m: cols.num, gap: cols.space, rtl: !!cols.rtl } : null);
-      const lay = bc && bandLayout(items, bc);
-      if (bc && lay.h <= room) { noteFlow.set(p, { items, skip: 0, h: lay.h, cols: bc, lay }); notesH.set(p, lay.h + NOTE_SEP); carry = []; continue; }
       // (Its notes cut under the text when one's reference line stayed on a page too short for it: splitParagraph.)
       const part = (notesOn.get(p) || []).filter((r) => r.partial && r.at != null);
-      if (part.length) { const at0 = Math.max(...part.map((r) => r.at)), pv = pageOf(at0); room = Math.max(MIN_ROOM, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
-      if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
+      const under = (list) => { const at0 = Math.max(...list.map((r) => r.at)), pv = pageOf(at0); room = Math.max(MIN_ROOM, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); };
       // Too long for the page: in Word it takes all the room under the text with its reference (that text's page ends
       // there), not only what the page keeps for its body. (`at` is in the flow: in columns, its own column's page.)
-      const ats = (notesOn.get(p) || []).map((r) => r.at).filter((v) => v != null);
-      if (ats.length && !part.length) { const at0 = Math.max(...ats), pv = pageOf(at0); room = Math.max(MIN_ROOM, Math.min(room, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP)); }
+      const ats = (notesOn.get(p) || []).filter((r) => r.at != null);
+      // In columns of its own: the band's balanced height; too tall for the page, each column filled to the room under
+      // the text and the rest carried to the next page's band (balanced there, if it can be), as Word does it.
+      // (Endnotes in a one-section document of columns are in its columns too, laid out the same way.)
+      const allEnd = items.every((r) => r.note && r.kind === 'endnote');
+      const bc = items.every((r) => r.note && r.kind === 'footnote') ? bandCols(p, items[0])
+        : allEnd && cols && !cols.unequal && cols.num > 1 ? { m: cols.num, gap: cols.space, rtl: !!cols.rtl } : null;
+      if (bc && allEnd) {
+        // Endnotes in columns: under the text where it ends (its columns balanced before them, balanceEndCols), or, with
+        // less than two lines' room left there, from the next page's top, as in Word (fncols-word end2-ltr). On a page of
+        // their own their columns run left to right, and a page going on with them has a continuation separator over its
+        // first column (endlong-ltr, endlong-rtl page 3); drawSheets.
+        const own = (notesOn.get(p) || []).length > 0;
+        if (own) {
+          const sh = colsBal && Math.floor(p / cols.num) === colsBal.sheet;
+          if (sh) room = Math.max(0, pageTop(p) + pageH(p) - marginsAt(p).bottom - (contentTop(p) + colsBal.bottom + ENDNOTE_LEAD) - NOTE_SEP);
+          else if (ats.length) { const at0 = Math.max(...ats.map((r) => r.at)), pv = pageOf(at0); room = Math.max(0, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP); }
+          if (room < MIN_ROOM) { carry = items; skip = 0; skipKey = ''; skipH = 0; continue; }
+        } else room = pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_SEP - ENDNOTE_TOP;
+        const lay = bandLayout(items, bc);
+        const wKey = `c${Math.round(lay.w)}`;
+        const from = skip && skipKey !== wKey ? skip * ((lay.notes[0][1] - lay.notes[0][0]) / (skipH || 1)) : skip;
+        // (Going on from endnotes on the page before, split there or not: Word's continuation separator.)
+        const cont = !own && endShown;
+        const fit = notes.bandFill(lay, bc.m, from, cont ? room + NOTE_SEP + ENDNOTE_TOP : room, cont ? CONT_LEAD : 0);
+        noteFlow.set(p, { items, skip: from, h: fit.h, cols: bc, lay, fit, own, cont });
+        endShown = true;
+        notesH.set(p, fit.h + NOTE_SEP);
+        carry = items.filter((r, j) => lay.notes[j][1] > fit.end + 0.5);
+        const c0 = carry.length ? lay.notes[items.indexOf(carry[0])] : null;
+        skip = c0 ? fit.end - c0[0] : 0;
+        skipKey = wKey;
+        skipH = c0 ? c0[1] - c0[0] : 0;
+        if (p > last + NOTE_RUNAWAY) { done(); break; }
+        continue;
+      }
+      if (bc) {
+        const lay = bandLayout(items, bc);
+        const wKey = `c${Math.round(lay.w)}`;
+        // (What of the first note was shown on the page before, measured at that page's width: in proportion here.)
+        const from = skip && skipKey !== wKey ? skip * ((lay.notes[0][1] - lay.notes[0][0]) / (skipH || 1)) : skip;
+        let fit = notes.bandFill(lay, bc.m, from, room);
+        let held = false;
+        if (fit.end < lay.total - 0.5) {
+          // (Footnotes: Word evens out the sheet's text up to the reference across its columns and starts the band under
+          // the lowest of them, worked out a pass behind: heldBands. Until then, under the reference's text.)
+          const hp = !allEnd && heldPrev.get(p);
+          if (hp && ats.length) room = Math.max(MIN_ROOM, pageTop(p) + pageH(p) - marginsAt(p).bottom - contentTop(p) - hp.top - NOTE_SEP);
+          else if (part.length) under(part);
+          else if (ats.length) under(ats);
+          fit = notes.bandFill(lay, bc.m, from, room);
+          held = !!(part.length || ats.length);
+        }
+        noteFlow.set(p, { items, skip: from, h: fit.h, cols: bc, lay, fit, held: held && !allEnd });
+        notesH.set(p, (held && fit.end < lay.total - 0.5 ? Math.max(room, fit.h) : fit.h) + NOTE_SEP);
+        carry = items.filter((r, j) => lay.notes[j][1] > fit.end + 0.5);
+        const c0 = carry.length ? lay.notes[items.indexOf(carry[0])] : null;
+        skip = c0 ? fit.end - c0[0] : 0;
+        skipKey = wKey;
+        skipH = c0 ? c0[1] - c0[0] : 0;
+        if (p > last + NOTE_RUNAWAY) { done(); break; }
+        continue;
+      }
+      // (Carried on from a band in columns: what was shown there, in proportion at this page's width.)
+      if (skip && skipKey !== (items[0].wKey ?? '')) skip *= (items[0].h || 0) / (skipH || 1);
+      const total = items.reduce((t, r) => t + r.h, 0) - skip;
+      if (part.length) under(part);
+      if (total <= room) { noteFlow.set(p, { items, skip, h: total }); notesH.set(p, total + NOTE_SEP); carry = []; skip = 0; continue; }
+      if (ats.length && !part.length) under(ats);
       // Cut at the last paragraph end that fits (or, a paragraph taller than the room, at the room).
       // (A line fits when its text ends above the margin: the half leading the browser puts under it is above it in Word,
       // longfn-word2 fnland page 4. Half a px for rounding.)
@@ -286,14 +377,18 @@ export function createPages(view, session, { sheet, scope }) {
       }
       carry = rest;
       skip = next;
-      if (p > last + NOTE_RUNAWAY) break;
+      skipKey = rest[0]?.wKey ?? '';
+      skipH = rest[0]?.h || 0;
+      if (p > last + NOTE_RUNAWAY) { done(); break; }
     }
+    done();
   };
   let blockNotes = new Map(); // block index -> [{ kind, id, n, h }]
   const placed = new Map(); // note key -> page
   // (`at`: where the block holding the references ends, when known: a note too long for its page has the room below it.)
   // A note into band p's list (placed: its band).
   const putNote = (r, p) => {
+    touchNotes(p);
     placed.set(r.kind + r.id, p);
     if (!notesOn.has(p)) notesOn.set(p, []);
     notesOn.get(p).push(r);
@@ -302,6 +397,7 @@ export function createPages(view, session, { sheet, scope }) {
   const takeNote = (r) => {
     const from = placed.get(r.kind + r.id);
     if (from == null) return false;
+    touchNotes(from);
     notesOn.set(from, (notesOn.get(from) || []).filter((x) => x !== r));
     placed.delete(r.kind + r.id);
     return true;
@@ -321,7 +417,9 @@ export function createPages(view, session, { sheet, scope }) {
     let added = false;
     for (const r of blockNotes.get(i) || []) {
       r.inCols = inCols;
-      if (placed.has(r.kind + r.id)) continue;
+      // (In columns, where its block ends now: moved on to another column, a note's block ends elsewhere, which a band
+      // too tall for its page goes by: heldBands.)
+      if (placed.has(r.kind + r.id)) { if (at != null && inCols && placed.get(r.kind + r.id) === p && r.at !== at) { r.at = at; touchNotes(p); added = true; } continue; }
       r.at = at;
       putNote(r, p);
       added = true;
@@ -1126,9 +1224,11 @@ export function createPages(view, session, { sheet, scope }) {
       if (!later.length) return base;
       const list = notesOn.get(band) || [];
       notesOn.set(band, list.filter((x) => !later.includes(x)));
+      touchNotes(band);
       sumNotes();
       const without = contentBottom(pg);
       notesOn.set(band, list);
+      touchNotes(band);
       sumNotes();
       return without;
     };
@@ -1152,6 +1252,7 @@ export function createPages(view, session, { sheet, scope }) {
       const carried = flow ? Math.max(0, flow.items.filter((r) => !own.includes(r)).reduce((t, r) => t + r.h, 0) - (flow.skip || 0)) : 0;
       if (under < carried + others.reduce((t, r) => t + r.h, 0) + first) return false;
       for (const r of inLine) { r.partial = true; r.at = at; }
+      touchNotes(band);
       sumNotes();
       return true;
     };
@@ -1548,7 +1649,7 @@ export function createPages(view, session, { sheet, scope }) {
         // Endnotes go after the last text, at the end of the document.
         const i = r.kind === 'endnote' ? ends[ends.length - 1][0] : ends[bi][0];
         if (!blockNotes.has(i)) blockNotes.set(i, []);
-        blockNotes.get(i).push({ ...r, h: noteHeight(note, r.kind, r.n), note });
+        blockNotes.get(i).push({ ...r, h: noteHeight(note, r.kind, r.n), note, bi: i });
       }
     }
   }
@@ -1582,6 +1683,7 @@ export function createPages(view, session, { sheet, scope }) {
     }
     const sheet = Math.floor((vEnd - re.P) / re.num);
     re.vEnd = vEnd;
+    touchNotes(Math.max(0, re.P, vEnd - re.num)); // (the bands from its last sheet on: its columns end there)
     re.offAfter = vEnd - (re.S0 + sheet);
     for (const v of [...colTops.keys()]) if (v > vEnd) colTops.delete(v);
     // (What follows on the same page starts under the lowest column; balanced, the columns are also cut even.)
@@ -1626,6 +1728,7 @@ export function createPages(view, session, { sheet, scope }) {
     const y0 = newPage ? contentTop(P) : Math.max(top, contentTop(p));
     const n = regs.indexOf(rs);
     rs.P = P;
+    touchNotes(Math.max(0, P - 1)); // (the bands from there on are its sheets now)
     rs.y0 = y0;
     rs.off0 = n ? regs[n - 1].offAfter || 0 : 0;
     rs.S0 = P - rs.off0;
@@ -1835,6 +1938,46 @@ export function createPages(view, session, { sheet, scope }) {
     else colsBal.bottom = low;
   }
 
+  // A band of footnotes in columns too tall for its page, as Word lays it out: the sheet's text up to the reference's
+  // line evened out across its columns (the first taking the extra, as before endnotes), every column cut there, and the
+  // band from under the lowest of them, the rest of its notes going on on the next page (fncols-word tall2a: two
+  // paragraphs of ten lines, the second with a note of 50 sentences, side by side over the band; not one under the
+  // other with the band under them). For the next pass, which lays the columns out again when it changed.
+  function heldBands(blocks, starts, colSplits) {
+    const now = new Map();
+    const held = [...noteFlow].filter(([, f]) => f.held);
+    if (held.length) {
+      const { at, ends } = colEnds(blocks, starts, colSplits, false);
+      for (const [b] of held) {
+        const g = colGeo(b);
+        if (!g || g.num < 2) continue;
+        const r = (notesOn.get(b) || []).filter((x) => x.at != null && x.kind === 'footnote').sort((x, y) => x.at - y.at).pop();
+        const e = r && at.find((q) => q.b.i === r.bi);
+        if (!e) continue;
+        // (Where the reference's block ends: in the last column it's carried into, when it's split.)
+        const cs = colSplits.get(e.b.i);
+        const parts = cs ? carriedOf(cs) : [];
+        const lastPart = parts[parts.length - 1];
+        const vRef = lastPart ? e.v + lastPart.off : e.v;
+        const endRef = lastPart ? contentTop(vRef) + lastPart.h : e.top + (e.b.bottom - e.b.top);
+        if (vRef < b || vRef >= b + g.num) continue;
+        let total = endRef - contentTop(vRef), low = total;
+        for (let v = b; v < vRef; v++) { const h = (ends.get(v) ?? contentTop(v)) - contentTop(v); total += h; low = Math.max(low, h); }
+        // (Not lower than the reference's own lines when they start the sheet: nothing comes before them to even out,
+        // tall2b's page 2, two lines carried over with the reference, a column of two lines beside them.)
+        const partTop = lastPart ? contentTop(vRef) : e.top;
+        const cut = Math.max(total / g.num + END_COLS_EXTRA, vRef === b && partTop <= contentTop(vRef) + 1 ? endRef - contentTop(vRef) + 1 : 0);
+        const gapUnder = spaceAfter(e.b.node) + 11.5;
+        now.set(b, { cut, top: Math.min(low, cut) + gapUnder, cuts: Array.from({ length: g.num }, (_, c) => [b + c, contentTop(b + c) + cut]) });
+      }
+    }
+    for (const b of new Set([...now.keys(), ...heldPrev.keys()])) {
+      const x = now.get(b), y = heldPrev.get(b);
+      if (!x || !y || Math.abs(x.cut - y.cut) > 0.5 || Math.abs(x.top - y.top) > 0.5) colsAgain = true;
+    }
+    heldPrev = now;
+  }
+
   // The walk's result applied: margin-tops (node decorations), split tables' padded rows and clip paths (CSS), spacer
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
@@ -2008,10 +2151,14 @@ export function createPages(view, session, { sheet, scope }) {
     notesOn = new Map();
     notesH = new Map();
     noteFlow = new Map();
+    sumSteps = [];
+    sumFrom = -Infinity;
     cuts = new Map();
     // A one-section document in columns with endnotes: its last sheet's columns cut to an even height (worked out a pass
     // behind, balanceEndCols), as Word balances them before the endnotes.
     if (cols && colsBal) for (let c = 0; c < cols.num - 1; c++) { const v = colsBal.sheet * cols.num + c; cuts.set(v, contentTop(v) + colsBal.h); }
+    // (And a sheet whose footnotes are too tall for it: its columns cut where its text up to the reference evens out.)
+    for (const hp of heldPrev.values()) for (const [v, y] of hp.cuts) cuts.set(v, Math.min(cuts.get(v) ?? Infinity, y));
     colTops = new Map();
     for (const r of colRegs) {
       r.k0 = blocks.findIndex((x) => x.i >= r.lo);
@@ -2222,7 +2369,9 @@ export function createPages(view, session, { sheet, scope }) {
           carryOn(k, cs);
           continue;
         }
-        if (!firstOnPage && b.bottom - b.top <= pageHeight(p + 1)) {
+        // (Taller than the next column too, it still goes on there, and is cut at its foot: kept here, it ran down past the
+        // column's foot, over a band of notes taking most of the page, fncols-word tall3a.)
+        if (!firstOnPage && !wide?.splits) {
           target = p + 1;
           overflow = true;
         }
@@ -2305,6 +2454,8 @@ export function createPages(view, session, { sheet, scope }) {
         colSplits.delete(blocks[n].i);
       }
       k = m; // re-check everything after the moved block
+      // (In columns, a paragraph taller than the column it moved to: itself too, so it's cut at that column's foot.)
+      if (inCols && moved.node.type === schema.nodes.paragraph && moved.bottom + shift > contentBottom(target) + 1) k = m - 1;
       breakPending = (!lineSplits || regs.some((r) => m >= r.k0 && m < r.k1)) && hasPageBreak(moved.node);
       breakKind = breakKindOf(moved.node);
       if (lineSplits && moved.node.type === schema.nodes.paragraph && (hasPageBreak(moved.node) || moved.bottom + shift > contentBottom(target) + 1)) {
@@ -2329,6 +2480,7 @@ export function createPages(view, session, { sheet, scope }) {
     colVa = new Map();
     if (cols && !regs.length) verticalAlignCols(doc, blocks, starts, colSplits);
     if (cols && !regs.length) balanceEndCols(blocks, starts, colSplits);
+    heldBands(blocks, starts, colSplits);
     const last = blocks.length ? blocks[blocks.length - 1].bottom + shift : 0;
     pages = Math.max(1, pageOf(Math.max(last - 1, 0)) + 1);
     // A band in columns grown (or shrunk) since the last pass, by a note further on in its sheet: its columns laid out
@@ -2336,6 +2488,7 @@ export function createPages(view, session, { sheet, scope }) {
     // (A band going back to its height of two passes ago keeps the larger of the two: the columns before it were cut to
     // that, and it would flip until the passes ran out.)
     const nextH = new Map(notesH);
+    for (const [b, f] of noteFlow) if (colGeo(b) && f.items.every((r) => r.kind === 'endnote')) nextH.delete(b); // (bandH)
     for (const b of new Set([...notesH.keys(), ...notesHPrev.keys()])) {
       if (!colGeo(b)) continue;
       const now = notesH.get(b) || 0, prev = notesHPrev.get(b) || 0;
@@ -2429,7 +2582,7 @@ export function createPages(view, session, { sheet, scope }) {
     // (Headers and footers with reference fields are drawn again as the document changes: a running head follows
     // its heading's text.)
     if (refsInStories == null) refsInStories = /\b(?:STYLEREF|PAGEREF|REF)\b/.test(Object.keys(session.pkg.files).filter((k) => /word\/(header|footer)\d*\.xml$/.test(k)).map((k) => session.pkg.text(k)).join(''));
-    const key = `${refsInStories ? view.state.doc.content.size + ':' + docSeq + ':' : ''}${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}:${endnotesAt()}`;
+    const key = `${refsInStories ? view.state.doc.content.size + ':' + docSeq + ':' : ''}${(view.state.doc.attrs.sectPr || '').match(/<w:pgBorders\b[\s\S]*?<\/w:pgBorders>/)?.[0] || ''}:${pages}:${margins.map((m) => m[0] + (m[2] ? 'f' : '')).join(',')}:${pitch}:${pageTop(pages)}:${[...notesOn].map(([p, l]) => p + '=' + l.map((r) => r.kind[0] + r.id + '.' + r.n).join('+')).join(',')}:${endnotesAt()}:${[...noteFlow].map(([p, f]) => `${p}/${Math.round(notesH.get(p) || 0)}/${Math.round(f.h)}/${Math.round(f.skip || 0)}`).join(',')}`;
     if (drawn === key) return;
     drawn = key;
     const frag = document.createDocumentFragment();
@@ -2507,17 +2660,19 @@ export function createPages(view, session, { sheet, scope }) {
         // Endnotes start where the text ends, as in Word (its separator line under the last paragraph's space after),
         // not at the page's foot as footnotes do: the generated documents' endnotes, tools/doc-generator.
         const last = view.dom.lastElementChild;
-        if (last && !flow.skip && flow.items.every((r) => r.kind === 'endnote')) {
+        const endOnly = flow.items.every((r) => r.kind === 'endnote');
+        // (In columns, a page of endnotes alone, after the text's last: from the top, its columns left to right whatever
+        // the section's direction, as Word prints them; going on from the page before, under a continuation separator.)
+        const alone = endOnly && !!flow.cols && !flow.own;
+        if (alone) top = marginsAt(p).top + (flow.cont ? 0 : ENDNOTE_TOP);
+        else if (last && !flow.skip && endOnly) {
           // (In columns balanced before them, under the lowest column: balanceEndCols.)
           const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
           if (y > 0 && y < top) top = y;
         }
         box.style.cssText = at ? `top:${top}px;left:${page.left + at.x}px;width:${at.w}px` : `top:${top}px;left:${page.left}px;right:${page.right}px`;
-        // (Endnotes in a document of newspaper columns are in the columns too, balanced, the separator at the top of the
-        // first, as Word lays them out.)
-        const inCols = !flow.cols && cols && !cols.unequal && cols.num > 1 && !flow.skip && flow.items.every((r) => r.kind === 'endnote');
         const sep = document.createElement('div');
-        sep.className = noteSepRtl() ? 'odx-note-sep odx-note-sep-rtl' : 'odx-note-sep';
+        sep.className = noteSepRtl(endOnly ? 'endnote' : 'footnote') ? 'odx-note-sep odx-note-sep-rtl' : 'odx-note-sep';
         // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)
         const clip = document.createElement('div');
         clip.style.cssText = `overflow:hidden;height:${flow.h}px`;
@@ -2525,16 +2680,11 @@ export function createPages(view, session, { sheet, scope }) {
         inner.style.marginTop = `${-flow.skip}px`;
         inner.append(...flow.items.map((r) => noteEl(r.note, r.kind, r.n)));
         clip.append(inner);
-        if (inCols) {
+        if (flow.cols) { // in the band's columns (endnotes too, in a one-section document of columns)
           clip.style.height = 'auto';
-          inner.style.cssText += `;column-count:${cols.num};column-gap:${cols.space}px;column-fill:balance`;
-          if (cols.rtl) inner.classList.add('odx-note-cols-rtl');
-          inner.prepend(sep);
-          box.append(clip);
-        } else if (flow.cols) { // footnotes in the band's columns
-          clip.style.height = 'auto';
-          clip.replaceChildren(bandBox(flow.items, flow.cols, flow.lay));
-          box.append(sep, clip);
+          const cont = alone && flow.cont;
+          clip.replaceChildren(bandBox(flow.items, alone ? { ...flow.cols, rtl: false } : flow.cols, flow.lay, flow.fit, cont ? sep : null));
+          if (cont) box.append(clip); else box.append(sep, clip);
         } else box.append(sep, clip);
         s.append(box);
       }
