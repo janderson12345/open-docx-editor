@@ -855,6 +855,17 @@ check(tocU.instr === 'TOC \\u \\h \\z' && tocU.words === 'H1 styled:1, H2 styled
 const tocT = await updateToc('toc-t-switch.docx');
 check(tocT.instr === 'TOC \\t "Section Title,1,Deep Title,3" \\h \\z' && tocT.words.startsWith('Custom style level 2:1, Custom style level 6:3, H1 styled:1'),
   `a \\t TOC updates to Word's entries (${JSON.stringify(tocT)})`);
+// End on a TOC entry, then typing straight away: every key at the end of the entry, after its page number. (Its last
+// node is the PAGEREF field's end, inside the entry's hyperlink: the browser's End stopped before it or went to the end
+// of the document, and the first keys typed went one place, the rest the other.)
+await open('toc-u-only.docx');
+await page.click('.odx-content p >> nth=0');
+await page.waitForTimeout(200);
+await page.keyboard.press('End');
+await page.keyboard.type(' typed');
+await page.waitForTimeout(300);
+const endTyped = await page.evaluate(() => `${window.odx.view.state.doc.firstChild.textContent}|${window.odx.view.state.doc.lastChild.textContent}`);
+check(endTyped === 'H1 styled1 typed|Body text', `End on a TOC entry and typing: all at the entry's end (${endTyped})`);
 
 // Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
 // cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
