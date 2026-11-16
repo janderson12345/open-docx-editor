@@ -22,3 +22,19 @@ files['[Content_Types].xml'] = strToU8(strFromU8(files['[Content_Types].xml']).r
 const rels = 'word/_rels/document.xml.rels';
 files[rels] = strToU8(strFromU8(files[rels]).replace('</Relationships>', '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>'));
 fs.writeFileSync(new URL('./notes-long.docx', import.meta.url), zipSync(files));
+
+// test/fixtures/notes-georgia14.docx: body text in 14pt Georgia a page and a half long, with Word's footnote styles
+// and separators but no notes yet (test/features.mjs inserts one and types in it and after its reference).
+const g = unzipSync(blankDocxBytes());
+const words = 'garden letter harbor paper orchard pocket river window morning lantern candle winter valley stone market silver meadow bridge story thunder';
+const gRun = (t) => `<w:r><w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`;
+const gBody = Array.from({ length: 9 }, (_, i) => `<w:p>${gRun(`Paragraph ${i + 1}. ${words} ${words}.`)}</w:p>`).join('');
+g[main] = strToU8(strFromU8(g[main]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${gBody}$1`));
+const noteStyles = '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:link w:val="FootnoteTextChar"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
+  + '<w:style w:type="character" w:customStyle="1" w:styleId="FootnoteTextChar"><w:name w:val="Footnote Text Char"/><w:link w:val="FootnoteText"/><w:uiPriority w:val="99"/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
+  + '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>';
+g['word/styles.xml'] = strToU8(strFromU8(g['word/styles.xml']).replace('</w:styles>', `${noteStyles}</w:styles>`));
+g['word/footnotes.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes ${W}>${seps}</w:footnotes>`);
+g['[Content_Types].xml'] = files['[Content_Types].xml'];
+g[rels] = files[rels];
+fs.writeFileSync(new URL('./notes-georgia14.docx', import.meta.url), zipSync(g));

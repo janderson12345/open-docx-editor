@@ -53,11 +53,12 @@ export function createNoteBoxes({ page, sheet, session }) {
     return sepRtl;
   };
   const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
+  const noteInks = new Map(); // note doc -> where the text of each of those lines ends, px from its top
   // (At `w`, a page's text width when it isn't the first section's: a landscape page's notes are wider, so shorter,
   // longfn-word2 fnland.)
   const noteHeight = (note, kind, n, w = null) => {
     const key = w == null ? '' : String(Math.round(w));
-    if (!noteHeights.has(note.doc)) { noteHeights.set(note.doc, new Map()); noteBounds.set(note.doc, new Map()); }
+    if (!noteHeights.has(note.doc)) { noteHeights.set(note.doc, new Map()); noteBounds.set(note.doc, new Map()); noteInks.set(note.doc, new Map()); }
     if (!noteHeights.get(note.doc).has(key)) {
       const box = document.createElement('div');
       box.className = 'odx-notes';
@@ -69,19 +70,28 @@ export function createNoteBoxes({ page, sheet, session }) {
       noteHeights.get(note.doc).set(key, box.getBoundingClientRect().height);
       // (A table's rows each end a place it can be cut too: a note holding a long table goes on on the next page from
       // the row that doesn't fit, as in Word.)
-      noteBounds.get(note.doc).set(key, [...el.children].flatMap((c) => {
+      // (Each with where its line's text ends, `ink`: the browser puts half a line's leading under its text, Word all of it
+      // above, so Word fits a cut whose last line's text ends on the margin, longfn-word2 fnland page 4.)
+      const cuts = [...el.children].flatMap((c) => {
         const t = ownTable(c);
         const rows = t && t.tBodies[0] ? [...t.tBodies[0].rows] : [];
-        if (rows.length) return rows.map((e) => e.getBoundingClientRect().bottom - top);
+        if (rows.length) return rows.map((e) => { const y = e.getBoundingClientRect().bottom - top; return { y, ink: y }; });
         // (And a paragraph's every line: a note longer than its page goes on on the next from the first line that doesn't
         // fit, as in Word, not from mid-line (longfn-word fnhuge).)
         const rg = document.createRange();
         rg.selectNodeContents(c);
+        const rects = [...rg.getClientRects()].filter((q) => q.height > 0);
         const tops = [];
-        for (const q of rg.getClientRects()) if (q.height > 0 && !tops.some((t) => Math.abs(t - q.top) < 2)) tops.push(q.top);
+        for (const q of rects) if (!tops.some((t) => Math.abs(t - q.top) < 2)) tops.push(q.top);
         tops.sort((x, y) => x - y);
-        return [...tops.slice(1).map((t) => t - top), c.getBoundingClientRect().bottom - top];
-      }).filter((b) => b > 0));
+        const ends = [...tops.slice(1), c.getBoundingClientRect().bottom];
+        return ends.map((e, i) => {
+          const inLine = rects.filter((q) => (q.top + q.bottom) / 2 < e && (q.top + q.bottom) / 2 > (i ? ends[i - 1] : -Infinity));
+          return { y: e - top, ink: Math.min(e, Math.max(-Infinity, ...inLine.map((q) => q.bottom))) - top };
+        });
+      }).filter((b) => b.y > 0);
+      noteBounds.get(note.doc).set(key, cuts.map((b) => b.y));
+      noteInks.get(note.doc).set(key, cuts.map((b) => (Number.isFinite(b.ink) ? b.ink : b.y)));
       box.remove();
     }
     return noteHeights.get(note.doc).get(key);
@@ -181,6 +191,8 @@ export function createNoteBoxes({ page, sheet, session }) {
     noteEl, noteSepRtl, noteHeight, bandLayout, bandBox,
     /** Where a note measured at width key `key` may be cut (px from its top), or undefined before it's measured. */
     boundsOf: (doc, key) => noteBounds.get(doc)?.get(key),
+    /** Where the text of the line ending at each of those cuts ends (px from the note's top). */
+    inksOf: (doc, key) => noteInks.get(doc)?.get(key),
     /** Everything measured forgotten: the notes or the styles they're drawn in changed. */
     clear() { noteHeights.clear(); bandLays.clear(); sepRtl = null; },
   };
