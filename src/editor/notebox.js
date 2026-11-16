@@ -12,6 +12,10 @@ import { startTags, tagAttr } from '../ooxml/xml.js';
 const serializer = DOMSerializer.fromSchema(schema);
 // A note paragraph's table: the element itself or its direct child.
 const ownTable = (el) => (el.tagName === 'TABLE' ? el : el.querySelector(':scope > table'));
+// A continuation separator over a band's first column: its rule this far down, the column's notes CONT_LEAD down
+// (Word's print of endnotes going on in columns, fncols-word endlong-ltr page 3: the rule at 79pt, the first column's
+// first baseline 14.6pt under the others').
+export const CONT_SEP_TOP = 9.3, CONT_LEAD = 19.5;
 
 /** The note boxes for one pagination: `page` its first section's page, `sheet` the element they're measured in. */
 export function createNoteBoxes({ page, sheet, session }) {
@@ -29,12 +33,14 @@ export function createNoteBoxes({ page, sheet, session }) {
   };
   // The footnote separator goes at the text's right edge when its paragraph is right to left (its own w:bidi, or the
   // document's default paragraph's), as in Word; at the left otherwise, whatever the section's direction.
-  let sepRtl = null;
-  const noteSepRtl = () => {
-    if (sepRtl == null) {
+  // (Footnotes' separator and endnotes' each from their own part: endnotes.xml has a separator of its own.)
+  const sepRtl = {};
+  const noteSepRtl = (kind = 'footnote') => {
+    if (sepRtl[kind] == null) {
       const bidi = (x) => /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(x || '');
-      const part = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes');
-      const sep = part && /<w:footnote\b[^>]*w:type="separator"[\s\S]*?<\/w:footnote>/.exec(session.pkg.text(part) || '')?.[0];
+      const part = session.pkg?.partByType?.(`http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}s`);
+      const text = part ? session.pkg.text(part) || '' : '';
+      const sep = (kind === 'endnote' ? /<w:endnote\b[^>]*w:type="separator"[\s\S]*?<\/w:endnote>/ : /<w:footnote\b[^>]*w:type="separator"[\s\S]*?<\/w:footnote>/).exec(text)?.[0];
       const ppr = sep && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(sep)?.[0];
       const stylesPart = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
       const styles = stylesPart ? session.pkg.text(stylesPart) || '' : '';
@@ -48,9 +54,9 @@ export function createNoteBoxes({ page, sheet, session }) {
         break;
       }
       const normalPpr = normal && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(normal)?.[0];
-      sepRtl = !!sep && (ppr && /<w:bidi\b/.test(ppr) ? bidi(ppr) : normalPpr && /<w:bidi\b/.test(normalPpr) ? bidi(normalPpr) : bidi(defaults));
+      sepRtl[kind] = !!sep && (ppr && /<w:bidi\b/.test(ppr) ? bidi(ppr) : normalPpr && /<w:bidi\b/.test(normalPpr) ? bidi(normalPpr) : bidi(defaults));
     }
-    return sepRtl;
+    return sepRtl[kind];
   };
   const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
   const noteInks = new Map(); // note doc -> where the text of each of those lines ends, px from its top
@@ -168,21 +174,24 @@ export function createNoteBoxes({ page, sheet, session }) {
   // columns only where each part keeps two lines (so a note of three lines never is); or, when that is taller than
   // `room`, each column filled to the room and the rest left for the next page's band (a column fits when its text ends
   // in the room: the browser puts half a line's leading under it, Word above). { h, spans: [[from, to] px], end }.
-  const bandFill = (lay, m, from = 0, room = Infinity) => {
-    const fkey = `${m}:${from.toFixed(2)}:${room === Infinity ? '' : room.toFixed(2)}`;
+  // (`lead`: px the first column starts lower than the others, under a continuation separator of its own.)
+  const bandFill = (lay, m, from = 0, room = Infinity, lead = 0) => {
+    const fkey = `${m}:${from.toFixed(2)}:${room === Infinity ? '' : room.toFixed(2)}:${lead}`;
     if (lay.fills.has(fkey)) return lay.fills.get(fkey);
     const { total, breaks, inks } = lay;
     const fill = (H, part) => { // the columns' stretches at height H; part: as far as they go, else null when they don't hold it all
       // (Whether break k, -1 the end, ends a column from x: held to the room, by its text's end.)
-      const fits = (x, k) => (k < 0 ? (part ? lay.totalInk : total) : part ? inks[k] : breaks[k]) - x <= H + 0.5;
+      let Hc = H;
+      const fits = (x, k) => (k < 0 ? (part ? lay.totalInk : total) : part ? inks[k] : breaks[k]) - x <= Hc + 0.5;
       const spans = [];
       let at = from;
       for (let c = 0; c < m; c++) {
+        Hc = c ? H : H - lead;
         if (fits(at, -1)) { spans.push([at, total]); return spans; }
         let to = null;
         for (let k = 0; k < breaks.length; k++) if (breaks[k] > at + 0.5 && fits(at, k)) to = breaks[k];
         // (Nowhere to end in the room, the first column: cut at the room, as one column cuts a paragraph taller than it.)
-        if (to == null && part && !c) to = Math.min(total, at + H);
+        if (to == null && part && !c) to = Math.min(total, at + Math.max(0, Hc));
         if (to == null) return part ? spans : null;
         spans.push([at, to]);
         at = to;
@@ -191,17 +200,18 @@ export function createNoteBoxes({ page, sheet, session }) {
     };
     // The heights a column can come to: from any place it can start (`from`, a break) to any place it can end.
     const starts = [from, ...breaks.filter((y) => y > from + 0.5)], ends = [...breaks, total].filter((y) => y > from + 0.5);
-    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).map((y) => +(y - x).toFixed(2))))].filter((h) => h >= (total - from) / m - 1 && h <= room + 0.5).sort((x, y) => x - y);
+    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).flatMap((y) => [+(y - x).toFixed(2), +(y - x + lead).toFixed(2)])))].filter((h) => h >= (total - from) / m - 1 && h <= room + 0.5).sort((x, y) => x - y);
     let cols = null;
     for (const H of cands) if ((cols = fill(H))) break;
     if (!cols) cols = room === Infinity ? [[from, total]] : fill(room, true);
     if (!cols.length) cols = [[from, from]];
-    const out = { h: Math.max(...cols.map(([x, y]) => y - x)), spans: cols, end: cols[cols.length - 1][1] };
+    const out = { h: Math.max(...cols.map(([x, y], c) => y - x + (c ? 0 : lead))), spans: cols, end: cols[cols.length - 1][1], lead };
     lay.fills.set(fkey, out);
     return out;
   };
   // The band drawn: each column its stretch of the notes (bandFill; right to left in a right-to-left section).
-  const bandBox = (items, bc, lay, fit) => {
+  // (`contSep`: a continuation separator drawn over the first column, in its lead.)
+  const bandBox = (items, bc, lay, fit, contSep = null) => {
     const out = document.createElement('div');
     out.className = 'odx-note-band';
     out.style.cssText = `position:relative;height:${fit.h}px`;
@@ -209,7 +219,9 @@ export function createNoteBoxes({ page, sheet, session }) {
     fit.spans.forEach(([from, to], c) => {
       const x = c * (lay.w + bc.gap);
       const col = document.createElement('div');
-      col.style.cssText = `position:absolute;top:0;left:${bc.rtl ? inner - x - lay.w : x}px;width:${lay.w}px;height:${to - from}px;overflow:hidden`;
+      const left = bc.rtl ? inner - x - lay.w : x;
+      col.style.cssText = `position:absolute;top:${c ? 0 : fit.lead || 0}px;left:${left}px;width:${lay.w}px;height:${to - from}px;overflow:hidden`;
+      if (!c && contSep) { contSep.style.cssText = `position:absolute;top:${CONT_SEP_TOP}px;left:${left}px;width:${lay.w}px;margin:0`; out.append(contSep); }
       // Only the notes it shows (a note split between columns in both): copies hidden above or below had taken clicks
       // on the body text and been found by Find and screen readers.
       const shown = items.map((r, j) => [r, j]).filter(([, j]) => lay.notes[j][0] < to - 0.5 && lay.notes[j][1] > from + 0.5);
@@ -229,6 +241,6 @@ export function createNoteBoxes({ page, sheet, session }) {
     /** Where the text of the line ending at each of those cuts ends (px from the note's top). */
     inksOf: (doc, key) => noteInks.get(doc)?.get(key),
     /** Everything measured forgotten: the notes or the styles they're drawn in changed. */
-    clear() { noteHeights.clear(); bandLays.clear(); sepRtl = null; },
+    clear() { noteHeights.clear(); bandLays.clear(); for (const k of Object.keys(sepRtl)) delete sepRtl[k]; },
   };
 }

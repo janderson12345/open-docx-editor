@@ -26,7 +26,7 @@ import { referenceValue, updateFields } from './refs.js';
 import { lineHeightOf, layoutRect } from './util.js';
 import { drawBalloons } from './balloons.js';
 import { noteRefs } from './notes.js';
-import { createNoteBoxes } from './notebox.js';
+import { createNoteBoxes, CONT_LEAD } from './notebox.js';
 import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
@@ -155,7 +155,12 @@ export function createPages(view, session, { sheet, scope }) {
   const contentTop = (p) => colTops.get(p) ?? pageTop(p) + marginsAt(p).top;
   // (With notes at its foot, the body's text keeps clear of the separator by a few px more: Word's separator is a line
   // of its own, and a line of body text ending 4px above our note box went to the next page in Word.)
-  const bandH = (p) => { const b = bandOf(p); return Math.max(notesH.get(b) || 0, colGeo(p) ? notesHPrev.get(b) || 0 : 0); };
+  // (In columns, not for endnotes: they come after the text, under its columns as they end, or on the next page.)
+  const bandH = (p) => {
+    const b = bandOf(p);
+    if (colGeo(p) && noteFlow.get(b)?.items.every((r) => r.kind === 'endnote')) return 0;
+    return Math.max(notesH.get(b) || 0, colGeo(p) ? notesHPrev.get(b) || 0 : 0);
+  };
   // Footnotes at the foot of page p (not endnotes, which follow the text).
   const footBand = (p) => !!bandH(p) && !!noteFlow.get(bandOf(p))?.items.some((r) => r.kind === 'footnote');
   // Over a band of notes, a paragraph's last line keeps its space after above the band, as in Word: in columns, and over
@@ -221,6 +226,8 @@ export function createPages(view, session, { sheet, scope }) {
   let sheetBand = null; // sheet -> its band (columns), or null: the same
   const NOTE_SEP = 14; // separator line and the space around it
   const ENDNOTE_LEAD = 4; // Word's separator under the text is a line of the Normal style, a little taller than NOTE_SEP
+  // Endnotes starting a page of their own: their separator 7pt under the top margin, as Word prints it (fncols-word end2-ltr).
+  const ENDNOTE_TOP = 6;
   const notes = createNoteBoxes({ page, sheet, session });
   const { noteEl, noteSepRtl, noteHeight, bandLayout, bandBox } = notes;
   // The notes drawn at each page's foot: those carried on from the pages before (a note longer than the room a page has
@@ -235,6 +242,7 @@ export function createPages(view, session, { sheet, scope }) {
     const last = withNotes[withNotes.length - 1];
     let carry = [], skip = 0;
     let skipKey = '', skipH = 0; // the width `skip` was measured at (a band's columns: c<px>), and its note's height there
+    let endShown = false; // endnotes in columns drawn on a page before
     for (let p = withNotes[0]; carry.length || p <= last; p = nextBand(p)) {
       const items = [...carry, ...(notesOn.get(p) || [])];
       if (!items.length) continue;
@@ -262,6 +270,35 @@ export function createPages(view, session, { sheet, scope }) {
       const allEnd = items.every((r) => r.note && r.kind === 'endnote');
       const bc = items.every((r) => r.note && r.kind === 'footnote') ? bandCols(p, items[0])
         : allEnd && cols && !cols.unequal && cols.num > 1 ? { m: cols.num, gap: cols.space, rtl: !!cols.rtl } : null;
+      if (bc && allEnd) {
+        // Endnotes in columns: under the text where it ends (its columns balanced before them, balanceEndCols), or, with
+        // less than two lines' room left there, from the next page's top, as in Word (fncols-word end2-ltr). On a page of
+        // their own their columns run left to right, and a page going on with them has a continuation separator over its
+        // first column (endlong-ltr, endlong-rtl page 3); drawSheets.
+        const own = (notesOn.get(p) || []).length > 0;
+        if (own) {
+          const sh = colsBal && Math.floor(p / cols.num) === colsBal.sheet;
+          if (sh) room = Math.max(0, pageTop(p) + pageH(p) - marginsAt(p).bottom - (contentTop(p) + colsBal.bottom + ENDNOTE_LEAD) - NOTE_SEP);
+          else if (ats.length) { const at0 = Math.max(...ats.map((r) => r.at)), pv = pageOf(at0); room = Math.max(0, pageTop(pv) + pageH(pv) - marginsAt(pv).bottom - at0 - NOTE_SEP); }
+          if (room < MIN_ROOM) { carry = items; skip = 0; skipKey = ''; skipH = 0; continue; }
+        } else room = pageH(p) - marginsAt(p).top - marginsAt(p).bottom - NOTE_SEP - ENDNOTE_TOP;
+        const lay = bandLayout(items, bc);
+        const wKey = `c${Math.round(lay.w)}`;
+        const from = skip && skipKey !== wKey ? skip * ((lay.notes[0][1] - lay.notes[0][0]) / (skipH || 1)) : skip;
+        // (Going on from endnotes on the page before, split there or not: Word's continuation separator.)
+        const cont = !own && endShown;
+        const fit = notes.bandFill(lay, bc.m, from, cont ? room + NOTE_SEP + ENDNOTE_TOP : room, cont ? CONT_LEAD : 0);
+        noteFlow.set(p, { items, skip: from, h: fit.h, cols: bc, lay, fit, own, cont });
+        endShown = true;
+        notesH.set(p, fit.h + NOTE_SEP);
+        carry = items.filter((r, j) => lay.notes[j][1] > fit.end + 0.5);
+        const c0 = carry.length ? lay.notes[items.indexOf(carry[0])] : null;
+        skip = c0 ? fit.end - c0[0] : 0;
+        skipKey = wKey;
+        skipH = c0 ? c0[1] - c0[0] : 0;
+        if (p > last + NOTE_RUNAWAY) break;
+        continue;
+      }
       if (bc) {
         const lay = bandLayout(items, bc);
         const wKey = `c${Math.round(lay.w)}`;
@@ -2420,6 +2457,7 @@ export function createPages(view, session, { sheet, scope }) {
     // (A band going back to its height of two passes ago keeps the larger of the two: the columns before it were cut to
     // that, and it would flip until the passes ran out.)
     const nextH = new Map(notesH);
+    for (const [b, f] of noteFlow) if (colGeo(b) && f.items.every((r) => r.kind === 'endnote')) nextH.delete(b); // (bandH)
     for (const b of new Set([...notesH.keys(), ...notesHPrev.keys()])) {
       if (!colGeo(b)) continue;
       const now = notesH.get(b) || 0, prev = notesHPrev.get(b) || 0;
@@ -2591,14 +2629,19 @@ export function createPages(view, session, { sheet, scope }) {
         // Endnotes start where the text ends, as in Word (its separator line under the last paragraph's space after),
         // not at the page's foot as footnotes do: the generated documents' endnotes, tools/doc-generator.
         const last = view.dom.lastElementChild;
-        if (last && !flow.skip && flow.items.every((r) => r.kind === 'endnote')) {
+        const endOnly = flow.items.every((r) => r.kind === 'endnote');
+        // (In columns, a page of endnotes alone, after the text's last: from the top, its columns left to right whatever
+        // the section's direction, as Word prints them; going on from the page before, under a continuation separator.)
+        const alone = endOnly && !!flow.cols && !flow.own;
+        if (alone) top = marginsAt(p).top + (flow.cont ? 0 : ENDNOTE_TOP);
+        else if (last && !flow.skip && endOnly) {
           // (In columns balanced before them, under the lowest column: balanceEndCols.)
           const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
           if (y > 0 && y < top) top = y;
         }
         box.style.cssText = at ? `top:${top}px;left:${page.left + at.x}px;width:${at.w}px` : `top:${top}px;left:${page.left}px;right:${page.right}px`;
         const sep = document.createElement('div');
-        sep.className = noteSepRtl() ? 'odx-note-sep odx-note-sep-rtl' : 'odx-note-sep';
+        sep.className = noteSepRtl(endOnly ? 'endnote' : 'footnote') ? 'odx-note-sep odx-note-sep-rtl' : 'odx-note-sep';
         // (Notes carried on from the page before: the part not yet shown, cut where this page's room ends.)
         const clip = document.createElement('div');
         clip.style.cssText = `overflow:hidden;height:${flow.h}px`;
@@ -2608,8 +2651,9 @@ export function createPages(view, session, { sheet, scope }) {
         clip.append(inner);
         if (flow.cols) { // in the band's columns (endnotes too, in a one-section document of columns)
           clip.style.height = 'auto';
-          clip.replaceChildren(bandBox(flow.items, flow.cols, flow.lay, flow.fit));
-          box.append(sep, clip);
+          const cont = alone && flow.cont;
+          clip.replaceChildren(bandBox(flow.items, alone ? { ...flow.cols, rtl: false } : flow.cols, flow.lay, flow.fit, cont ? sep : null));
+          if (cont) box.append(clip); else box.append(sep, clip);
         } else box.append(sep, clip);
         s.append(box);
       }
