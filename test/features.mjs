@@ -624,6 +624,22 @@ await page.keyboard.press('Control+z'); // (the inserted heading paragraph)
 await page.keyboard.press('Control+z'); // (the first paste, style and all)
 const undone = await page.evaluate(() => `${window.odx.view.state.doc.childCount}:${window.odx.view.state.doc.firstChild.attrs.styleId || ''}:${window.odx.view.state.doc.textContent}`);
 check(oneP === 'some words=Heading2' && undone === '1::', `words from one paragraph keep the heading they go into; Undo takes a paste back whole (${oneP}, ${undone})`);
+// A lone heading (a whole <h2>, Word's MsoHeading3) into an empty paragraph of body text: the heading's style, as in
+// Word, not the paragraph's it went into.
+const lone = await page.evaluate(() => {
+  const v = window.odx.view;
+  const out = [];
+  for (const html of ['<h2>Lone heading</h2>', '<p class="MsoHeading3">Word heading</p>']) {
+    const end = v.state.doc.content.size;
+    const tr = v.state.tr.insert(end, v.state.schema.nodes.paragraph.create());
+    v.dispatch(tr.setSelection(v.state.selection.constructor.create(tr.doc, end + 1)));
+    const dt = new DataTransfer(); dt.setData('text/html', html); dt.setData('text/plain', 'x');
+    v.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    out.push(`${v.state.doc.lastChild.textContent}=${v.state.doc.lastChild.attrs.styleId || ''}`);
+  }
+  return out.join(' ');
+});
+check(lone === 'Lone heading=Heading2 Word heading=Heading3', `a lone pasted heading takes its own heading style in an empty paragraph (${lone})`);
 
 // Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
 // Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
