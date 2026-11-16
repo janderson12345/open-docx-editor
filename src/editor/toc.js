@@ -19,16 +19,37 @@ const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind ==
  * itself) and the levels taken, 0-based. As Word builds them (odx-test toc-u-only.docx, made with Word COM and updated in
  * Word): a bare TOC or \o with no range is \o "1-9"; \u alone takes every paragraph with an outline level 1-9, direct or
  * from its style (a custom style's too), and no heading by style name alone; with \o, its range limits \u's entries too.
+ * \t "Style,level,..." (toc-t-switch.docx, the same way): the named styles at those levels (1 when a name has none),
+ * matched by name in any case, over the level \o would give them; \t without \o takes those styles only, \u adding none.
  */
 export function tocSwitches(instr) {
   const o = /\\o(?:\s+"?\s*(\d)\s*-\s*(\d)\s*"?)?/i.exec(instr);
   const u = /\\u\b/i.test(instr);
+  const t = /\\t\s+"([^"]*)"/i.exec(instr);
+  const styles = new Map();
+  if (t) {
+    // (Word's list separator: a comma in English Word, a semicolon in some others.)
+    const parts = t[1].split(/[,;]/).map((x) => x.trim());
+    for (let i = 0; i < parts.length; i++) {
+      const name = parts[i];
+      if (!name || /^\d+$/.test(name)) continue;
+      let lvl = 1;
+      if (/^[1-9]$/.test(parts[i + 1] || '')) lvl = Number(parts[++i]);
+      styles.set(name.toLowerCase(), lvl - 1);
+    }
+  }
   const range = o && o[1] ? [Number(o[1]) - 1, Number(o[2]) - 1] : [0, 8];
-  return { o: !!o || !u, u, from: range[0], to: range[1] };
+  return { o: !!o || (!u && !t), u: u && (!!o || !t), from: range[0], to: range[1], styles };
 }
 
 /** A paragraph's level for a table with these switches (0-based), or null when it isn't an entry. */
 export function tocLevel(session, node, sw) {
+  if (sw.styles?.size) {
+    const name = session.styles.styles.get(node.attrs.styleId || session.styles.defaultParagraph)?.name;
+    const named = name == null ? undefined : sw.styles.get(name.toLowerCase());
+    if (named != null) return named;
+  }
+  if (!sw.o && !sw.u) return null;
   const direct = node.attrs.view?.outlineLvl;
   let lvl;
   if (sw.o && sw.u) lvl = outlineLevel(session, node);
