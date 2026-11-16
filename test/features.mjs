@@ -525,6 +525,24 @@ const pasted = await page.evaluate(() => {
 });
 check(pasted[0] === 'color=C00000 font=Georgia size=32' && pasted[1] === '', `pasted colour, size and font kept (${pasted.join(' | ')})`);
 
+// Pasted headings written as styled <p>s (Word's clipboard HTML, other editors' classes, role=heading, a whole
+// paragraph in bold at 2em): headings in the heading style they name; bold or MsoNormal text stays body text.
+await page.evaluate(() => window.odx.newDocument({ share: false }));
+await page.click('.odx-content p');
+const pHeads = await page.evaluate(() => {
+  const dt = new DataTransfer();
+  dt.setData('text/html', '<p>before</p><p class="MsoHeading1">wordclass</p><p class="MsoNormal" style="mso-style-name:\'Heading 2\';margin:0">msoname</p>'
+    + '<p class="MsoNormal" style="mso-outline-level:3">outline</p><p class="heading-2">editorclass</p><p style="font-size:2em;font-weight:bold">bigbold</p>'
+    + '<p role="heading" aria-level="4">aria</p><p style="font-weight:bold">justbold</p><p class="MsoNormal">body</p>');
+  dt.setData('text/plain', 'x');
+  window.odx.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  const out = [];
+  window.odx.view.state.doc.forEach((n) => { if (n.textContent) out.push(`${n.textContent}=${n.attrs.styleId || ''}`); });
+  return out.join(' ');
+});
+check(pHeads === 'before= wordclass=Heading1 msoname=Heading2 outline=Heading3 editorclass=Heading2 bigbold=Heading1 aria=Heading4 justbold= body=',
+  `pasted <p> headings arrive as headings (${pHeads})`);
+
 // Fit text (mkfittext.py): each fitted run, or group of runs, as wide as it says, the text after it starting there, as in
 // Word's PDF (96, 192, 96, 72 and 144px on from the paragraph's left).
 await open('fittext.docx');
@@ -767,6 +785,30 @@ const loc = await page.evaluate(() => ({
 const locXml = strFromU8(unzipSync(new Uint8Array(await page.evaluate(async () => Array.from(await window.odx.save()))))['word/styles.xml']);
 check(loc.toc === 'TDC1,TDC2,Ttulo1,Ttulo2,TtuloTDC' && loc.pasted === 'Ttulo1' && !/w:styleId="(TOC1|TOCHeading|Heading1)"/.test(locXml),
   `a localised document's TOC and pasted heading use its own style ids (${JSON.stringify(loc)})`);
+
+// Update table on a TOC \u \h \z (toc-u-only.docx, made with Word COM): the field keeps its switches and lists what Word's
+// own update did, outline levels set on paragraphs or through styles, 1-9, and no style based on Heading 1 at body text.
+await open('toc-u-only.docx');
+await page.click('.odx-content p');
+await page.click('.odx-rtab:text-is("References")');
+await page.click('button[title="Table of contents"]');
+await page.click('.odx-pop .odx-item:has-text("Update table")');
+await page.waitForTimeout(500);
+const tocU = await page.evaluate(() => {
+  const words = [];
+  let instr = null;
+  window.odx.view.state.doc.forEach((p) => {
+    p.forEach((c) => { if (instr == null && c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr = c.attrs.xml.replace(/<[^>]*>/g, ''); });
+    const m = /^TOC(\d)$/.exec(p.attrs.styleId || '');
+    if (!m) return;
+    let t = '', tab = false;
+    p.forEach((c) => { if (c.type.name === 'tab') tab = true; else if (!tab && c.isText) t += c.text; });
+    words.push(`${t.trim()}:${m[1]}`);
+  });
+  return { instr: instr.trim(), words: words.slice(0, 9).join(', ') };
+});
+check(tocU.instr === 'TOC \\u \\h \\z' && tocU.words === 'H1 styled:1, H2 styled:2, H4 styled:4, Direct level 1:1, Direct level 5:5, Direct level 9:9, Custom style level 2:2, Custom style level 6:6, H1 styled:1',
+  `a \\u-only TOC updates to Word's entries (${JSON.stringify(tocU)})`);
 
 // Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
 // cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
