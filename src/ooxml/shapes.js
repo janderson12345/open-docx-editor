@@ -717,7 +717,9 @@ function shapeSvg(el, ctx, top = false, m = NO_MAP) {
 export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   const data = desc(drawing, 'graphicData');
   const root = data && els(data).find((n) => n.localName === 'wgp' || n.localName === 'wsp');
-  if (!root || !width || !height) return null;
+  // (A straight line across or down the page is as tall or wide as nothing, wp:extent cy or cx 0: drawn too, in the room
+  // round it for its outline and arrowheads. Word's floating ones had not been drawn at all.)
+  if (!root || !(width >= 0) || !(height >= 0) || !(width || height)) return null;
   const c = { colors: {}, font: 'Calibri', ...ctx };
   const inner = shapeSvg(root, c, true);
   if (!inner) return null;
@@ -741,19 +743,15 @@ export function diagramSvg(drawingPart, ctx, width, height) {
 }
 
 /**
- * How far a drawing's lines are drawn past its box (px) for their arrowheads, which Word draws there (an image can't:
- * the room is added around it, shapesSvg's pad). Only for arrowheads: room for every outline moved lines on the page
- * by a fraction of a pixel (sample S129, 103 inline shapes: 118 lines 0.7px off), so outlines stay inside the box.
+ * How far a drawing's outlines and arrowheads are drawn past its box (px), which Word draws there (an image can't: the
+ * room is added around it, shapesSvg's pad, and taken back off its margins, so it takes the same room as before).
  */
-export function shapesPad(drawing, { outline = false } = {}) {
+export function shapesPad(drawing) {
   let pad = 0;
-  // (A floating shape's own outline too: Word draws it centred on the box's edge, half outside. Not an inline one's, whose
-  // room in its line would grow: padding those moved sample S129's lines 0.7px.)
-  if (outline) {
-    for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
-      if (child(ln, 'noFill')) continue;
-      pad = Math.max(pad, (ln.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
-    }
+  // (Its shapes' outlines: Word draws one centred on the box's edge, half outside.)
+  for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
+    if (child(ln, 'noFill')) continue;
+    pad = Math.max(pad, (ln.getAttribute('w') ? px(ln.getAttribute('w')) : 1.33) / 2 + 1);
   }
   for (const ln of [...drawing.getElementsByTagName('*')].filter((n) => n.localName === 'ln' && n.parentNode?.localName === 'spPr')) {
     if (child(ln, 'noFill')) continue;
