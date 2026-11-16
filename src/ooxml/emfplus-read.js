@@ -4,6 +4,8 @@
 // given (png, dataUrl, emfToSvg) for the images.
 
 export const n = (v) => +(+v).toFixed(3);
+// The most pixels an uncompressed bitmap object may have (as tiff.js: 160 MB of RGBA); a larger one isn't drawn.
+const MAX_PIXELS = 40e6;
 
 /** A little-endian reader over `bytes` from offset o: r.bytes and r.dv are what it reads. */
 export const reader = (bytes) => {
@@ -84,7 +86,8 @@ export const readImage = (r, end, h) => {
       palette = [];
       for (let i = 0; i < count; i++) palette.push(r.u32());
     }
-    if (!(w > 0 && hh > 0) || r.o + stride * hh > end) return null;
+    // (Its rows must be in the record, each at least as long as its pixels: a stride of 0 would read one row for all.)
+    if (!(w > 0 && hh > 0 && w * hh <= MAX_PIXELS) || stride < Math.ceil((w * bpp) / 8) || r.o + stride * hh > end) return null;
     const rgba = new Uint8Array(w * hh * 4);
     const premul = format === 0x000e200b;
     for (let y = 0; y < hh; y++) {
@@ -117,14 +120,24 @@ export const readImage = (r, end, h) => {
     const mtype = r.u32(), size = r.u32();
     if (mtype < 3) return null; // WMF
     const inner = r.bytes.subarray(r.o, Math.min(end, r.o + size));
-    const svg = h.emfToSvg(inner);
-    if (!svg) return null;
+    if (inner.length < 88) return null;
     // (Its size from its frame, in its reference's pixels: the drawing's rounded bounds came out a pixel short.)
     const iv = new DataView(inner.buffer, inner.byteOffset, inner.byteLength);
     const pxm = iv.getInt32(72, true) / (iv.getInt32(80, true) || 1);
     const fw = ((iv.getInt32(32, true) - iv.getInt32(24, true)) / 100) * pxm, fh = ((iv.getInt32(36, true) - iv.getInt32(28, true)) / 100) * (iv.getInt32(76, true) / (iv.getInt32(84, true) || 1));
-    const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
-    return { kind: 'image', w: fw > 0 ? fw : m ? +m[1] : 1, h: fh > 0 ? fh : m ? +m[2] : 1, href: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}` };
+    // Drawn by the EMF reader when first drawn (imageUse), not when defined: a crafted file defining many image
+    // objects it never draws, each a metafile at the SVG budget, took seconds and gigabytes. (Converted now only when
+    // its frame gives no size, to read the size from the drawing.)
+    let svg;
+    const draw = () => { if (svg === undefined) svg = h.emfToSvg(inner) || ''; return svg; };
+    let w = fw, ih = fh;
+    if (!(fw > 0 && fh > 0)) {
+      const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(draw());
+      if (!svg) return null;
+      w = fw > 0 ? fw : m ? +m[1] : 1;
+      ih = fh > 0 ? fh : m ? +m[2] : 1;
+    }
+    return { kind: 'image', w, h: ih, get href() { return draw() ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(draw())))}` : 'data:,'; } };
   }
   return null;
 };
@@ -244,7 +257,6 @@ export const readObject = (type, r, end, h) => {
   }
 };
 
-/** The pixel size of a PNG, GIF, BMP or JPEG file, or [0, 0]. */
 function imageSize(b) {
   const be = (o) => (b[o] << 8) | b[o + 1];
   if (b[0] === 0x89 && b.length > 24) return [(be(16) << 16) | be(18), (be(20) << 16) | be(22)];
