@@ -11,6 +11,7 @@
 // and with it neither mode gives that line the strut: editor.css's odx-markers rules size it.)
 import { Plugin } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { w14Color } from '../ooxml/texteffects.js';
 
 // Inline content that takes no room on a line: markers (bookmarks, empty content controls) and floating pictures.
 const marker = (c) => (c.type.name === 'opaque_inline' && !c.attrs.text && c.attrs.width == null) || (c.type.name === 'image' && /float:|position:\s*absolute/.test(c.attrs.place || ''));
@@ -27,8 +28,16 @@ const strut = () => {
 // properties) is drawn mirrored below its baseline: each word in an odx-rf span carrying its text, which editor.css
 // draws again as the span's ::after, flipped and faded. Generated content isn't selected, copied, found or read out,
 // and is in no saved document; a word at a time, so a run that wraps is mirrored on each of its lines.
-const reflects = (c) => c.marks.some((m) => m.type.name === 'rextra' && m.attrs.items.some(([n, x]) => n === 'reflection' && x.startsWith('<w14:')));
+//
+// A run with an inner shadow (a w14:shadow scaled to nothing, sx and sy 0) the same way: each word in an odx-is span,
+// which editor.css draws again over itself as its ::before, through the shadow's SVG filter (texteffects.js), leaving
+// only the shadow inside the letters.
+const effect = (c, name, test) => c.marks.some((m) => m.type.name === 'rextra' && m.attrs.items.some(([n, x]) => n === name && x.startsWith('<w14:') && test(x)));
+const reflects = (c) => effect(c, 'reflection', () => true);
+const pressed = (c) => effect(c, 'shadow', (x) => /\bw14:sx="0"/.test(x) && /\bw14:sy="0"/.test(x) && !!w14Color(x));
 const WORD = /\S+/g;
+/** A word's decoration attributes for a reflection and an inner shadow. */
+const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filter(Boolean).join(' '), ...(rf ? { 'data-odx-rf': w } : {}), ...(is ? { 'data-odx-is': w } : {}) });
 
 /** The decorations of one textblock at `pos`: each text node in an odx-t span, a strut before a break after a break. */
 function blockDecos(node, pos, out) {
@@ -36,7 +45,8 @@ function blockDecos(node, pos, out) {
   node.forEach((c, off) => {
     const at = pos + 1 + off;
     if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: 'odx-t' }));
-    if (c.isText && reflects(c)) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, { class: 'odx-rf', 'data-odx-rf': m[0] }));
+    const rf = c.isText && reflects(c), is = c.isText && pressed(c);
+    if (rf || is) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, wordAttrs(m[0], rf, is)));
     if (c.type.name === 'hard_break') {
       if (afterBreak) out.push(Decoration.widget(at, strut, { side: -1, key: 'odx-strut', ignoreSelection: true }));
       afterBreak = true;
@@ -97,13 +107,14 @@ export function wrapText(root) {
     s.className = 'odx-t';
     t.replaceWith(s);
     s.append(t);
-    // (A reflected run's words, as in the editor.)
-    if (s.closest('[style*="--odx-rf-a"]')) {
+    // (A reflected or inner-shadowed run's words, as in the editor.)
+    const rf = !!s.closest('[style*="--odx-rf-a"]'), is = !!s.closest('[style*="--odx-is:"]');
+    if (rf || is) {
       s.replaceChildren(...t.data.split(/(\S+)/).filter(Boolean).map((w) => {
         if (!/\S/.test(w)) return document.createTextNode(w);
         const r = document.createElement('span');
-        r.className = 'odx-rf';
-        r.dataset.odxRf = w;
+        const a = wordAttrs(w, rf, is);
+        for (const [k, v] of Object.entries(a)) r.setAttribute(k, v);
         r.textContent = w;
         return r;
       }));
