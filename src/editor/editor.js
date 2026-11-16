@@ -492,8 +492,11 @@ function localStylesPlugin(session) {
         const { selection } = view.state;
         const first = out.content.firstChild;
         into = null;
+        // (Several paragraphs, or a lone heading: Word gives it its heading style. Words from one paragraph of body text
+        // take the paragraph's they go into.)
+        const heading = (n) => { const l = cmd.outlineLevel(session, n); return l != null && l >= 0 && l < 9; };
         if (selection.empty && selection.$from.parent.type === schema.nodes.paragraph && !selection.$from.parent.content.size
-          && out.openStart > 0 && out.content.childCount > 1 && first.type === schema.nodes.paragraph && !tracking(view.state).on) {
+          && out.openStart > 0 && first?.type === schema.nodes.paragraph && (out.content.childCount > 1 || heading(first)) && !tracking(view.state).on) {
           into = { pos: selection.$from.before(), attrs: first.attrs };
         }
         return out;
