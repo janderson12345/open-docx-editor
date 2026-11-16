@@ -15,5 +15,13 @@ export function placeVar(place, name) {
   return null;
 }
 
+/**
+ * A place's declarations, [property, value] in order, and back (cssText): the place rewritten by its properties, not by
+ * a regex over the whole string that a new property in it, or one in another order, would stop matching (reader.js
+ * padPlace and turned). Values here hold no ';' (calc() and var() do, at most, ':' never in a property's name).
+ */
+export const cssDecls = (css) => String(css || '').split(';').filter((d) => d.trim()).map((d) => { const i = d.indexOf(':'); return i < 0 ? [d, ''] : [d.slice(0, i), d.slice(i + 1)]; });
+export const cssText = (decls) => decls.map(([k, v]) => `${k}:${v}`).join(';');
+
 /** A place's --odx-pad in px (0 for none). */
 export const padOf = (place) => parseFloat(placeVar(place, 'odx-pad')) || 0;

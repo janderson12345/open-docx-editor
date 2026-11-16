@@ -140,6 +140,51 @@ await open('valign.docx');
 const vtop = await page.evaluate(() => { const p = document.querySelector('.odx-content > p'); const s = document.querySelector('.odx-sheet'); return p.getBoundingClientRect().top - s.getBoundingClientRect().top; });
 check(vtop > 350 && vtop < 500, `a centred section's text sits in the middle of the page (${vtop.toFixed(0)}px down)`);
 
+// Where a block is: its sheet (by the sheets' boxes) and its box on that sheet.
+const sheetPlaces = () => page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  return [...document.querySelectorAll('.odx-content > p')].map((p) => {
+    const r = p.getBoundingClientRect();
+    const n = sheets.findIndex((s) => r.top + 1 >= s.top && r.top < s.bottom);
+    return { text: p.textContent, sheet: n, top: r.top - (sheets[n]?.top ?? 0), bottom: r.bottom - (sheets[n]?.top ?? 0), left: r.left - (sheets[n]?.left ?? 0), w: sheets[n]?.width ?? 0 };
+  });
+});
+// A one-section document in two columns, centred (pages.js verticalAlignCols): its text moved down to the middle.
+await open('valign-columns.docx');
+const vcols = await sheetPlaces();
+check(vcols[0].sheet === 0 && vcols[0].top > 250 && vcols[0].top < 500, `columns centred on their page: the text starts ${vcols[0].top.toFixed(0)}px down`);
+// Two columns before their endnote (balanceEndCols): the second column used, the columns ending within a few lines of
+// each other, and the endnote right under the lower of them (it had been drawn where the first pass left it, at the
+// page's foot: drawSheets' key had no place for it).
+await open('columns-endnotes.docx');
+const ecols = (await sheetPlaces()).filter((x) => x.sheet === 0 && x.text.trim());
+const half = ecols[0]?.w / 2;
+const leftBottom = Math.max(...ecols.filter((x) => x.left < half).map((x) => x.bottom));
+const rightCol = ecols.filter((x) => x.left >= half);
+const rightBottom = rightCol.length ? Math.max(...rightCol.map((x) => x.bottom)) : -1;
+const endnoteTop = await page.evaluate(() => {
+  const n = document.querySelector('.odx-note[data-kind="endnote"]');
+  const s = document.querySelector('.odx-sheets > .odx-sheet');
+  return n && s ? n.getBoundingClientRect().top - s.getBoundingClientRect().top : null;
+});
+check(rightCol.length > 0 && Math.abs(leftBottom - rightBottom) < 80 && endnoteTop != null && endnoteTop >= Math.max(leftBottom, rightBottom) - 1 && endnoteTop < Math.max(leftBottom, rightBottom) + 40,
+  `columns before an endnote end level and the endnote goes under them (${JSON.stringify({ leftBottom: Math.round(leftBottom), rightBottom: Math.round(rightBottom), endnoteTop: endnoteTop && Math.round(endnoteTop) })})`);
+// Odd- and even-page section breaks (parityPage): page 2 left blank, the second section on page 3, the third on 4.
+await open('odd-even-breaks.docx');
+const oe = (await sheetPlaces()).filter((x) => x.text.trim()).map((x) => x.sheet + 1);
+const oeSheets = await page.evaluate(() => document.querySelectorAll('.odx-sheets > .odx-sheet').length);
+check(oe.join(',') === '1,3,4' && oeSheets === 4, `odd- and even-page section breaks: the sections on pages ${oe.join(', ')} of ${oeSheets}`);
+// Printed, a note's reference mark keeps its number (printlines.js: CSS counts them, and in the print layer the count
+// would start again): find-all.docx's footnote 1, after its comment's end (it had been left out of the printed line),
+// and endnote i.
+await open('find-all.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+const printedMarks = await page.evaluate(() => [...document.querySelectorAll('.odx-printlines [data-kind="footnoteReference"], .odx-printlines [data-kind="endnoteReference"]')].map((m) => `${m.dataset.kind}:${m.dataset.n}`));
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(printedMarks.join(' ') === 'footnoteReference:1 endnoteReference:i', `printed note marks keep their numbers (${printedMarks.join(' ')})`);
+
 await open('effects.docx');
 // (Two lines of 11pt Calibri at 1.08 are 38.7px; the marks add 0.31em, 4.5px, above the first or below it.)
 const grow = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(6, 10).map((p) => p.getBoundingClientRect().height));
