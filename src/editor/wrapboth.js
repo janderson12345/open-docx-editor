@@ -69,7 +69,7 @@ export const wrapBothPlugin = new Plugin({
       const list = [];
       for (const s of st.list) {
         const r = tr.mapping.mapResult(s.pos, 1);
-        if (!r.deleted) list.push({ pos: r.pos, w: s.w, l: mapRange(tr.mapping, s.l), r: mapRange(tr.mapping, s.r), next: s.next == null ? null : tr.mapping.map(s.next) });
+        if (!r.deleted) list.push({ pos: r.pos, w: s.w, l: mapRange(tr.mapping, s.l), r: mapRange(tr.mapping, s.r), next: s.next == null ? null : tr.mapping.map(s.next), tail: s.tail, flush: s.flush });
       }
       return { list, set: decos(tr.doc, list), passes: 0 };
     },
@@ -115,11 +115,11 @@ function zones(view, stories) {
     const v = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map((x) => parseFloat(x) || 0);
     const r = img.getBoundingClientRect();
     if (!r.width || !r.height) continue;
-    const [t, rt, b, l] = v.length === 4 ? v : [0, 0, 0, 0];
+    const [t, rt, b, l, fxT = 0] = v.length >= 4 ? v : [0, 0, 0, 0];
     // (Its own box: less the room drawn round its outline, reader.js padPlace's --odx-pad. floatshapes-word's 6pt-outlined
     // rectangle by Text 2, its lines' words otherwise kept that much further off each side.)
     const pad = padOf(img.getAttribute('style'));
-    out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + pad - t, bottom: r.bottom - pad + b });
+    out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + pad - t, bottom: r.bottom - pad + b, fxT, host: img.closest('.odx-content > *') });
   }
   // A float drawn up to end at its page's edge (pages.js floatsPast) over lines of paragraphs above its own: Word lays
   // those lines out round it too (its PDF: the short lines above such a float go on to its right). Its own paragraph's
@@ -220,7 +220,7 @@ function splitJustified(line, all, z, end, squeeze) {
     while (L[f].space) f++;
     const sp = L.slice(f, s).filter((c) => c.space);
     const over = xn[we] + L[we].nat - z.left;
-    if (we + 1 < L.length && squeezeFits(over, sp.length, sp.reduce((a, c) => a + c.nat, 0), sp.reduce((a, c) => a + c.em, 0), xn[we] + L[we].nat - xn[s])) {
+    if (we + 1 < L.length && squeezeFits(over, sp.length, sp.reduce((a, c) => a + c.nat, 0), sp.reduce((a, c) => a + c.em, 0), xn[we] + L[we].nat - xn[s], true)) {
       s = we + 1;
       while (s < L.length && L[s].space) s++;
       if (s >= L.length) return null;
@@ -249,8 +249,11 @@ function splitJustified(line, all, z, end, squeeze) {
   let last = -1, wordEnd = -1;
   // (The next word: on the line if it fits (1), or Word squeezes it in (2).)
   const takes = () => {
-    if (last < 0 || n.width + p.space + p.word <= room) return 1;
-    return squeeze && squeezeFits(n.width + p.space + p.word - room, n.spaces + p.n, n.spaceW + p.space, n.em + p.em, p.word) ? 2 : 0;
+    // (The first word too: one that doesn't fit leaves the side empty, as Word does: wrap-word3 sq-none, Text 23's first
+    // line, nothing in the 28pt right of its rectangle.)
+    if (n.width + p.space + p.word <= room) return 1;
+    if (last < 0) return 0;
+    return squeeze && squeezeFits(n.width + p.space + p.word - room, n.spaces + p.n, n.spaceW + p.space, n.em + p.em, p.word, true) ? 2 : 0;
   };
   const take = () => {
     n.width += p.space + p.word; n.spaces += p.n; n.spaceW += p.space; n.em += p.em; n.drawn += p.drawn + p.wordD;
@@ -275,8 +278,17 @@ function splitJustified(line, all, z, end, squeeze) {
     if (t) take();
     full = !t || t === 2;
   }
-  if (last < 0) return { s, start, l, r: null };
-  return { s, start, l, r: { from: L[s].pos, to: all[last].pos + 1, ws: !full || !n.spaces ? 0 : (room - 0.3 - n.drawn) / n.spaces } };
+  // (No word fits after the room: the spacer ends the line, and the browser spreading the line slid it to the line's end;
+  // it reaches there itself, half a px short as one to the line's end (applyWrapBoth's `end`).)
+  if (last < 0) return { s, start, l, r: null, flush: Math.max(0, room - 0.5) };
+  // (One word after the room, the line going on: Word sets it at the line's end (wrap-word3 sq-*, a rectangle near the
+  // right margin, "garden" alone flush right beside it). With no space there to spread, the browser spread its room over
+  // the words before the room, the spacer moved off the room's side and went and came back until the passes ran out:
+  // the spacer takes it, `flush`, past the room's right side. Drawn a little wider than it measures, with no space to
+  // narrow, the spacer gives up what it needs, up to 3px: sq-none's Text 23, "harbor" by 0.3px.)
+  const short = room - 0.3 - n.drawn;
+  const flush = full && !n.spaces ? (short >= -3 ? short : 0) : 0;
+  return { s, start, l, r: { from: L[s].pos, to: all[last].pos + 1, ws: !full || !n.spaces ? 0 : (room - 0.3 - n.drawn) / n.spaces }, flush };
 }
 
 // The characters in lines: a new line where one starts left of the last and lower down.
@@ -322,7 +334,10 @@ export function applyWrapBoth(view, stories = null) {
     // (The lines' end: a room taking text on its left only reaches to it, a px short so its spacer stays on its line;
     // half that when justified, the browser spreading what's left over the line, moving the spacer that much.)
     const end = er.right - (parseFloat(cs.borderRightWidth) || 0) - (parseFloat(cs.paddingRight) || 0);
-    const near = zs.filter((z) => z.own !== el && er.bottom + after > z.top && er.top < z.bottom).map((z) => (z.toEnd ? { ...z, right: end - (justified ? 0.5 : 1) } : z));
+    // (A room anchored in a later paragraph, `later`: one placed above its paragraph's text, reaching up to this one's.)
+    const near = zs.filter((z) => z.own !== el && er.bottom + after > z.top && er.top < z.bottom)
+      .map((z) => (z.toEnd ? { ...z, right: end - (justified ? 0.5 : 1) } : z))
+      .map((z) => (z.host && z.host !== el && el.compareDocumentPosition(z.host) & Node.DOCUMENT_POSITION_FOLLOWING ? { ...z, later: true } : z));
     const from = offset, to = offset + node.nodeSize;
     const own = list.filter((s) => s.pos > from && s.pos < to);
     if (!near.length) {
@@ -331,27 +346,39 @@ export function applyWrapBoth(view, stories = null) {
     }
     const chars = charsOf(view, el, justified);
     const lines = linesOf(chars);
-    // (A line's box, as Word measures it against the shape: from the line above's foot, or the paragraph's top, to its
-    // own. Word's PDF: a line whose text starts 1pt below the shape but whose box reaches it is split too.)
-    let above = er.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
-    for (const line of lines) { line.boxTop = Math.min(line.top, above); above = line.bottom; }
+    // (A line's box, as Word measures it against the shape: from its own top, the lead the line has above its text as the
+    // paragraph's first line shows it, to its text's foot. Not from the line above's foot: the room under a shape ending
+    // in the 2.6px a line spaced 1.15 keeps below its text took the next line in too, where Word sets that line whole
+    // (wrap-word3 vt-*: rectangles 0.5pt apart in height, the rows beside each as in Word's print).)
+    const top0 = er.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+    const lead = lines.length ? Math.max(0, lines[0].top - top0) : 0;
+    let above = top0;
+    for (const line of lines) { line.boxTop = Math.max(Math.min(line.top, above), line.top - lead); above = line.bottom; }
     // (A paragraph's last line down through its space after: Word's PDF, a line 7pt above a float, its space after
     // reaching it, goes beside it. Not beside a header's or footer's shape: pagefloat-word pf-footer, Text 3's last line
     // above its rectangle, its space after reaching it, whole.)
+    // (Nor does it, nor a line, reach into the room a later paragraph's shape's effect extent takes above it: wrap-word3
+    // vt-thick, each paragraph's last line, its space after reaching 3pt into the extent of the 6pt-outlined rectangle
+    // below, whole in Word's print; sq-thick, Text 5's last line into that of Text 6's, placed 7.5pt above its
+    // paragraph. Split, the paragraph grew a line, moving the room down a line too, and the spacers came and went until
+    // the passes ran out.)
     if (lines.length) lines[lines.length - 1].after = after;
-    const beside = (top, bottom, z, extra = 0) => bottom + (z.story ? 0 : extra) > z.top + 0.25 && top < z.bottom - 0.25;
+    const beside = (top, bottom, z, extra = 0) => bottom + (z.story ? 0 : extra) > z.top + (z.later ? z.fxT || 0 : 0) + 0.25 && top < z.bottom - 0.25;
     // A spacer no longer ending at the room's right side on a line beside it (the text before it changed, or the lines
     // moved): it and those after it in the paragraph go, to be put back as the lines settle. (Its word may have gone on
     // to the next line, not fitting beside the room: the spacer still ends there. Its line by where it sits; one holding
     // nothing else, a line's height above it.)
     const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2 || 16;
+    // (A `tail` spacer, below, keeps its line's space after and the line it added: the room it met, a later paragraph's,
+    // went down that line with it.)
+    const pitch = Math.max(lh, lines.length > 1 ? lines[lines.length - 1].top - lines[lines.length - 2].top : 0);
     const els = [...el.querySelectorAll('.odx-wb')];
     const stale = own.find((s, i) => {
       const r = els[i]?.getBoundingClientRect();
       if (!r) return true;
       const line = lines.find((l) => r.top >= l.top - 1 && r.top <= l.bottom + (l.after || 0) + 1);
       const [top, bottom] = line ? [line.boxTop, line.bottom] : [r.bottom - lh, r.bottom];
-      return !near.some((z) => beside(top, bottom, z, line?.after) && Math.abs(r.right - z.right) <= 1);
+      return !near.some((z) => beside(top, bottom, z, s.tail ? after + pitch : line?.after) && Math.abs(r.right - z.right - (s.flush || 0)) <= 1);
     });
     if (stale) {
       list = list.filter((s) => !(s.pos >= stale.pos && s.pos < to));
@@ -361,14 +388,21 @@ export function applyWrapBoth(view, stories = null) {
     for (const line of lines) {
       const z = near.find((zz) => beside(line.boxTop, line.bottom, zz, line.after));
       if (!z) continue;
+      // (Beside it through its space after only, `tail`: split, its words go on to a new last line and it isn't the last
+      // any more, but Word, laying the lines out in turn, has split it already; so it keeps that space after while it
+      // stays (the stale test above), and a paragraph takes one such. Otherwise the spacer came and went until the passes
+      // ran out, the pages never laid out: wrap-word3 vt-none, Text 19's last line above the room of Text 20's rectangle,
+      // placed 4.5pt above its paragraph.)
+      const tail = !!line.after && !beside(line.boxTop, line.bottom, z);
+      if (tail && own.some((s) => s.tail)) continue;
       // Justified: each side spread on its own (splitJustified).
       const sp = justified ? splitJustified(line, chars, z, end, view.odx?.session?.compatMode >= 15) : null;
       if (sp) {
         const c = line.chars[sp.s];
-        const w = z.right - sp.start;
+        const w = z.right - sp.start + (sp.flush || 0);
         if (w <= 0.5 || list.some((x) => x.pos === c.pos)) continue;
         // (next: where the line after it starts, for justify.js; the word pushed on, when nothing follows the room.)
-        list.push({ pos: c.pos, w, l: sp.l, r: sp.r, next: z.toEnd ? c.pos : sp.r ? sp.r.to : null });
+        list.push({ pos: c.pos, w, l: sp.l, r: sp.r, next: z.toEnd ? c.pos : sp.r ? sp.r.to : null, tail, flush: sp.flush || 0 });
         fresh.push([sp.l ? sp.l.from : c.pos, sp.r ? sp.r.to : c.pos + 1]);
         list.sort((a, b) => a.pos - b.pos);
         changed = true;
@@ -382,7 +416,7 @@ export function applyWrapBoth(view, stories = null) {
       const c = line.chars[s];
       const w = z.right - c.x0;
       if (w <= 0.5 || list.some((x) => x.pos === c.pos)) continue;
-      list.push({ pos: c.pos, w });
+      list.push({ pos: c.pos, w, tail });
       list.sort((a, b) => a.pos - b.pos);
       changed = true;
       return; // (one a pass: the lines after it move)
