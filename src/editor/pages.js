@@ -31,7 +31,7 @@ import { applySqueeze } from './justify.js';
 import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
-import { applyWrapBoth } from './wrapboth.js';
+import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
@@ -468,7 +468,8 @@ export function createPages(view, session, { sheet, scope }) {
       // size it's saved at; sample p-textbox__landscape of the generated documents, 20px past the foot.)
       if (r.height > pageHeight(p) + 1 || placeVar(img.getAttribute('style'), 'odx-grown') != null) { up.set(-1, 0); return; }
       const edge = pageTop(p) + pageH(p);
-      if (bottom > edge + 0.5) up.set(n, bottom - edge);
+      // (The edge kept for the lines it wraps above it: wrapboth.js drawnUpTo.)
+      if (bottom > edge + 0.5) { up.set(n, bottom - edge); drawnUpTo.set(img, edge); }
     });
     return up.has(-1) ? { past: true } : { up };
   };
@@ -1951,7 +1952,9 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
     if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
-    if (applySqueeze(view, session)) return; // lines changed: measure again once they're drawn
+    // (Its own pass: a view update only lays out again when the document changed, and a squeeze that settled after
+    // everything else (lines split beside a shape, wrapboth.js) had left the pages undrawn.)
+    if (applySqueeze(view, session)) return schedule(); // lines changed: measure again once they're drawn
     if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;
     const dom = view.dom;

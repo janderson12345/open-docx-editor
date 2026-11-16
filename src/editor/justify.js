@@ -7,6 +7,7 @@ import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { ZERO_WIDTH } from '../ooxml/reader.js';
+import { splitOf } from './wrapboth.js';
 
 const MAX_SQUEEZE = 0.25; // share of a space's width
 const MAX_SQUEEZE_EM = 0.07; // and of the font size (Verdana's wide spaces squeeze less than a quarter)
@@ -17,6 +18,17 @@ const MAX_SQUEEZE_EM = 0.07; // and of the font size (Verdana's wide spaces sque
 const MAX_OUT = 0.4512;
 const SHARE_WEIGHT = 0.3;
 
+/**
+ * Whether Word squeezes a word of width `w` on to a line it sticks out of by `over` px, its `n` spaces (`spaceW` px
+ * wide in all, of fonts `em` px in all) narrowed to take it. Also for each side of a line split beside a shape
+ * (wrapboth.js; wrap-word2 wj-both: the words after the shape squeezed as a line's are).
+ */
+export function squeezeFits(over, n, spaceW, em, w) {
+  if (!n) return false;
+  const per = Math.min(MAX_SQUEEZE * spaceW, MAX_SQUEEZE_EM * em) / n; // the most each space may lose
+  return over / n <= per && over / w + SHARE_WEIGHT * over / spaceW <= MAX_OUT;
+}
+
 const key = new PluginKey('odx-justify');
 export const justifyPlugin = new Plugin({
   key,
@@ -24,11 +36,28 @@ export const justifyPlugin = new Plugin({
     init: () => DecorationSet.empty,
     apply(tr, set) {
       const next = tr.getMeta(key);
-      return next ? DecorationSet.create(tr.doc, next) : set.map(tr.mapping, tr.doc);
+      if (next) return DecorationSet.create(tr.doc, next);
+      const drop = tr.getMeta(dropKey);
+      const out = set.map(tr.mapping, tr.doc);
+      if (!drop) return out;
+      const gone = [];
+      for (const [from, to] of drop) gone.push(...out.find(from, to).filter((d) => d.to > from && d.from < to));
+      return gone.length ? out.remove(gone) : out;
     },
   },
   props: { decorations: (state) => key.getState(state) },
 });
+
+/**
+ * Takes away the squeezes over the ranges `at` ([from, to]: wrapboth.js, lines split beside a shape, the column's
+ * width no longer theirs); the next pass works them out again. Returns the transaction.
+ */
+const dropKey = new PluginKey('odx-justify-drop');
+export function dropSqueeze(tr, at) {
+  if (!at.length) return tr;
+  last = '';
+  return tr.setMeta(dropKey, at);
+}
 
 let ctx = null;
 const fontOf = (cs) => `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
@@ -38,7 +67,7 @@ const fontOf = (cs) => `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fon
  * (PM positions of the line's start and the end of the word it pulls in, squeeze in px per space), or null
  * when the paragraph holds anything but plain text, or isn't laid out.
  */
-function squeezedLines(view, node, pos, el) {
+function squeezedLines(view, node, pos, el, split) {
   const segs = []; // [text, pm start, font, space width]
   let plain = true;
   node.descendants((child, off) => {
@@ -49,6 +78,11 @@ function squeezedLines(view, node, pos, el) {
       if (ZERO_WIDTH.has(child.attrs.kind) || child.attrs.kind === 'proofErr' || (dom && dom.nodeType === 1 && !dom.getBoundingClientRect().width)) return false;
     }
     if (!child.isLeaf) return true; // content controls and the like: their text counts
+    // Nor a shape set out of the flow, wrapped with text on both sides (wrapboth.js splits the lines beside it).
+    if (child.isAtom && !child.isText) {
+      const dom = view.nodeDOM(pos + 1 + off);
+      if (dom && dom.nodeType === 1 && getComputedStyle(dom).position === 'absolute' && dom.style.getPropertyValue('--odx-both')) return false;
+    }
     // A line break (w:br, w:cr) ends a line where it is; the lines either side are fitted on their own.
     if (child.type === schema.nodes.hard_break) { segs.push({ brk: true, start: pos + 1 + off }); return false; }
     if (!child.isText || /[\t\xad]/.test(child.text)) { plain = false; return false; }
@@ -118,45 +152,51 @@ function squeezedLines(view, node, pos, el) {
   }
   if (cur) words.push(cur);
   const out = [];
-  let avail = right - fr.left;
-  let width = 0;
-  let spaces = 0;
-  let spaceW = 0;
-  let spaceEm = 0;
-  let lineFrom = segs[0].start;
-  for (let k = 0; k < words.length; k++) {
-    const wd = words[k];
-    if (wd.brk) { width = 0; lineFrom = wd.to; avail = right - left; continue; }
-    if (k === 0 || width === 0) { width = wd.w; spaces = 0; spaceW = 0; spaceEm = 0; continue; }
-    const add = wd.space + wd.w;
-    const gap = wd.space > 0 ? 1 : 0;
-    if (width + add <= avail + 0.01) { width += add; spaces += gap; spaceW += wd.space; spaceEm += gap * wd.em; continue; }
-    const over = width + add - avail;
-    const n = spaces + gap;
-    const per = n ? Math.min(MAX_SQUEEZE * (spaceW + wd.space), MAX_SQUEEZE_EM * (spaceEm + gap * wd.em)) / n : 0; // the most each space may lose
-    // Measurement hook (fitting MAX_OUT against Word's own line breaks); off unless a test sets it.
-    if (typeof window !== 'undefined' && window.__sqdbg) window.__sqdbg.push({ word: view.state.doc.textBetween(wd.from, wd.to), before: view.state.doc.textBetween(Math.max(lineFrom, wd.from - 40), wd.from), over, n, spaceW: spaceW + wd.space, w: wd.w, em: wd.em });
-    if (n && over / n <= per && over / wd.w + SHARE_WEIGHT * over / (spaceW + wd.space) <= MAX_OUT) {
-      // A little extra: canvas and layout widths differ slightly, and justification spreads it back out
-      // (never so much that the word after it could fit too). Not on a paragraph's last line, or one ending in a
-      // line break: nothing spreads those, so only half a pixel in all (Word squeezes those by just what fits).
-      const after = words[k + 1]?.brk ? null : words[k + 1];
-      const slack = after ? Math.min(0.3, (after.space + after.w) / 2 / n) : Math.min(0.3, 0.5 / n);
-      out.push({ from: lineFrom, to: wd.to, squeeze: over / n + slack });
-      width = 0; // the next word starts a new line
-      lineFrom = wd.to;
-      avail = right - left;
-      continue;
-    }
-    // Break before this word.
-    lineFrom = wd.from;
-    avail = right - left;
-    width = wd.w;
-    spaces = 0;
-    spaceW = 0;
-    spaceEm = 0;
-  }
+  // (Split beside a shape, wrapboth.js: the lines before the first split one, as from the paragraph's start, and those
+  // after the last, as from a line's.)
+  if (split) {
+    run(words.filter((w) => w.to <= split.first), right - fr.left, segs[0].start);
+    if (split.next != null) run(words.filter((w) => w.from >= split.next), right - left, split.next);
+  } else run(words, right - fr.left, segs[0].start);
   return out;
+
+  function run(words, avail, lineFrom) {
+    let width = 0;
+    let spaces = 0;
+    let spaceW = 0;
+    let spaceEm = 0;
+    for (let k = 0; k < words.length; k++) {
+      const wd = words[k];
+      if (wd.brk) { width = 0; lineFrom = wd.to; avail = right - left; continue; }
+      if (k === 0 || width === 0) { width = wd.w; spaces = 0; spaceW = 0; spaceEm = 0; continue; }
+      const add = wd.space + wd.w;
+      const gap = wd.space > 0 ? 1 : 0;
+      if (width + add <= avail + 0.01) { width += add; spaces += gap; spaceW += wd.space; spaceEm += gap * wd.em; continue; }
+      const over = width + add - avail;
+      const n = spaces + gap;
+      // Measurement hook (fitting MAX_OUT against Word's own line breaks); off unless a test sets it.
+      if (typeof window !== 'undefined' && window.__sqdbg) window.__sqdbg.push({ word: view.state.doc.textBetween(wd.from, wd.to), before: view.state.doc.textBetween(Math.max(lineFrom, wd.from - 40), wd.from), over, n, spaceW: spaceW + wd.space, w: wd.w, em: wd.em });
+      if (squeezeFits(over, n, spaceW + wd.space, spaceEm + gap * wd.em, wd.w)) {
+        // A little extra: canvas and layout widths differ slightly, and justification spreads it back out
+        // (never so much that the word after it could fit too). Not on a paragraph's last line, or one ending in a
+        // line break: nothing spreads those, so only half a pixel in all (Word squeezes those by just what fits).
+        const after = words[k + 1]?.brk ? null : words[k + 1];
+        const slack = after ? Math.min(0.3, (after.space + after.w) / 2 / n) : Math.min(0.3, 0.5 / n);
+        out.push({ from: lineFrom, to: wd.to, squeeze: over / n + slack });
+        width = 0; // the next word starts a new line
+        lineFrom = wd.to;
+        avail = right - left;
+        continue;
+      }
+      // Break before this word.
+      lineFrom = wd.from;
+      avail = right - left;
+      width = wd.w;
+      spaces = 0;
+      spaceW = 0;
+      spaceEm = 0;
+    }
+  }
 }
 
 /** Recomputes the squeezed lines of every justified paragraph; true when the decorations changed. */
@@ -169,7 +209,10 @@ export function applySqueeze(view, session) {
     if (node.type !== schema.nodes.paragraph) return true;
     const el = view.nodeDOM(pos);
     if (!el || el.nodeType !== 1 || getComputedStyle(el).textAlign !== 'justify') return false;
-    const lines = squeezedLines(view, node, pos, el);
+    // (Lines split beside a shape: wrapboth.js spreads those, and these only the lines above and below them.)
+    const split = el.querySelector('.odx-wb') ? splitOf(view.state, pos, pos + node.nodeSize) : null;
+    if (split === false) return false;
+    const lines = squeezedLines(view, node, pos, el, split);
     for (const l of lines || []) decos.push(Decoration.inline(l.from, l.to, { style: `word-spacing:${(-l.squeeze).toFixed(2)}px` }, { key: `sq:${l.squeeze.toFixed(2)}` }));
     return false;
   });
