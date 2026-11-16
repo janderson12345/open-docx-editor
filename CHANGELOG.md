@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Security fixes from the release review**: a crafted document could put CSS of its own into a picture's style (a
+  request to another site on open, a picture over the page), make EMF/EMF+ pictures take minutes and gigabytes (a
+  bitmap claiming any size, metafiles nested without end, an object drawn again and again, long text wrapped), or make
+  a mail-merge comparison backtrack for seconds; a co-editor could do the same through a picture's attributes, write
+  parts outside the package's folders with a "../" name, or loop an editor for ever with a name without an extension.
+  All are bounded or checked now. Two slow patterns over table-of-contents switches and pasted styles were made linear.
+- **Mail merge: IF fields per record, and merge fields in headers and footers**, in the merged document and the preview,
+  as Word's own merge fills them.
+- **Tables of contents**: `\u` alone lists paragraphs by outline level; `\t` takes entries from named styles at their
+  levels; the field keeps its switches when updated.
+- **Pasting**: headings from styled paragraphs (Word's own clipboard HTML, `class="Heading1"`) arrive as headings; a
+  paragraph pasted into an empty one keeps its style.
+- **Home and End on a table of contents entry** (or any paragraph beginning or ending in a linked field) go to the start
+  or end of the paragraph; text typed straight after them is no longer misplaced. The find bar keeps its search.
+- **Shapes turned and flipped inside groups**, a turned group's shapes turning with it, as Word draws them; SmartArt
+  gradient fills; text in a shape centred or at the bottom as its anchor says.
 - **Inner shadows drawn in body text**: Word's inner shadow (a text shadow scaled to nothing, the letters looking
   pressed in, as in the WordArt gallery's Style 15) is drawn on the page and in print; text boxes' version now falls on
   Word's side at Word's depth.
