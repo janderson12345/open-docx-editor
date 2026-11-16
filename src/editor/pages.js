@@ -32,6 +32,7 @@ import { applyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
 import { applyWrapBoth } from './wrapboth.js';
+import { settleHyphens } from './hyphenate.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
@@ -2586,6 +2587,8 @@ export function createPages(view, session, { sheet, scope }) {
     // (Printed at full size, whatever the zoom on screen.)
     printZoom = sheet.style.zoom;
     sheet.style.zoom = '';
+    // (At full size a line can break a little differently: the words the hyphenation zone and limit leave whole, again.)
+    settleHyphens(view);
     // Word updates the body's fields as it prints (page references, cross-references): so do we, from the pages.
     updateFields(view, { all: true });
     setGap(0);
@@ -2604,7 +2607,7 @@ export function createPages(view, session, { sheet, scope }) {
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; };
+  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 

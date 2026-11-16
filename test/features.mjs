@@ -1027,6 +1027,39 @@ await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.emulateMedia({ media: 'screen' });
 check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.includes('\u00ad') && /<w:suppressAutoHyphens\/>/.test(hySaved) && hyPrinted > 0,
   `automatic hyphenation: break points shown, not saved, printed with hyphens (${JSON.stringify({ ...hy, hyPrinted })})`);
+// The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
+// line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
+// same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
+const hyLines = async (f) => {
+  await open(f);
+  await page.waitForFunction(() => document.querySelectorAll('.odx-content .odx-shy, .odx-content p.odx-hyph').length > 0, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  return page.evaluate(() => {
+    if (document.querySelector('.odx-content p.odx-hyph')) return null;
+    const rectAt = (t, i) => { const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1); return r.getClientRects()[0]; };
+    const near = (s, dir) => {
+      const w = document.createTreeWalker(s.closest('p'), NodeFilter.SHOW_TEXT);
+      w.currentNode = s.firstChild;
+      for (let t = dir > 0 ? w.nextNode() : w.previousNode(); t; t = dir > 0 ? w.nextNode() : w.previousNode()) if (t.data && !t.parentElement.closest('.odx-shy')) return rectAt(t, dir > 0 ? 0 : t.data.length - 1);
+      return null;
+    };
+    let breaks = 0, run = 0, most = 0, last = null;
+    for (const s of document.querySelectorAll('.odx-content .odx-shy')) {
+      const a = near(s, -1), b = near(s, 1);
+      if (!a || !b || Math.abs(a.top - b.top) < a.height / 2) continue;
+      breaks++;
+      run = last && Math.abs(last.top - a.top) < a.height / 2 ? run + 1 : 1;
+      most = Math.max(most, run);
+      last = b;
+    }
+    return { breaks, most };
+  });
+};
+const hyFree = await hyLines('hyphenation-free.docx');
+const hyZone = await hyLines('hyphenation-zone.docx');
+const hyLimit = await hyLines('hyphenation-limit.docx');
+check(!hyFree || (hyFree.most > 1 && hyZone.breaks < hyFree.breaks / 3 && hyLimit.most === 1 && hyLimit.breaks > 0),
+  `hyphenation zone and consecutive-hyphen limit (${JSON.stringify({ hyFree, hyZone, hyLimit })})`);
 
 // Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
 // its fields), the next record, Insert Merge Field, a CSV file of recipients, and Finish & Merge's merged document.
