@@ -55,7 +55,8 @@ function blockDecos(node, pos, out) {
   return out;
 }
 
-function build(doc) {
+/** Every text span's decoration in the document (spansSet arranges them in a set). */
+export function spanDecos(doc) {
   const out = [];
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true;
@@ -63,6 +64,25 @@ function build(doc) {
     return false;
   });
   return out;
+}
+
+/**
+ * DecorationSet.create(doc, spanDecos(doc)), made a top-level block at a time: each block's own set, the document's set
+ * holding them as its children, as create arranges them. (create looks for each top-level block's decorations among
+ * all that are left: a long document's spans took quadratic time, 6,400 paragraphs 0.35s and 4 times as many blocks 14
+ * times as long; test/stress.test.js checks both give the same set.)
+ */
+export function spansSet(doc) {
+  const children = [];
+  doc.forEach((block, offset) => {
+    // (Positions in the block, from its content's start, as a child set's are.)
+    const out = [];
+    if (block.isTextblock) blockDecos(block, -1, out);
+    else block.descendants((node, pos) => { if (!node.isTextblock) return true; blockDecos(node, pos, out); return false; });
+    const set = out.length ? DecorationSet.create(block, out) : DecorationSet.empty;
+    if (set !== DecorationSet.empty) children.push(offset, offset + block.nodeSize, set);
+  });
+  return children.length ? new DecorationSet([], children) : DecorationSet.empty;
 }
 
 const MANY_STEPS = 100;
@@ -74,12 +94,12 @@ function wide(tr) {
 
 export const textSpansPlugin = new Plugin({
   state: {
-    init: (_, { doc }) => DecorationSet.create(doc, build(doc)),
+    init: (_, { doc }) => spansSet(doc),
     apply(tr, set) {
       if (!tr.docChanged) return set;
       // Many steps (Accept All, a paste of a long document), or one taking in most of the document: made again whole.
       // (Mapping each step's range through the steps after it is quadratic in their number: 6000 steps took a second.)
-      if (tr.steps.length > MANY_STEPS || wide(tr)) return DecorationSet.create(tr.doc, build(tr.doc));
+      if (tr.steps.length > MANY_STEPS || wide(tr)) return spansSet(tr.doc);
       set = set.map(tr.mapping, tr.doc);
       // The textblocks a step touched, in the new document: their decorations made again. (A mark step changes no
       // positions but splits text nodes: its range is in its map too.)
