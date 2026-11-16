@@ -26,8 +26,8 @@
 - **Hyphenation zone and consecutive-hyphen limit**: with automatic hyphenation on, a word is left whole where wrapping
   it leaves no more room at the line's end than the hyphenation zone (in documents of Word 2010's layout and older:
   Word 2013's has none), and no more lines in a row end in a hyphen than the document allows, on screen and in print.
-  Checked against Word's print of test documents (a 1in zone, limits of 1 and 2). Not where the browser hyphenates by
-  itself (Firefox).
+  Checked against Word's print of test documents (a 1in zone, limits of 1 and 2); in Firefox, which hyphenates by
+  itself, too.
 - **Accept All and Reject All on thousands of changes are faster**: on 6,000 tracked changes, from
   1.9s to 0.5-0.6s each, the result the same.
 - **Home and End on a table of contents entry** (or any paragraph beginning or ending in a linked field) go to the start

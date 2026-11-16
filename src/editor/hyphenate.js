@@ -4,8 +4,9 @@
 // patterns, as soft hyphens: widgets on screen only, never in the document's text. Either way a line ends at the last
 // break point that fits, with a hyphen, as Word's does. (Not widgets everywhere: Firefox's caret sticks in them.)
 // Paragraphs and styles with w:suppressAutoHyphens are left alone, and words in capitals with w:doNotHyphenateCaps.
-// With the soft hyphens, the hyphenation zone (Word 2010's layout and older) and the consecutive-hyphen limit are
-// followed too, once the lines are laid out (holdWords); the browser's own hyphenation has neither.
+// The hyphenation zone (Word 2010's layout and older) and the consecutive-hyphen limit are followed too, once the
+// lines are laid out (holdWords): a word Word would leave whole loses its soft hyphens, or, where the browser
+// hyphenates itself, is marked hyphens:manual (odx-nohyph).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
@@ -52,15 +53,29 @@ const shyIn = (w) => () => { const s = document.createElement('span'); s.classNa
 
 // Words left whole (their break points dropped) for the hyphenation zone or the consecutive-hyphen limit, as Word
 // leaves them: per paragraph node and layout (zoom and width: lines break a little differently at each), the offsets of
-// the words' starts. (A paragraph edited is a new node: worked out again.)
+// the words' starts, to their lengths. (A paragraph edited is a new node: worked out again.)
 const held = new WeakMap();
 const layoutOf = new WeakMap(); // session -> the layout its words are held for now
 const heldIn = (node, session) => held.get(node)?.get(layoutOf.get(session));
-function hold(node, session, w) {
+function hold(node, session, w, len) {
   const at = layoutOf.get(session);
   if (!held.has(node)) held.set(node, new Map());
-  if (!held.get(node).has(at)) held.get(node).set(at, new Set());
-  held.get(node).get(at).add(w);
+  if (!held.get(node).has(at)) held.get(node).set(at, new Map());
+  held.get(node).get(at).set(w, len);
+}
+
+/** The words of a paragraph that may be hyphenated: { w (offset in the paragraph), len, text node's marks }. */
+function wordsOf(node, session) {
+  const out = [];
+  const caps = session.doNotHyphenateCaps;
+  node.forEach((child, off) => {
+    if (!child.isText) return;
+    for (const m of child.text.matchAll(WORD)) {
+      if (m[0].length < MIN_WORD || (caps && m[0] === m[0].toUpperCase())) continue;
+      out.push({ w: off + m.index, text: m[0], marks: child.marks });
+    }
+  });
+  return out;
 }
 
 /** The soft-hyphen widgets for one paragraph at `pos` (memoised on the node: unchanged paragraphs cost nothing). */
@@ -69,17 +84,11 @@ function paragraphDecos(node, pos, session) {
   let rel = memo.get(node);
   if (!rel) {
     rel = [];
-    const caps = session.doNotHyphenateCaps;
-    node.forEach((child, off) => {
-      if (!child.isText) return;
-      for (const m of child.text.matchAll(WORD)) {
-        if (m[0].length < MIN_WORD || (caps && m[0] === m[0].toUpperCase())) continue;
-        const parts = hyphenate(m[0]);
-        const w = off + m.index;
-        let at = w;
-        for (let i = 0; i < parts.length - 1; i++) { at += parts[i].length; rel.push({ at, w, marks: child.marks }); }
-      }
-    });
+    for (const { w, text, marks } of wordsOf(node, session)) {
+      const parts = hyphenate(text);
+      let at = w;
+      for (let i = 0; i < parts.length - 1; i++) { at += parts[i].length; rel.push({ at, w, marks }); }
+    }
     memo.set(node, rel);
   }
   const whole = heldIn(node, session);
@@ -97,22 +106,13 @@ const MAX_ROUNDS = 60;
 function holdWords(view, session) {
   const zone = session.hyphenationZone / 15; // px
   const limit = session.consecutiveHyphenLimit;
+  const native = nativeHyphens();
   let changed = false;
   view.state.doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
     const el = view.nodeDOM(pos);
     if (!el || !el.querySelectorAll) return false;
-    const shys = el.querySelectorAll('.odx-shy');
-    if (!shys.length) return false;
-    // Where a line breaks: the letters either side of the widget on different lines. (Not the hyphen's width: on a
-    // page's last line, pages.js's, it measures nothing.)
-    const sameLine = (a, b) => Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < (b.bottom - b.top) / 2;
-    const shown = [];
-    for (const s of shys) {
-      const a = charRect(s, el, -1);
-      const b = charRect(s, el, 1);
-      if (a && b && !sameLine(a, b)) shown.push({ s, r: a, next: b });
-    }
+    const shown = native ? nativeBreaks(view, node, pos, session) : widgetBreaks(el);
     if (!shown.length) return false;
     const box = el.getBoundingClientRect();
     const scale = el.offsetWidth ? box.width / el.offsetWidth : 1;
@@ -124,10 +124,9 @@ function holdWords(view, session) {
       const right = box.right - (parseFloat(cs.paddingRight) + parseFloat(cs.borderRightWidth)) * scale;
       let run = 0;
       let nextLine = null; // where the text after the last hyphen goes on
-      for (const { s, r, next } of shown) {
+      for (const { w, len, r, next } of shown) {
         run = nextLine && sameLine(nextLine, r) ? run + 1 : 1;
         nextLine = next;
-        const w = Number(s.dataset.w);
         let whole = limit > 0 && run > limit;
         if (!whole && zone > 0) {
           // The end of the text before the word (on the same line: else the word starts the line, and must break).
@@ -138,7 +137,7 @@ function holdWords(view, session) {
           }
         }
         if (whole) {
-          hold(node, session, w);
+          hold(node, session, w, len);
           changed = true;
           break;
         }
@@ -147,6 +146,56 @@ function holdWords(view, session) {
     return false;
   });
   return changed;
+}
+
+const sameLine = (a, b) => Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < (b.bottom - b.top) / 2;
+
+/**
+ * The lines of a paragraph that end inside a word, in order: { w, len (the word's start and length), r (the rect of the
+ * letter before the break), next (of the one after) }. With the soft hyphens, where the letters either side of a widget
+ * are on different lines. (Not the hyphen's width: on a page's last line, pages.js's, it measures nothing.)
+ */
+function widgetBreaks(el) {
+  const out = [];
+  for (const s of el.querySelectorAll('.odx-shy')) {
+    const a = charRect(s, el, -1);
+    const b = charRect(s, el, 1);
+    if (a && b && !sameLine(a, b)) out.push({ w: Number(s.dataset.w), len: 0, r: a, next: b });
+  }
+  return out;
+}
+
+/** The same where the browser hyphenates itself: words whose first and last letters are on different lines. */
+function nativeBreaks(view, node, pos, session) {
+  const out = [];
+  for (const { w, text } of wordsOf(node, session)) {
+    const at = (k) => letterRect(view, pos + 1 + w + k);
+    const first = at(0);
+    const last = at(text.length - 1);
+    if (!first || !last || sameLine(first, last)) continue;
+    for (let k = 1, prev = first; k < text.length; k++) {
+      const r = at(k);
+      if (!r) break;
+      if (!sameLine(prev, r)) { out.push({ w, len: text.length, r: prev, next: r }); break; }
+      prev = r;
+    }
+  }
+  return out;
+}
+
+/** The rect of the letter at document position `p` (the one after it). */
+function letterRect(view, p) {
+  let { node: n, offset } = view.domAtPos(p);
+  if (n.nodeType !== 3) {
+    n = n.childNodes[offset];
+    while (n && n.nodeType === 1) n = n.firstChild;
+    offset = 0;
+  }
+  if (!n || n.nodeType !== 3 || offset >= n.data.length) return null;
+  const range = document.createRange();
+  range.setStart(n, offset);
+  range.setEnd(n, offset + 1);
+  return range.getClientRects()[0] || null;
 }
 
 /** The rect of the character just after (`dir` 1) or before (-1) `s` (a hyphen widget) inside `el`. */
@@ -177,8 +226,11 @@ function build(doc, session) {
   doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
     if (noHyph(node, session)) return false;
-    if (own) decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-hyph' }));
-    else decos.push(...paragraphDecos(node, pos, session));
+    if (own) {
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-hyph' }));
+      // (The words the zone or the limit leave whole: not hyphenated, editor.css.)
+      for (const [w, len] of heldIn(node, session) || []) decos.push(Decoration.inline(pos + 1 + w, pos + 1 + w + len, { class: 'odx-nohyph' }));
+    } else decos.push(...paragraphDecos(node, pos, session));
     return false;
   });
   return DecorationSet.create(doc, decos);
@@ -186,7 +238,7 @@ function build(doc, session) {
 
 const sessions = new WeakMap(); // view -> its session
 const busy = new WeakSet(); // views settling now (their own dispatches start nothing more)
-const rules = (session) => session.autoHyphenation && hyphenate && !nativeHyphens() && (session.hyphenationZone > 0 || session.consecutiveHyphenLimit > 0);
+const rules = (session) => session.autoHyphenation && (hyphenate || nativeHyphens()) && (session.hyphenationZone > 0 || session.consecutiveHyphenLimit > 0);
 const redraw = (view) => view.dispatch(view.state.tr.setMeta(key, true).setMeta('addToHistory', false));
 
 /**
