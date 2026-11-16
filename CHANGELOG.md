@@ -1,13 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-11-16)
 
 - **Security fixes from the release review**: a crafted document could put CSS of its own into a picture's style (a
   request to another site on open, a picture over the page), make EMF/EMF+ pictures take minutes and gigabytes (a
   bitmap claiming any size, metafiles nested without end, an object drawn again and again, long text wrapped), or make
   a mail-merge comparison backtrack for seconds; a co-editor could do the same through a picture's attributes, write
   parts outside the package's folders with a "../" name, or loop an editor for ever with a name without an extension.
-  All are bounded or checked now. Two slow patterns over table-of-contents switches and pasted styles were made linear.
+  A cross-reference to a list label of thousands of dots or spaces took time growing with its square, and a field's format switch naming "constructor" was taken as a format. All are bounded or checked now. Two slow patterns over table-of-contents switches and pasted styles were made linear.
 - **Mail merge: IF fields per record, and merge fields in headers and footers**, in the merged document and the preview,
   as Word's own merge fills them.
 - **Tables of contents**: `\u` alone lists paragraphs by outline level; `\t` takes entries from named styles at their

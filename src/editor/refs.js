@@ -49,7 +49,8 @@ function pageIndexAt(view, pos) {
 /** A page's number as its header shows it: the section's numbering and format, or the field's own (\* roman). */
 function pageNumberText(view, p, fmt) {
   const { n, fmt: own } = view.odx.pages.numberAt(p);
-  return formatNumber(n, fmt && fmt in FORMATS ? FORMATS[fmt] : own);
+  // (Own keys only: the format comes from the field's switch, and "constructor" or "__proto__" are in every object.)
+  return formatNumber(n, fmt && Object.hasOwn(FORMATS, fmt) ? FORMATS[fmt] : own);
 }
 
 /** The list label of the paragraph holding `pos` ("3.2." -> "3.2"), as drawn; '' if it has none. */
@@ -58,7 +59,12 @@ function paragraphNumber(view, pos) {
   for (let d = $p.depth; d > 0; d--) {
     if ($p.node(d).type !== schema.nodes.paragraph) continue;
     const el = view.nodeDOM($p.before(d));
-    return (el?.dataset?.label || '').replace(/[\s.)]+$/, '').trim();
+    // (Its trailing spaces, dots and brackets cut off by walking back from the end: a regular expression tried them at
+    // every position, time growing with the square of a crafted label's length.)
+    const label = el?.dataset?.label || '';
+    let end = label.length;
+    while (end > 0 && /[\s.)]/.test(label[end - 1])) end--;
+    return label.slice(0, end).trim();
   }
   return '';
 }
