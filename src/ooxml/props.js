@@ -63,15 +63,36 @@ export function readBorders(el) {
   return out;
 }
 
+// Borders of two or three lines: their whole width (pt) from their size (pt), as Word lays them out (hdrgap-word: an
+// empty header paragraph with each bordered below it at 0.75pt to 6pt, the body that much lower in Word's PDF, within
+// its 0.12pt steps). A double's size is each line, with a gap as wide between (doc 01: 2.88px lines, 2.88px apart, for
+// sz 18); a triple's, its three lines and two gaps. A thick-thin pair's size is its thick line: with a small gap, the
+// thin line and the gap add 0.75pt each; a medium one, half the size each; a large one, 0.75pt and 1.5pt. Thin-thick-thin
+// the same on both sides, but a large gap's thin lines and gaps adding 3pt and the size again.
+const COMPOUND = {
+  double: (w) => 3 * w,
+  triple: (w) => 5 * w,
+  thinThickSmallGap: (w) => w + 1.5,
+  thickThinSmallGap: (w) => w + 1.5,
+  thinThickMediumGap: (w) => 2 * w,
+  thickThinMediumGap: (w) => 2 * w,
+  thinThickLargeGap: (w) => w + 2.25,
+  thickThinLargeGap: (w) => w + 2.25,
+  thinThickThinSmallGap: (w) => w + 3,
+  thinThickThinMediumGap: (w) => 3 * w,
+  thinThickThinLargeGap: (w) => 2 * w + 3,
+};
+
+const BROKEN = { dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dotDash: 'dashed' };
+
 /** CSS for one border side; Word sizes are eighths of a point. */
 export function borderCss(b) {
   if (!b || !b.val || b.val === 'nil' || b.val === 'none') return 'none';
-  const style = { double: 'double', dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dotDash: 'dashed', triple: 'double', thinThickSmallGap: 'double', thickThinSmallGap: 'double' }[b.val] || 'solid';
-  // A double border's size is each of its lines, with a gap as wide between: 3x in all (Word's PDF, doc 01: 2.88px
-  // lines, 2.88px apart, for sz 18). (At least 2.25pt, 3px, for the browser to draw two lines.)
-  // A thick-thin pair's size is its thick line; the thin line and the gap add 0.75pt (sample S078's 2.25pt
-  // header rule: Word's body starts 0.8pt lower than with the size alone).
-  const w = b.val === 'double' ? Math.max(2.25, (3 * b.sz) / 8) : /^th(ick|in)Th(in|ick)SmallGap$/.test(b.val) ? Math.max(2.25, b.sz / 8 + 0.75) : Math.max(0.5, b.sz / 8);
+  const lines = Object.hasOwn(COMPOUND, b.val) ? COMPOUND[b.val] : null;
+  const style = lines ? 'double' : Object.hasOwn(BROKEN, b.val) ? BROKEN[b.val] : 'solid';
+  // A border of two or three lines is as wide as all of them and their gaps (COMPOUND), at least 2.25pt (3px) for the
+  // browser to draw two lines.
+  const w = lines ? Math.max(2.25, lines(b.sz / 8)) : Math.max(0.5, b.sz / 8);
   return `${w}pt ${style} ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`;
 }
 
