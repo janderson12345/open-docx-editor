@@ -43,3 +43,32 @@ test('Strict charts\' percentages are plain numbers', () => {
   const out = strFromU8(fromStrict({ 'word/charts/chart1.xml': strToU8(`<c:chartSpace xmlns:c="${C}"><c:gapWidth val="150%"/><c:overlap val="-20%"/></c:chartSpace>`) })['word/charts/chart1.xml']);
   assert.match(out, /<c:gapWidth val="150"\/><c:overlap val="-20"\/>/);
 });
+
+// Tags whose two attributes were read by one regex (<x\b[^>]*a="..."[^>]*b="...") took time growing with the square of
+// a crafted tag's length: the first attribute repeated inside another one's single-quoted value (valid XML) gave the
+// second [^>]* a place to start at each. Read tag by tag now (xml.js startTag), each in moments.
+test('tags read two attributes at a time in moments, however long a crafted one is', async () => {
+  const { startTag, tagAttr, setTagAttr } = await import('../src/ooxml/xml.js');
+  const { w14Color } = await import('../src/ooxml/texteffects.js');
+  const { shapeInfo } = await import('../src/editor/imgresize.js');
+  const { docProps } = await import('../src/editor/pagefields.js');
+  const { DocxSession } = await import('../src/ooxml/docx.js');
+  const many = (s) => s.repeat(40000);
+  const quick = (what, fn) => { const t = performance.now(); fn(); const ms = performance.now() - t; assert.ok(ms < 1000, `${what}: ${Math.round(ms)}ms`); };
+  // The reader itself: a '>' in a quoted value isn't the tag's end, and the attribute is the one by that name.
+  const t = startTag(`<a x='>"' cx="5" w:cx="6"/>`, 'a');
+  assert.equal(t.tag, `<a x='>"' cx="5" w:cx="6"/>`);
+  assert.equal(tagAttr(t.tag, 'cx'), '5');
+  assert.equal(tagAttr(t.tag, 'w:cx'), '6');
+  assert.equal(setTagAttr(t.tag, 'cx', '7'), `<a x='>"' cx="7" w:cx="6"/>`);
+  assert.equal(startTag('<ab/><a/>', 'a').at, 5); // (a longer name isn't it)
+  quick('w14Color', () => assert.equal(w14Color(`<w14:srgbClr x='${many('w14:val="FF0000" ')}' w14:val="00FF00"/>`), '#00FF00'));
+  quick('shapeInfo', () => shapeInfo(`<wps:wsp><wps:spPr><a:xfrm/><a:ext q='${many('cx="1" ')}' cx="9" cy="9"/><a:prstGeom prst="rect"><a:avLst><a:gd z='${many('name="adj" ')}' name="adj" fmla="val 1"/></a:avLst></a:prstGeom></wps:spPr></wps:wsp>`));
+  quick('docProps', () => docProps({ text: (p) => (p === 'docProps/custom.xml' ? `<Properties><property q='${many('name="x" ')}' name="Client"><vt:lpwstr>Ann</vt:lpwstr></property></Properties>` : '') }));
+  const session = DocxSession.blank();
+  const crafted = session.addShape('rect', 96, 72).xml.replace('<wp:extent ', `<wp:extent q='${many('cx="1" ')}' `);
+  let resized;
+  quick('resizeShape', () => { resized = session.resizeShape(crafted, 48, 36); });
+  assert.match(resized.xml, /<wp:extent q='[^']*' cx="457200" cy="342900"\/>/); // (its own cx and cy, not those in q)
+  assert.match(resized.xml, /<a:ext cx="457200" cy="342900"\/>/);
+});

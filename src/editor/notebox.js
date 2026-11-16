@@ -7,6 +7,7 @@ import { schema } from './schema.js';
 import { styleStoryTables } from './hfstory.js';
 import { wrapText } from './textspans.js';
 import { noteLabel } from './notes.js';
+import { startTags, tagAttr } from '../ooxml/xml.js';
 
 const serializer = DOMSerializer.fromSchema(schema);
 // A note paragraph's table: the element itself or its direct child.
@@ -38,7 +39,14 @@ export function createNoteBoxes({ page, sheet, session }) {
       const stylesPart = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
       const styles = stylesPart ? session.pkg.text(stylesPart) || '' : '';
       const defaults = /<w:pPrDefault>[\s\S]*?<\/w:pPrDefault>/.exec(styles)?.[0];
-      const normal = /<w:style\b[^>]*w:type="paragraph"[^>]*w:default="1"[\s\S]*?<\/w:style>/.exec(styles)?.[0];
+      // (The default paragraph style's element, read tag by tag: xml.js startTag.)
+      let normal = null;
+      for (const t of startTags(styles, 'w:style')) {
+        if (tagAttr(t.tag, 'w:type') !== 'paragraph' || tagAttr(t.tag, 'w:default') !== '1') continue;
+        const close = styles.indexOf('</w:style>', t.end);
+        if (close >= 0) normal = styles.slice(t.at, close + 10);
+        break;
+      }
       const normalPpr = normal && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(normal)?.[0];
       sepRtl = !!sep && (ppr && /<w:bidi\b/.test(ppr) ? bidi(ppr) : normalPpr && /<w:bidi\b/.test(normalPpr) ? bidi(normalPpr) : bidi(defaults));
     }

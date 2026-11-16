@@ -883,7 +883,7 @@ const tocEntries = () => page.evaluate(() => {
   const words = [];
   let instr = null;
   window.odx.view.state.doc.forEach((p) => {
-    p.forEach((c) => { if (instr == null && c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr = c.attrs.xml.replace(/<[^>]*>/g, ''); });
+    p.forEach((c) => { if (instr == null && c.type.name === 'opaque_inline' && c.attrs.kind === 'instrText') instr = /<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/.exec(c.attrs.xml)?.[1] ?? ''; }); // (its text, as merge.js reads it)
     const m = /^TOC(\d)$/.exec(p.attrs.styleId || '');
     if (!m) return;
     let t = '', tab = false;

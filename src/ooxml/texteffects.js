@@ -6,6 +6,7 @@
 // colour's w14:alpha is its transparency (Word's 50% transparent red is alpha 50000), not DrawingML's opacity; Word
 // also writes the old w:outline beside a w14:textOutline, which then is the outline drawn.
 import { modify, OFFICE } from './shapes.js';
+import { startTags, tagAttr } from './xml.js';
 
 // The open document's theme colours (docx.js, from its theme part): scheme name -> hex.
 const THEME = {};
@@ -17,9 +18,35 @@ export function setThemeColors(colors) {
 const SCHEME = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk2', bg2: 'lt2' };
 const num = (xml, name) => Number(new RegExp(`\\bw14:${name}="(-?\\d+)"`).exec(xml)?.[1] ?? NaN);
 
+// Tags read one pass each (xml.js startTag), not by regexes reading two attributes of a tag, which took time growing
+// with the square of a crafted tag's length.
+/** A fragment's first w14:srgbClr or w14:schemeClr with a w14:val: [, name, val, , inner XML], or null. */
+function firstColor(xml) {
+  const tags = [...['srgbClr', 'schemeClr'].flatMap((k) => [...startTags(xml, `w14:${k}`)].map((t) => [k, t]))].sort((p, q) => p[1].at - q[1].at);
+  for (const [k, t] of tags) {
+    const val = tagAttr(t.tag, 'w14:val');
+    if (!val) continue;
+    if (t.selfClosing) return [null, k, val, null, ''];
+    const close = xml.indexOf(`</w14:${k}>`, t.end);
+    if (close >= 0) return [null, k, val, null, xml.slice(t.end, close)];
+  }
+  return null;
+}
+/** A gradient fill's stops: [, position (as written), inner XML] each. */
+function gradStops(fill) {
+  const out = [];
+  for (const t of startTags(fill, 'w14:gs')) {
+    const pos = tagAttr(t.tag, 'w14:pos');
+    const close = fill.indexOf('</w14:gs>', t.end);
+    if (close < 0) break;
+    if (/^\d+$/.test(pos || '')) out.push([null, pos, fill.slice(t.end, close)]);
+  }
+  return out;
+}
+
 /** The first colour in a w14 fragment (srgbClr or schemeClr, with its changes) as a CSS colour; null if none. */
 export function w14Color(xml) {
-  const m = /<w14:(srgbClr|schemeClr)\b[^>]*?\bw14:val="([^"]+)"[^>]*?(\/>|>([\s\S]*?)<\/w14:\1>)/.exec(xml || '');
+  const m = firstColor(xml || '');
   if (!m) return null;
   let hex = m[1] === 'srgbClr' ? m[2] : THEME[SCHEME[m[2]] || m[2]] || OFFICE[SCHEME[m[2]] || m[2]];
   if (!/^[0-9A-Fa-f]{6}$/.test(hex || '')) return null;
@@ -93,7 +120,7 @@ export function textEffectsCss(items) {
   if (fill) {
     if (/<w14:noFill\b/.test(fill)) css.push('-webkit-text-fill-color:transparent');
     else if (/<w14:gradFill\b/.test(fill)) {
-      const stops = [...fill.matchAll(/<w14:gs\b[^>]*?\bw14:pos="(\d+)"[^>]*>([\s\S]*?)<\/w14:gs>/g)].map((g) => `${w14Color(g[2]) || 'currentColor'} ${+(Number(g[1]) / 1000).toFixed(1)}%`);
+      const stops = gradStops(fill).map((g) => `${w14Color(g[2]) || 'currentColor'} ${+(Number(g[1]) / 1000).toFixed(1)}%`);
       const ang = num(fill, 'ang');
       // (A linear gradient's angle is clockwise from left to right; CSS's from bottom to top.)
       const deg = Number.isFinite(ang) ? 90 + ang / 60000 : 90;
@@ -204,7 +231,7 @@ export function svgTextEffects(rPr, n, serialize) {
   if (fill) {
     if (/<w14:noFill\b/.test(fill)) attrs.push('fill="none"');
     else if (/<w14:gradFill\b/.test(fill)) {
-      const stops = [...fill.matchAll(/<w14:gs\b[^>]*?\bw14:pos="(\d+)"[^>]*>([\s\S]*?)<\/w14:gs>/g)];
+      const stops = gradStops(fill);
       const ang = num(fill, 'ang');
       const a = ((Number.isFinite(ang) ? ang / 60000 : 0) * Math.PI) / 180;
       const [x1, y1, x2, y2] = [0.5 - Math.cos(a) / 2, 0.5 - Math.sin(a) / 2, 0.5 + Math.cos(a) / 2, 0.5 + Math.sin(a) / 2].map((v) => +v.toFixed(3));
