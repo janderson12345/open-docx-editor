@@ -788,13 +788,16 @@ check(loc.toc === 'TDC1,TDC2,Ttulo1,Ttulo2,TtuloTDC' && loc.pasted === 'Ttulo1' 
 
 // Update table on a TOC \u \h \z (toc-u-only.docx, made with Word COM): the field keeps its switches and lists what Word's
 // own update did, outline levels set on paragraphs or through styles, 1-9, and no style based on Heading 1 at body text.
-await open('toc-u-only.docx');
-await page.click('.odx-content p');
-await page.click('.odx-rtab:text-is("References")');
-await page.click('button[title="Table of contents"]');
-await page.click('.odx-pop .odx-item:has-text("Update table")');
-await page.waitForTimeout(500);
-const tocU = await page.evaluate(() => {
+const updateToc = async (file) => {
+  await open(file);
+  await page.click('.odx-content p');
+  await page.click('.odx-rtab:text-is("References")');
+  await page.click('button[title="Table of contents"]');
+  await page.click('.odx-pop .odx-item:has-text("Update table")');
+  await page.waitForTimeout(500);
+  return tocEntries();
+};
+const tocEntries = () => page.evaluate(() => {
   const words = [];
   let instr = null;
   window.odx.view.state.doc.forEach((p) => {
@@ -805,10 +808,16 @@ const tocU = await page.evaluate(() => {
     p.forEach((c) => { if (c.type.name === 'tab') tab = true; else if (!tab && c.isText) t += c.text; });
     words.push(`${t.trim()}:${m[1]}`);
   });
-  return { instr: instr.trim(), words: words.slice(0, 9).join(', ') };
+  return { instr: instr.trim().replace(/&quot;/g, '"'), words: words.slice(0, 9).join(', ') };
 });
+const tocU = await updateToc('toc-u-only.docx');
 check(tocU.instr === 'TOC \\u \\h \\z' && tocU.words === 'H1 styled:1, H2 styled:2, H4 styled:4, Direct level 1:1, Direct level 5:5, Direct level 9:9, Custom style level 2:2, Custom style level 6:6, H1 styled:1',
   `a \\u-only TOC updates to Word's entries (${JSON.stringify(tocU)})`);
+// And a TOC \t "Section Title,1,Deep Title,3" \h \z (toc-t-switch.docx): those two styles at those levels, nothing else
+// (the next entry is the second table's, as Word left it).
+const tocT = await updateToc('toc-t-switch.docx');
+check(tocT.instr === 'TOC \\t "Section Title,1,Deep Title,3" \\h \\z' && tocT.words.startsWith('Custom style level 2:1, Custom style level 6:3, H1 styled:1'),
+  `a \\t TOC updates to Word's entries (${JSON.stringify(tocT)})`);
 
 // Insert > Table as Word's: in the Table Grid style (added to the document), lines drawn all round and between the
 // cells, the cells' text with no space after and single spacing (rows 18.33px and 19px in Word's own print of it).
