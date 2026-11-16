@@ -9,6 +9,7 @@ import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { lineHeightOf } from './util.js';
+import { pictureFix, pictureAlone } from './picfix.js';
 
 const key = new PluginKey('odx-lhfix');
 export const lineFixPlugin = new Plugin({
@@ -64,6 +65,23 @@ function bestHeight(box, el, chain, want, length) {
   return best;
 }
 
+/**
+ * A paragraph's picture-line fix (picfix.js) with its pictures by offset in the paragraph, or null: for one with a picture
+ * on a line with text (pararules.js odx-pictext), measured with the line height chosen (`value`, or its own).
+ */
+function picture(view, node, pos, el, box, value) {
+  if (!el.querySelector('img:not(.ProseMirror-separator)')) return null;
+  const fix = el.classList.contains('odx-pictext') ? pictureFix(el, box, value ?? '') : pictureAlone(el, box);
+  if (!fix) return null;
+  const mts = [];
+  node.forEach((c, off) => {
+    const dom = c.type.name === 'image' && view.nodeDOM(pos + 1 + off);
+    const m = dom && fix.mts.find(([img]) => img === dom || dom.contains?.(img));
+    if (m) mts.push([off, m[1]]);
+  });
+  return { d: fix.d, mts };
+}
+
 let last = '';
 let gridPitch = 0;
 // Results by paragraph node ({ value, want }, null for none), until fonts load: probing every paragraph again on each
@@ -89,12 +107,19 @@ export function applyLineFix(view) {
   const g = /<w:docGrid\b[^>]*>/.exec(view.state.doc.attrs.sectPr || '')?.[0] || '';
   const pitch = /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
   if (pitch !== gridPitch) { memo = new WeakMap(); gridPitch = pitch; }
+  // A paragraph's decorations from its result: its line height, and a picture line's fix (picfix.js) on it and its pictures.
+  const put = (pos, node, r) => {
+    if (!r) return;
+    if (r.value != null) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
+    if (!r.pic) return;
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-picb:${r.pic.d}px` }, { key: `pb:${r.pic.d}` }));
+    for (const [off, mt] of r.pic.mts) decos.push(Decoration.node(pos + 1 + off, pos + 2 + off, { style: `--odx-picmt:${mt}px${mt < 0 ? `;--odx-picclip:${-mt}px` : ''}` }, { key: `pm:${mt}` }));
+  };
   view.state.doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
     // An unchanged paragraph keeps its result (ProseMirror keeps the node): no probing again.
     if (memo.has(node)) {
-      const r = memo.get(node);
-      if (r) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
+      put(pos, node, memo.get(node));
       return false;
     }
     const el = view.nodeDOM(pos);
@@ -117,15 +142,18 @@ export function applyLineFix(view) {
       const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
       const on = Math.max(pitch * mult, Math.ceil(want / pitch - 1e-3) * pitch);
       const value = `${on.toFixed(4)}px`;
-      memo.set(node, { value, want, grid: true });
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${value}`, 'data-odx-lh': String(want), 'data-odx-grid': '1' }, { key: `lh:${value}g` }));
+      const r = { value, want, grid: true, pic: picture(view, node, pos, el, box, value) };
+      memo.set(node, r);
+      put(pos, node, r);
       return false;
     }
     const best = bestHeight(box, el, chain, want, length);
-    if (best == null) return false;
-    const value = length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
-    memo.set(node, { value, want });
-    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${value}`, 'data-odx-lh': String(want) }, { key: `lh:${value}` }));
+    const value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
+    const pic = picture(view, node, pos, el, box, value);
+    if (value == null && !pic) return false;
+    const r = { value, want, pic };
+    memo.set(node, r);
+    put(pos, node, r);
     return false;
   });
   box.remove();
