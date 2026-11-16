@@ -91,6 +91,9 @@ function png(w, h, rgba) {
 
 /** A BMP file from a DIB header and bits (a browser shows BMP data URLs); 32-bit DIBs as PNG, keeping their alpha. */
 function bmp(bytes, offBmi, cbBmi, offBits, cbBits) {
+  // (The sizes the record gives, kept to the bytes the file has: a crafted record could claim gigabytes.)
+  cbBmi = Math.max(0, Math.min(cbBmi, bytes.length - offBmi));
+  cbBits = Math.max(0, Math.min(cbBits, bytes.length - offBits));
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const bits = dv.getUint16(offBmi + 14, true), compression = dv.getUint32(offBmi + 16, true);
   if (bits === 32 && (compression === 0 || compression === 3)) {
@@ -119,9 +122,13 @@ function bmp(bytes, offBmi, cbBmi, offBits, cbBits) {
   return dataUrl('image/bmp', out);
 }
 
-/** The EMF in `bytes` as an SVG document (string), or null when it can't be read. */
-export function emfToSvg(bytes) {
-  if (!isEmf(bytes)) return null;
+// How deep metafiles inside an EMF+ file's images are drawn: each is embedded in the one around it, so a crafted file
+// nesting them without end would grow its SVG at every level.
+const MAX_NESTED = 3;
+
+/** The EMF in `bytes` as an SVG document (string), or null when it can't be read. (`depth`: how many metafiles it's inside.) */
+export function emfToSvg(bytes, depth = 0) {
+  if (!isEmf(bytes) || depth > MAX_NESTED) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const i32 = (o) => dv.getInt32(o, true);
   const u32 = (o) => dv.getUint32(o, true);
@@ -387,7 +394,7 @@ export function emfToSvg(bytes) {
   // whose EMF+ records need something not read here is drawn from its GDI copy instead.
   let body = out, defs = clips;
   if (hasEmfPlus(dv)) {
-    const plus = emfPlusToSvg(bytes, { bx, by }, { png, dataUrl, emfToSvg, win, fontStack, esc, measure });
+    const plus = emfPlusToSvg(bytes, { bx, by }, { png, dataUrl, emfToSvg: (inner) => emfToSvg(inner, depth + 1), win, fontStack, esc, measure });
     const dual = (dv.getUint16(off0Plus(dv) + 2, true) & 1) === 1;
     if (!(plus.unsupported && dual)) {
       const inGdi = (at) => plus.gdi.some(([a, b]) => at >= a && at < b);

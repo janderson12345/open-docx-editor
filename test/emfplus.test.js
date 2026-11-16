@@ -18,7 +18,9 @@ test('an EMF+ only picture is drawn from its EMF+ records', () => {
   assert.match(svg, /M20 280 C60 200 140 200 180 280Z/, 'a path with a curve');
   assert.match(svg, /font-family="&quot;Arial&quot;[^"]*" font-size="16" font-weight="bold"[^>]*><tspan x="232.667" y="129.48">EMF\+ text</, 'text, its family name no longer in capitals');
   assert.match(svg, /transform="matrix\(0\.8660254 -0\.5 0\.5 0\.8660254 200 250\)"><tspan[^>]*>Turned</, 'text turned by the world transform');
-  assert.match(svg, /<g transform="matrix\(5 0 0 5 150 100\)"><image width="8" height="8"[^>]*href="data:image\/png;base64,[^"]+" style="image-rendering:pixelated"/, 'a bitmap, unsmoothed');
+  const pic = /<g transform="matrix\(5 0 0 5 150 100\)"><use href="#(i\d+)" style="image-rendering:pixelated"\/>/.exec(svg);
+  assert.ok(pic, 'a bitmap, unsmoothed');
+  assert.match(svg, new RegExp(`<defs>.*<image id="${pic[1]}" width="8" height="8"[^>]*href="data:image/png;base64,[^"]+"/>.*</defs>`), 'its picture defined once');
 });
 
 test('an EMF+ dual picture is drawn from its EMF+ records too, its GDI copy left out', () => {
