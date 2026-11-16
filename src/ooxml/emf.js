@@ -10,7 +10,8 @@ import { hasEmfPlus, emfPlusToSvg } from './emfplus.js';
 // The offset of the EMF+ header record (inside the comment after the EMF header).
 const off0Plus = (dv) => dv.getUint32(4, true) + 16;
 
-const rgb = (v) => `#${[v & 255, (v >> 8) & 255, (v >> 16) & 255].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+// A GDI COLORREF (0x00BBGGRR) as #rrggbb; emfplus.js argb is EMF+'s 0xAARRGGBB.
+const colorref = (v) => `#${[v & 255, (v >> 8) & 255, (v >> 16) & 255].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 const n = (v) => +v.toFixed(3);
 // Windows ascent and descent (em) of common fonts: GDI puts top-aligned text's baseline an ascent below the point,
 // and a positive LOGFONT height is the whole cell (ascent + descent).
@@ -187,13 +188,13 @@ export function emfToSvg(bytes, depth = 0) {
     if (!p || p.style === 5) return 'stroke="none"';
     const w = Math.max(len(p.width || 0), 0.75);
     const dash = { 1: '4 2', 2: '1 2', 3: '4 2 1 2', 4: '4 2 1 2 1 2' }[p.style];
-    return `stroke="${rgb(p.color)}" stroke-width="${n(w)}"${dash ? ` stroke-dasharray="${dash.split(' ').map((v) => n(v * w)).join(' ')}"` : ''} stroke-linejoin="miter"`;
+    return `stroke="${colorref(p.color)}" stroke-width="${n(w)}"${dash ? ` stroke-dasharray="${dash.split(' ').map((v) => n(v * w)).join(' ')}"` : ''} stroke-linejoin="miter"`;
   };
   const fill = () => {
     const b = dc.brush;
     if (!b || b.style === 1) return 'fill="none"';
-    if (b.style === 3 && b.image) return `fill="${rgb(0xc0c0c0)}"`;
-    return `fill="${rgb(b.color ?? 0)}"`;
+    if (b.style === 3 && b.image) return `fill="${colorref(0xc0c0c0)}"`;
+    return `fill="${colorref(b.color ?? 0)}"`;
   };
   const poly = (o, count, small, close, drawFill) => {
     const pts = [];
@@ -378,11 +379,11 @@ export function emfToSvg(bytes, depth = 0) {
         const xAttr = offDx && anchor === 'start' ? pts.map(([px]) => n(px)).join(' ') : n(sx0);
         if ((options & 2) && dc.bkMode === 2) { /* ETO_OPAQUE: the background is filled by the record's rectangle */
           const [ox1, oy1] = pt(i32(t + 20), i32(t + 24)), [ox2, oy2] = pt(i32(t + 28), i32(t + 32));
-          put(`<rect x="${n(Math.min(ox1, ox2))}" y="${n(Math.min(oy1, oy2))}" width="${n(Math.abs(ox2 - ox1))}" height="${n(Math.abs(oy2 - oy1))}" fill="${rgb(dc.bkColor)}"${clipAttr()}/>`);
+          put(`<rect x="${n(Math.min(ox1, ox2))}" y="${n(Math.min(oy1, oy2))}" width="${n(Math.abs(ox2 - ox1))}" height="${n(Math.abs(oy2 - oy1))}" fill="${colorref(dc.bkColor)}"${clipAttr()}/>`);
         }
         const deco = [f.underline && 'underline', f.strike && 'line-through'].filter(Boolean).join(' ');
         const rot = f.escapement ? ` transform="rotate(${n(-f.escapement / 10)} ${n(sx0)} ${n(sy0)})"` : '';
-        put(`<text x="${xAttr}" y="${n(sy0)}" font-family="${esc(fontStack(f.face))}" font-size="${n(fh)}" font-weight="${f.weight >= 600 ? 'bold' : 'normal'}"${f.italic ? ' font-style="italic"' : ''}${deco ? ` text-decoration="${deco}"` : ''} fill="${rgb(dc.textColor)}" text-anchor="${anchor}" xml:space="preserve"${rot}${clipAttr()}>${esc(s)}</text>`);
+        put(`<text x="${xAttr}" y="${n(sy0)}" font-family="${esc(fontStack(f.face))}" font-size="${n(fh)}" font-weight="${f.weight >= 600 ? 'bold' : 'normal'}"${f.italic ? ' font-style="italic"' : ''}${deco ? ` text-decoration="${deco}"` : ''} fill="${colorref(dc.textColor)}" text-anchor="${anchor}" xml:space="preserve"${rot}${clipAttr()}>${esc(s)}</text>`);
         break;
       }
       case 14: off = bytes.length; break; // EOF

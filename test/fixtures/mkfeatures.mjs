@@ -97,6 +97,33 @@ build('valign', [
   SECT({ vAlign: 'both' }),
 ].join(''));
 
+// The layout's cases that only the doc-generator corpus had: a one-section document in two columns centred on its page
+// (pages.js verticalAlignCols); one in two columns before its endnotes, its columns ended level and the endnote under
+// them (balanceEndCols); and sections starting on an odd and an even page (parityPage), each with a blank page before.
+const colsSect = (extra = '') => `<w:sectPr>${extra}<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>`;
+build('valign-columns', [
+  para(run('Columns centred on the page: this text sits in the middle of it.')), para(run(LONG)), para(run(LONG)),
+  colsSect().replace('</w:sectPr>', '<w:vAlign w:val="center"/></w:sectPr>'),
+].join(''));
+const EN_W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+const enSeps = '<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote><w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>';
+build('columns-endnotes', [
+  ...Array.from({ length: 6 }, (_, i) => para(run(`Paragraph ${i + 1}. ${LONG}${LONG}`))),
+  para(run('The last paragraph, with the endnote.') + '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:endnoteReference w:id="1"/></w:r>'),
+  colsSect(),
+].join(''), {
+  parts: { 'word/endnotes.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:endnotes ${EN_W}>${enSeps}<w:endnote w:id="1"><w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:endnoteRef/></w:r>${run(' The endnote, under both columns.')}</w:p></w:endnote></w:endnotes>` },
+  rels: '<Relationship Id="rIdEn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>',
+  types: '<Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>',
+});
+const typed = (type) => `<w:sectPr><w:type w:val="${type}"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:space="720"/></w:sectPr>`;
+build('odd-even-breaks', [
+  para(run('First section, on page 1.'), SECT()),
+  para(run('Second section: it starts on an odd page, page 3, after a blank page 2.'), typed('oddPage')),
+  para(run('Third section: it starts on an even page, page 4.')),
+  typed('evenPage'),
+].join(''));
+
 // Line numbers: every line, restarting each page, in the first section; every second line, continuing, in the second;
 // from w:start in the third (restarting there); a paragraph that suppresses them.
 const lnSect = (lnNum) => para('', `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>${lnNum}<w:cols w:space="720"/></w:sectPr>`);

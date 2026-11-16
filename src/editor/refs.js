@@ -5,6 +5,7 @@
 import { schema } from './schema.js';
 import { formatNumber } from '../ooxml/styles.js';
 import { announce } from './live.js';
+import { unescapeXml } from '../ooxml/xml.js';
 
 const NOT_FOUND = 'Error! Reference source not found.';
 const NO_STYLE = 'Error! No text of specified style in document.';
@@ -154,7 +155,6 @@ function styleRef(view, style, at, f) {
 
 const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'fldChar' ? /fldCharType="(\w+)"/.exec(n.attrs.xml)?.[1] : null);
 const instrOf = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'instrText' ? (/<w:instrText[^>]*>([^<]*)</.exec(n.attrs.xml) || [])[1] || '' : null);
-const unescape = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 
 /**
  * The body's reference and page fields in [from, to]: [{ instr, resultFrom, resultTo }] (the result's document range,
@@ -170,7 +170,7 @@ function bodyFields(doc, from, to) {
     else if (t === 'end' && stack.length) {
       const f = stack.pop();
       // (Fields inside others too: a table of contents' page numbers are PAGEREF fields within its TOC field.)
-      if (f.resultFrom != null) out.push({ instr: unescape(f.instr), resultFrom: f.resultFrom, resultTo: pos });
+      if (f.resultFrom != null) out.push({ instr: unescapeXml(f.instr), resultFrom: f.resultFrom, resultTo: pos });
     } else if (stack.length && stack[stack.length - 1].resultFrom == null) {
       const i = instrOf(n);
       if (i != null) stack[stack.length - 1].instr += i;
