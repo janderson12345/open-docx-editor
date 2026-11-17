@@ -57,6 +57,38 @@ function browserOffset(pcs, rcs, host) {
  * CSS for the print-only shift of each top-level paragraph whose first run is in a font we know.
  * `blocks`: [{ el, i }] in document order; `scope`: the editor's class.
  */
+/**
+ * The run on a paragraph's first line whose ascent (Word's: hhea, plus any raise) passes `have` (the first run's) by
+ * more than half a pixel, the tallest: { cs, family }, or null. Only runs that could pass it are looked for on the line
+ * (reading where text sits lays the paragraph out: a long document skips that off screen).
+ */
+function tallest(el, first, have, known) {
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  walk.currentNode = first;
+  let best = null;
+  let most = have + 0.5;
+  let line = null;
+  // (The first 200 runs at most: a line holds far fewer.)
+  for (let t = walk.nextNode(), n = 0; t && n < 200; t = walk.nextNode(), n++) {
+    const host = t.parentElement;
+    if (host.closest('sup, sub, math')) continue;
+    const cs = getComputedStyle(host);
+    const family = known(cs);
+    if (!family) continue;
+    const va = parseFloat(cs.verticalAlign);
+    const a = ASCENT[family] * parseFloat(cs.fontSize) + (Number.isFinite(va) ? va : 0);
+    if (!(a > most)) continue;
+    const r = document.createRange();
+    if (!line) { r.selectNodeContents(first); line = r.getClientRects()[0]; if (!line) return null; }
+    r.selectNodeContents(t);
+    const at = r.getClientRects()[0];
+    if (!at || at.top >= line.bottom) break; // (on a later line: so is every run after it)
+    most = a;
+    best = { cs, family };
+  }
+  return best;
+}
+
 /** How far (px) a paragraph's printed text should move down to sit on Word's baseline, or 0. */
 export function shiftFor(el, host, anchored = false) {
   // (A paragraph holding anchored pictures stays put, unless the caller moves them back: moving it would move them too.)
@@ -64,12 +96,12 @@ export function shiftFor(el, host, anchored = false) {
   const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
   const text = walk.nextNode();
   if (!text) return 0;
-  const rcs = getComputedStyle(text.parentElement);
+  let rcs = getComputedStyle(text.parentElement);
   // After a leading bare break (its line in the smaller strut, doc 07), the text's line is its runs' own: measured as theirs.
   // (A leading break, not a leading run in bold or italic: their <strong>/<em> are runs like a span. Doc 08 edited to
   // open with a bold word printed 0.7px low.)
   const own = el.classList.contains('odx-markers') && !/^(SPAN|STRONG|EM|U|S|B|I|SUB|SUP|A)$/.test(el.firstElementChild?.tagName || 'SPAN');
-  const pcs = own ? rcs : getComputedStyle(el);
+  let pcs = own ? rcs : getComputedStyle(el);
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
   const known = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
   let family = known(rcs);
@@ -99,6 +131,11 @@ export function shiftFor(el, host, anchored = false) {
     // (A shift beyond where the browser's centred text can be, half the line's height off either way: left alone.)
     return Math.abs(e) >= 0.05 && Math.abs(e) < h / 2 ? e : 0;
   }
+  // A larger run later in the first line sets its baseline, in Word as in the browser: the shift is that run's (sample
+  // S078's footer, 10pt "ITP Template" before 12pt bold "Company Proprietary" raised 3pt, printed 0.76px high; Word-made
+  // footers and body lines of 10pt Times New Roman with a 12pt run, raised, lowered or not, 1.8-2.8px high).
+  const top = tallest(el, text, asc * fs, known);
+  if (top) { rcs = pcs = top.cs; family = top.family; asc = ASCENT[family]; fs = parseFloat(rcs.fontSize); }
   // A line taller than its text: the browser puts half the extra height above the text. Word puts all of it above
   // for at-least spacing, and none for multiple spacing (double-spaced text sits at its line's top).
   // A picture in the first line taller than its text: the line's top is the picture's, its baseline the picture's foot,

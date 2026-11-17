@@ -1512,6 +1512,44 @@ const afterApi = await ribbonPage.evaluate(() => { window.odx.setRibbon('simple'
 check(simpleNow.join() === 'true,simple' && afterBtn.join() === 'false,classic' && afterApi.join() === 'true,simple', `ribbon: 'simple' starts the one-line ribbon over the user's classic; the button and setRibbon() switch it (${simpleNow} | ${afterBtn} | ${afterApi})`);
 await ribbonPage.close();
 
+// Where printed text sits in its line, as Word's PDFs put it (lines.docx, Times New Roman, mklines.mjs): an exactly 40pt
+// line's baseline four fifths of the way down it; a line of 10pt text with a 12pt run, raised 3pt or not, on the 12pt
+// run's ascent (plus its raise), not the first run's. Each measured from the line's top as laid out (the print shift
+// taken off), the 12pt run's baseline found from its text's box with a probe in its font (the raised run's own
+// baseline: 3pt over its line's, whose top is 3pt higher too).
+await open('lines.docx');
+await page.emulateMedia({ media: 'print' });
+await page.waitForTimeout(300);
+const printedBase = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(1, 4).map((p) => {
+  // (The exact line's text; the 12pt run in the others.)
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  let t = w.nextNode();
+  while (t && p.textContent.includes('Large') && t.data !== 'Large') t = w.nextNode();
+  const cs = getComputedStyle(t.parentElement);
+  const q = document.createElement('div');
+  q.style.cssText = `position:absolute;left:-9999px;top:0;line-height:0;font:${cs.font};white-space:nowrap`;
+  q.innerHTML = '<span>X<i style="display:inline-block;width:0;height:0"></i></span>';
+  q.firstChild.style.lineHeight = cs.lineHeight;
+  document.body.append(q);
+  const above = q.querySelector('i').getBoundingClientRect().top - q.firstChild.getBoundingClientRect().top; // baseline below the text's box
+  q.remove();
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  const top = p.getBoundingClientRect().top - (parseFloat(getComputedStyle(p).top) || 0);
+  return +(r.getClientRects()[0].top + above - top).toFixed(2);
+}));
+await page.emulateMedia({ media: 'screen' });
+// (Times New Roman's ascent 0.9336em, its print offset 0.34px: baseline.js.)
+// (Exact lines: 0.1px over 0.8 of the line, baseline.js.)
+const baseWant = [0.8 * 800 / 15 + 0.1, 0.9336 * 16 + 0.34, 0.9336 * 16 + 0.34];
+check(printedBase.length === 3 && printedBase.every((b, i) => Math.abs(b - baseWant[i]) < 0.75), `printed baselines where Word's are: exact 40pt at 0.8 of the line, a larger run's ascent over the first run's (${JSON.stringify(printedBase)}, want ${JSON.stringify(baseWant.map((b) => +b.toFixed(2)))})`);
+// A large document (over 1,500 blocks: those far off screen skip layout) still gets its line heights fixed (lhfix.js):
+// its probes are laid out, as many of its paragraphs fixed as in the same lines in a document a quarter as long.
+const fixedShare = async (f) => { await open(f); await page.waitForTimeout(1500); return page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')].slice(0, 400); return [ps.filter((p) => p.dataset.odxLh).length, document.querySelector('.odx-large') != null]; }); };
+const [smallFixed] = await fixedShare('lines-small.docx');
+const [largeFixed, isLarge] = await fixedShare('lines-large.docx');
+check(isLarge && largeFixed >= smallFixed, `a large document's line heights fixed as a small one's (${largeFixed} of its first 400 paragraphs, ${smallFixed} in the small one)`);
+
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
 server.close();
