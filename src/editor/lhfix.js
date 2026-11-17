@@ -100,6 +100,9 @@ export function applyLineFix(view) {
   // Probes go in a copy of the content box (its classes give the document's styles), off to the side.
   const box = document.createElement('div');
   box.className = view.dom.className;
+  // (Laid out though off screen: a large document's paragraphs skip layout there, editor.css, and every probe measured 0,
+  // leaving a 2,000-paragraph document's lines up to 0.02pt short each, 1px a page.)
+  box.classList.add('odx-probes');
   box.setAttribute('aria-hidden', 'true');
   box.style.cssText = `position:absolute;left:-99999px;top:0;width:${view.dom.clientWidth}px;visibility:hidden;contain:layout`;
   view.dom.parentElement.append(box);
