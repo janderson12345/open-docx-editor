@@ -87,7 +87,8 @@ const COMPOUND = {
 
 // Their lines and gaps (pt, line first) as Word prints them, in the page's order whichever side they're on: top to
 // bottom across the page, left to right down it (thinbdr-word: boxes of each at 0.25pt to 1.5pt, Word's PDF; a
-// thin-thick border's size line above or left of its thin one on all four sides). Their sums are COMPOUND's.
+// thin-thick border's size line above or left of its thin one on all four sides; bdr3-word: 3pt to 6pt the same, and
+// a large gap's lines 1.5pt and 0.75pt at every size, the size its gap). Their sums are COMPOUND's.
 const STRIPES = {
   double: (w) => [w, w, w],
   triple: (w) => [w, w, w, w, w],
@@ -95,11 +96,11 @@ const STRIPES = {
   thickThinSmallGap: (w) => [0.75, 0.75, w],
   thinThickMediumGap: (w) => [w, w / 2, w / 2],
   thickThinMediumGap: (w) => [w / 2, w / 2, w],
-  thinThickLargeGap: (w) => [w, 1.5, 0.75],
-  thickThinLargeGap: (w) => [0.75, 1.5, w],
+  thinThickLargeGap: (w) => [1.5, w, 0.75],
+  thickThinLargeGap: (w) => [0.75, w, 1.5],
   thinThickThinSmallGap: (w) => [0.75, 0.75, w, 0.75, 0.75],
   thinThickThinMediumGap: (w) => [w / 2, w / 2, w, w / 2, w / 2],
-  thinThickThinLargeGap: (w) => [0.75, w / 2 + 0.75, w, w / 2 + 0.75, 0.75],
+  thinThickThinLargeGap: (w) => [0.75, w, 1.5, w, 0.75],
 };
 
 const BROKEN = { dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dotDash: 'dashed' };
@@ -124,7 +125,7 @@ export function cleanBorders(borders) {
 }
 
 /**
- * Paragraph borders with a compound side thinner than the 2.25pt the browser needs to draw two lines (CSS double): all
+ * Paragraph borders with a compound side (CSS double draws two equal lines, none under 2.25pt, a triple as two): all
  * their sides drawn by one picture (a border-image cut in nine, its edges stretched along the sides), each side's lines as
  * Word prints them, each corner's lines joined one inside the other, as Word's are. Null when there's none, or a side
  * the picture can't draw (dotted, dashed: those keep CSS's own). Returns the image's CSS and each side's width (px, whole:
@@ -133,7 +134,7 @@ export function cleanBorders(borders) {
 function stripedBorders(borders) {
   const sides = ['top', 'right', 'bottom', 'left'];
   const has = (s) => drawnSide(borders[s]);
-  if (!sides.some((s) => has(s) && Object.hasOwn(COMPOUND, borders[s].val) && COMPOUND[borders[s].val](borders[s].sz / 8) < 2.25)) return null;
+  if (!sides.some((s) => has(s) && Object.hasOwn(COMPOUND, borders[s].val))) return null;
   if (sides.some((s) => has(s) && Object.hasOwn(BROKEN, borders[s].val))) return null;
   const width = {}, lines = {}, color = {};
   for (const s of sides) {
@@ -174,6 +175,20 @@ function stripedBorders(borders) {
   }
   const data = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" preserveAspectRatio="none">${svg}</svg>`;
   return { width, color, css: `border-image:url('data:image/svg+xml,${encodeURIComponent(data).replace(/'/g, '%27')}') 10 stretch` };
+}
+
+/**
+ * A compound border side (double, triple, thick-thin...) as Word prints it: its lines ([start, length], fractions of its
+ * width, in the page's order), its width (px) and colour (#rrggbb). Null for any other side.
+ */
+export function compoundSide(b) {
+  if (!b || typeof b !== 'object' || !drawnSide(b) || !Object.hasOwn(STRIPES, b.val)) return null;
+  const n = Number(b.sz);
+  const segs = STRIPES[b.val]((Number.isFinite(n) && n > 0 ? Math.min(255, n) : 4) / 8);
+  const total = segs.reduce((a, v) => a + v, 0);
+  const lines = [];
+  for (let i = 0, at = 0; i < segs.length; at += segs[i], i++) if (i % 2 === 0) lines.push([at / total, segs[i] / total]);
+  return { lines, px: (total * 4) / 3, color: /^[0-9A-Fa-f]{6}$/.test(b.color || '') ? '#' + b.color : '#000000' };
 }
 
 /** CSS for one border side; Word sizes are eighths of a point. */
