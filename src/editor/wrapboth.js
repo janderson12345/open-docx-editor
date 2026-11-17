@@ -49,9 +49,10 @@ export function splitOf(state, from, to) {
 }
 
 /**
- * Floats drawn up to end at their page's edge (pages.js floatsPast): the edge's place below the editor's top, by
- * picture. Where such a float is drawn depends on where its paragraph is, which the lines it wraps above it move: its
- * room is taken from the edge, which stays put, not from where a pass before drew it.
+ * Floats drawn up to end at their page's edge (pages.js floatsPast), and shapes with text on both sides at its bottom
+ * margin (shapesPast): the edge's place below the editor's top, by picture. Where such a float is drawn depends on
+ * where its paragraph is, which the lines it wraps above it move: its room is taken from the edge, which stays put, not
+ * from where a pass before drew it.
  */
 export const drawnUpTo = new WeakMap();
 
@@ -111,6 +112,7 @@ function storyZones(root) {
 // The room kept clear round each such shape, as drawn (its turned outline when turned): { left, right, top, bottom }.
 function zones(view, stories) {
   const out = storyZones(stories);
+  const domTop = view.dom.getBoundingClientRect().top;
   for (const img of view.dom.querySelectorAll('img[style*="--odx-both"]')) {
     const v = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map((x) => parseFloat(x) || 0);
     const r = img.getBoundingClientRect();
@@ -119,13 +121,16 @@ function zones(view, stories) {
     // (Its own box: less the room drawn round its outline, reader.js padPlace's --odx-pad. floatshapes-word's 6pt-outlined
     // rectangle by Text 2, its lines' words otherwise kept that much further off each side.)
     const pad = padOf(img.getAttribute('style'));
-    out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + pad - t, bottom: r.bottom - pad + b, fxT, host: img.closest('.odx-content > *') });
+    // (Drawn up to end at its page's bottom margin, pages.js shapesPast: its room from there, as a float's drawn up
+    // (below), not from where a pass before drew it, a line lower once a line above it split.)
+    const edge = img.style.translate ? drawnUpTo.get(img) : null;
+    const dy = edge == null ? 0 : domTop + edge - r.bottom;
+    out.push({ left: r.left + pad - l, right: r.right - pad + rt, top: r.top + dy + pad - t, bottom: r.bottom + dy - pad + b, fxT, host: img.closest('.odx-content > *') });
   }
   // A float drawn up to end at its page's edge (pages.js floatsPast) over lines of paragraphs above its own: Word lays
   // those lines out round it too (its PDF: the short lines above such a float go on to its right). Its own paragraph's
   // lines the browser wraps (it's a float there). Its room from the edge it ends at (drawnUpTo); text on its left only
   // (a right float; wrap-word2 wl-up: the lines above it stop at its left) reaching to the line's end (toEnd).
-  const domTop = view.dom.getBoundingClientRect().top;
   for (const img of view.dom.querySelectorAll('img[style*="translate"]')) {
     const cs = getComputedStyle(img);
     if ((cs.float !== 'left' && cs.float !== 'right') || !/^0px -/.test(img.style.translate)) continue;
@@ -361,9 +366,11 @@ export function applyWrapBoth(view, stories = null) {
     // vt-thick, each paragraph's last line, its space after reaching 3pt into the extent of the 6pt-outlined rectangle
     // below, whole in Word's print; sq-thick, Text 5's last line into that of Text 6's, placed 7.5pt above its
     // paragraph. Split, the paragraph grew a line, moving the room down a line too, and the spacers came and went until
-    // the passes ran out.)
+    // the passes ran out.) Nor its space after into a later paragraph's shape at all: wrap-word3 vt-none's Text 19 and
+    // sq-none's Text 5, their last lines whole in Word's print above rectangles Word drew up 4.7 and 7.2pt (saved so),
+    // their space after reaching them; split, the paragraph below and its rectangle went a line down, Text 6 moved on.
     if (lines.length) lines[lines.length - 1].after = after;
-    const beside = (top, bottom, z, extra = 0) => bottom + (z.story ? 0 : extra) > z.top + (z.later ? z.fxT || 0 : 0) + 0.25 && top < z.bottom - 0.25;
+    const beside = (top, bottom, z, extra = 0) => bottom + (z.story || z.later ? 0 : extra) > z.top + (z.later ? z.fxT || 0 : 0) + 0.25 && top < z.bottom - 0.25;
     // A spacer no longer ending at the room's right side on a line beside it (the text before it changed, or the lines
     // moved): it and those after it in the paragraph go, to be put back as the lines settle. (Its word may have gone on
     // to the next line, not fitting beside the room: the spacer still ends there. Its line by where it sits; one holding
