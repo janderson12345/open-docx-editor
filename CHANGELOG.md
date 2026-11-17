@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 (2026-11-17)
 
+- **Hardening from the release review**: a co-editor's paragraph borders of any shape are drawn safely (sizes and
+  spaces as bounded numbers, colours as hex; a space sent as text had stopped the paragraph being drawn), and a
+  paragraph of thousands of shapes with text on both sides looks for text above only a bounded number of them.
 - **Exactly spaced lines print where Word puts their text**, the baseline at four fifths of the line's height whatever
   the font; they printed up to 4px high (19px in a 60pt line). A line with a larger run after its first prints on that
   run's ascent, as Word's (10pt text with a 12pt run printed 2-3px high). Documents over 1,500 paragraphs get their line
