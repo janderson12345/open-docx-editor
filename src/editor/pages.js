@@ -534,6 +534,11 @@ export function createPages(view, session, { sheet, scope }) {
   let colsAgain = false;
   let colsPasses = 0;
   let colsRepass = false; // the coming pass is one of those
+  // Where the walk last put the shapes with text on both sides (their paragraphs' pushes, their drawing up or down):
+  // moved, the lines beside them are split afresh (wrapboth.js) and the pages walked again, a few times at most.
+  let shapesAt = '';
+  let shapesPasses = 0;
+  let shapesDoc = null; // (the count starts again when the document changes)
   // Splitting paragraphs line by line needs each page-crossing paragraph laid
   // out; in very long documents (content-visibility skips off-screen blocks)
   // that costs too much, so there paragraphs move to the next page whole.
@@ -2180,6 +2185,7 @@ export function createPages(view, session, { sheet, scope }) {
     passed = false;
     if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
     colsRepass = false;
+    if (shapesDoc !== view.state.doc) { shapesDoc = view.state.doc; shapesPasses = 0; }
     const t0 = performance.now();
     quiet(() => layoutTabs(view, session));
     if (quiet(() => fitAutofitColumns(view))) return schedule(); // column widths changed: measure again once they're drawn
@@ -2636,6 +2642,18 @@ export function createPages(view, session, { sheet, scope }) {
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
+    // Shapes with text on both sides moved by this walk (their paragraph moved on, or the shape drawn up or down): the
+    // lines beside them were split where they were, so split them again where they are now, and walk again. Otherwise a
+    // walk over lines not yet settled stayed: wrap-word4 vt-none, Text 20 moved on whole as its rectangle, drawn up past
+    // the lines above as they were then, reached over them, and nothing laid the pages out again once they had moved
+    // (unless a font came in later, so the pages came out one way or the other from one load to the next).
+    let shapesNow = '';
+    for (const b of blocks) {
+      if (b.node.type !== schema.nodes.paragraph || !b.el.querySelector('img[style*="--odx-both"]')) continue;
+      shapesNow += `${b.i}:${(applied.get(b.i)?.extra || 0).toFixed(1)}:${[...b.el.querySelectorAll('img[style*="--odx-both"]')].map((im) => im.style.translate).join('/')};`;
+    }
+    const shapesMoved = shapesNow !== shapesAt;
+    shapesAt = shapesNow;
     // (Headers and footers drawn afresh with a shape the body's text wraps round: their lines split beside it, again.)
     const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && applyWrapBoth(view, layer);
     drawHeads(heads.concat(contHeads));
@@ -2648,6 +2666,7 @@ export function createPages(view, session, { sheet, scope }) {
     else if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
     // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
+    else if (shapesMoved && shapesPasses < 6) { shapesPasses++; schedule(); }
     colsAgain = false;
   }
 
