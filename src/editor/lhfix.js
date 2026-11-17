@@ -7,9 +7,11 @@
 // in other sizes still scale from it), a length for exact and at-least spacing (as they were).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Mark } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { lineHeightOf } from './util.js';
 import { pictureFix, pictureAlone } from './picfix.js';
+import { mixedLines } from './mixlines.js';
 
 const key = new PluginKey('odx-lhfix');
 export const lineFixPlugin = new Plugin({
@@ -38,7 +40,13 @@ function pitch(box, el, chain, lh, length) {
   q.setAttribute('style', (el.getAttribute('style') || '').replace(OURS, ''));
   q.style.setProperty('--odx-lhv', length ? `${lh}px` : String(lh / parseFloat(getComputedStyle(el).fontSize)));
   let inner = q;
-  for (const c of chain) { const k = c.cloneNode(false); inner.append(k); inner = k; }
+  for (const c of chain) {
+    const k = c.cloneNode(false);
+    // (Not a run box of Word's from an earlier pass, mixlines.js: the probe measures the stylesheet's line height.)
+    if (el.dataset.odxMix === '1') for (const p of ['line-height', 'vertical-align', 'position', 'top']) k.style.removeProperty(p);
+    inner.append(k);
+    inner = k;
+  }
   box.append(q);
   inner.textContent = 'x';
   const one = q.getBoundingClientRect().height;
@@ -48,9 +56,12 @@ function pitch(box, el, chain, lh, length) {
   return (five - one) / 4;
 }
 
-/** The line height (px) whose pitch is nearest `want`, or null when Edge already lays it within 0.002px. */
-function bestHeight(box, el, chain, want, length) {
-  const k = [el.className, (el.getAttribute('style') || '').replace(OURS, ''), ...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`), want, length].join('|');
+/**
+ * The line height (px) whose pitch is nearest `want`, or null when Edge already lays it within 0.002px. `where`: the
+ * kind of box probed in, part of what's remembered (a header's paragraph styles aren't the body's).
+ */
+function bestHeight(box, el, chain, want, length, where = '') {
+  const k = [where, el.className, (el.getAttribute('style') || '').replace(OURS, ''), ...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`), want, length].join('|');
   if (cache.has(k)) return cache.get(k);
   let best = null;
   let err = Math.abs(pitch(box, el, chain, want, length) - want);
@@ -86,6 +97,35 @@ function picture(view, node, pos, el, box, value) {
   return { d: fix.d, mts };
 }
 
+/**
+ * Word's boxes for the runs of a paragraph of mixed sizes, fonts or raises (mixlines.js), as [from, to, css] by offset
+ * from the paragraph's position, or null.
+ */
+function mixed(view, node, pos, el, box) {
+  // (Text all in one formatting has one box: nothing to read from the page. Most paragraphs.)
+  let marks = null, one = true;
+  node.descendants((c) => { if (c.isText) { if (!marks) marks = c.marks; else if (one && !Mark.sameSet(marks, c.marks)) one = false; } return one; });
+  if (one) return null;
+  const got = mixedLines(el, box);
+  if (!got) return null;
+  const out = [];
+  try {
+    for (const [span, css] of got.spans) {
+      const from = view.posAtDOM(span.firstChild, 0) - pos;
+      const to = from + span.firstChild.data.length;
+      if (!(from > 0) || to > view.state.doc.nodeAt(pos).nodeSize - 1) return null;
+      out.push([from, to, css]);
+    }
+  } catch { return null; }
+  return out;
+}
+
+/** The pitch (px) of the document's grid of lines (w:docGrid type lines or linesAndChars), or 0. */
+export function lineGrid(doc) {
+  const g = /<w:docGrid\b[^>]*>/.exec(doc.attrs.sectPr || '')?.[0] || '';
+  return /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
+}
+
 let last = '';
 let gridPitch = 0;
 // Results by paragraph node ({ value, want }, null for none), until fonts load: probing every paragraph again on each
@@ -111,13 +151,16 @@ export function applyLineFix(view) {
   // the grid, its pitch (w:linePitch) times the spacing, or the whole number of pitches its text needs, with the text
   // centred in it (Word's PDFs of the generated documents, tools/doc-generator: 11pt at 1.08 lines on an 18pt grid
   // 25.9px a line, 16pt headings 48px, double spacing 48px).
-  const g = /<w:docGrid\b[^>]*>/.exec(view.state.doc.attrs.sectPr || '')?.[0] || '';
-  const pitch = /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
+  const pitch = lineGrid(view.state.doc);
   if (pitch !== gridPitch) { memo = new WeakMap(); gridPitch = pitch; }
   // A paragraph's decorations from its result: its line height, and a picture line's fix (picfix.js) on it and its pictures.
   const put = (pos, node, r) => {
     if (!r) return;
     if (r.value != null) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
+    if (r.mix) {
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-odx-mix': '1' }, { key: 'mx' }));
+      for (const [from, to, css] of r.mix) decos.push(Decoration.inline(pos + from, pos + to, { style: css }, { key: `mx:${css}` }));
+    }
     if (!r.pic) return;
     decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-picb:${r.pic.d}px` }, { key: `pb:${r.pic.d}` }));
     for (const [off, mt] of r.pic.mts) decos.push(Decoration.node(pos + 1 + off, pos + 2 + off, { style: `--odx-picmt:${mt}px${mt < 0 ? `;--odx-picclip:${-mt}px` : ''}` }, { key: `pm:${mt}` }));
@@ -139,10 +182,7 @@ export function applyLineFix(view) {
     if (!want || !fs) return false;
     // The text's own elements (Word documents often set the font and size on runs, not the paragraph). Not an equation's:
     // its parts (a script with one of its two children copied) aren't a line of text, and Firefox reports them as errors.
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('math') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
-    const text = walk.nextNode();
-    const chain = [];
-    for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
+    const chain = chainOf(el);
     const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
     // (Not in a table: Word sets a cell's lines as without the grid.)
     if (pitch && !length && parseFloat(cs.getPropertyValue('--odx-runmult')) !== 0 && !el.closest('td')) {
@@ -157,8 +197,9 @@ export function applyLineFix(view) {
     const best = bestHeight(box, el, chain, want, length);
     const value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
     const pic = picture(view, node, pos, el, box, value);
-    if (value == null && !pic) return false;
-    const r = { value, want, pic };
+    const mix = mixed(view, node, pos, el, box);
+    if (value == null && !pic && !mix) return false;
+    const r = { value, want, pic, mix };
     memo.set(node, r);
     put(pos, node, r);
     return false;
@@ -169,4 +210,70 @@ export function applyLineFix(view) {
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));
   return true;
+}
+
+/** A paragraph's first text's elements below it (where its line height is probed), or []. */
+function chainOf(el) {
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('math') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  const text = walk.nextNode();
+  const chain = [];
+  for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
+  return chain;
+}
+
+// Header and footer paragraphs' results by paragraph node ({ value, want, mix: [css by odx-t span], spans }), until
+// fonts load: a story is drawn again for every page.
+let storyMemo = new WeakMap();
+let storyFonts = -1;
+/**
+ * The same line heights for the header and footer paragraphs under `root` (drawn, in the document): each paragraph's
+ * pitch as Word's (as the body's: a 10pt Times New Roman footer line 15.31px, not 15.33), and Word's run boxes in a
+ * line of mixed sizes (mixlines.js: sample S078's footer, 10pt text and a 12pt run raised 3pt, drawn 0.7px low).
+ * `nodeOf`: a paragraph element's node, for remembering its result (or undefined). Not on a document grid (lines on a
+ * grid are the body's: left as they were).
+ */
+export function storyLineFix(root, nodeOf) {
+  if (storyFonts !== fontLoads) { storyMemo = new WeakMap(); storyFonts = fontLoads; }
+  let box = null;
+  const probeBox = (el) => {
+    if (box) return box;
+    const hf = el.closest('.odx-hf') || root;
+    box = hf.cloneNode(false);
+    box.removeAttribute('id');
+    box.classList.add('odx-probes');
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = `position:absolute;left:-99999px;top:0;width:${hf.clientWidth}px;visibility:hidden;contain:layout;white-space:pre-wrap`;
+    hf.parentElement.append(box);
+    return box;
+  };
+  try {
+    for (const el of root.querySelectorAll('p')) {
+      const node = nodeOf?.(el);
+      const spans = el.querySelectorAll('span.odx-t');
+      let r = node && storyMemo.get(node);
+      if (!r || r.spans !== spans.length) {
+        const cs = getComputedStyle(el);
+        const fs = parseFloat(cs.fontSize);
+        const want = parseFloat(lineHeightOf(cs));
+        const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
+        r = { value: null, want, mix: null, spans: spans.length };
+        if (want && fs) {
+          const best = bestHeight(probeBox(el), el, chainOf(el), want, length, 'hf');
+          r.value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
+        }
+        if (r.value != null) el.style.setProperty('--odx-lhv', r.value);
+        const got = mixedLines(el, probeBox(el));
+        if (got) {
+          const at = new Map([...spans].map((s, i) => [s, i]));
+          r.mix = got.spans.map(([s, css]) => [at.get(s), css]);
+        }
+        if (node) storyMemo.set(node, r);
+      } else if (r.value != null) el.style.setProperty('--odx-lhv', r.value);
+      if (r.value != null) el.dataset.odxLh = String(r.want);
+      if (r.mix) {
+        for (const [i, css] of r.mix) if (spans[i]) spans[i].style.cssText += `;${css}`;
+        el.dataset.odxMix = '1';
+      }
+    }
+  } finally { box?.remove(); }
 }
