@@ -3,7 +3,7 @@
 // ticks the check box; Enter opens the drop-down's list and the date's calendar; Shift+Tab goes back; the rich-text
 // field takes text. Then the values read back through the API, survive saving (read again from the saved bytes), and
 // the saved file is sound (tools/check-ooxml.mjs). The saved file is left in test/out/form.filled.docx. Last, a legacy
-// text field with a maximum length: a paste too long for it is cut to fit.
+// text field with a maximum length: a paste too long for it is cut to fit. And content controls bound to custom XML.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -123,6 +123,53 @@ catch (e) { check(false, `saved file: ${e.stdout}`); }
   await page.keyboard.press('Backspace');
   await paste('ZZZ');
   check((await values()).Short === 'BartZ', `room made, a paste fills it (${(await values()).Short})`);
+}
+// Content controls bound to custom XML (test/fixtures/mkbinding.mjs): they open showing their nodes' values, not their
+// placeholders (a single-space value blank), in the header too; typing into one changes every control bound to the
+// same node, the header's as well, and the saved custom XML part.
+{
+  await page.setInputFiles('input[type=file]', 'test/fixtures/binding.docx');
+  await page.waitForFunction(() => window.odx?.fileName === 'binding.docx');
+  await page.waitForTimeout(800);
+  // Each inline control's text and range, by its tag (read from the editor's marks).
+  const fieldsIn = () => page.evaluate(() => {
+    const out = {};
+    window.odx.view.state.doc.descendants((n, pos) => {
+      const m = n.isText && n.marks.find((k) => k.type.name === 'sdt');
+      if (!m) return;
+      const f = (out[m.attrs.tag] ||= { text: '', from: pos, to: pos });
+      f.text += n.text;
+      f.to = pos + n.nodeSize;
+    });
+    return out;
+  });
+  const shown = async () => Object.fromEntries(Object.entries(await fieldsIn()).map(([k, v]) => [k, v.text]));
+  const headerText = () => page.evaluate(() => [...document.querySelectorAll('.odx-hf')].map((e) => e.textContent).join('|'));
+  const body = () => page.evaluate(() => document.querySelector('.odx-content').textContent);
+  let f = await shown();
+  check(f.Number === 'NNC-0042' && f.Order === 'first order' && f.OrderAgain === 'first order' && f.Ref === ' ', `bound controls show their values (${JSON.stringify(f)})`);
+  check((await body()).includes('Bound title'), 'a control around a table cell shows its value');
+  check((await headerText()).includes('Header order: first order'), `the header's bound control shows its value (${await headerText()})`);
+  check(!(await page.evaluate(() => document.querySelector('.odx-content .odx-field-ph'))), 'no placeholder look on bound values');
+  // Select the Order field's text and type over it.
+  const order = (await fieldsIn()).Order;
+  await page.evaluate(({ from, to }) => {
+    const v = window.odx.view;
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, from, to)));
+    v.focus();
+  }, order);
+  await page.keyboard.type('second order');
+  await page.waitForTimeout(600);
+  f = await shown();
+  check(f.Order === 'second order' && f.OrderAgain === 'second order', `typing changes every control bound to the node (${JSON.stringify(f)})`);
+  check((await headerText()).includes('Header order: second order'), `... the header's too (${await headerText()})`);
+  const saved = Buffer.from(await page.evaluate(() => [...window.odx.save()]));
+  fs.writeFileSync('test/out/binding.saved.docx', saved);
+  const files = unzipSync(new Uint8Array(saved));
+  check(/<order>second order<\/order>/.test(strFromU8(files['customXml/item1.xml'])), 'the saved custom XML part has the new value');
+  check((strFromU8(files['word/document.xml']).match(/second order/g) || []).length === 2 && /second order/.test(strFromU8(files['word/header1.xml'])), '... and the controls in the body and header show it');
+  try { execFileSync(process.execPath, ['tools/check-ooxml.mjs', 'test/out/binding.saved.docx'], { stdio: 'pipe' }); check(true, 'saved file is sound'); }
+  catch (e) { check(false, `saved file: ${e.stdout}`); }
 }
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 
