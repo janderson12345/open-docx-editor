@@ -23,6 +23,7 @@ import { decoSet } from '../src/editor/decoset.js';
 import { commentsPlugin } from '../src/editor/comments.js';
 import { marksPlugin } from '../src/editor/marks.js';
 import { mailMergePlugin } from '../src/editor/mailmerge.js';
+import { joinsPlugin } from '../src/editor/joins.js';
 import { mergeTargets, fieldMarks, mergeCursor } from '../src/merge.js';
 
 const N = 600;
@@ -169,12 +170,14 @@ const decoDocs = {
   comments: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run('before ')}<w:commentRangeStart w:id="${k}"/>${run(`commented ${k}`)}<w:commentRangeEnd w:id="${k}"/><w:r><w:commentReference w:id="${k}"/></w:r>${run(' after')}</w:p>`).join(''),
   marks: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`text ${k}`)}</w:p><w:p/>`).join(''),
   'merge fields': (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`Dear ${k} `)}${fld('begin')}<w:r><w:instrText xml:space="preserve"> MERGEFIELD Name </w:instrText></w:r>${fld('separate')}${run('«Name»')}${fld('end')}${run(',')}</w:p>`).join(''),
+  joins: (n) => Array.from({ length: n }, (_, k) => `<w:p><w:pPr><w:rPr><w:del ${rev(2 * k + 1)}/></w:rPr></w:pPr>${run(`joins ${k} `)}</w:p><w:p><w:pPr><w:rPr><w:ins ${rev(2 * k + 2)}/></w:rPr></w:pPr>${run(`into ${k}`)}</w:p><w:p>${run(`plain ${k}`)}</w:p>`).join(''),
 };
 /** Each decoration's plugin for a session (Preview Results on, automatic hyphenation on). */
 const decoPlugins = {
   comments: (s) => commentsPlugin(s),
   marks: () => marksPlugin,
   'merge fields': (s) => { s.merge = { records: [{ Name: 'Ada' }], fields: ['Name'], index: 0, preview: true }; return mailMergePlugin(s); },
+  joins: () => joinsPlugin,
 };
 /** The plugin's decorations in `state`. */
 const decosOf = (plugin, state) => { const v = plugin.getState(state); return v.set || v; };
