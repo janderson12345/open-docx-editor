@@ -10,14 +10,17 @@ import { blankDocxBytes } from '../../src/ooxml/template.js';
 const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
 export const PH = '<w:r><w:rPr><w:rStyle w:val="PlaceholderText"/></w:rPr><w:t>.</w:t></w:r>';
 
-/** A bound control: { xpath, store?, prefixes?, kind (w:sdtPr's kind element), content, plc, rPr, tag }. */
-export function bound({ xpath, store = '', prefixes = '', kind = '<w:text/>', content = PH, plc = true, rPr = '<w:rPr><w:b/></w:rPr>', tag = '' }) {
+/** A bound control: { xpath, store?, prefixes?, kind (w:sdtPr's kind element), content, plc, rPr, tag, docPart }. */
+export function bound({ xpath, store = '', prefixes = '', kind = '<w:text/>', content = PH, plc = true, rPr = '<w:rPr><w:b/></w:rPr>', tag = '', docPart = '' }) {
   const db = `<w:dataBinding${prefixes ? ` w:prefixMappings="${prefixes}"` : ''} w:xpath="${xpath}"${store ? ` w:storeItemID="${store}"` : ''}/>`;
-  return `<w:sdt><w:sdtPr>${rPr}${tag ? `<w:tag w:val="${tag}"/>` : ''}<w:id w:val="${xpath.length * 7919}"/>${plc ? '<w:showingPlcHdr/>' : ''}${kind}${db}</w:sdtPr><w:sdtContent>${content}</w:sdtContent></w:sdt>`;
+  return `<w:sdt><w:sdtPr>${rPr}${tag ? `<w:tag w:val="${tag}"/>` : ''}<w:id w:val="${xpath.length * 7919}"/>${docPart ? `<w:placeholder><w:docPart w:val="${docPart}"/></w:placeholder>` : ''}${plc ? '<w:showingPlcHdr/>' : ''}${kind}${db}</w:sdtPr><w:sdtContent>${content}</w:sdtContent></w:sdt>`;
 }
 
-/** A .docx with `body`, an optional default `header`, and custom XML parts [{ xml, id? }] (id: its itemProps' itemID). */
-export function bindingDocx({ body, header = null, parts = [] }) {
+/**
+ * A .docx with `body`, an optional default `header`, custom XML parts [{ xml, id? }] (id: its itemProps' itemID), a
+ * glossary of placeholders { name: text } and pictures { 'media/x.png': bytes } (the document's rIdP1, rIdP2...).
+ */
+export function bindingDocx({ body, header = null, parts = [], glossary = null, media = {} }) {
   const f = unzipSync(blankDocxBytes());
   let ct = strFromU8(f['[Content_Types].xml']);
   let rels = strFromU8(f['word/_rels/document.xml.rels']);
@@ -39,6 +42,16 @@ export function bindingDocx({ body, header = null, parts = [] }) {
     ct = ct.replace('</Types>', '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>');
     doc = doc.replace(/<w:sectPr>/, '<w:sectPr><w:headerReference w:type="default" r:id="rIdH1"/>');
   }
+  if (glossary) {
+    const dp = Object.entries(glossary).map(([name, text]) => `<w:docPart><w:docPartPr><w:name w:val="${name}"/><w:category><w:name w:val="General"/><w:gallery w:val="placeholder"/></w:category><w:types><w:type w:val="bbPlcHdr"/></w:types><w:behaviors><w:behavior w:val="content"/></w:behaviors></w:docPartPr><w:docPartBody><w:p><w:r><w:rPr><w:rStyle w:val="PlaceholderText"/><w:i/></w:rPr><w:t>${text}</w:t></w:r></w:p></w:docPartBody></w:docPart>`).join('');
+    f['word/glossary/document.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:glossaryDocument xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docParts>${dp}</w:docParts></w:glossaryDocument>`);
+    rels = rels.replace('</Relationships>', `${rel('rIdG1', 'glossaryDocument', 'glossary/document.xml')}</Relationships>`);
+    ct = ct.replace('</Types>', '<Override PartName="/word/glossary/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.glossary+xml"/></Types>');
+  }
+  Object.entries(media).forEach(([name, bytes], i) => {
+    f[`word/${name}`] = bytes;
+    rels = rels.replace('</Relationships>', `${rel(`rIdP${i + 1}`, 'image', name)}</Relationships>`);
+  });
   f['word/document.xml'] = strToU8(doc);
   f['[Content_Types].xml'] = strToU8(ct);
   f['word/_rels/document.xml.rels'] = strToU8(rels);

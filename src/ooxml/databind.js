@@ -15,6 +15,16 @@ const MAX_XPATH = 2048;
 const MAX_STEPS = 64;
 const MAX_MAPPINGS = 4096;
 const MAX_CACHE = 2048;
+const MAX_ITEMS = 1000; // a repeating section's items
+const MAX_PICTURE = 16 * 1024 * 1024; // a bound picture's base64 text
+const REL_GLOSSARY = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/glossaryDocument';
+const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+const NS_W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+const NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const NS_WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+// Word's placeholders when a control names none it has.
+const DEFAULT_PH = { text: 'Click or tap here to enter text.', richText: 'Click or tap here to enter text.', date: 'Click or tap to enter a date.', dropdown: 'Choose an item.', combobox: 'Choose an item.' };
 
 // One step: an element (prefix optional) with an optional position, or, last, an attribute or text().
 const NAME = '[\\p{L}_][\\p{L}\\p{N}_.\\-]*';
@@ -115,6 +125,40 @@ export class BindingStore {
       if (pdoc?.documentElement) id = normId(pdoc.documentElement.getAttributeNS(NS_DS, 'itemID'));
       this.parts.push({ path: r.target, id, doc, text, dirty: false });
     }
+    this._glossary = null;
+  }
+
+  /**
+   * The placeholder a control shows while its node is empty, as Word shows it: its w:placeholder's building block in
+   * the glossary (its text, its first run's w:rPr element), else Word's default for its kind in the PlaceholderText
+   * style. { text, rPr (an element, or null) }.
+   */
+  placeholder(prXml, kind) {
+    const t = prXml ? startTag(prXml, 'w:docPart') : null;
+    const name = t ? unescapeXml(tagAttr(t.tag, 'w:val') ?? '') : '';
+    const part = name ? this._docParts().get(name) : null;
+    if (part && part.text) return part;
+    return { text: DEFAULT_PH[kind] || DEFAULT_PH.text, rPr: null };
+  }
+
+  _docParts() {
+    if (this._glossary) return this._glossary;
+    const map = (this._glossary = new Map());
+    const rel = this.pkg.mainPath && this.pkg.readRels(this.pkg.mainPath).find((r) => r.type === REL_GLOSSARY && !r.external);
+    if (!rel || !(this.pkg.files[rel.target]?.length <= MAX_PART_BYTES)) return map;
+    let doc;
+    try { doc = this.pkg.xml(rel.target); } catch { return map; }
+    const parts = doc?.documentElement ? doc.documentElement.getElementsByTagNameNS(NS.w, 'docPart') : [];
+    for (let i = 0; i < parts.length && map.size < 10000; i++) {
+      const dp = parts[i];
+      const nm = kids(kids(dp, 'docPartPr')[0], 'name')[0]?.getAttributeNS(NS.w, 'val');
+      const body = kids(dp, 'docPartBody')[0];
+      if (!nm || !body || map.has(nm)) continue;
+      const text = kids(body, 'p').map(textWithBreaks).join('\n');
+      const r = body.getElementsByTagNameNS(NS.w, 'r')[0];
+      map.set(nm, { text, rPr: r ? kids(r, 'rPr')[0] || null : null });
+    }
+    return map;
   }
 
   get empty() { return !this.parts.length; }
@@ -155,6 +199,28 @@ export class BindingStore {
   target(b) {
     const hit = this.find(typeof b === 'string' ? bindingOf(b) : b);
     return hit ? (hit.attr || hit.el) : null;
+  }
+
+  /**
+   * How many nodes a repeating section's binding (its XPath's last step without a position: /root/items/item) finds,
+   * in the part chosen as `find` chooses it; null when its parent is found in none.
+   */
+  count(b) {
+    const steps = b && this._compiled(b);
+    if (!steps || !steps.length) return null;
+    const last = steps.at(-1);
+    const id = normId(b.store);
+    const named = id && this.parts.find((p) => p.id === id);
+    for (const part of named ? [named] : this.parts) {
+      const root = part.doc.documentElement;
+      if (steps.length === 1) return root.localName === last.name && (root.namespaceURI || null) === last.ns ? 1 : 0;
+      const hit = resolve(part.doc, steps.slice(0, -1));
+      if (!hit || hit.attr) continue;
+      let n = 0;
+      for (const c of kids(hit.el)) if (c.localName === last.name && (c.namespaceURI || null) === last.ns) n++;
+      return n;
+    }
+    return null;
   }
 
   /** Set the value a binding finds; true when it changed. */
@@ -287,17 +353,28 @@ const kindOf = (pr) => {
     : has(NS.w, 'date') ? 'date' : has(NS.w, 'picture') ? 'picture' : has(NS.w, 'text') ? 'text' : 'richText';
 };
 
+/** A w:sdtPr's XML with w:showingPlcHdr added (before its binding, where Word writes it). */
+export function withPlc(prXml) {
+  if (/<w:showingPlcHdr\b/.test(prXml)) return prXml;
+  const at = prXml.search(/<w(?:15)?:dataBinding\b/);
+  if (at >= 0) return `${prXml.slice(0, at)}<w:showingPlcHdr/>${prXml.slice(at)}`;
+  return prXml.replace(/<\/w:sdtPr>/, '<w:showingPlcHdr/></w:sdtPr>');
+}
+
 /**
  * Every bound control in a parsed part (document, header, footer) given the value it is bound to, as Word does when it
- * opens the file: its cached content replaced by the value, in the control's own run formatting (w:sdtPr's w:rPr), its
- * placeholder flag dropped. A control that finds no node, or whose node is empty, keeps what it has, as in Word; so
- * does one already showing its value. Inline controls, and ones around a paragraph or a table cell, are filled; others
- * (around several cells, a row) are left. Returns the number of controls changed.
+ * opens the file: a repeating section given an item for each node it is bound to (the last copied, or the extra ones
+ * dropped); a control's cached content replaced by its node's value in the control's own run formatting (w:sdtPr's
+ * w:rPr), its placeholder flag dropped; one whose node is empty showing its placeholder (the glossary's building block);
+ * a picture control showing the picture its node holds (base64), fitted in the picture's box. A control that finds no
+ * node keeps what it has, as in Word; so does one already showing its value. Inline controls, and ones around a
+ * paragraph or a table cell, are filled; others (around several cells, a row) are left. `partPath`: the part's path,
+ * for a picture's relationship. Returns the number of controls changed.
  */
-export function applyBindings(xmlDoc, store) {
+export function applyBindings(xmlDoc, store, partPath = store?.pkg?.mainPath) {
   if (!store || store.empty) return 0;
   const W = NS.w;
-  let changed = 0;
+  let changed = repeatSections(xmlDoc, store);
   const sdts = [...xmlDoc.getElementsByTagNameNS(W, 'sdt')];
   for (const sdt of sdts) {
     const pr = kids(sdt, 'sdtPr')[0];
@@ -305,11 +382,20 @@ export function applyBindings(xmlDoc, store) {
     const b = pr && content && bindingOfEl(pr);
     if (!b) continue;
     const value = store.value(b);
+    if (value == null) continue;
     const kind = kindOf(pr);
-    const prXml = serializeXml(pr);
-    const shown = boundDisplay(prXml, kind, value);
-    if (!shown) continue;
+    if (kind === 'picture') { if (value && bindPicture(content, value, store, partPath)) changed++; continue; }
     const plc = kids(pr, 'showingPlcHdr').some((e) => !/^(0|false|off)$/.test(e.getAttributeNS(W, 'val') || ''));
+    const prXml = serializeXml(pr);
+    let shown = boundDisplay(prXml, kind, value);
+    let phRPr = null;
+    if (!shown) {
+      // An empty node: the placeholder (a check box shows its state, whatever).
+      if (plc || kind === 'checkbox') continue;
+      const ph = store.placeholder(prXml, kind);
+      shown = { text: ph.text };
+      phRPr = ph.rPr;
+    }
     const inner = kids(content);
     // Where the runs go: the control's own content (inline), or its paragraph's (around a paragraph or a cell).
     let host = content;
@@ -321,13 +407,21 @@ export function applyBindings(xmlDoc, store) {
       host = p;
     } else if (inner.some((c) => c.namespaceURI === W && (c.localName === 'p' || c.localName === 'tc' || c.localName === 'tr' || c.localName === 'tbl' || c.localName === 'sdt'))) continue;
     const cached = textWithBreaks(host);
-    if (!plc && cached === shown.text) continue;
-    // Formatting: the control's run properties (a check box keeps its symbol font: its first run's).
-    const firstRun = host.getElementsByTagNameNS(W, 'r')[0];
-    const rPr = kind === 'checkbox' && firstRun ? kids(firstRun, 'rPr')[0] : kids(pr, 'rPr')[0];
+    if (!phRPr && !plc && cached === shown.text && value !== '') continue;
+    // Formatting: the control's run properties (a check box keeps its symbol font: its first run's); a placeholder's,
+    // its building block's (else the PlaceholderText style).
     const doc = sdt.ownerDocument;
+    const firstRun = host.getElementsByTagNameNS(W, 'r')[0];
+    let rPr;
+    if (value === '') {
+      rPr = phRPr ? doc.importNode(phRPr, true) : doc.createElementNS(W, 'w:rPr');
+      if (!phRPr) { const st = doc.createElementNS(W, 'w:rStyle'); st.setAttributeNS(W, 'w:val', 'PlaceholderText'); rPr.appendChild(st); }
+    } else {
+      const own = kind === 'checkbox' && firstRun ? kids(firstRun, 'rPr')[0] : kids(pr, 'rPr')[0];
+      rPr = own ? own.cloneNode(true) : null;
+    }
     const r = doc.createElementNS(W, 'w:r');
-    if (rPr) r.appendChild(rPr.cloneNode(true));
+    if (rPr) r.appendChild(rPr);
     shown.text.split('\n').forEach((line, i) => {
       if (i) r.appendChild(doc.createElementNS(W, 'w:br'));
       if (!line) return;
@@ -341,13 +435,139 @@ export function applyBindings(xmlDoc, store) {
     if (host !== content && first.localName === 'tc') for (const extra of kids(first, 'p').slice(1)) first.removeChild(extra);
     for (const c of [...host.childNodes]) if (!(c.nodeType === 1 && c.namespaceURI === W && c.localName === 'pPr')) host.removeChild(c);
     host.appendChild(r);
-    // The placeholder flag dropped; a check box's state and a date's w:fullDate as shown.
-    for (const e of kids(pr, 'showingPlcHdr')) pr.removeChild(e);
-    if (shown.checked != null) for (const e of pr.getElementsByTagNameNS(NS_W14, 'checked')) e.setAttributeNS(NS_W14, 'w14:val', shown.checked ? '1' : '0');
-    if (shown.date) for (const e of kids(pr, 'date')) e.setAttributeNS(W, 'w:fullDate', fullDate(shown.date));
+    if (value === '') {
+      // The placeholder flag, before the binding as Word writes it.
+      const flag = doc.createElementNS(W, 'w:showingPlcHdr');
+      const before = kids(pr).find((e) => e.localName === 'dataBinding') || null;
+      pr.insertBefore(flag, before);
+    } else {
+      // The placeholder flag dropped; a check box's state and a date's w:fullDate as shown.
+      for (const e of kids(pr, 'showingPlcHdr')) pr.removeChild(e);
+      if (shown.checked != null) for (const e of pr.getElementsByTagNameNS(NS_W14, 'checked')) e.setAttributeNS(NS_W14, 'w14:val', shown.checked ? '1' : '0');
+      if (shown.date) for (const e of kids(pr, 'date')) e.setAttributeNS(W, 'w:fullDate', fullDate(shown.date));
+    }
     changed++;
   }
   return changed;
+}
+
+/**
+ * Repeating sections (w15:repeatingSection) bound to a set of nodes: an item for each node, as Word makes them on
+ * opening. Items short are copies of the last one, the bindings inside it moved on to their own node
+ * (/root[1]/items[1]/item[2]/name[1] in the second); items over are dropped (one is always kept). Copies get new ids
+ * and lose their paragraphs' ids and bookmarks, which may not repeat.
+ */
+function repeatSections(xmlDoc, store) {
+  const W = NS.w;
+  let changed = 0;
+  let nextId = 0x2f000000;
+  for (const sec of [...xmlDoc.getElementsByTagNameNS(NS_W15, 'repeatingSection')]) {
+    const pr = sec.parentNode;
+    const sdt = pr?.parentNode;
+    if (!pr || pr.localName !== 'sdtPr' || !sdt || sdt.localName !== 'sdt') continue;
+    const bind = kids(pr).find((e) => e.localName === 'dataBinding' && (e.namespaceURI === NS_W15 || e.namespaceURI === W));
+    const xpath = bind?.getAttributeNS(W, 'xpath');
+    const content = kids(sdt, 'sdtContent')[0];
+    if (!xpath || !content) continue;
+    const b = { xpath, store: bind.getAttributeNS(W, 'storeItemID') || '', prefixes: bind.getAttributeNS(W, 'prefixMappings') || '' };
+    const steps = store._compiled(b);
+    const last = steps?.at(-1);
+    if (!last || last.attr || last.text || /\]\s*$/.test(xpath)) continue; // (the set: its last step has no position)
+    const count = store.count(b);
+    if (count == null) continue;
+    const items = kids(content, 'sdt').filter((it) => kids(kids(it, 'sdtPr')[0], 'repeatingSectionItem', NS_W15).length);
+    if (!items.length || items.length !== kids(content).length) continue;
+    const want = Math.min(MAX_ITEMS, Math.max(1, count));
+    if (want === items.length) continue;
+    for (const extra of items.slice(want)) content.removeChild(extra);
+    const model = items[Math.min(items.length, want) - 1];
+    const from = Math.min(items.length, want);
+    const base = xpath.trim();
+    for (let k = from + 1; k <= want; k++) {
+      const copy = model.cloneNode(true);
+      // Its bindings moved from the model's node to this item's: <section xpath>[from] to [k].
+      for (const db of [...copy.getElementsByTagNameNS(W, 'dataBinding'), ...copy.getElementsByTagNameNS(NS_W15, 'dataBinding')]) {
+        const x = db.getAttributeNS(W, 'xpath') || '';
+        const head = `${base}[${from}]`;
+        if (x.startsWith(head) && (x.length === head.length || x[head.length] === '/')) db.setAttributeNS(W, 'w:xpath', `${base}[${k}]${x.slice(head.length)}`);
+      }
+      for (const id of copy.getElementsByTagNameNS(W, 'id')) if (id.parentNode?.localName === 'sdtPr') id.setAttributeNS(W, 'w:val', String(nextId++));
+      for (const p of copy.getElementsByTagNameNS(W, 'p')) { p.removeAttributeNS(NS_W14, 'paraId'); p.removeAttributeNS(NS_W14, 'textId'); }
+      for (const name of ['bookmarkStart', 'bookmarkEnd']) for (const bm of [...copy.getElementsByTagNameNS(W, name)]) bm.parentNode.removeChild(bm);
+      content.appendChild(copy);
+    }
+    changed++;
+  }
+  return changed;
+}
+
+// A picture's type and size in pixels, from its first bytes: { mime, ext, w, h } or null.
+function pictureInfo(b) {
+  const u16 = (i, le) => (le ? b[i] | (b[i + 1] << 8) : (b[i] << 8) | b[i + 1]);
+  const u32 = (i, le) => (le ? (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000 : b[i] * 0x1000000 + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]));
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { mime: 'image/png', ext: 'png', w: u32(16), h: u32(20) };
+  if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { mime: 'image/gif', ext: 'gif', w: u16(6, true), h: u16(8, true) };
+  if (b.length > 26 && b[0] === 0x42 && b[1] === 0x4d) return { mime: 'image/bmp', ext: 'bmp', w: u32(18, true), h: Math.abs(u32(22, true) | 0) };
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    // JPEG: the frame header (SOFn) gives the size; segments walked by their lengths, a bounded number of them.
+    for (let i = 2, n = 0; i + 9 < b.length && n < 10000; n++) {
+      if (b[i] !== 0xff) return null;
+      const m = b[i + 1];
+      if (m === 0xff) { i++; continue; }
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { mime: 'image/jpeg', ext: 'jpeg', w: u16(i + 7), h: u16(i + 5) };
+      i += 2 + u16(i + 2);
+    }
+  }
+  return null;
+}
+
+/** A base64 text as bytes, or null (not base64, or too long). */
+function fromBase64(s) {
+  if (s.length > MAX_PICTURE) return null;
+  const clean = s.replace(/\s+/g, '');
+  if (!clean || !/^[A-Za-z0-9+/]+={0,2}$/.test(clean)) return null;
+  try {
+    const bin = atob(clean);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch { return null; }
+}
+
+/**
+ * A picture control's picture made the one its node holds (base64), as Word shows it: a new image part (the one it
+ * showed is left, in case anything else shows it too), fitted in the picture's box keeping its proportions. True
+ * when it changed.
+ */
+function bindPicture(content, value, store, partPath) {
+  const pkg = store.pkg;
+  const blip = content.getElementsByTagNameNS(NS_A, 'blip')[0];
+  const extent = content.getElementsByTagNameNS(NS_WP, 'extent')[0];
+  const bytes = blip && extent && partPath ? fromBase64(value) : null;
+  const info = bytes && pictureInfo(bytes);
+  if (!info || !(info.w > 0) || !(info.h > 0)) return false;
+  const rId = blip.getAttributeNS(NS_R, 'embed');
+  const rel = rId && pkg.readRels(partPath).find((r) => r.id === rId);
+  const had = rel && !rel.external && pkg.files[rel.target];
+  if (had && had.length === bytes.length && had.every((x, i) => x === bytes[i])) return false;
+  const dir = partPath.slice(0, partPath.lastIndexOf('/') + 1);
+  let n = 1;
+  while (pkg.files[`${dir}media/bound${n}.${info.ext}`]) n++;
+  const name = `media/bound${n}.${info.ext}`;
+  pkg.files[`${dir}${name}`] = bytes;
+  pkg.addOverride(`${dir}${name}`, info.mime);
+  blip.setAttributeNS(NS_R, 'r:embed', pkg.addRel(REL_IMAGE, name, false, partPath));
+  // Fitted in the box (wp:extent), and the picture's own size (a:ext in pic:spPr) with it.
+  const cx = Number(extent.getAttribute('cx')), cy = Number(extent.getAttribute('cy'));
+  if (cx > 0 && cy > 0) {
+    const scale = Math.min(cx / info.w, cy / info.h);
+    const nx = String(Math.max(1, Math.round(info.w * scale))), ny = String(Math.max(1, Math.round(info.h * scale)));
+    extent.setAttribute('cx', nx);
+    extent.setAttribute('cy', ny);
+    const ext = [...content.getElementsByTagNameNS(NS_A, 'ext')].find((e) => e.parentNode?.localName === 'xfrm' && e.hasAttribute('cx'));
+    if (ext) { ext.setAttribute('cx', nx); ext.setAttribute('cy', ny); }
+  }
+  return true;
 }
 
 /** A paragraph's or a control's text, its line breaks as '\n'. */

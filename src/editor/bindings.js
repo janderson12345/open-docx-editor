@@ -3,9 +3,9 @@
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { schema } from './schema.js';
-import { listFields, formsKey, writeField } from './fields.js';
+import { listFields, formsKey } from './fields.js';
 import { fieldInfo } from '../ooxml/reader.js';
-import { bindingOf, boundDisplay, boundPr, storeValue } from '../ooxml/databind.js';
+import { bindingOf, boundDisplay, boundPr, storeValue, withPlc } from '../ooxml/databind.js';
 
 const PLC = /<w:showingPlcHdr(?![^>]*w:val="(?:0|false)")[^>]*\/>/;
 const leafText = (leaf) => (leaf.type === schema.nodes.hard_break ? '\n' : '');
@@ -28,10 +28,12 @@ export function boundFields(doc, store) {
     f.value = f.placeholder ? (f.kind === 'checkbox' ? f.value : '') : storeValue(f.pr, f.kind, f);
     out.push(f);
   };
-  for (const f of listFields(doc)) {
-    if (f.legacy || !/<w:dataBinding\b/.test(f.pr || '')) continue;
+  for (const f of listFields(doc, { nested: true })) {
+    if (f.legacy || f.kind === 'picture' || !/<w:dataBinding\b/.test(f.pr || '')) continue;
     const text = doc.textBetween(f.from, f.to, '\n', leafText);
-    const placeholder = f.block ? PLC.test(f.pr) : f.mark?.attrs.phText != null && f.text === f.mark.attrs.phText;
+    // (Around a paragraph: showing its placeholder while it's flagged so and shows the placeholder's text; typed into,
+    // it holds a value.)
+    const placeholder = f.block ? PLC.test(f.pr) && text === store.placeholder(f.pr, f.kind).text : f.mark?.attrs.phText != null && f.text === f.mark.attrs.phText;
     add({ key: f.key, kind: f.kind, pr: f.pr, from: f.from, to: f.to, text, checked: f.checked, value: f.value, placeholder, block: f.block, field: f });
   }
   // Controls around a table cell (their wrapper on the cell: reader.js readTable).
@@ -40,7 +42,8 @@ export function boundFields(doc, store) {
     const open = node.attrs.sdt?.open;
     if (open && /<w:dataBinding\b/.test(open)) {
       const kind = fieldInfo(open).kind;
-      if (kind !== 'checkbox') add({ key: `c${node.attrs.sdt.g}`, kind, pr: open, from: pos, to: pos + node.nodeSize, text: node.textBetween(0, node.content.size, '\n', leafText), placeholder: PLC.test(open), cell: node });
+      const text = node.textBetween(0, node.content.size, '\n', leafText);
+      if (kind !== 'checkbox' && kind !== 'picture') add({ key: `c${node.attrs.sdt.g}`, kind, pr: open, from: pos, to: pos + node.nodeSize, text, placeholder: PLC.test(open) && text === store.placeholder(open, kind).text, cell: node });
     }
     return true;
   });
@@ -64,20 +67,33 @@ function firstMarks(doc, from, to) {
   return marks || [];
 }
 
-/** One control made to show `value` (its node's) inside `tr`; false when it already does. */
-function show(tr, f, value) {
-  const shown = boundDisplay(f.pr, f.kind, value);
-  if (!shown) {
-    // An emptied node: the control shows its placeholder (an inline one; one around a paragraph or a cell is left).
-    if (f.placeholder || f.block || f.cell || f.kind === 'checkbox') return false;
-    writeField(tr, f.field, '');
-    return true;
+/**
+ * One control made to show `value` (its node's) inside `tr`: the value, or for an empty node its placeholder (the
+ * glossary's, in the PlaceholderText style, flagged w:showingPlcHdr), as Word shows them. False when it already does.
+ */
+function show(tr, f, value, store) {
+  let shown = boundDisplay(f.pr, f.kind, value);
+  let pr;
+  let ph = null;
+  if (shown) {
+    if (!f.placeholder && f.text === shown.text && (shown.checked == null || shown.checked === f.checked)) {
+      // The value shown already; a paragraph or cell still flagged as showing its placeholder (typed into) loses the flag.
+      if (f.field?.mark || !PLC.test(f.pr)) return false;
+      unflag(tr, f, boundPr(f.pr, shown));
+      return true;
+    }
+    pr = boundPr(f.pr, shown);
+  } else {
+    if (f.placeholder || f.kind === 'checkbox') return false;
+    ph = store.placeholder(f.pr, f.kind).text;
+    shown = { text: ph };
+    pr = withPlc(f.pr);
   }
-  if (!f.placeholder && f.text === shown.text && (shown.checked == null || shown.checked === f.checked)) return false;
-  const pr = boundPr(f.pr, shown);
+  // The control's own formatting (the placeholder's style for a placeholder, not otherwise).
+  let marks = firstMarks(tr.doc, f.from, f.to).filter((m) => !isPh(m) && !(m.type === schema.marks.sdt && f.field?.mark && m.attrs.key === f.field.mark.attrs.key));
+  if (ph != null) marks = schema.marks.cstyle.create({ val: 'PlaceholderText' }).addToSet(marks);
   if (f.cell) {
     const first = f.cell.firstChild;
-    const marks = firstMarks(tr.doc, f.from, f.to).filter((m) => !isPh(m));
     const para = schema.nodes.paragraph.create(first?.type === schema.nodes.paragraph ? first.attrs : null, textNodes(shown.text, marks));
     tr.replaceWith(f.from + 1, f.to - 1, para);
     tr.setNodeMarkup(f.from, null, { ...f.cell.attrs, sdt: { ...f.cell.attrs.sdt, open: pr } });
@@ -85,16 +101,24 @@ function show(tr, f, value) {
   }
   if (f.block) {
     const first = tr.doc.nodeAt(f.from);
-    const marks = firstMarks(tr.doc, f.from, f.to).filter((m) => !isPh(m));
     const para = schema.nodes.paragraph.create({ ...first.attrs, sdt: { ...first.attrs.sdt, open: pr } }, textNodes(shown.text, marks));
     tr.replaceWith(f.from, f.to, para);
     return true;
   }
   const m = f.field.mark;
-  const mark = schema.marks.sdt.create({ ...m.attrs, pr, phText: null });
-  const marks = mark.addToSet(firstMarks(tr.doc, f.from, f.to).filter((x) => !(x.type === schema.marks.sdt && x.attrs.key === m.attrs.key) && !isPh(x)));
+  marks = schema.marks.sdt.create({ ...m.attrs, pr, phText: ph }).addToSet(marks);
   tr.replaceWith(f.from, f.to, textNodes(shown.text, marks));
   return true;
+}
+
+/** A paragraph's or cell's control no longer flagged as showing its placeholder, its text out of the placeholder style. */
+function unflag(tr, f, open) {
+  if (f.cell) tr.setNodeMarkup(f.from, null, { ...f.cell.attrs, sdt: { ...f.cell.attrs.sdt, open } });
+  else {
+    const n = tr.doc.nodeAt(f.from);
+    tr.setNodeMarkup(f.from, null, { ...n.attrs, sdt: { ...n.attrs.sdt, open } });
+  }
+  tr.removeMark(f.from, f.to, schema.marks.cstyle.create({ val: 'PlaceholderText' }));
 }
 
 /** Every bound control in `tr`'s doc made to show its node's value; true when any changed. */
@@ -102,7 +126,7 @@ export function syncInto(tr, store) {
   let changed = false;
   // (Last first, so the positions of those before stay as they were.)
   for (const f of boundFields(tr.doc, store).reverse()) {
-    if (show(tr, f, store.value(f.b))) changed = true;
+    if (show(tr, f, store.value(f.b), store)) changed = true;
   }
   return changed;
 }
@@ -127,12 +151,18 @@ export function bindingsPlugin(session, { story = null } = {}) {
     key: bindingsKey,
     appendTransaction(trs, oldState, state) {
       if (!store || store.empty || !trs.some((t) => t.docChanged) || trs.every((t) => t.getMeta(bindingsKey))) return null;
+      // Others' edits in a shared document (collab.js): the room's text is what counts, so their controls' values go
+      // into the nodes here, those that just arrived too (joining, the room's document replacing the file's), but
+      // nothing is written: the editor that made the edit made its other controls follow, and those steps arrive too
+      // (written here as well, both would be kept, the text twice).
+      const remote = trs.every((t) => !t.docChanged || t.getMeta('odx-remote') || t.getMeta('y-sync$')?.isChangeOrigin);
       const was = new Map(boundFields(oldState.doc, store).map((f) => [f.key, f.value]));
       let edited = false;
       for (const f of boundFields(state.doc, store)) {
-        if (was.has(f.key) && was.get(f.key) !== f.value && store.set(f.b, f.value)) edited = true;
+        if ((was.has(f.key) ? was.get(f.key) !== f.value : remote) && store.set(f.b, f.value)) edited = true;
       }
       if (!edited) return null;
+      if (remote) { session.syncBindings(null, story); return null; }
       const tr = state.tr;
       syncInto(tr, store);
       // The headers and footers (but this one) follow; a header's edit reaches the body once it's drawn (view below).

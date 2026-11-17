@@ -122,6 +122,25 @@ function sdtBlocks(el, ctx, out) {
     }
     return true;
   }
+  // A control holding controls (a repeating section's items): each item's blocks read as above, the outer control their
+  // parent (written back around them all, writer.js writeBlocks).
+  if (inner.length > 1 && inner.every((c) => c.namespaceURI === NS.w && c.localName === 'sdt')) {
+    const sub = [];
+    for (const c of inner) {
+      const one = [];
+      if (!sdtBlocks(c, ctx, one) || one.some((b) => b.attrs.sdt.parent)) return false;
+      sub.push(...one);
+    }
+    const head = kids(el).filter((c) => c !== content).map((c) => ctx.xml(c)).join('');
+    const parent = { open: `<w:sdt>${head}<w:sdtContent>`, close: '</w:sdtContent></w:sdt>', g: ++sdtGroup };
+    const items = new Map(); // (one object for each item's blocks, as for a control's own)
+    for (const b of sub) {
+      const s = b.attrs.sdt;
+      if (!items.has(s)) items.set(s, { ...s, parent });
+      out.push({ ...b, attrs: { ...b.attrs, sdt: items.get(s) } });
+    }
+    return true;
+  }
   if (!inner.length || !inner.every((c) => c.namespaceURI === NS.w && (c.localName === 'p' || c.localName === 'tbl'))) return false;
   const blocks = readBlocks(inner, ctx);
   if (blocks.some((b) => b.attrs?.sdt)) return false;
