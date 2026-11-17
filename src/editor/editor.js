@@ -335,7 +335,9 @@ function paragraphPlugin(session) {
             : auto(node, 'beforeAuto') ? (plainAuto ? 5 : 14) * pt : twipsToPx(spacing(node, 'before'));
           const after = !prev ? 0 : last(prev.style, 'margin-bottom') != null ? last(prev.style, 'margin-bottom') * pt
             : auto(prev.node, 'afterAuto') ? (plainAuto ? 5 : 14) * pt : twipsToPx(spacing(prev.node, 'after'));
-          style.push(`--odx-sb:${+Math.max(0, before - after).toFixed(2)}px`);
+          const sb = +Math.max(0, before - after).toFixed(2);
+          // (--odx-sbtb: that space again under a top-and-bottom shape, over the paragraph's own text: reader.js.)
+          style.push(`--odx-sb:${sb}px`, `--odx-sbtb:${node.textContent.trim() ? sb : 0}px`);
         }
         const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');

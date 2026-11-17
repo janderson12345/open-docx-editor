@@ -49,7 +49,7 @@ test('padPlace takes the pad off every margin anchorCss writes, and keeps every 
 
 test("fromParagraphTop: a place's top moved up by its paragraph's space before (none above a page's top), whatever its wrapping", () => {
   const up = (v) => `calc(${v} - min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
-  const down = (v) => `calc(${v} + min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  const down = (v) => `calc(${v} + min(var(--odx-sbtb, 0px), var(--odx-sbtop, 100000px)))`;
   assert.equal(fromParagraphTop('float:left;margin:-3px 9px -3px calc(9px - var(--odx-page-left, 96px));--odx-pad:3px'),
     `float:left;margin:${up('-3px')} 9px -3px calc(9px - var(--odx-page-left, 96px));--odx-pad:3px`);
   assert.equal(fromParagraphTop('position:absolute;left:0px;margin-top:4px;z-index:1'), `position:absolute;left:0px;margin-top:${up('4px')};z-index:1`);

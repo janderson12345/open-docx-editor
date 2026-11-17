@@ -18,7 +18,8 @@
                          --odx-atleast that length; --odx-flh a tall font's own line factor on its run
      --odx-bl, --odx-bla the print baseline shift of a paragraph (baseline.js); -bla for one holding anchored pictures
      --odx-sb            space before (less the space after above it), where a paragraph-relative picture offset starts
-                         above the text; --odx-sbtop the most of it left above a page's top (pages.js)
+                         above the text; --odx-sbtop the most of it left above a page's top (pages.js); --odx-sbtb that space
+                         again under a top-and-bottom picture (none in a paragraph without text of its own)
      --odx-mark          the paragraph mark's size, for an empty last line
      --odx-hang, --odx-lsize, --odx-lfont, --odx-lbl-up, --odx-lbl-down   a list label: its indent, size, font, and
                          the room a larger bullet adds above or below its line

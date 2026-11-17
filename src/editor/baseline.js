@@ -183,7 +183,7 @@ export function baselineCss(blocks, scope, host) {
     const anchored = el.tagName === 'P' && !!el.querySelector(':scope > [style*="position: absolute"], :scope > [style*="position:absolute"]');
     let d = node ? blockMemo.get(node) : undefined;
     if (d === undefined) { d = shiftFor(el, host, anchored); if (node) blockMemo.set(node, d); }
-    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"], img[style*="float:"], img.odx-wrap-block)){position:relative;top:${d}px}`);
+    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"], img[style*="float:"], img.odx-wrap-block){position:relative;top:${d}px}`);
     else if (d) {
       rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
       // Its floating pictures (wrapped round on one side, or top and bottom) drawn back where they were: the shift is the
