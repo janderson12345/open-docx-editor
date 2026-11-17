@@ -567,7 +567,12 @@ function anchorCss(drawing, page, compatMode = 15) {
   // turned one's, whose room is its turned outline's: turned() keeps the text clear of that.)
   const plainShape = !textBox && !shapeTurn(drawing) && !turnedInside(drawing) && /wordprocessing(Shape|Group)$/.test([...drawing.getElementsByTagName('*')].find((e) => e.localName === 'graphicData')?.getAttribute('uri') || '');
   const shapeFx = (k) => (plainShape ? Math.max(0, emuToPx(fx?.getAttribute(k) || 0)) : 0);
-  const y = ['paragraph', 'line'].includes(vRel) ? px(childNamed(posV, 'posOffset')?.textContent) + Math.round(fxT * 100) / 100 : 0;
+  // (To the hundredth of a px, not the whole one: Word's offsets are fractions of a point (wrap-word4 vt-*: -0.25 to
+  // 0.35pt, Word's own for shapes it drew up -7.7pt), and a fraction of a px decides which lines go beside a shape, Word
+  // splitting a line that reaches any of the way into its room. Bounded: a crafted offset a long way off is as far as any
+  // page.)
+  const fine = (v) => { const n = emuToPx(Number(v) || 0); return Number.isFinite(n) ? Math.round(Math.max(-1e5, Math.min(1e5, n)) * 100) / 100 : 0; };
+  const y = ['paragraph', 'line'].includes(vRel) ? Math.round((fine(childNamed(posV, 'posOffset')?.textContent) + fxT) * 100) / 100 : 0;
   // (Only the values ST_AlignV allows: the text goes into the picture's style, where a crafted document's could have
   // added any CSS, a request to another site or a picture over the page.)
   const vAlign = ['top', 'center', 'bottom', 'inside', 'outside'].find((v) => v === childNamed(posV, 'align')?.textContent) || 'none';

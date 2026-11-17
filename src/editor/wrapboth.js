@@ -342,7 +342,12 @@ export function applyWrapBoth(view, stories = null) {
     // (A room anchored in a later paragraph, `later`: one placed above its paragraph's text, reaching up to this one's.)
     const near = zs.filter((z) => z.own !== el && er.bottom + after > z.top && er.top < z.bottom)
       .map((z) => (z.toEnd ? { ...z, right: end - (justified ? 0.5 : 1) } : z))
-      .map((z) => (z.host && z.host !== el && el.compareDocumentPosition(z.host) & Node.DOCUMENT_POSITION_FOLLOWING ? { ...z, later: true } : z));
+      .map((z) => (z.host && z.host !== el && el.compareDocumentPosition(z.host) & Node.DOCUMENT_POSITION_FOLLOWING ? { ...z, later: true } : z))
+      // (And an earlier paragraph's placed below this one's top, `below`, as a later one's, its space after not reaching it:
+      // wrap-word4 vt-thin, Text 20's rectangle saved 586pt below its paragraph at page 4's foot, Text 25's last line
+      // whole above it in Word's print, its space after reaching 4.7pt into it; split, Text 25 grew a line and Text 26
+      // went a line down, its own rectangle drawn up over Text 25.)
+      .map((z) => (!z.later && z.host && z.host !== el && z.top > er.top ? { ...z, below: true } : z));
     const from = offset, to = offset + node.nodeSize;
     const own = list.filter((s) => s.pos > from && s.pos < to);
     if (!near.length) {
@@ -370,7 +375,28 @@ export function applyWrapBoth(view, stories = null) {
     // sq-none's Text 5, their last lines whole in Word's print above rectangles Word drew up 4.7 and 7.2pt (saved so),
     // their space after reaching them; split, the paragraph below and its rectangle went a line down, Text 6 moved on.
     if (lines.length) lines[lines.length - 1].after = after;
-    const beside = (top, bottom, z, extra = 0) => bottom + (z.story || z.later ? 0 : extra) > z.top + (z.later ? z.fxT || 0 : 0) + 0.25 && top < z.bottom - 0.25;
+    // (Into the room by any of it, at its top or its foot: wrap-word4 vt-thin, Text 1's fourth line reaching 0.11px into
+    // the room under its rectangle, split beside it in Word's print; vt-none, Text 3's 0.06px short of it, whole.)
+    const beside = (top, bottom, z, extra = 0) => bottom + (z.story || z.later || z.below ? 0 : extra) > z.top + (z.later ? z.fxT || 0 : 0) + 0.03 && top < z.bottom - 0.03;
+    // The room a line from `top` to `bottom` (through `extra` below, its space after) meets: the first shape's beside it,
+    // and any other's beside it that overlaps that one across, as one (wrap-word4 sq-thick: Text 16's rectangle, saved at
+    // page 4's foot, over Text 21's own; Word's lines there go round both, the words before the room ending at the one's
+    // left, those after it starting at the other's right). (A few times over, for a chain of them; the shapes looked at
+    // once each a time.)
+    const roomAt = (top, bottom, extra) => {
+      const at = near.filter((zz) => beside(top, bottom, zz, extra));
+      if (at.length < 2) return at[0] || null;
+      let z = at[0];
+      for (let round = 0; round < 3; round++) {
+        let grew = false;
+        for (const o of at) {
+          if (o === z || o.left >= z.right || o.right <= z.left) continue;
+          if (o.left < z.left || o.right > z.right) { z = { ...z, left: Math.min(z.left, o.left), right: Math.max(z.right, o.right), toEnd: z.toEnd || o.toEnd }; grew = true; }
+        }
+        if (!grew) break;
+      }
+      return z;
+    };
     // A spacer no longer ending at the room's right side on a line beside it (the text before it changed, or the lines
     // moved): it and those after it in the paragraph go, to be put back as the lines settle. (Its word may have gone on
     // to the next line, not fitting beside the room: the spacer still ends there. Its line by where it sits; one holding
@@ -385,7 +411,8 @@ export function applyWrapBoth(view, stories = null) {
       if (!r) return true;
       const line = lines.find((l) => r.top >= l.top - 1 && r.top <= l.bottom + (l.after || 0) + 1);
       const [top, bottom] = line ? [line.boxTop, line.bottom] : [r.bottom - lh, r.bottom];
-      return !near.some((z) => beside(top, bottom, z, s.tail ? after + pitch : line?.after) && Math.abs(r.right - z.right - (s.flush || 0)) <= 1);
+      const z = roomAt(top, bottom, s.tail ? after + pitch : line?.after);
+      return !z || Math.abs(r.right - z.right - (s.flush || 0)) > 1;
     });
     if (stale) {
       list = list.filter((s) => !(s.pos >= stale.pos && s.pos < to));
@@ -393,7 +420,7 @@ export function applyWrapBoth(view, stories = null) {
       return;
     }
     for (const line of lines) {
-      const z = near.find((zz) => beside(line.boxTop, line.bottom, zz, line.after));
+      const z = roomAt(line.boxTop, line.bottom, line.after);
       if (!z) continue;
       // (Beside it through its space after only, `tail`: split, its words go on to a new last line and it isn't the last
       // any more, but Word, laying the lines out in turn, has split it already; so it keeps that space after while it
