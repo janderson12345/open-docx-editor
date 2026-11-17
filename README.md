@@ -574,6 +574,11 @@ editor.setForms(false);   // back to normal editing
 Values: check boxes are `true`/`false`; drop-downs use the item's value (falling back to its text);
 an empty string puts the field's placeholder back; a multi-paragraph field takes `\n` between lines.
 
+Controls bound to custom XML (Word's XML Mapping: `w:dataBinding`, often filled by another program) show the value in
+the bound `customXml/itemN.xml` node, as Word does. Typing into one, or setting it with `setFieldValues`/`fillFields`,
+changes that node, and every control bound to it (body, headers and footers) shows the new value; saving writes the
+changed custom XML part.
+
 Without an editor (for example on the server when a document is checked in):
 
 ```js
