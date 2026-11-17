@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyInfo } from '../src/ooxml/ffdata.js';
 import { bevelFx, textEffectsCss } from '../src/ooxml/texteffects.js';
-import { readBorders, borderCss } from '../src/ooxml/props.js';
+import { readBorders, borderCss, cleanBorders, pPrToCss } from '../src/ooxml/props.js';
 import { parseXml } from '../src/ooxml/xml.js';
 
 // Crafted values from a file, bounded (the security review of the leftovers after 0.8.0).
@@ -35,6 +35,13 @@ test("a border's size and space bounded as Word bounds them", () => {
   assert.equal(b.top.space, 31);
   assert.equal(b.bottom.sz, 12);
   assert.ok(parseFloat(borderCss(b.top)) <= 5 * 255 / 8);
+});
+
+test("a co-editor's borders of any shape drawn safely: numbers as numbers, colours as hex", () => {
+  const css = pPrToCss({ borders: { top: { val: 'double', sz: 2, space: '1', color: 'red;background:url(x)' }, left: { val: 'single', sz: '8', space: 'x' }, constructor: { val: 'single' } } });
+  assert.doesNotMatch(css, /url\(x\)|red;/);
+  assert.doesNotMatch(css, /NaN|undefined/);
+  assert.deepEqual(cleanBorders({ top: { val: 'single', sz: '1e9', space: -4, color: 'FF0000' } }).top, { val: 'single', sz: 255, color: 'FF0000', space: 0 });
 });
 
 test("a reflection's blur bounded", () => {
