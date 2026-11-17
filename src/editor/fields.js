@@ -10,6 +10,7 @@ import { fieldInfo } from '../ooxml/reader.js';
 import { legacyInfo } from '../ooxml/ffdata.js';
 import { unescapeXml } from '../ooxml/xml.js';
 import { openSectionAt } from './protect.js';
+import { formatDate } from '../ooxml/databind.js';
 
 
 /** Every field in document order: [{ key, tag, alias, kind, from, to, block, value, checked?, items? }] */
@@ -158,7 +159,7 @@ const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 const PH_DEFAULT = 'Click or tap here to enter text.';
 
 /** Replace one field's value inside `tr` (positions from tr.doc). */
-function writeField(tr, f, value) {
+export function writeField(tr, f, value) {
   if (f.legacy) return writeLegacy(tr, f, value);
   if (f.block) {
     const first = tr.doc.nodeAt(f.from);
@@ -519,15 +520,7 @@ function pickFromList(view, f, event, done) {
   sel.focus();
 }
 
-/** A date in the control's w:dateFormat (Word patterns such as M/d/yyyy, MMMM d, yyyy, dd-MMM-yy). */
-export function formatDate(d, pr = '') {
-  const fmt = (/<w:dateFormat\b[^>]*w:val="([^"]*)"/.exec(pr) || [])[1] || 'M/d/yyyy';
-  const M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const D = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const p2 = (n) => String(n).padStart(2, '0');
-  const parts = { yyyy: d.getFullYear(), yy: p2(d.getFullYear() % 100), MMMM: M[d.getMonth()], MMM: M[d.getMonth()].slice(0, 3), MM: p2(d.getMonth() + 1), M: d.getMonth() + 1, dddd: D[d.getDay()], ddd: D[d.getDay()].slice(0, 3), dd: p2(d.getDate()), d: d.getDate() };
-  return fmt.replace(/'([^']*)'|yyyy|yy|MMMM|MMM|MM|M|dddd|ddd|dd|d/g, (m, lit) => (lit != null ? lit : parts[m]));
-}
+export { formatDate };
 
 function pickDate(view, f, event, done) {
   document.querySelector('.odx-fieldpick')?.remove();

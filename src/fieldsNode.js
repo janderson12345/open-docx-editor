@@ -3,6 +3,7 @@
 import { DocxSession } from './ooxml/docx.js';
 import { EditorState } from 'prosemirror-state';
 import { fieldValues, listFields, setFieldValues } from './editor/fields.js';
+import { bindingsPlugin } from './editor/bindings.js';
 
 /** { name: value } for every named content control in a .docx. */
 export function readFieldValues(bytes) {
@@ -12,7 +13,7 @@ export function readFieldValues(bytes) {
 /** A copy of the .docx with fields filled by Tag or Title. Returns { bytes, missing }. */
 export function fillFields(bytes, values) {
   const session = new DocxSession(bytes);
-  const view = { state: EditorState.create({ doc: session.doc }), dispatch(tr) { this.state = this.state.apply(tr); } };
+  const view = { state: EditorState.create({ doc: session.doc, plugins: [bindingsPlugin(session)] }) /* (a bound control's value into its node) */, dispatch(tr) { this.state = this.state.apply(tr); } };
   const missing = setFieldValues(view, values);
   return { bytes: session.save(view.state.doc), missing };
 }
