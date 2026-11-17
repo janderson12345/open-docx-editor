@@ -48,7 +48,7 @@ export function bindingDocx({ body, header = null, parts = [] }) {
 const P = (label, x) => `<w:p><w:r><w:t xml:space="preserve">${label}: </w:t></w:r>${x}</w:p>`;
 const cellCtl = (xpath) => `<w:sdt><w:sdtPr><w:id w:val="77"/><w:showingPlcHdr/><w:text/><w:dataBinding w:xpath="${xpath}"/></w:sdtPr><w:sdtContent><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p>${PH}</w:p></w:tc></w:sdtContent></w:sdt>`;
 export const FIXTURE = {
-  body: P('Contract', bound({ xpath: '/root/number', tag: 'Number' }))
+  body: '<w:p><w:r><w:t>Bound controls</w:t></w:r></w:p>' + P('Contract', bound({ xpath: '/root/number', tag: 'Number' }))
     + P('Order no', bound({ xpath: '/root/order', tag: 'Order' }))
     + P('Order no again', bound({ xpath: '/root[1]/order[1]', tag: 'OrderAgain' }))
     + P('Reference', bound({ xpath: '/root/ref', tag: 'Ref' }))
