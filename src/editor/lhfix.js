@@ -74,10 +74,14 @@ function picture(view, node, pos, el, box, value) {
   const fix = el.classList.contains('odx-pictext') ? pictureFix(el, box, value ?? '') : pictureAlone(el, box);
   if (!fix) return null;
   const mts = [];
+  // (Looked up by picture, not searched for each: a paragraph of thousands of pictures.)
+  const byImg = new Map(fix.mts);
   node.forEach((c, off) => {
     const dom = c.type.name === 'image' && view.nodeDOM(pos + 1 + off);
-    const m = dom && fix.mts.find(([img]) => img === dom || dom.contains?.(img));
-    if (m) mts.push([off, m[1]]);
+    if (!dom) return;
+    let mt = byImg.get(dom);
+    if (mt == null) for (const img of dom.querySelectorAll?.('img') || []) if ((mt = byImg.get(img)) != null) break;
+    if (mt != null) mts.push([off, mt]);
   });
   return { d: fix.d, mts };
 }

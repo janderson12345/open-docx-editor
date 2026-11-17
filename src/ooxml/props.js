@@ -58,7 +58,9 @@ export function readBorders(el) {
   if (!el) return out;
   for (const c of kids(el)) {
     const side = { start: 'left', end: 'right' }[c.localName] || c.localName;
-    out[side] = { val: attr(c, 'val'), sz: Number(attr(c, 'sz')) || 4, color: hexColor(attr(c, 'color')), space: Number(attr(c, 'space')) || 0 };
+    // (Size and space bounded as Word bounds them: a size of eighths of a point up to 96, an art border's points up to
+    // 31, so at most 255 here; space up to 31pt. A file's huge size made a paragraph millions of pixels tall.)
+    out[side] = { val: attr(c, 'val'), sz: Math.min(255, Number(attr(c, 'sz')) || 4), color: hexColor(attr(c, 'color')), space: Math.min(31, Number(attr(c, 'space')) || 0) };
   }
   return out;
 }
