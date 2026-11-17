@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Exactly spaced lines print where Word puts their text**, the baseline at four fifths of the line's height whatever
+  the font; they printed up to 4px high (19px in a 60pt line). A line with a larger run after its first prints on that
+  run's ascent, as Word's (10pt text with a 12pt run printed 2-3px high). Documents over 1,500 paragraphs get their line
+  heights matched to Word's too (they had come out up to 1px a page short).
+- **A paragraph holding a shape with text on both sides splits over two pages** as in Word, the shape staying with its
+  first lines (it moved to the next page whole); such a shape reaching past the bottom margin is drawn up to end there,
+  one above the top margin down to it. A float drawn up at a page's foot no longer narrows its paragraph's lines on the
+  next page.
+- **A text box's text, opened for editing, sits exactly where the box draws it**, inset from a thick outline, instead
+  of jumping about 12px when editing starts or ends.
+- **Thin compound borders** (triple, medium-gap, double and small-gap under 2.25pt) are laid out at Word's width, so
+  the text below starts where Word puts it, and their lines drawn as Word prints them (they were up to 22pt off).
+- **Long documents with many comments, merge fields (Preview Results), empty paragraphs with formatting marks shown,
+  tracked paragraph joins, or automatic hyphenation** open and respond to typing in time growing with the document, not
+  its square: 2,400 joined paragraphs from 333ms a key to 14ms, a 2,400-paragraph hyphenated document from 291ms to
+  about 1ms. Automatic hyphenation updates only the edited paragraphs.
+
 ## 0.8.1 (2026-11-16)
 
 - **Security fixes from the release reviews**: a crafted document could make the editor hang or crawl through work
