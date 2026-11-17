@@ -903,9 +903,10 @@ export function fromParagraphTop(place) {
   const t = [...ds].reverse().find((d) => d[0].trim() === 'margin-top');
   const m = ds.find((d) => d[0].trim() === 'margin');
   // (Over its paragraph's text, top and bottom, that space comes again under it, above the text: sb-tb, the first line under
-  // a rectangle spaced 6 or 12pt before that much lower in Word's PDF than under one spaced none.)
+  // a rectangle spaced 6 or 12pt before that much lower in Word's PDF than under one spaced none. Not in a paragraph of no
+  // text of its own, --odx-sbtb 0 (editor.js): ftd-1.35MB's page 35 chart, the next paragraph's text right under it.)
   const tb = ds.some((d) => d[0].trim() === 'display' && d[1].trim() === 'block') && !placeVar(place, 'odx-band');
-  const down = (v) => `calc(${v} + min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  const down = (v) => `calc(${v} + min(var(--odx-sbtb, 0px), var(--odx-sbtop, 100000px)))`;
   const b = [...ds].reverse().find((d) => d[0].trim() === 'margin-bottom');
   if (t && (!m || ds.indexOf(t) > ds.indexOf(m))) t[1] = up(t[1].trim());
   else if (m) { const v = cssValues(m[1]); if (!v.length) return place; v[0] = up(v[0]); m[1] = v.join(' '); }
