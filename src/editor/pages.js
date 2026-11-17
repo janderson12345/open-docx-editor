@@ -70,6 +70,12 @@ const addTo = (map, k, d) => map.set(k, (map.get(k) || 0) + d);
 // table's frame); a table in a cell, only as a child or in a tableWrapper (a note's: notebox.js ownTable).
 const tableOf = (el) => (el.tagName === 'TABLE' ? el : el.querySelector('table'));
 const cellTable = (el) => (el.tagName === 'TABLE' ? el : el.classList.contains('tableWrapper') ? el.querySelector(':scope > table') : null);
+// A shape with text on both sides, set out of the flow (reader.js anchorCss, --odx-both): it takes no line of its own,
+// so it is no line when a paragraph is split over pages, nor where one starts. Counted as one, it made the lines beside
+// it a single line the page couldn't split, the paragraph moved on whole; Word breaks such a paragraph as any other,
+// the shape staying with its first lines (wrap-word3 vt-thin: Text 7's three lines beside its rectangle at page 1's
+// foot, the rest on page 2 the column's width).
+const bothShape = (e) => e.tagName === 'IMG' && !!e.style.getPropertyValue('--odx-both') && getComputedStyle(e).position === 'absolute';
 
 const GAP = 24; // px between sheets
 const TIE = 0.33; // px an exactly spaced line must end above the page's bottom margin (splitParagraph)
@@ -581,6 +587,60 @@ export function createPages(view, session, { sheet, scope }) {
     });
     return up.has(-1) ? { past: true } : { up };
   };
+  // A shape with text on both sides (bothShape) in the paragraph reaching past its page's bottom margin: Word keeps it on
+  // the page with the paragraph's first lines, drawn up to end at the margin (not the page's edge, as a float), and
+  // splits the paragraph as any other, its lines beside the shape where it's drawn, those on the next page the column's
+  // width (wrap-word4 foot-h*: rectangles 30 to 80pt high at their paragraph's top, stepped down to the foot). Drawn up
+  // over the text of the lines above, the paragraph goes on to the next page whole instead (`past`), its shape where
+  // its offset puts it there (foot-h50-long Case 14: a filler line above reaching under it; Word saves where it drew a
+  // shape, so its file has that rectangle 596.75pt below its paragraph, at page 2's foot, as wrap-word3 vt-thin has
+  // Text 20's). And one above the page's top margin is drawn down to start there (sq-thick: Text 6's rectangle, saved
+  // 7.2pt above its paragraph, at page 2's top margin). How far to draw each up (px, down when below 0), by its index
+  // among the paragraph's pictures.
+  const PAST_MIN = 1; // px a shape is drawn up past where it's saved before the text above it can move its paragraph on
+  const MAX_ABOVE = 50; // blocks above looked at for text a shape drawn up would reach (a bound, not a fitted value)
+  const shapesPast = (b, shift, p) => {
+    const er = b.el.getBoundingClientRect();
+    const up = new Map();
+    let past = false;
+    [...b.el.querySelectorAll('img')].forEach((img, n) => {
+      if (!bothShape(img)) return;
+      const r = img.getBoundingClientRect();
+      if (r.height >= contentBottom(p) - contentTop(p)) return; // (taller than the page's text area: as it is)
+      const ty = parseFloat((img.style.translate || '').split(/\s+/)[1]) || 0;
+      const rel = r.top - ty - er.top; // (its top from its paragraph's, as laid out)
+      const over = b.top + shift + rel + r.height - contentBottom(p);
+      const under = contentTop(p) - (b.top + shift + rel);
+      // (Its room from the margin it's drawn to, as a float's from its edge: wrapboth.js drawnUpTo.)
+      if (under > 0.5) { up.set(n, -under); drawnUpTo.set(img, contentTop(p) + r.height); return; }
+      if (over <= 0.5) return;
+      up.set(n, over);
+      drawnUpTo.set(img, contentBottom(p));
+      // (Only when drawn up further than the half point or so the page's lines may sit lower than Word's: one Word drew up
+      // is saved there, wrap-word3 sq-none's Text 6 7.2pt above its paragraph, split over the pages as in Word.)
+      if (over <= PAST_MIN) return;
+      // (The text above it there: of the blocks above on the page, a line reaching below its top, across its room.)
+      const v = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map((x) => parseFloat(x) || 0);
+      const left = r.left - (v[3] || 0), right = r.right + (v[1] || 0);
+      // (From where the paragraph is less the push the last pass gave it: moved on to the next page, the text above was
+      // that page's gap away, and it came back, and went on again.)
+      const own = er.top - (applied.get(b.i)?.extra || 0);
+      const top = own + rel - over;
+      const range = document.createRange();
+      let sib = b.el.previousElementSibling;
+      for (let k = 0; sib && k < MAX_ABOVE && !past; k++, sib = sib.previousElementSibling) {
+        const sr = sib.getBoundingClientRect();
+        if (sr.bottom <= top) break;
+        const walker = document.createTreeWalker(sib, NodeFilter.SHOW_TEXT);
+        for (let t = walker.nextNode(); t && !past; t = walker.nextNode()) {
+          if (!t.data.trim()) continue;
+          range.selectNodeContents(t);
+          for (const q of range.getClientRects()) if (q.width > 0 && q.bottom > top + 0.25 && q.top < own && q.right > left && q.left < right) { past = true; break; }
+        }
+      }
+    });
+    return { up, past };
+  };
   const HF_GAP = 60, HF_FAR = 0.3; // a header or footer too tall for the page: how near the middle Word cuts it; from how near the far edge
   /**
    * Rows that have to start a new page, Word-style: a row that doesn't fit moves
@@ -837,7 +897,12 @@ export function createPages(view, session, { sheet, scope }) {
       for (const r of range.getClientRects()) if (r.height > 0) frags.push(r);
     }
     // (A turned picture by its box, not its turned outline: the room it takes on its line.)
-    b.el.querySelectorAll('img:not(.ProseMirror-separator), br:not(.ProseMirror-trailingBreak)').forEach((e) => { const r = layoutRect(e); if (r.height > 0) frags.push(r); });
+    // (Not a shape with text on both sides: bothShape.)
+    b.el.querySelectorAll('img:not(.ProseMirror-separator), br:not(.ProseMirror-trailingBreak)').forEach((e) => {
+      if (bothShape(e)) return;
+      const r = layoutRect(e);
+      if (r.height > 0) frags.push(r);
+    });
     // A paragraph ending in a line break has an empty last line (drawn by the editor's own break): Word counts it
     // for widow control (three lines and the break split two and two).
     const trailing = frags.length ? b.el.querySelector('br.ProseMirror-trailingBreak') : null;
@@ -888,7 +953,7 @@ export function createPages(view, session, { sheet, scope }) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, skipPush);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       if (n.nodeType === 1) {
-        if ((n.tagName === 'IMG' || n.tagName === 'BR') && onLine(n.getBoundingClientRect())) return view.posAtDOM(n.parentNode, [...n.parentNode.childNodes].indexOf(n));
+        if ((n.tagName === 'IMG' || n.tagName === 'BR') && !bothShape(n) && onLine(n.getBoundingClientRect())) return view.posAtDOM(n.parentNode, [...n.parentNode.childNodes].indexOf(n));
         continue;
       }
       range.selectNodeContents(n);
@@ -1389,6 +1454,7 @@ export function createPages(view, session, { sheet, scope }) {
   const unfloated = new WeakSet();
   const floatUp = new Map(); // block index -> { el, up: Map(picture's index in it -> px drawn up) }, this pass's (floatsPast)
   let drawnUp = new Set(); // pictures drawn up now
+  const shapeUp = new Map(); // block index -> { el, up }: its shapes with text on both sides drawn up (shapesPast), this pass's
   let applied = new Map(); // block index -> { extra px we added above it }
   const keep = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.keepNext ?? session.styleProp(node.attrs.styleId, 'keepNext'));
   const paraBreakBefore = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.pageBreakBefore ?? session.styleProp(node.attrs.styleId, 'pageBreakBefore'));
@@ -2172,6 +2238,7 @@ export function createPages(view, session, { sheet, scope }) {
     const rec = new Map(); // (columns sections) block k -> { top, bottom, carry } where it was last placed
     const frameDy = new Map(); // block index -> px a frame set down on its page is moved below where it comes
     floatUp.clear();
+    shapeUp.clear();
     placed.clear();
     assignNotes(doc);
     // The steps of the walk below that have names of their own (closures: they move `shift` and the walk's maps).
@@ -2309,6 +2376,13 @@ export function createPages(view, session, { sheet, scope }) {
       // (In columns of their own widths, a paragraph's bottom at the width of the column it's in: atColumnWidth.)
       const wide = inCols ? atColumnWidth(b, cols || inReg, p, shift, top <= contentTop(p) + 1) : null;
       const bottom = wide ? wide.bottom : b.bottom;
+      // (Its shapes with text on both sides past the foot, drawn up: shapesPast. Not in columns.)
+      let shapePast = false;
+      if (!inCols && b.node.type === schema.nodes.paragraph) {
+        const sp = shapesPast(b, shift, p);
+        if (sp.up.size) shapeUp.set(b.i, { el: b.el, up: sp.up });
+        shapePast = sp.past;
+      }
       let target = null;
       let overflow = false;
       let forced = false;
@@ -2335,6 +2409,10 @@ export function createPages(view, session, { sheet, scope }) {
       else if (k > 0 && !firstOnPage && b.node.type === schema.nodes.paragraph && liftedPage(b.node) > p) target = liftedPage(b.node); // (its float's page: liftFloats)
       else if (top < contentTop(p)) target = p; // landed in a gap or a top margin
       else if (!firstOnPage && b.node.type === schema.nodes.paragraph && floatsMoveOn(b, p)) {
+        target = p + 1;
+        overflow = true;
+      }
+      else if (!firstOnPage && shapePast) { // (its shape drawn up over the text above it: shapesPast)
         target = p + 1;
         overflow = true;
       }
@@ -2448,6 +2526,7 @@ export function createPages(view, session, { sheet, scope }) {
       shift += delta;
       if (rec.has(m)) rec.set(m, { top: moved.top + shift, bottom: moved.bottom + shift }); // (the walk goes on after it, not from it)
       for (let n = m; n <= k; n++) {
+        shapeUp.delete(blocks[n].i);
         moveNotes(blocks[n].i, target);
         splits.delete(blocks[n].i);
         paraSplits.delete(blocks[n].i);
@@ -2458,6 +2537,10 @@ export function createPages(view, session, { sheet, scope }) {
       if (inCols && moved.node.type === schema.nodes.paragraph && moved.bottom + shift > contentBottom(target) + 1) k = m - 1;
       breakPending = (!lineSplits || regs.some((r) => m >= r.k0 && m < r.k1)) && hasPageBreak(moved.node);
       breakKind = breakKindOf(moved.node);
+      if (!inCols && moved.node.type === schema.nodes.paragraph) {
+        const { up } = shapesPast(moved, shift, target);
+        if (up.size) shapeUp.set(moved.i, { el: moved.el, up });
+      }
       if (lineSplits && moved.node.type === schema.nodes.paragraph && (hasPageBreak(moved.node) || moved.bottom + shift > contentBottom(target) + 1)) {
         const split = splitParagraph(moved, shift, true, true);
         if (split && split.pushes.length) {
@@ -2508,7 +2591,7 @@ export function createPages(view, session, { sheet, scope }) {
     sheet.classList.remove('odx-bl-off');
     // Floats drawn up to end at their page's edge (floatsPast); those no longer drawn up, put back.
     const upNow = new Map();
-    for (const [, { el, up }] of floatUp) {
+    for (const [, { el, up }] of [...floatUp, ...shapeUp]) {
       const imgs = [...el.querySelectorAll('img')];
       for (const [n, dy] of up) if (imgs[n]) upNow.set(imgs[n], dy);
     }
