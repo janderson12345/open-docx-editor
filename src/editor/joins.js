@@ -6,7 +6,8 @@
 // into the next one (odx-ojoined), and those whose marks are deleted stay apart.
 import { wrapText } from './textspans.js';
 import { Plugin, PluginKey } from 'prosemirror-state';
-import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Decoration } from 'prosemirror-view';
+import { decoSet } from './decoset.js';
 import { DOMSerializer } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { paragraphMarkRev } from './track.js';
@@ -71,7 +72,7 @@ function compute(doc) {
   };
   visit(doc, 0);
   separators(doc, serializer, decos);
-  return DecorationSet.create(doc, decos);
+  return decoSet(doc, decos);
 }
 
 /** A hidden paragraph mark (w:vanish with w:specVanish: Word's style separator, for run-in headings). */

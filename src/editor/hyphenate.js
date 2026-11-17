@@ -9,6 +9,7 @@
 // hyphenates itself, is marked hyphens:manual (odx-nohyph).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { decoSet } from './decoset.js';
 import { schema } from './schema.js';
 
 const key = new PluginKey('odx-hyphenate');
@@ -221,21 +222,68 @@ function noHyph(node, session) {
   return own != null ? own : !!session.styleProp(node.attrs.styleId, 'noHyph');
 }
 
-function build(doc, session) {
-  const own = nativeHyphens();
+/** One paragraph's decorations at `pos`, into `decos`: the browser's own hyphens (`own`), else the soft-hyphen widgets. */
+function paragraphInto(node, pos, session, own, decos) {
+  if (noHyph(node, session)) return;
+  if (own) {
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-hyph' }));
+    // (The words the zone or the limit leave whole: not hyphenated, editor.css.)
+    for (const [w, len] of heldIn(node, session) || []) decos.push(Decoration.inline(pos + 1 + w, pos + 1 + w + len, { class: 'odx-nohyph' }));
+  } else decos.push(...paragraphDecos(node, pos, session));
+}
+
+/** The document's hyphenation decorations (`own`: the browser hyphenates itself). Exported for the tests. */
+export function hyphenSet(doc, session, own = nativeHyphens()) {
   if (!own && !hyphenate) return DecorationSet.empty;
   const decos = [];
   doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
-    if (noHyph(node, session)) return false;
-    if (own) {
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'odx-hyph' }));
-      // (The words the zone or the limit leave whole: not hyphenated, editor.css.)
-      for (const [w, len] of heldIn(node, session) || []) decos.push(Decoration.inline(pos + 1 + w, pos + 1 + w + len, { class: 'odx-nohyph' }));
-    } else decos.push(...paragraphDecos(node, pos, session));
+    paragraphInto(node, pos, session, own, decos);
     return false;
   });
-  return DecorationSet.create(doc, decos);
+  return decoSet(doc, decos);
+}
+
+const MANY_STEPS = 100;
+
+/**
+ * The set after an edit: the old one mapped, the paragraphs the steps touched made again (as textspans.js does the text
+ * spans). Each paragraph's decorations are its own, so the rest stay as they were; typing in a long hyphenated
+ * document made all of its soft hyphens again (6,000 paragraphs, 80ms a key). Made again whole after many steps, steps
+ * over most of the document, or a step with no range (a document attribute's: styles may have changed what is
+ * hyphenated). Exported for the tests.
+ */
+export function mapHyphens(tr, set, session, own = nativeHyphens()) {
+  if (!own && !hyphenate) return DecorationSet.empty;
+  if (tr.steps.length > MANY_STEPS) return hyphenSet(tr.doc, session, own);
+  const maps = tr.mapping.maps;
+  const ranges = [];
+  for (let i = 0; i < tr.steps.length; i++) {
+    let { from, to } = tr.steps[i];
+    if (from == null) tr.steps[i].getMap().forEach((_s, _e, a, b) => { from = Math.min(from ?? a, a); to = Math.max(to ?? b, b); });
+    if (from == null) return hyphenSet(tr.doc, session, own);
+    for (let j = i; j < maps.length; j++) { from = maps[j].map(from, -1); to = maps[j].map(to, 1); }
+    ranges.push([Math.max(0, from - 1), Math.min(tr.doc.content.size, to + 1)]);
+  }
+  // (Most of the document touched, an Accept All or a paste of a long document: made whole, adding that many to the
+  // set goes through every block for each.)
+  if (ranges.reduce((n, [a, b]) => n + b - a, 0) > tr.doc.content.size / 2) return hyphenSet(tr.doc, session, own);
+  set = set.map(tr.mapping, tr.doc);
+  for (const [a, b] of ranges) {
+    // (Every paragraph the range takes in, and what lay in them: a node decoration of a paragraph split in two covers both.)
+    let lo = Infinity, hi = -Infinity;
+    const decos = [];
+    tr.doc.nodesBetween(a, b, (node, pos) => {
+      if (node.type !== schema.nodes.paragraph) return true;
+      lo = Math.min(lo, pos);
+      hi = Math.max(hi, pos + node.nodeSize);
+      paragraphInto(node, pos, session, own, decos);
+      return false;
+    });
+    if (lo > hi) continue;
+    set = set.remove(set.find(lo, hi).filter((d) => d.from >= lo && d.to <= hi)).add(tr.doc, decos);
+  }
+  return set;
 }
 
 const sessions = new WeakMap(); // view -> its session
@@ -268,10 +316,11 @@ export function hyphenatePlugin(session) {
   return new Plugin({
     key,
     state: {
-      init: (_, state) => (session.autoHyphenation ? build(state.doc, session) : DecorationSet.empty),
+      init: (_, state) => (session.autoHyphenation ? hyphenSet(state.doc, session) : DecorationSet.empty),
       apply(tr, set) {
         if (!session.autoHyphenation) return set;
-        return tr.docChanged || tr.getMeta(key) ? build(tr.doc, session) : set;
+        if (tr.getMeta(key)) return hyphenSet(tr.doc, session);
+        return tr.docChanged ? mapHyphens(tr, set, session) : set;
       },
     },
     props: {
