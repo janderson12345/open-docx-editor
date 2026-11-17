@@ -7,6 +7,7 @@
 // in other sizes still scale from it), a length for exact and at-least spacing (as they were).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Mark } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { lineHeightOf } from './util.js';
 import { pictureFix, pictureAlone } from './picfix.js';
@@ -100,7 +101,11 @@ function picture(view, node, pos, el, box, value) {
  * Word's boxes for the runs of a paragraph of mixed sizes, fonts or raises (mixlines.js), as [from, to, css] by offset
  * from the paragraph's position, or null.
  */
-function mixed(view, pos, el, box) {
+function mixed(view, node, pos, el, box) {
+  // (Text all in one formatting has one box: nothing to read from the page. Most paragraphs.)
+  let marks = null, one = true;
+  node.descendants((c) => { if (c.isText) { if (!marks) marks = c.marks; else if (one && !Mark.sameSet(marks, c.marks)) one = false; } return one; });
+  if (one) return null;
   const got = mixedLines(el, box);
   if (!got) return null;
   const out = [];
@@ -192,7 +197,7 @@ export function applyLineFix(view) {
     const best = bestHeight(box, el, chain, want, length);
     const value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
     const pic = picture(view, node, pos, el, box, value);
-    const mix = mixed(view, pos, el, box);
+    const mix = mixed(view, node, pos, el, box);
     if (value == null && !pic && !mix) return false;
     const r = { value, want, pic, mix };
     memo.set(node, r);
