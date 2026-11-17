@@ -400,7 +400,22 @@ function drawBoxes(d) {
     // Table cells' plain lines are inset shadows (ooxml/styles.js): a band along the edge the offset points from.
     const bands = cs.boxShadow && cs.boxShadow !== 'none' ? [...cs.boxShadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+0px\s+0px\s+inset/g)]
       .map((m) => ({ c: color(m[1]), x: +m[2], y: +m[3] })).filter((s) => s.c && (s.x || s.y)) : [];
-    if (!bg && !sides.length && !bands.length) continue;
+    const lines = cellLines(el);
+    if (!bg && !sides.length && !bands.length && !lines.length) continue;
+    if (lines.length) {
+      // Table cells' compound lines (ooxml/props.js cellLines): rects placed on the cell's box, cut to each sheet.
+      const box = el.getBoundingClientRect();
+      for (const [xf, xo, yf, yo, wf, wo, hf, ho, c] of lines) {
+        const l = box.left + xf * box.width + xo, t = box.top + yf * box.height + yo;
+        const w = wf * box.width + wo, h = hf * box.height + ho;
+        for (let n = 0; n < sheets.length; n++) {
+          const sr = sheets[n].r;
+          const top = Math.max(t, sr.top), bottom = Math.min(t + h, sr.bottom), left = Math.max(l, sr.left), right = Math.min(l + w, sr.right);
+          if (bottom <= top || right <= left) continue;
+          pages[n].drawRectangle({ x: (left - sr.left) * PT, y: (sr.bottom - bottom) * PT, width: (right - left) * PT, height: (bottom - top) * PT, color: c });
+        }
+      }
+    }
     for (const r of el.getClientRects()) {
       for (let n = 0; n < sheets.length; n++) {
         const sr = sheets[n].r;
@@ -690,6 +705,25 @@ function clipped(el, r) {
 }
 
 /** CSS color to pdf-lib's, with its alpha; null when transparent. */
+/**
+ * A table cell's compound lines from its own --odx-lines (not one inherited from a cell round it): each rect's eight
+ * numbers (x, y, width, height, each a share of the cell's size and px) and its #rrggbb colour; at most 400.
+ */
+function cellLines(el) {
+  const spec = el.style ? el.style.getPropertyValue('--odx-lines') : '';
+  if (!spec) return [];
+  const out = [];
+  for (const part of spec.split(',', 400)) {
+    const f = part.trim().split(/\s+/);
+    if (f.length !== 9 || !/^#[0-9A-Fa-f]{6}$/.test(f[8])) continue;
+    const v = f.slice(0, 8).map(Number);
+    if (!v.every((x) => Number.isFinite(x) && Math.abs(x) < 1e5)) continue;
+    const hex = parseInt(f[8].slice(1), 16);
+    out.push([...v, rgb((hex >> 16) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255)]);
+  }
+  return out;
+}
+
 function color(css) {
   const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(css || '');
   if (!m) return null;
