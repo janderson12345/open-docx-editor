@@ -107,6 +107,23 @@ const BROKEN = { dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dot
 const drawnSide = (b) => b && b.val && b.val !== 'nil' && b.val !== 'none';
 
 /**
+ * Borders as readBorders gives them, whatever came in: a co-editor's step carries any JSON in a paragraph's attributes,
+ * so sizes and spaces made numbers within Word's bounds, colours six hex digits or none, kinds strings. (A space given
+ * as a string made the CSS's arithmetic throw, and the paragraph couldn't be drawn.)
+ */
+export function cleanBorders(borders) {
+  const out = {};
+  if (!borders || typeof borders !== 'object') return out;
+  for (const side of ['top', 'bottom', 'left', 'right', 'between', 'bar']) {
+    const b = Object.hasOwn(borders, side) ? borders[side] : null;
+    if (!b || typeof b !== 'object') continue;
+    const num = (v, max, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.min(max, n) : d; };
+    out[side] = { val: typeof b.val === 'string' ? b.val : null, sz: num(b.sz, 255, 4) || 4, color: hexColor(b.color), space: num(b.space, 31, 0) };
+  }
+  return out;
+}
+
+/**
  * Paragraph borders with a compound side thinner than the 2.25pt the browser needs to draw two lines (CSS double): all
  * their sides drawn by one picture (a border-image cut in nine, its edges stretched along the sides), each side's lines as
  * Word prints them, each corner's lines joined one inside the other, as Word's are. Null when there's none, or a side
@@ -167,7 +184,8 @@ export function borderCss(b) {
   // A border of two or three lines is as wide as all of them and their gaps (COMPOUND), at least 2.25pt (3px) for the
   // browser to draw two lines.
   const w = lines ? Math.max(2.25, lines(b.sz / 8)) : Math.max(0.5, b.sz / 8);
-  return `${w}pt ${style} ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`;
+  // (Only a number and six hex digits go into the CSS, whatever a co-editor's step carried.)
+  return `${Number.isFinite(w) ? w : 0.5}pt ${style} ${hexColor(b.color) ? '#' + b.color : '#000'}`;
 }
 
 export function shdFill(shd) {
@@ -431,12 +449,13 @@ export function pPrToCss(p) {
   if (p.indRight != null) css.push(`margin-inline-end:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
   if (p.indFirst != null) css.push(`text-indent:${twipsToPt(p.indFirst)}pt`);
   if (p.borders) {
-    const striped = stripedBorders(p.borders);
+    const borders = cleanBorders(p.borders);
+    const striped = stripedBorders(borders);
     // (Or none: a style's picture isn't to draw the paragraph's own borders.)
     if (striped) css.push(striped.css);
-    else if (['top', 'bottom', 'left', 'right'].some((s) => p.borders[s])) css.push('border-image:none');
+    else if (['top', 'bottom', 'left', 'right'].some((s) => borders[s])) css.push('border-image:none');
     for (const side of ['top', 'bottom', 'left', 'right']) {
-      const b = p.borders[side];
+      const b = borders[side];
       if (!b) continue;
       if (striped && drawnSide(b)) {
         // Drawn by the picture, at Word's width less what the browser can't draw (it draws whole pixels: the nearest,

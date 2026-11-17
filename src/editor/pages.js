@@ -599,10 +599,14 @@ export function createPages(view, session, { sheet, scope }) {
   // among the paragraph's pictures.
   const PAST_MIN = 1; // px a shape is drawn up past where it's saved before the text above it can move its paragraph on
   const MAX_ABOVE = 50; // blocks above looked at for text a shape drawn up would reach (a bound, not a fitted value)
+  const MAX_SCANS = 32; // shapes of one paragraph that look (a bound, not a fitted value)
   const shapesPast = (b, shift, p) => {
     const er = b.el.getBoundingClientRect();
     const up = new Map();
     let past = false;
+    // (At most MAX_SCANS shapes of a paragraph look for text above them: a crafted paragraph of thousands of such shapes,
+    // none over the text, scanned the same blocks for each on every pass.)
+    let scans = 0;
     [...b.el.querySelectorAll('img')].forEach((img, n) => {
       if (!bothShape(img)) return;
       const r = img.getBoundingClientRect();
@@ -618,7 +622,7 @@ export function createPages(view, session, { sheet, scope }) {
       drawnUpTo.set(img, contentBottom(p));
       // (Only when drawn up further than the half point or so the page's lines may sit lower than Word's: one Word drew up
       // is saved there, wrap-word3 sq-none's Text 6 7.2pt above its paragraph, split over the pages as in Word.)
-      if (over <= PAST_MIN) return;
+      if (over <= PAST_MIN || past || ++scans > MAX_SCANS) return;
       // (The text above it there: of the blocks above on the page, a line reaching below its top, across its room.)
       const v = getComputedStyle(img).getPropertyValue('--odx-both').trim().split(/\s+/).map((x) => parseFloat(x) || 0);
       const left = r.left - (v[3] || 0), right = r.right + (v[1] || 0);
