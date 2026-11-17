@@ -241,6 +241,24 @@ await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.emulateMedia({ media: 'screen' });
 const footOff = Math.max(0, ...printed.filter((ln) => !ln.last && ln.left.length > 1).map((ln) => Math.abs(ln.left[ln.left.length - 1] - footRoom.left)));
 check(printed.length > 2 && printed.every((ln) => !ln.inside && !ln.right.length) && footOff < 2, `printed, justified lines beside a footer's shape wrapped on its left only end at its room (${printed.length} lines, ${printed.reduce((a, ln) => a + ln.inside + ln.right.length, 0)} words in or past it, ends ${footOff.toFixed(1)}px off)`);
+// Shapes placed from their paragraph's top under space before (sb-word.docx, Word-made: wrap-word5 mksbfix.ps1): Word
+// measures the offset from the paragraph's top above that space, the space after the paragraph above not part of it,
+// and from the page's top for one starting a page. In Word's PDF: under the filler line (no space after) at 0, a square
+// one under a paragraph spaced 18pt before; 24pt under it (12 after, offset 12) one in front of the text under 18pt
+// before; at 0 a tight one under 12pt before; at the page's top margin one spaced 18pt before starting page 2.
+await page.setInputFiles('input[type=file]', 'test/fixtures/sb-word.docx');
+await page.waitForFunction(() => window.odx?.fileName === 'sb-word.docx');
+await page.waitForTimeout(2500);
+const sbTops = await page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((img) => {
+  const pad = parseFloat(getComputedStyle(img).getPropertyValue('--odx-pad')) || 0;
+  const top = img.getBoundingClientRect().top + pad;
+  const p = img.closest('p');
+  const above = p.previousElementSibling;
+  const sheet = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((e) => e.getBoundingClientRect()).find((q) => p.getBoundingClientRect().top >= q.top && p.getBoundingClientRect().top < q.bottom);
+  return { fromAbove: top - above.getBoundingClientRect().bottom, fromPage: sheet ? top - sheet.top - 96 : NaN };
+}));
+const sbWant = [['fromAbove', 0], ['fromAbove', 32], ['fromAbove', 0], ['fromPage', 0]];
+check(sbTops.length === 4 && sbWant.every(([k, v], i) => Math.abs(sbTops[i][k] - v) < 1.5), `shapes under space before placed from their paragraph's top above it, as Word's (${sbTops.map((t, i) => t[sbWant[i]?.[0]]?.toFixed(1)).join(', ')}px; Word 0, 32, 0, 0)`);
 check(!errors.length, `no page errors (${errors.join(' | ')})`);
 await browser.close();
 server.close();

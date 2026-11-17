@@ -39,7 +39,7 @@ test('a turned floating shape wrapped round (text on its right): the text keeps 
   const n = node(xml);
   // 96 x 72 at 30 degrees: 119.1 x 110.4, so 11.57px wider and 19.18px taller each side. Its top room isn't added to
   // its offset (10px), as for an unturned shape: Word draws it about its box's centre.
-  const m = /float:left;margin:(-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px;transform:translate\(([\d.]+)px, ([\d.]+)px\) rotate\(30deg\)/.exec(n.place);
+  const m = /float:left;margin:calc\((-?[\d.]+)px - min\(var\(--odx-sb, 0px\), var\(--odx-sbtop, 100000px\)\)\) (-?[\d.]+)px (-?[\d.]+)px (-?[\d.]+)px;transform:translate\(([\d.]+)px, ([\d.]+)px\) rotate\(30deg\)/.exec(n.place);
   assert.ok(m, n.place);
   const [t, r, b, l, tx, ty] = m.slice(1).map(Number);
   // (Less the room drawn round its outline, each side: reader.js padPlace, --odx-pad.)
