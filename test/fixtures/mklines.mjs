@@ -22,9 +22,10 @@ make('lines.docx', [
   P('', R('Mixed small ', '<w:sz w:val="20"/>') + R('Large', '<w:b/><w:sz w:val="24"/>') + R(' small.', '<w:sz w:val="20"/>')),
   P('', R('Raised small ', '<w:sz w:val="20"/>') + R('Large', '<w:b/><w:position w:val="6"/><w:sz w:val="24"/>') + R(' small.', '<w:sz w:val="20"/>')),
   P('', R('Plain after.', '<w:sz w:val="24"/>')),
-  // (Lines of runs in two sizes, Word's heights: Times New Roman's 12pt lowered 3pt, Calibri's raised 3pt, at 1.15.)
-  P('', R('Lowered small ', '<w:sz w:val="20"/>') + R('Large', '<w:position w:val="-6"/><w:sz w:val="24"/>') + R(' small.', '<w:sz w:val="20"/>')),
-  P('', C('Calibri small ', '<w:sz w:val="20"/>') + C('Large', '<w:position w:val="6"/><w:sz w:val="24"/>') + C(' small.', '<w:sz w:val="20"/>')),
+  // (Lines of runs in two sizes, Word's heights: Times New Roman's 12pt lowered 3pt, Calibri's raised 3pt, single spaced
+  // (the blank document's Normal is 1.08), and at 1.15.)
+  P(' w:line="240" w:lineRule="auto"', R('Lowered small ', '<w:sz w:val="20"/>') + R('Large', '<w:position w:val="-6"/><w:sz w:val="24"/>') + R(' small.', '<w:sz w:val="20"/>')),
+  P(' w:line="240" w:lineRule="auto"', C('Calibri small ', '<w:sz w:val="20"/>') + C('Large', '<w:position w:val="6"/><w:sz w:val="24"/>') + C(' small.', '<w:sz w:val="20"/>')),
   P(' w:line="276" w:lineRule="auto"', R('Spaced small ', '<w:sz w:val="20"/>') + R('Large', '<w:position w:val="6"/><w:sz w:val="24"/>') + R(' small.', '<w:sz w:val="20"/>')),
 ].join(''));
 const sizes = [20, 21, 22, 26];
