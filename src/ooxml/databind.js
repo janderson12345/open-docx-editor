@@ -2,7 +2,7 @@
 // the package's custom XML parts (customXml/itemN.xml), as Word does, and an edit to the control goes back into that
 // node, which every control bound to it then shows. The XPath and the part's id come from the file, so they are read by
 // a small resolver of the paths Word writes (/root/a, /ns0:root[1]/ns0:a[1], .../@attr), never a general XPath engine.
-import { NS, kids, parseXml, serializeXml, startTag, tagAttr, unescapeXml } from './xml.js';
+import { NS, kids, parseXml, serializeXml, startTag, startTags, tagAttr, setTagAttr, unescapeXml, xmlChars } from './xml.js';
 
 const REL_CUSTOM_XML = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml';
 const REL_PROPS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps';
@@ -11,10 +11,14 @@ const NS_W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
 // (Bounds on what a file can make this do: parts read, their size, an XPath's length and steps, the prefixes mapped.)
 const MAX_PARTS = 64;
 const MAX_PART_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const MAX_XPATH = 2048;
 const MAX_STEPS = 64;
 const MAX_MAPPINGS = 4096;
 const MAX_CACHE = 2048;
+// (Elements looked at over all lookups in one store: a crafted part of millions of siblings and thousands of controls
+// bound past them would otherwise cost their product. Found nodes are remembered, so only new bindings spend it.)
+const MAX_WORK = 2e7;
 
 // One step: an element (prefix optional) with an optional position, or, last, an attribute or text().
 const NAME = '[\\p{L}_][\\p{L}\\p{N}_.\\-]*';
@@ -72,8 +76,11 @@ export function compileXPath(xpath, prefixes = '') {
   return steps;
 }
 
-/** The node `steps` pick in a parsed part: { el, attr? } (attr: the attribute node), or null. */
-function resolve(doc, steps) {
+/**
+ * The node `steps` pick in a parsed part: { el, attr? } (attr: the attribute node), or null. `budget.left` counts the
+ * elements looked at down; at 0 nothing more is found.
+ */
+function resolve(doc, steps, budget) {
   let node = null;
   for (const s of steps) {
     if (s.text) break;
@@ -81,15 +88,50 @@ function resolve(doc, steps) {
       const a = node && node.getAttributeNodeNS(s.ns, s.name);
       return a ? { el: node, attr: a } : null;
     }
-    const pool = node ? kids(node) : [doc.documentElement];
+    const root = !node;
+    let hit = null;
     let k = 0;
-    node = null;
-    for (const c of pool) {
-      if (c.localName === s.name && (c.namespaceURI || null) === s.ns && ++k === s.n) { node = c; break; }
+    for (let c = root ? doc.documentElement : node.firstChild; c; c = root ? null : c.nextSibling) {
+      if (--budget.left < 0) return null;
+      if (c.nodeType === 1 && c.localName === s.name && (c.namespaceURI || null) === s.ns && ++k === s.n) { hit = c; break; }
     }
+    node = hit;
     if (!node) return null;
   }
   return node ? { el: node } : null;
+}
+
+/** Start tag `name`'s attribute `attr` in a control's w:sdtPr XML (as written, still escaped), or null: one scan. */
+export const prAttr = (xml, name, attr) => {
+  const t = typeof xml === 'string' ? startTag(xml, name) : null;
+  return t ? tagAttr(t.tag, attr) : null;
+};
+
+/** Whether a control's w:sdtPr XML says it shows its placeholder (a w:showingPlcHdr not set to 0 or false). */
+export function showsPlc(xml) {
+  if (typeof xml !== 'string') return false;
+  for (const t of startTags(xml, 'w:showingPlcHdr')) {
+    const v = tagAttr(t.tag, 'w:val');
+    if (v !== '0' && v !== 'false') return true;
+  }
+  return false;
+}
+
+/** A control's w:sdtPr XML without its w:showingPlcHdr (scanned, not by a pattern that goes back over unclosed tags). */
+export function dropPlc(xml) {
+  if (typeof xml !== 'string') return xml;
+  let out = '';
+  let at = 0;
+  for (const t of startTags(xml, 'w:showingPlcHdr')) {
+    if (t.at < at) continue;
+    out += xml.slice(at, t.at);
+    at = t.end;
+    if (!t.selfClosing) {
+      const c = xml.indexOf('</w:showingPlcHdr>', at);
+      if (c >= 0) at = c + '</w:showingPlcHdr>'.length;
+    }
+  }
+  return at ? out + xml.slice(at) : xml;
 }
 
 /** A node's value as a bound control shows it. */
@@ -101,10 +143,15 @@ export class BindingStore {
     this.pkg = pkg;
     this.parts = [];
     this._steps = new Map();
+    this._hits = new Map();
+    this._budget = { left: MAX_WORK };
+    this._gen = 0;
+    let total = 0;
     const rels = pkg.mainPath ? pkg.readRels(pkg.mainPath).filter((r) => r.type === REL_CUSTOM_XML && !r.external) : [];
     for (const r of rels.slice(0, MAX_PARTS)) {
       const bytes = pkg.files[r.target];
-      if (!bytes || bytes.length > MAX_PART_BYTES || this.parts.some((p) => p.path === r.target)) continue;
+      if (!bytes || bytes.length > MAX_PART_BYTES || total + bytes.length > MAX_TOTAL_BYTES || this.parts.some((p) => p.path === r.target)) continue;
+      total += bytes.length;
       const text = pkg.text(r.target);
       let doc;
       try { doc = parseXml(text.replace(/^\uFEFF/, '')); } catch { continue; }
@@ -134,21 +181,31 @@ export class BindingStore {
    */
   find(b) {
     if (!b || this.empty) return null;
+    // (Remembered: a set changes nodes' values, never which node a path picks.)
+    const key = `${normId(b.store)}\u0000${b.prefixes}\u0000${b.xpath}`;
+    if (this._hits.has(key)) return this._hits.get(key);
     const steps = this._compiled(b);
-    if (!steps) return null;
-    const id = normId(b.store);
-    const named = id && this.parts.find((p) => p.id === id);
-    for (const part of named ? [named] : this.parts) {
-      const hit = resolve(part.doc, steps);
-      if (hit) return { part, ...hit };
+    let found = null;
+    if (steps) {
+      const id = normId(b.store);
+      const named = id && this.parts.find((p) => p.id === id);
+      for (const part of named ? [named] : this.parts) {
+        const hit = resolve(part.doc, steps, this._budget);
+        if (hit) { found = { part, ...hit }; break; }
+      }
     }
-    return null;
+    if (this._hits.size >= MAX_CACHE * 4) this._hits.clear();
+    this._hits.set(key, found);
+    return found;
   }
 
   /** The value a control's binding (its w:sdtPr XML or a binding) shows, or null when it finds nothing. */
   value(b) {
     const hit = this.find(typeof b === 'string' ? bindingOf(b) : b);
-    return hit ? valueOf(hit) : null;
+    if (!hit) return null;
+    // (Read once until the next set: a node's text is all its descendants', which may be the whole part.)
+    if (hit.gen !== this._gen) { hit.v = valueOf(hit); hit.gen = this._gen; }
+    return hit.v;
   }
 
   /** The node's identity (for controls bound to the same one), or null. */
@@ -160,8 +217,9 @@ export class BindingStore {
   /** Set the value a binding finds; true when it changed. */
   set(b, value) {
     const hit = this.find(typeof b === 'string' ? bindingOf(b) : b);
-    const v = String(value ?? '');
+    const v = xmlChars(value ?? '');
     if (!hit || valueOf(hit) === v) return false;
+    this._gen++;
     if (hit.attr) hit.attr.value = v;
     else {
       while (hit.el.firstChild) hit.el.removeChild(hit.el.firstChild);
@@ -186,7 +244,7 @@ export class BindingStore {
 
 /** A date in the control's w:dateFormat (Word patterns such as M/d/yyyy, MMMM d, yyyy, dd-MMM-yy). */
 export function formatDate(d, pr = '') {
-  const fmt = (/<w:dateFormat\b[^>]*w:val="([^"]*)"/.exec(pr) || [])[1] || 'M/d/yyyy';
+  const fmt = unescapeXml(prAttr(pr, 'w:dateFormat', 'w:val') ?? '').slice(0, 256) || 'M/d/yyyy';
   const M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const D = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const p2 = (n) => String(n).padStart(2, '0');
@@ -224,8 +282,8 @@ export function boundDisplay(prXml, kind, value) {
   const v = String(value).replace(/\r\n?/g, '\n');
   if (kind === 'checkbox') {
     const on = /^\s*(true|1)\s*$/i.test(v);
-    const code = (re) => (re.exec(prXml) || [])[1];
-    const hex = on ? code(/<w14:checkedState\b[^>]*w14:val="([0-9A-Fa-f]{1,6})"/) || '2612' : code(/<w14:uncheckedState\b[^>]*w14:val="([0-9A-Fa-f]{1,6})"/) || '2610';
+    const code = (name) => { const v = prAttr(prXml, name, 'w14:val'); return v && /^[0-9A-Fa-f]{1,6}$/.test(v) ? v : null; };
+    const hex = on ? code('w14:checkedState') || '2612' : code('w14:uncheckedState') || '2610';
     const cp = parseInt(hex, 16);
     return { text: String.fromCodePoint(cp > 0 && cp <= 0x10ffff ? cp : 0x2610), checked: on };
   }
@@ -239,7 +297,7 @@ export function boundDisplay(prXml, kind, value) {
     const d = parseXmlDate(v);
     return d ? { text: formatDate(d, prXml), date: d } : { text: v };
   }
-  const multi = kind === 'richText' || /<w:text\b[^>]*w:multiLine="(?:1|true|on)"/.test(prXml);
+  const multi = kind === 'richText' || /^(?:1|true|on)$/.test(prAttr(prXml, 'w:text', 'w:multiLine') ?? '');
   return { text: multi ? v : v.replace(/\n/g, ' ') };
 }
 
@@ -250,9 +308,14 @@ function* startTagsIn(xml, name) {
 
 /** A control's w:sdtPr XML once it shows a bound value: no placeholder; a check box's state, a date's w:fullDate set. */
 export function boundPr(prXml, shown) {
-  let pr = prXml.replace(/<w:showingPlcHdr\b[^>]*\/>/g, '');
-  if (shown.checked != null) pr = pr.replace(/(<w14:checked\b[^>]*w14:val=")[^"]*"/, `$1${shown.checked ? 1 : 0}"`);
-  if (shown.date) pr = pr.replace(/(<w:date\b)[^>]*?(\/?>)/, (m0, open, close) => `${open} w:fullDate="${attrEsc(fullDate(shown.date))}"${close}`);
+  // (Tags found by scanning, not by patterns that go back over a co-editor's unclosed tags.)
+  let pr = dropPlc(prXml);
+  const retag = (name, f) => {
+    const t = startTag(pr, name);
+    if (t) pr = pr.slice(0, t.at) + f(t) + pr.slice(t.end);
+  };
+  if (shown.checked != null) retag('w14:checked', (t) => setTagAttr(t.tag, 'w14:val', shown.checked ? '1' : '0'));
+  if (shown.date) retag('w:date', (t) => `<w:date w:fullDate="${attrEsc(fullDate(shown.date))}"${t.selfClosing ? '/>' : '>'}`);
   return pr;
 }
 
@@ -264,7 +327,8 @@ export function storeValue(prXml, kind, { text, checked, value }) {
   if (kind === 'checkbox') return checked ? 'true' : 'false';
   if (kind === 'dropdown' || kind === 'combobox') return value ?? text;
   if (kind === 'date' && text) {
-    const as = (/<w:storeMappedDataAs\b[^>]*w:val="(\w+)"/.exec(prXml) || [])[1] || 'dateTime';
+    const v = prAttr(prXml, 'w:storeMappedDataAs', 'w:val');
+    const as = v && /^\w{1,32}$/.test(v) ? v : 'dateTime';
     if (as === 'text') return text;
     // The date picked (w:fullDate) while the text still shows it; a date typed in instead, read as one if it is.
     let full = (/w:fullDate="(\d{4}-\d\d-\d\d)/.exec(prXml) || [])[1];
@@ -352,16 +416,22 @@ export function applyBindings(xmlDoc, store) {
 
 /** A paragraph's or a control's text, its line breaks as '\n'. */
 function textWithBreaks(el) {
+  // (Walked without recursion: a crafted control nested 100,000 deep would otherwise overflow the stack.)
   let out = '';
-  const walk = (n) => {
-    for (let c = n.firstChild; c; c = c.nextSibling) {
-      if (c.nodeType !== 1) continue;
-      if (c.namespaceURI === NS.w && c.localName === 't') out += c.textContent;
-      else if (c.namespaceURI === NS.w && (c.localName === 'br' || c.localName === 'cr')) out += '\n';
-      else if (c.namespaceURI === NS.w && c.localName === 'tab') out += '\t';
-      else if (!(c.namespaceURI === NS.w && (c.localName === 'rPr' || c.localName === 'pPr' || c.localName === 'delText'))) walk(c);
+  let c = el.firstChild;
+  while (c && c !== el) {
+    let down = false;
+    if (c.nodeType === 1) {
+      const w = c.namespaceURI === NS.w;
+      if (w && c.localName === 't') out += c.textContent;
+      else if (w && (c.localName === 'br' || c.localName === 'cr')) out += '\n';
+      else if (w && c.localName === 'tab') out += '\t';
+      else down = !(w && (c.localName === 'rPr' || c.localName === 'pPr' || c.localName === 'delText'));
     }
-  };
-  walk(el);
+    if (down && c.firstChild) { c = c.firstChild; continue; }
+    while (c && c !== el && !c.nextSibling) c = c.parentNode;
+    if (!c || c === el) break;
+    c = c.nextSibling;
+  }
   return out;
 }

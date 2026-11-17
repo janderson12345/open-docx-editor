@@ -4,7 +4,11 @@ import assert from 'node:assert/strict';
 import { legacyInfo } from '../src/ooxml/ffdata.js';
 import { bevelFx, textEffectsCss } from '../src/ooxml/texteffects.js';
 import { readBorders, borderCss, cleanBorders, pPrToCss } from '../src/ooxml/props.js';
-import { parseXml } from '../src/ooxml/xml.js';
+import { parseXml, esc } from '../src/ooxml/xml.js';
+import { DocxSession } from '../src/ooxml/docx.js';
+import { boundPr, boundDisplay, showsPlc, dropPlc, storeValue, formatDate } from '../src/ooxml/databind.js';
+import { listFields } from '../src/editor/fields.js';
+import { bindingDocx, bound } from './fixtures/mkbinding.mjs';
 
 // Crafted values from a file, bounded (the security review of the leftovers after 0.8.0).
 
@@ -42,6 +46,52 @@ test("a co-editor's borders of any shape drawn safely: numbers as numbers, colou
   assert.doesNotMatch(css, /url\(x\)|red;/);
   assert.doesNotMatch(css, /NaN|undefined/);
   assert.deepEqual(cleanBorders({ top: { val: 'single', sz: '1e9', space: -4, color: 'FF0000' } }).top, { val: 'single', sz: 255, color: 'FF0000', space: 0 });
+});
+
+// The security review of 0.8.3: content controls bound to custom XML.
+
+test('thousands of controls bound past a part of many siblings open in bounded time', () => {
+  const root = `<r>${'<a/>'.repeat(200000)}<z>end</z></r>`;
+  const body = Array.from({ length: 300 }, (_, i) => `<w:p>${bound({ xpath: i % 2 ? '/r/a[999999]' : '/r/z', store: '{00000000-0000-0000-0000-000000000000}' })}</w:p>`).join('');
+  const t0 = Date.now();
+  const s = new DocxSession(bindingDocx({ body, parts: [{ xml: root }, { xml: root }, { xml: root }] }));
+  assert.ok(Date.now() - t0 < 8000, `${Date.now() - t0}ms`);
+  assert.equal(listFields(s.doc).filter((f) => f.text === 'end').length, 150);
+});
+
+test("a co-editor's control properties of unclosed tags read in one pass", () => {
+  const pr = '<w:sdtPr><w:dataBinding w:xpath="/r"/>' + '<w:showingPlcHdr'.repeat(40000) + '<w:storeMappedDataAs w:val="'.repeat(10000) + '<w:text w:multiLine="'.repeat(10000);
+  const t0 = Date.now();
+  showsPlc(pr);
+  dropPlc(pr);
+  boundPr(pr, { text: 'x', checked: true, date: new Date(2020, 0, 1) });
+  boundDisplay(pr, 'text', 'v');
+  boundDisplay(pr, 'checkbox', 'true');
+  storeValue(pr, 'date', { text: '1/1/2020' });
+  formatDate(new Date(2020, 0, 1), `<w:dateFormat w:val="${"'".repeat(100000)}"/>`);
+  assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0}ms`);
+  // Still what the patterns did.
+  assert.equal(showsPlc('<w:sdtPr><w:showingPlcHdr/></w:sdtPr>'), true);
+  assert.equal(showsPlc('<w:sdtPr><w:showingPlcHdr w:val="0"/></w:sdtPr>'), false);
+  assert.equal(dropPlc('<w:sdtPr><w:alias w:val="a"/><w:showingPlcHdr/><w:tag w:val="t"/></w:sdtPr>'), '<w:sdtPr><w:alias w:val="a"/><w:tag w:val="t"/></w:sdtPr>');
+  assert.match(boundPr('<w:sdtPr><w:date w:fullDate="x"><w:dateFormat w:val="M/d/yyyy"/></w:date></w:sdtPr>', { date: new Date(2020, 0, 2) }), /<w:date w:fullDate="2020-01-02T00:00:00Z"><w:dateFormat/);
+});
+
+test("characters XML can't hold are left out of what is saved", () => {
+  assert.equal(esc('a\u0001b\uFFFEc\uD800d\te\n'), 'abcd\te\n');
+  assert.equal(esc('😀'), '😀');
+});
+
+test('a bound control nested 100,000 deep opens', () => {
+  const deep = '<w:r><w:t>x</w:t></w:r>';
+  const content = '<w:customXml w:element="e">'.repeat(100000) + deep + '</w:customXml>'.repeat(100000);
+  let s;
+  try { s = new DocxSession(bindingDocx({ body: `<w:p>${bound({ xpath: '/r/a', plc: false, content })}</w:p>`, parts: [{ xml: '<r><a>val</a></r>' }] })); } catch (e) {
+    // (A parser may refuse such nesting itself; what must not happen is our own walk overflowing.)
+    assert.doesNotMatch(String(e), /call stack/i);
+    return;
+  }
+  assert.ok(s.doc);
 });
 
 test("a reflection's blur bounded", () => {

@@ -8,9 +8,9 @@ import { Fragment, Slice } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { fieldInfo } from '../ooxml/reader.js';
 import { legacyInfo } from '../ooxml/ffdata.js';
-import { unescapeXml } from '../ooxml/xml.js';
+import { unescapeXml, startTag, startTags, tagAttr, setTagAttr } from '../ooxml/xml.js';
 import { openSectionAt } from './protect.js';
-import { formatDate } from '../ooxml/databind.js';
+import { formatDate, prAttr, showsPlc, dropPlc } from '../ooxml/databind.js';
 
 
 /** Every field in document order: [{ key, tag, alias, kind, from, to, block, value, checked?, items? }] */
@@ -48,8 +48,15 @@ export function listFields(doc) {
     if (f.legacy) continue;
     const ph = f.mark?.attrs.phText;
     f.value = (ph != null && f.text === ph) || (f.block && PLC.test(f.pr)) ? '' : f.text;
-    if (f.kind === 'checkbox') f.value = f.checked = /<w14:checked\b[^>]*w14:val="(1|true)"/.test(f.pr);
-    if (f.kind === 'dropdown' || f.kind === 'combobox') f.items = [...f.pr.matchAll(/<w:listItem\b[^>]*>/g)].map((x) => ({ text: unescapeXml((/w:displayText="([^"]*)"/.exec(x[0]) || [])[1] ?? (/w:value="([^"]*)"/.exec(x[0]) || [])[1]), value: unescapeXml((/w:value="([^"]*)"/.exec(x[0]) || [])[1]) }));
+    // (Tags found by scanning: a co-editor's w:sdtPr of unclosed tags must not send a pattern back over them.)
+    if (f.kind === 'checkbox') f.value = f.checked = /^(1|true)$/.test(prAttr(f.pr, 'w14:checked', 'w14:val') ?? '');
+    if (f.kind === 'dropdown' || f.kind === 'combobox') {
+      f.items = [];
+      for (const t of startTags(f.pr || '', 'w:listItem')) {
+        const v = tagAttr(t.tag, 'w:value') ?? undefined;
+        f.items.push({ text: unescapeXml(tagAttr(t.tag, 'w:displayText') ?? v), value: unescapeXml(v) });
+      }
+    }
     // A list's value is the chosen item's value (what Word stores), not its display text.
     if (f.items && f.value) f.value = f.items.find((i) => i.text === f.value)?.value ?? f.value;
   }
@@ -97,14 +104,21 @@ function writeLegacy(tr, f, value) {
   if (f.kind === 'checkbox') {
     const on = value === true || value === 'true' || value === 1 || value === '1';
     const tag = `<w:checked w:val="${on ? 1 : 0}"/>`;
-    xml = /<w:checked\b[^>]*\/>/.test(xml) ? xml.replace(/<w:checked\b[^>]*\/>/, tag) : xml.replace(/(<w:checkBox>[\s\S]*?<w:default\b[^>]*\/>)/, `$1${tag}`);
+    const c = startTag(xml, 'w:checked');
+    if (c?.selfClosing) xml = xml.slice(0, c.at) + tag + xml.slice(c.end);
+    else {
+      const box = xml.indexOf('<w:checkBox>');
+      const d = box >= 0 ? startTag(xml, 'w:default', box) : null;
+      if (d?.selfClosing) xml = xml.slice(0, d.end) + tag + xml.slice(d.end);
+    }
     tr.setNodeMarkup(f.begin, null, { ...beginNode.attrs, xml });
     return;
   }
   if (f.kind === 'dropdown') {
     const i = Math.max(0, f.items.findIndex((x) => x.value === String(value)));
     const tag = `<w:result w:val="${i}"/>`;
-    xml = /<w:result\b[^>]*\/>/.test(xml) ? xml.replace(/<w:result\b[^>]*\/>/, tag) : xml.replace(/<w:ddList>/, `<w:ddList>${tag}`);
+    const r = startTag(xml, 'w:result');
+    xml = r?.selfClosing ? xml.slice(0, r.at) + tag + xml.slice(r.end) : xml.replace('<w:ddList>', `<w:ddList>${tag}`);
     tr.setNodeMarkup(f.begin, null, { ...beginNode.attrs, xml });
     return;
   }
@@ -152,8 +166,13 @@ export function fieldValues(doc) {
   return out;
 }
 
-const PLC = /<w:showingPlcHdr(?![^>]*w:val="(?:0|false)")[^>]*\/>/;
-const noPlc = (sdt) => ({ ...sdt, open: sdt.open.replace(new RegExp(PLC.source, 'g'), '') });
+const PLC = { test: showsPlc };
+const noPlc = (sdt) => ({ ...sdt, open: dropPlc(sdt.open) });
+/** `xml` with its first start tag `name` made `f(tag)` (as it was without one). */
+const retag = (xml, name, f) => {
+  const t = startTag(xml, name);
+  return t ? xml.slice(0, t.at) + f(t) + xml.slice(t.end) : xml;
+};
 
 const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const PH_DEFAULT = 'Click or tap here to enter text.';
@@ -176,10 +195,9 @@ export function writeField(tr, f, value) {
   let phText = null;
   if (f.kind === 'checkbox') {
     const on = value === true || value === 'true' || value === 1 || value === '1';
-    pr = pr.replace(/(<w14:checked\b[^>]*w14:val=")[^"]*"/, `$1${on ? 1 : 0}"`);
-    const state = (/<w14:(?:checkedState)\b[^>]*w14:val="([0-9A-Fa-f]+)"/.exec(pr) || [])[1];
-    const off = (/<w14:(?:uncheckedState)\b[^>]*w14:val="([0-9A-Fa-f]+)"/.exec(pr) || [])[1];
-    text = String.fromCodePoint(parseInt(on ? state || '2612' : off || '2610', 16));
+    pr = retag(pr, 'w14:checked', (t) => setTagAttr(t.tag, 'w14:val', on ? '1' : '0'));
+    const code = (name) => { const v = prAttr(pr, name, 'w14:val'); return v && /^[0-9A-Fa-f]{1,6}$/.test(v) && parseInt(v, 16) <= 0x10ffff ? v : null; };
+    text = String.fromCodePoint(parseInt(on ? code('w14:checkedState') || '2612' : code('w14:uncheckedState') || '2610', 16));
   } else if (value == null || value === '') {
     // An empty control shows its placeholder, as in Word.
     text = m.attrs.phText || PH_DEFAULT;
@@ -188,12 +206,12 @@ export function writeField(tr, f, value) {
   } else {
     text = String(value);
     if (f.kind === 'dropdown' || f.kind === 'combobox') text = f.items?.find((i) => i.value === text)?.text ?? text;
-    pr = pr.replace(/<w:showingPlcHdr\b[^>]*\/>/g, '');
+    pr = dropPlc(pr);
     if (f.kind === 'date') {
       // Word's date picker reads w:fullDate; keep it in step with the text.
       const d = new Date(value instanceof Date ? value : text);
       const full = isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T00:00:00Z`;
-      pr = pr.replace(/(<w:date\b)[^>]*?(\/?>)/, (m0, open, close) => `${open}${full ? ` w:fullDate="${full}"` : ''}${close}`);
+      pr = retag(pr, 'w:date', (t) => `<w:date${full ? ` w:fullDate="${full}"` : ''}${t.selfClosing ? '/>' : '>'}`);
       if (value instanceof Date) text = formatDate(d, pr);
     }
   }
@@ -343,7 +361,7 @@ export function formsPlugin() {
       for (const f of listFields(tr.doc)) {
         if (f.block || f.legacy || f.mark.attrs.phText == null || f.text === f.mark.attrs.phText) continue;
         // (And no w:showingPlcHdr: with it Word shows the value as the placeholder and reads the field as empty.)
-        tr.removeMark(f.from, f.to, f.mark).addMark(f.from, f.to, schema.marks.sdt.create({ ...f.mark.attrs, phText: null, pr: (f.mark.attrs.pr || '').replace(/<w:showingPlcHdr\b[^>]*\/>/g, '') }));
+        tr.removeMark(f.from, f.to, f.mark).addMark(f.from, f.to, schema.marks.sdt.create({ ...f.mark.attrs, phText: null, pr: dropPlc(f.mark.attrs.pr || '') }));
         tr.doc.nodesBetween(f.from, f.to, (n, pos) => {
           const m = n.isText && n.marks.find((x) => x.type === ph && x.attrs.val === 'PlaceholderText');
           if (m) tr.removeMark(Math.max(pos, f.from), Math.min(pos + n.nodeSize, f.to), m);

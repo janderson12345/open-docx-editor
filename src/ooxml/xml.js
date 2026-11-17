@@ -79,8 +79,14 @@ export function onOff(el) {
   return !(v === '0' || v === 'false' || v === 'off');
 }
 
+/** Characters XML can't hold (C0 controls but tab and newlines, U+FFFE and U+FFFF, lone surrogates). */
+const XML_BAD = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Text with the characters XML can't hold left out (a file with one is one Word won't open). */
+export const xmlChars = (s) => String(s).replace(XML_BAD, '');
+
 export function esc(s) {
-  return String(s)
+  return xmlChars(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

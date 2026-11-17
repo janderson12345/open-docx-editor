@@ -5,9 +5,9 @@ import { Transform } from 'prosemirror-transform';
 import { schema } from './schema.js';
 import { listFields, formsKey, writeField } from './fields.js';
 import { fieldInfo } from '../ooxml/reader.js';
-import { bindingOf, boundDisplay, boundPr, storeValue } from '../ooxml/databind.js';
+import { bindingOf, boundDisplay, boundPr, storeValue, showsPlc } from '../ooxml/databind.js';
 
-const PLC = /<w:showingPlcHdr(?![^>]*w:val="(?:0|false)")[^>]*\/>/;
+const PLC = { test: showsPlc };
 const leafText = (leaf) => (leaf.type === schema.nodes.hard_break ? '\n' : '');
 const isPh = (m) => m.type === schema.marks.cstyle && m.attrs.val === 'PlaceholderText';
 
