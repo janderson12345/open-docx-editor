@@ -22,6 +22,8 @@ import { textSpansPlugin, spansSet, spanDecos } from '../src/editor/textspans.js
 import { decoSet } from '../src/editor/decoset.js';
 import { commentsPlugin } from '../src/editor/comments.js';
 import { marksPlugin } from '../src/editor/marks.js';
+import { mailMergePlugin } from '../src/editor/mailmerge.js';
+import { mergeTargets, fieldMarks, mergeCursor } from '../src/merge.js';
 
 const N = 600;
 const LIMIT = 10;
@@ -159,17 +161,20 @@ test('the text spans made a block at a time are the set DecorationSet.create mak
 // --- Decorations: comments, formatting marks, merge fields, joined paragraphs, hyphenation ---------------------------
 
 const run = (t) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`;
+const fld = (t) => `<w:r><w:fldChar w:fldCharType="${t}"/></w:r>`;
 // (The decorations' documents: as many repeats as the stress documents' paragraphs, the larger made from the smaller.)
 const DN = N;
 /** Body XML of `n` repeats of what each decoration is made for. */
 const decoDocs = {
   comments: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run('before ')}<w:commentRangeStart w:id="${k}"/>${run(`commented ${k}`)}<w:commentRangeEnd w:id="${k}"/><w:r><w:commentReference w:id="${k}"/></w:r>${run(' after')}</w:p>`).join(''),
   marks: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`text ${k}`)}</w:p><w:p/>`).join(''),
+  'merge fields': (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`Dear ${k} `)}${fld('begin')}<w:r><w:instrText xml:space="preserve"> MERGEFIELD Name </w:instrText></w:r>${fld('separate')}${run('«Name»')}${fld('end')}${run(',')}</w:p>`).join(''),
 };
 /** Each decoration's plugin for a session (Preview Results on, automatic hyphenation on). */
 const decoPlugins = {
   comments: (s) => commentsPlugin(s),
   marks: () => marksPlugin,
+  'merge fields': (s) => { s.merge = { records: [{ Name: 'Ada' }], fields: ['Name'], index: 0, preview: true }; return mailMergePlugin(s); },
 };
 /** The plugin's decorations in `state`. */
 const decosOf = (plugin, state) => { const v = plugin.getState(state); return v.set || v; };
@@ -267,5 +272,19 @@ test('the decorations\' sets made from sorted decorations are the sets Decoratio
   for (const [name, d, decos] of cases) {
     // (create takes the decorations out of the array it is given: a copy.)
     assert.deepEqual(tree(decoSet(d, decos), decos), tree(DecorationSet.create(d, decos.slice()), decos), name);
+  }
+});
+
+test('merge field previews: a field\'s paragraph and formatting found from its position give what resolving it does', () => {
+  for (const f of ['mailmerge.docx', 'mergeif.docx', 'mergenext.docx', 'mergeskip.docx']) {
+    const session = fixtureSession(f);
+    const { doc } = session;
+    const targets = mergeTargets(doc, mergeCursor([{ Name: 'Ada' }], 0, { preview: true }));
+    assert.ok(targets.length, f);
+    session.merge = { records: [{ Name: 'Ada' }], fields: ['Name'], index: 0, preview: true };
+    const plugin = mailMergePlugin(session);
+    const shown = decosOf(plugin, opened(plugin, doc)).find().filter((d) => d.spec.key).map((d) => [d.from, d.spec.marks.map((m) => m.type.name)]);
+    const plain = targets.filter(({ field: x }) => doc.resolve(x.from).parent === doc.resolve(x.to).parent).map(({ field: x }) => [x.from, fieldMarks(doc, x).map((m) => m.type.name)]);
+    assert.deepEqual(shown, plain, f);
   }
 });

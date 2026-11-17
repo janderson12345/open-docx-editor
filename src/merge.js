@@ -235,15 +235,21 @@ export function mergeTargets(doc, ctx) {
   return out.sort((a, b) => a.field.from - b.field.from);
 }
 
-/** The formatting a field's text takes: its result's first character's (\* MERGEFORMAT), else its code's. */
-export function fieldMarks(doc, f) {
+/**
+ * The formatting a field's text takes: its result's first character's (\* MERGEFORMAT), else its code's. `inside`, the
+ * textblock holding the field and its content's start ({ node, start }): looked through alone, not from the document's
+ * start (a preview of many fields, mailmerge.js).
+ */
+export function fieldMarks(doc, f, inside = null) {
   if (f.simple) {
     const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(f.simple.attrs.xml)?.[0];
     return rPr ? marksFromRPr(rPr).map((m) => schema.markFromJSON(m)) : f.simple.marks;
   }
   const range = f.resultFrom != null && f.resultTo > f.resultFrom ? [f.resultFrom, f.resultTo] : [f.from, f.to];
   let found = null;
-  doc.nodesBetween(range[0], range[1], (n) => { if (found == null && (n.isText || n.type === schema.nodes.opaque_inline)) found = n.marks; return found == null; });
+  const take = (n) => { if (found == null && (n.isText || n.type === schema.nodes.opaque_inline)) found = n.marks; return found == null; };
+  if (inside) inside.node.nodesBetween(range[0] - inside.start, range[1] - inside.start, take);
+  else doc.nodesBetween(range[0], range[1], take);
   return found || [];
 }
 
