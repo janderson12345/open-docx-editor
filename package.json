@@ -1,6 +1,6 @@
 {
   "name": "open-docx-editor",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Open and edit .docx files in the browser. 100% JavaScript, no server, no Office.",
   "keywords": [
     "docx",
