@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { borderCss, pPrToCss, compoundSide } from '../src/ooxml/props.js';
+import { borderCss, pPrToCss, compoundSide, junctionRects, cellLines } from '../src/ooxml/props.js';
 
 const width = (val, sz) => parseFloat(borderCss({ val, sz, color: '1F497D' }));
 
@@ -68,4 +68,29 @@ test("compound borders of 3pt to 6pt: their lines as Word prints them, a large g
   assert.deepEqual(lines('triple', 24), [[0, 3], [6, 3], [12, 3]]);
   assert.equal(compoundSide({ val: 'single', sz: 4 }), null);
   assert.equal(compoundSide({ val: 'toString', sz: 4 }), null);
+});
+
+test("where table borders of three lines meet: Word's cross, T and corner", () => {
+  // (bdr3-word's tables, triple 0.25pt: a cross is its middle lines crossing and a dot where each quadrant's nearest
+  // lines turn; a T on the top edge keeps its outer line; a corner nests its lines.)
+  const t = compoundSide({ val: 'triple', sz: 2 }).lines;
+  const draw = (arms) => junctionRects(t, t, arms).map(([x, y, w, h, k]) => `${k}${[x, y, w, h].map((v) => Math.round(v * 5)).join(',')}`).sort().join(' ');
+  assert.equal(draw({ l: 1, r: 1, u: 1, d: 1 }), 'h0,0,1,1 h0,2,5,1 h0,4,1,1 h4,0,1,1 h4,4,1,1 v0,0,1,1 v0,4,1,1 v2,0,1,5 v4,0,1,1 v4,4,1,1');
+  assert.equal(draw({ l: 1, r: 1, u: 0, d: 1 }), 'h0,0,5,1 h0,2,5,1 h0,4,1,1 h4,4,1,1 v0,4,1,1 v2,2,1,3 v4,4,1,1');
+  assert.equal(draw({ l: 0, r: 1, u: 0, d: 1 }), 'h0,0,5,1 h2,2,3,1 h4,4,1,1 v0,0,1,5 v2,2,1,3 v4,4,1,1');
+});
+
+test("a table cell's compound lines: pictures on whole pixels, the same rects for the PDF, only numbers and colours", () => {
+  const d = compoundSide({ val: 'double', sz: 24, color: '1F497D' }); // 9pt: 12px
+  const thin = compoundSide({ val: 'triple', sz: 2, color: '"/><x' }); // 1.25pt: 1.67px
+  const out = cellLines({ top: thin, left: d }, {});
+  // A corner square, the top's strip after it, the left's strip under the square's whole pixels.
+  assert.match(out.css, /background-position:left 0px top 0px,left 12px top 0px,left 0px top 2px;/);
+  assert.match(out.css, /background-size:12px 2px,calc\(100% - 12px\) 2px,12px calc\(100% - 2px\);/);
+  assert.doesNotMatch(out.css, /%3Cx/);
+  // Every rect: eight numbers and a colour.
+  for (const r of out.lines.split(',')) assert.match(r, /^(-?[\d.]+ ){8}#[0-9A-Fa-f]{6}$/);
+  // The top's first line right across the cell from the square: x 12px, y 0, width the cell less 12px.
+  assert.match(out.lines, /(^|,)0 12 0 0 1 -12 0 0\.333 #000000(,|$)/);
+  assert.equal(cellLines({}, {}), null);
 });

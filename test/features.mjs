@@ -1532,6 +1532,19 @@ const off = thin.map((b) => ({ ...b, want: 2 * ((wordWidth[b.val](b.sz / 8) + 1)
 check(thinOnes.length === 14 && thin.length === 18 && !off.length,
   `compound borders drawn as Word prints them, at Word's width (${thinOnes.length} thin of ${thin.length}; off: ${JSON.stringify(off)})`);
 
+// Table cells' compound borders (tableborders-word.docx, made in Word, its print checked: twelve tables, each with one
+// kind of compound border all round and inside, 0.25pt to 3pt): drawn by pictures behind the cells, not CSS's collapsed
+// double (2.25pt at least, two lines); each row as much taller than its text as Word's line between rows is wide, the
+// text half the side line's width further in, as Word has it.
+await open('tableborders-word.docx');
+const cellBorders = await page.evaluate(() => [...document.querySelectorAll('.odx-content table')].slice(0, 11).flatMap((t) => [...t.rows].slice(0, 2).map((tr) => {
+  const td = tr.cells[1], p = td.querySelector('p'), cs = getComputedStyle(td);
+  return { pic: /svg/.test(cs.backgroundImage), css: cs.borderTopStyle + cs.borderLeftStyle, extra: td.getBoundingClientRect().height - p.getBoundingClientRect().height, inset: p.getBoundingClientRect().left - td.getBoundingClientRect().left };
+})));
+const tableWord = [1.25, 1, 2, 1.5, 3.25, 2.25, 9, 15, 4.5, 5.25, 9]; // (each kind's width, pt: COMPOUND in props.js)
+const cellOff = cellBorders.filter((c, i) => { const w = (tableWord[i >> 1] * 4) / 3; return !c.pic || c.css !== 'nonenone' || Math.abs(c.extra - w) > 0.1 || Math.abs(c.inset - w / 2 - cellBorders[0].inset + (tableWord[0] * 2) / 3) > 0.1; });
+check(cellBorders.length === 22 && !cellOff.length, `table cells' compound borders drawn as Word prints them, rows and text where Word's widths put them (off: ${JSON.stringify(cellOff)})`);
+
 // Where printed text sits in its line, as Word's PDFs put it (lines.docx, Times New Roman, mklines.mjs): an exactly 40pt
 // line's baseline four fifths of the way down it; a line of 10pt text with a 12pt run, raised 3pt or not, on the 12pt
 // run's ascent (plus its raise), not the first run's. Each measured from the line's top as laid out (the print shift
