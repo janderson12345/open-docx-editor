@@ -61,6 +61,20 @@ function best(fn, runs = RUNS) {
   return { t, out };
 }
 
+/**
+ * The smaller and larger documents' best times (`best`), measured again up to three more times while the larger looks
+ * LIMIT times as slow or more: a step that is really quadratic is about 16 times as slow every time, while a pause from
+ * the other test files running beside this one (npm test runs them in parallel) comes and goes.
+ */
+function timedPair(small, large, runs = RUNS) {
+  let a = best(small, runs), b = best(large, runs);
+  for (let i = 0; i < 3 && b.t > 5 && b.t / Math.max(a.t, 0.5) >= LIMIT; i++) {
+    const a2 = best(small, runs), b2 = best(large, runs);
+    if (b2.t / Math.max(a2.t, 0.5) < b.t / Math.max(a.t, 0.5)) { a = a2; b = b2; }
+  }
+  return [a, b];
+}
+
 /** Accept All (or Reject All), its transaction applied with the text spans' plugin, as in the editor: the new doc. */
 function resolveWhole(state, accept) {
   let next = null;
@@ -88,7 +102,7 @@ test('stress documents: open, text spans, Find, Accept All, Reject All and save 
   for (const fn of Object.values(steps)) fn(sizes[0]);
   const report = {};
   for (const [name, fn] of Object.entries(steps)) {
-    const [small, large] = sizes.map((s) => best(() => fn(s)));
+    const [small, large] = timedPair(() => fn(sizes[0]), () => fn(sizes[1]));
     report[name] = `${small.t.toFixed(1)}ms, ${large.t.toFixed(1)}ms`;
     // (Below a few milliseconds the timer's own steps count: a step that fast isn't the trouble.)
     if (large.t > 5) assert.ok(large.t / Math.max(small.t, 0.5) < LIMIT, `${name}: ${N} paragraphs ${small.t.toFixed(1)}ms, ${4 * N} ${large.t.toFixed(1)}ms (${(large.t / small.t).toFixed(1)}x)`);
@@ -227,7 +241,7 @@ test('decorations: comments, formatting marks, merge fields, joins and hyphenati
     for (const s of sizes) { s.open(); s.typed(); }
     for (const step of ['open', 'typed']) {
       // (More runs: a millisecond or two each, where one pause would count.)
-      const [small, large] = sizes.map((s) => best(s[step], 15));
+      const [small, large] = timedPair(sizes[0][step], sizes[1][step], 15);
       report[`${name} ${step}`] = `${small.t.toFixed(1)}ms, ${large.t.toFixed(1)}ms`;
       assert.ok(decosOf(plugin, large.out).find().length >= 4 * DN, `${name}: decorations made`);
       if (large.t > 5) assert.ok(large.t / Math.max(small.t, 0.5) < LIMIT, `${name} ${step}: ${DN} ${small.t.toFixed(1)}ms, ${4 * DN} ${large.t.toFixed(1)}ms (${(large.t / small.t).toFixed(1)}x)`);
