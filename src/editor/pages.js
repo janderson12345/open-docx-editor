@@ -2252,6 +2252,10 @@ export function createPages(view, session, { sheet, scope }) {
     let balanceAgain = false;
     const rec = new Map(); // (columns sections) block k -> { top, bottom, carry } where it was last placed
     const frameDy = new Map(); // block index -> px a frame set down on its page is moved below where it comes
+    // Block index -> px of its space before left above it at the top of the page it was moved to (the space kept: none at
+    // a page Word starts by itself): a drawing placed from its paragraph's top above that space is placed from the page's
+    // top there, not above it (reader.js fromParagraphTop, --odx-sbtop).
+    const sbTop = new Map();
     floatUp.clear();
     shapeUp.clear();
     placed.clear();
@@ -2540,7 +2544,9 @@ export function createPages(view, session, { sheet, scope }) {
       starts.set(moved.i, (cols || carried.has(moved.i) ? starts.get(moved.i) || 0 : 0) + delta); // (in columns it may already carry a split's push; after a frame moved on, that push)
       shift += delta;
       if (rec.has(m)) rec.set(m, { top: moved.top + shift, bottom: moved.bottom + shift }); // (the walk goes on after it, not from it)
+      sbTop.set(moved.i, forced ? kept : 0);
       for (let n = m; n <= k; n++) {
+        if (n > m) sbTop.delete(blocks[n].i);
         shapeUp.delete(blocks[n].i);
         moveNotes(blocks[n].i, target);
         splits.delete(blocks[n].i);
@@ -2599,6 +2605,11 @@ export function createPages(view, session, { sheet, scope }) {
     if (noteFlow.size) pages = Math.max(pages, Math.max(...noteFlow.keys()) + 1);
     const { colCss, contHeads, blockAttrs } = placeColumns(blocks, regs, starts, colSplits, paraSplits, splits);
     for (const [i, dy] of frameDy) { if (!blockAttrs.has(i)) blockAttrs.set(i, { cls: [], style: [] }); blockAttrs.get(i).style.push(`--odx-fdy:${dy.toFixed(2)}px`); }
+    for (const b of blocks) {
+      if (!sbTop.has(b.i) || !b.el.querySelector?.('img[style*="--odx-sb"]')) continue;
+      if (!blockAttrs.has(b.i)) blockAttrs.set(b.i, { cls: [], style: [] });
+      blockAttrs.get(b.i).style.push(`--odx-sbtop:${Math.max(0, sbTop.get(b.i)).toFixed(2)}px`);
+    }
 
     const { css, heads } = applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs);
     css.push(`.${scope} > .odx-content{min-height:${pageTop(pages) - gap}px}`);

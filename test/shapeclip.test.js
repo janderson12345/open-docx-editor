@@ -45,7 +45,7 @@ test('a shape in line with the text: room drawn round its outline, its line\'s r
 });
 
 // (Floating in front of the text: its picture's top margin is its offset, to the px, less the room drawn round it.)
-const top = (a) => parseFloat(/margin-top:(-?[\d.]+)px/.exec(a.place)[1]) + padOf(a.place);
+const top = (a) => parseFloat(/margin-top:(?:calc\()?(-?[\d.]+)px/.exec(a.place)[1]) + padOf(a.place); // (from its paragraph's top: reader.js fromParagraphTop)
 const roomAbove = (a) => px(/<wp:effectExtent l="\d+" t="(\d+)"/.exec(a.xml)[1]);
 
 test('a floating shape sits at its offset, its effect extent not added: a line with arrowheads, a text box', () => {

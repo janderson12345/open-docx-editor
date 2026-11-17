@@ -2,7 +2,7 @@ import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { placeVar, padOf, cssDecls, cssText } from '../src/ooxml/place.js';
-import { padPlace, turned } from '../src/ooxml/reader.js';
+import { padPlace, turned, fromParagraphTop } from '../src/ooxml/reader.js';
 import { parseXml, unescapeXml } from '../src/ooxml/xml.js';
 
 // A drawing's place is CSS with custom properties the layout reads back (src/ooxml/place.js).
@@ -45,6 +45,22 @@ test('padPlace takes the pad off every margin anchorCss writes, and keeps every 
   assert.equal(padPlace('position:absolute;left:0px;margin-top:4px;z-index:1', 2), 'position:absolute;left:0px;margin-top:2px;margin-left:-2px;z-index:1');
   assert.equal(padPlace('float:left;margin:0px 12px 0px 9px', 0), 'float:left;margin:0px 12px 0px 9px');
   assert.equal(padPlace('', 3), '');
+});
+
+test("fromParagraphTop: a place's top moved up by its paragraph's space before (none above a page's top), whatever its wrapping", () => {
+  const up = (v) => `calc(${v} - min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  const down = (v) => `calc(${v} + min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  assert.equal(fromParagraphTop('float:left;margin:-3px 9px -3px calc(9px - var(--odx-page-left, 96px));--odx-pad:3px'),
+    `float:left;margin:${up('-3px')} 9px -3px calc(9px - var(--odx-page-left, 96px));--odx-pad:3px`);
+  assert.equal(fromParagraphTop('position:absolute;left:0px;margin-top:4px;z-index:1'), `position:absolute;left:0px;margin-top:${up('4px')};z-index:1`);
+  // (Turned, its top already a calc(): kept whole.)
+  assert.equal(fromParagraphTop('float:right;margin:calc(5px - 2px) 0px 0px 6px'), `float:right;margin:${up('calc(5px - 2px)')} 0px 0px 6px`);
+  // Top and bottom: that space again under it, above the text; not for a column-wide one wrapped round (a band).
+  assert.equal(fromParagraphTop('display:block;margin:0px auto 6px'), `display:block;margin:${up('0px')} auto ${down('6px')}`);
+  assert.equal(fromParagraphTop('display:block;margin-top:5px;margin-left:10px;margin-bottom:8px'), `display:block;margin-top:${up('5px')};margin-left:10px;margin-bottom:${down('8px')}`);
+  assert.equal(fromParagraphTop('display:block;margin-top:5px;margin-left:10px;margin-bottom:8px;--odx-band:1'), `display:block;margin-top:${up('5px')};margin-left:10px;margin-bottom:8px;--odx-band:1`);
+  assert.equal(fromParagraphTop(''), '');
+  assert.equal(fromParagraphTop('z-index:1'), 'z-index:1');
 });
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"';

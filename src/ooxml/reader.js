@@ -580,14 +580,16 @@ function anchorCss(drawing, page, compatMode = 15) {
   const fromPage = hRel === 'page';
   const inFlowX = fromPage ? `calc(${x}px - var(--odx-page-left, 96px))` : `${x}px`;
   if (wrap === 'wrapTopAndBottom') {
-    // A paragraph-relative offset is from the paragraph's top above its space before (ftd-1.35MB's page 35 chart, 32.8px
-    // under a paragraph spaced 14.9px before: 15px too low when measured from the text).
-    const top = vRel === 'paragraph' && y ? `calc(${y}px - var(--odx-sb, 0pt))` : `${y}px`;
-    if (hAlign === 'center') return `display:block;margin:${top} auto ${px(anchor.getAttribute('distB'))}px`;
-    if (hAlign === 'right') return `display:block;margin:${top} 0 ${px(anchor.getAttribute('distB'))}px auto`;
+    // (A paragraph-relative offset is from the paragraph's top above its space before: placeOf, fromParagraphTop.)
+    const top = `${y}px`;
+    // (The text below it clear of its effect extent too, its outline's room, as wrapped square: sb-tb, the line under a
+    // rectangle with a 2pt extent below 2pt lower in Word's PDF.)
+    const below = +(px(anchor.getAttribute('distB')) + shapeFx('b')).toFixed(2);
+    if (hAlign === 'center') return `display:block;margin:${top} auto ${below}px`;
+    if (hAlign === 'right') return `display:block;margin:${top} 0 ${below}px auto`;
     // (A wrapped-round one keeps its paragraph's own line, below it like any line Word wraps round it: sample S095's empty
     // anchor paragraph, a line under the picture.)
-    return `display:block;margin-top:${top};margin-left:${inFlowX};margin-bottom:${px(anchor.getAttribute('distB'))}px${band ? ';--odx-band:1' : ''}`;
+    return `display:block;margin-top:${top};margin-left:${inFlowX};margin-bottom:${below}px${band ? ';--odx-band:1' : ''}`;
   }
   if (wrap === 'wrapNone') {
     // Centred or right-aligned: in the column (between the margins), or on the page (sample S078's text box,
@@ -708,7 +710,8 @@ function bandFloats(content) {
     if (y < b0 || y + Number(n.attrs.height || 0) > b1 + 1) continue;
     const right = /^float:right/.test(n.attrs.place);
     const x = right ? `right:var(--odx-page-right, 96px)` : `left:var(--odx-page-left, 96px)`;
-    n.attrs.place = `position:absolute;${x};margin-top:${y}px;z-index:1`;
+    const at = `position:absolute;${x};margin-top:${y}px;z-index:1`;
+    n.attrs.place = /--odx-sb/.test(n.attrs.place) ? fromParagraphTop(at) : at; // (from its paragraph's top, as it was)
   }
 }
 
@@ -847,10 +850,64 @@ function readDrawing(drawing, ctx, rPrXml) {
  */
 function placeOf(drawing, ctx, { width, height, effect, floatPad, grown }) {
   const anchored = padPlace(anchorCss(drawing, ctx.pages?.[Math.min(ctx.sect, ctx.pages.length - 1)], ctx.compatMode), floatPad);
-  const place = padded(turned(anchored || effect, drawing, width, height), floatPad);
+  const turnedPlace = turned(anchored || effect, drawing, width, height);
+  const place = padded(anchored && anchorVRel(drawing) === 'paragraph' ? fromParagraphTop(turnedPlace) : turnedPlace, floatPad);
   // (A floating text box grown to fit its text, marked: past the page's foot, Word moves it to the next page, where it
   // keeps other floats on theirs: pages.js floatsPast.)
   return grown && /^float:/.test(place) ? `${place};--odx-grown:1` : place;
+}
+
+/** What a floating drawing's vertical offset is from (wp:positionV relativeFrom, its mc:Fallback's as anchorCss reads it). */
+function anchorVRel(drawing) {
+  const anchor = [...drawing.getElementsByTagName('*')].find((e) => e.localName === 'anchor');
+  if (!anchor) return null;
+  let posV = childNamed(anchor, 'positionV');
+  for (const ac of posV ? [] : elementKids(anchor).filter((n) => n.localName === 'AlternateContent')) {
+    const fb = childNamed(ac, 'Fallback');
+    posV = posV || (fb && childNamed(fb, 'positionV'));
+  }
+  return posV ? posV.getAttribute('relativeFrom') : 'paragraph';
+}
+
+/** A place's CSS declarations split on the spaces between values, not those inside a calc() or var(). */
+const cssValues = (v) => {
+  const out = [];
+  let depth = 0, cur = '';
+  for (const ch of String(v).trim()) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ' ' && !depth) { if (cur) out.push(cur); cur = ''; } else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+};
+
+/**
+ * A paragraph-relative drawing's place, its top moved up by its paragraph's space before: Word measures the offset from
+ * the paragraph's top above that space, whatever the wrapping (wrap-word5 sb-*: rectangles wrapped square on one side or
+ * both, tight, in front of the text, and top and bottom, at -12 to 36pt below paragraphs spaced 6 to 24pt before, each
+ * that space higher than from the text; ftd-1.35MB's page 35 chart, 32.8px under a paragraph spaced 14.9px before). That
+ * space is what the paragraph adds to the one after the paragraph above (--odx-sb, editor.js; the two collapse, as in
+ * Word: sb2-*, 12pt after over 18pt before, the shape 6pt above the text), and none of it above a page's top
+ * (--odx-sbtop, pages.js).
+ */
+export function fromParagraphTop(place) {
+  if (!place) return place;
+  const up = (v) => `calc(${v} - min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  const ds = cssDecls(place);
+  const t = [...ds].reverse().find((d) => d[0].trim() === 'margin-top');
+  const m = ds.find((d) => d[0].trim() === 'margin');
+  // (Over its paragraph's text, top and bottom, that space comes again under it, above the text: sb-tb, the first line under
+  // a rectangle spaced 6 or 12pt before that much lower in Word's PDF than under one spaced none.)
+  const tb = ds.some((d) => d[0].trim() === 'display' && d[1].trim() === 'block') && !placeVar(place, 'odx-band');
+  const down = (v) => `calc(${v} + min(var(--odx-sb, 0px), var(--odx-sbtop, 100000px)))`;
+  const b = [...ds].reverse().find((d) => d[0].trim() === 'margin-bottom');
+  if (t && (!m || ds.indexOf(t) > ds.indexOf(m))) t[1] = up(t[1].trim());
+  else if (m) { const v = cssValues(m[1]); if (!v.length) return place; v[0] = up(v[0]); m[1] = v.join(' '); }
+  else return place;
+  if (tb && b && (!m || ds.indexOf(b) > ds.indexOf(m))) b[1] = down(b[1].trim());
+  else if (tb && m) { const v = cssValues(m[1]); if (v.length >= 3) { v[2] = down(v[2]); m[1] = v.join(' '); } }
+  return cssText(ds);
 }
 
 /**
