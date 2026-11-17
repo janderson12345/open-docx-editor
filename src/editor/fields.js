@@ -13,8 +13,11 @@ import { openSectionAt } from './protect.js';
 import { formatDate } from '../ooxml/databind.js';
 
 
-/** Every field in document order: [{ key, tag, alias, kind, from, to, block, value, checked?, items? }] */
-export function listFields(doc) {
+/**
+ * Every field in document order: [{ key, tag, alias, kind, from, to, block, value, checked?, items? }]. `nested`: the
+ * inline fields inside a field around paragraphs too (a repeating section's items; editor/bindings.js).
+ */
+export function listFields(doc, { nested = false } = {}) {
   const byKey = new Map();
   const order = [];
   const add = (key, info, from, to, text, extra = {}) => {
@@ -35,7 +38,7 @@ export function listFields(doc) {
       const key = `b${node.attrs.sdt.g}`;
       const had = byKey.has(key);
       add(key, info, pos, pos + node.nodeSize, (had ? '\n' : '') + node.textContent, { block: true, pr: open });
-      return false;
+      return nested;
     }
     if (!node.isInline) return true;
     const m = node.marks.find((x) => x.type === schema.marks.sdt);
@@ -159,7 +162,7 @@ const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 const PH_DEFAULT = 'Click or tap here to enter text.';
 
 /** Replace one field's value inside `tr` (positions from tr.doc). */
-export function writeField(tr, f, value) {
+function writeField(tr, f, value) {
   if (f.legacy) return writeLegacy(tr, f, value);
   if (f.block) {
     const first = tr.doc.nodeAt(f.from);

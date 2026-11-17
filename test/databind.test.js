@@ -1,7 +1,7 @@
 // Content controls bound to custom XML (w:dataBinding): shown with their nodes' values on opening, as Word shows them
-// (checked against Word: a node's value replaces the placeholder, a single space too; an empty node or one not found
-// leaves it; storeItemID picks the part when one has that id), and edits going into the node and every control bound
-// to it, body and header, and into customXml/itemN.xml on saving.
+// (checked against Word: a node's value replaces the placeholder, a single space too; one not found leaves it;
+// storeItemID picks the part when one has that id), and edits going into the node and every control bound to it, body
+// and header, and into customXml/itemN.xml on saving. Empty nodes, repeating sections, pictures: databind-more.test.js.
 import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

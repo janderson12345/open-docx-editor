@@ -577,7 +577,8 @@ an empty string puts the field's placeholder back; a multi-paragraph field takes
 Controls bound to custom XML (Word's XML Mapping: `w:dataBinding`, often filled by another program) show the value in
 the bound `customXml/itemN.xml` node, as Word does. Typing into one, or setting it with `setFieldValues`/`fillFields`,
 changes that node, and every control bound to it (body, headers and footers) shows the new value; saving writes the
-changed custom XML part.
+changed custom XML part. An empty node shows the control's placeholder, a repeating section gets an item for each node
+it is bound to, and a picture control shows the picture its node holds (base64).
 
 Without an editor (for example on the server when a document is checked in):
 
