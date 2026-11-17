@@ -30,6 +30,62 @@ const OFFSET = {
   // (Arial and Calibri refitted: after later fixes their lines sat 0.15-0.28px low on average.)
 };
 
+// Word's own ascent where it isn't ASCENT's (the font's Windows ascent plus its external leading, GDI's): what a line of
+// runs in several sizes or fonts is sized from (mixlines.js). Calibri's line is its Windows ascent and descent, 0.9521em
+// above the baseline (Word's PDFs: 12pt Calibri raised 3pt in 10pt text, 17.11pt lines), where ASCENT has hhea's
+// ascender plus line gap, which the print offsets below were fitted on.
+const WORD_ASCENT = { calibri: 0.9521, 'calibri light': 0.9521, carlito: 0.9521, consolas: 0.9199 };
+/** Word's ascent per em of a font ASCENT knows (its lowercase family name). */
+export const wordAscent = (family) => (Object.hasOwn(WORD_ASCENT, family) ? WORD_ASCENT[family] : ASCENT[family]);
+/** The first family of a computed style's stack that ASCENT knows, lowercase, or ''. */
+export const knownFamily = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
+/** How far (px) a span's text is raised in its paragraph `el`: its wrappers' vertical-align (not its own), or null when one isn't a length. */
+export function raiseOf(span, el) {
+  let r = 0;
+  for (let n = span.parentElement; n && n !== el; n = n.parentElement) {
+    const va = getComputedStyle(n).verticalAlign;
+    if (va === 'baseline') continue;
+    const v = parseFloat(va);
+    if (!Number.isFinite(v) || !va.endsWith('px')) return null;
+    r += v;
+  }
+  return r;
+}
+/** A font's print offset (OFFSET), with its exceptions: Trebuchet's small text, Segoe UI's outside lists. */
+const offsetFor = (family, fs, el) => ((family === 'trebuchet ms' && fs < 12) || (family === 'segoe ui' && !el.classList.contains('odx-li')) ? 0 : OFFSET[family] || 0);
+
+/**
+ * The print shift (px) of a paragraph whose text spans have Word's boxes (mixlines.js, data-odx-mix): its baseline is
+ * already Word's, so only the difference between the ascent the offsets were fitted from (ASCENT) and Word's own, and
+ * the font's offset, of the run with the highest top on its first line. `first`: its first text node.
+ */
+function mixedShift(el, first) {
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  walk.currentNode = first;
+  let best = null, most = -Infinity, line = null;
+  const r = document.createRange();
+  for (let t = first, n = 0; t && n < 200; t = walk.nextNode(), n++) {
+    if (!t.data.trim()) continue;
+    const span = t.parentElement;
+    if (span.closest('sup, sub')) continue;
+    const cs = getComputedStyle(span);
+    const family = knownFamily(cs);
+    if (!family) continue;
+    const fs = parseFloat(cs.fontSize);
+    const top = wordAscent(family) * fs + (raiseOf(span, el) || 0);
+    if (!line) { r.selectNodeContents(first); line = r.getClientRects()[0]; if (!line) return 0; }
+    if (t !== first) {
+      r.selectNodeContents(t);
+      const at = r.getClientRects()[0];
+      if (!at || at.top >= line.bottom) break; // (on a later line: so is every run after it)
+    }
+    if (top > most) { most = top; best = { family, fs }; }
+  }
+  if (!best) return 0;
+  const d = Math.round(((ASCENT[best.family] - wordAscent(best.family)) * best.fs + offsetFor(best.family, best.fs, el)) * 100) / 100;
+  return Math.abs(d) < 0.05 ? 0 : d;
+}
+
 const cache = new Map();
 let probe = null;
 
@@ -96,6 +152,7 @@ export function shiftFor(el, host, anchored = false) {
   const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
   const text = walk.nextNode();
   if (!text) return 0;
+  if (el.dataset.odxMix === '1') return mixedShift(el, text);
   let rcs = getComputedStyle(text.parentElement);
   // After a leading bare break (its line in the smaller strut, doc 07), the text's line is its runs' own: measured as theirs.
   // (A leading break, not a leading run in bold or italic: their <strong>/<em> are runs like a span. Doc 08 edited to
@@ -103,7 +160,7 @@ export function shiftFor(el, host, anchored = false) {
   const own = el.classList.contains('odx-markers') && !/^(SPAN|STRONG|EM|U|S|B|I|SUB|SUP|A)$/.test(el.firstElementChild?.tagName || 'SPAN');
   let pcs = own ? rcs : getComputedStyle(el);
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
-  const known = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
+  const known = knownFamily;
   let family = known(rcs);
   let asc = ASCENT[family];
   if (!asc || lineHeightOf(pcs) === 'normal') return 0;
@@ -147,7 +204,7 @@ export function shiftFor(el, host, anchored = false) {
   // without it.)
   // (Segoe UI's only in list paragraphs, where it was fitted: corpus 2's plain 9pt Segoe UI sat right without it,
   // 25 lines 1.4px low with it.)
-  const off = (family === 'trebuchet ms' && fs < 12) || (family === 'segoe ui' && !el.classList.contains('odx-li')) ? 0 : OFFSET[family] || 0;
+  const off = offsetFor(family, fs, el);
   const imgs = el.querySelectorAll('img');
   const tr = imgs.length ? text.parentElement.getBoundingClientRect() : null;
   for (const img of imgs) {
