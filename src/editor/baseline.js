@@ -53,27 +53,6 @@ function browserOffset(pcs, rcs, host) {
   return v;
 }
 
-/** The browser's text box in a line: its top (px) from the line's top, and its height. */
-function textBox(pcs, rcs, host) {
-  const key = ['box', pcs.fontSize, pcs.fontFamily, lineHeightOf(pcs), rcs.font].join('|');
-  if (cache.has(key)) return cache.get(key);
-  if (!probe) {
-    probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap';
-  }
-  host.append(probe);
-  probe.style.font = `${pcs.fontSize} ${pcs.fontFamily}`;
-  probe.style.lineHeight = '0';
-  probe.innerHTML = '<span>X</span>';
-  probe.firstChild.style.font = rcs.font;
-  probe.firstChild.style.lineHeight = lineHeightOf(pcs);
-  const r = probe.firstChild.getBoundingClientRect();
-  const v = [r.top - probe.getBoundingClientRect().top, r.height];
-  probe.remove();
-  cache.set(key, v);
-  return v;
-}
-
 /**
  * CSS for the print-only shift of each top-level paragraph whose first run is in a font we know.
  * `blocks`: [{ el, i }] in document order; `scope`: the editor's class.
@@ -107,21 +86,18 @@ export function shiftFor(el, host, anchored = false) {
       if (cs && cs.fontFamily === pcs.fontFamily && cs.fontSize === pcs.fontSize) { family = pfam; asc = ASCENT[pfam]; fs = parseFloat(pcs.fontSize); break; }
     }
   }
-  // Exact line spacing places text its own way in Word: leave those lines alone, but for one thing. A line a little
-  // shorter than its text box has a negative half-leading, which the browser rounds down to a whole pixel: the text
-  // jumps up by nearly 1px where Word moves it by the half (sample S085's 11.2pt-exact headings in 10pt Times, 1.3px high).
+  // Exact line spacing: Word puts the baseline four fifths of the way down the line, whatever the font, its size or the
+  // line's height, shorter than the text or taller (Word's PDFs of exactly 10 to 60pt lines in Times New Roman, Calibri,
+  // Aptos and Arial at 11 and 12pt: 0.800-0.806 of the line, within Word's 0.12pt grid). The browser centres the text's
+  // box in the line instead: 12pt Aptos at exactly 20pt printed 4px high, at 60pt 19px.
   if (parseFloat(pcs.getPropertyValue('--odx-runmult')) === 0) {
-    const [top, box] = textBox(pcs, rcs, host);
     const h = parseFloat(lineHeightOf(pcs));
-    const d = Math.round(((h - box) / 2 - top) * 100) / 100;
-    if (h < box) return d > 0.1 && d < 1 ? d : 0;
-    // A line taller than its text: Word sets the text at its bottom, its descent on the line's foot, where the browser
-    // centres it (11pt Calibri at exactly 15pt printed 1.3px high: the generated documents, tools/doc-generator).
-    const nat = (parseFloat(rcs.getPropertyValue('--odx-lh')) || 1.17) * fs;
-    if (h <= nat + 0.5 || family !== known(rcs)) return 0;
-    const off = OFFSET[family] || 0;
-    const e = Math.round((h - nat + asc * fs - browserOffset(pcs, rcs, host) + off) * 100) / 100;
-    return e > 0.05 && e < 3 ? e : 0;
+    if (!(h > 0) || family !== known(rcs)) return 0;
+    // (Plus 0.1px for every font, not the fonts' offsets below: those were fitted where Word sets the text on its ascent,
+    // and left exact lines in Times New Roman 0.25px low, Aptos 0.13px; with 0.1px all four sit within 0.05px on average.)
+    const e = Math.round((0.8 * h - browserOffset(pcs, rcs, host) + 0.1) * 100) / 100;
+    // (A shift beyond where the browser's centred text can be, half the line's height off either way: left alone.)
+    return Math.abs(e) >= 0.05 && Math.abs(e) < h / 2 ? e : 0;
   }
   // A line taller than its text: the browser puts half the extra height above the text. Word puts all of it above
   // for at-least spacing, and none for multiple spacing (double-spaced text sits at its line's top).
