@@ -10,6 +10,7 @@ import { baseKeymap } from 'prosemirror-commands';
 import * as cmd from './commands.js';
 import { csFormatPlugin } from './csformat.js';
 import { zoomOf } from './zoom.js';
+import { padOf } from '../ooxml/place.js';
 
 let open = null; // { main, tv, el, pos, node, k, doc0, outside }
 
@@ -67,7 +68,10 @@ export function editTextBox(main, pos, x = null, y = null, k0 = null) {
   if (!node || node.type.name !== 'image' || !/txbxContent/.test(node.attrs.xml || '') || !img?.getBoundingClientRect) return null;
   const boxes = main.odx.session.textBoxes(node.attrs.xml);
   if (!boxes?.length) return null;
-  const r = img.getBoundingClientRect();
+  // (The shape's own box: its picture is drawn larger all round for its outline, --odx-pad, which the boxes aren't in.)
+  const r0 = img.getBoundingClientRect();
+  const p = padOf(node.attrs.place) * zoomOf(main);
+  const r = { left: r0.left + p, top: r0.top + p, width: Math.max(0, r0.width - 2 * p), height: Math.max(0, r0.height - 2 * p) };
   const at = (b) => ({ left: r.left + b.rect[0] * r.width, top: r.top + b.rect[1] * r.height, width: b.rect[2] * r.width, height: b.rect[3] * r.height });
   const inside = (b) => { const a = at(b); return x >= a.left && x <= a.left + a.width && y >= a.top && y <= a.top + a.height; };
   // The smallest box under the point, so a box inside another one wins.
