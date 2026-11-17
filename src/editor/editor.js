@@ -51,6 +51,7 @@ import { pastePictures, pictureLinks } from './pastepics.js';
 import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { protectPlugin, tabLeaves } from './protect.js';
+import { tableArrow, tableVert } from './tablecaret.js';
 
 let scopeSeq = 0;
 
@@ -537,6 +538,11 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     'Shift-Home': lineEdge(-1, true),
     End: lineEdge(1, false),
     'Shift-End': lineEdge(1, true),
+    // (At a table's edges: into, out of and across its cells, in right-to-left text too, keeping the caret's column.)
+    ArrowLeft: tableArrow(-1),
+    ArrowRight: tableArrow(1),
+    ArrowUp: tableVert(-1),
+    ArrowDown: tableVert(1),
     'Mod-b': spoken('bold', 'Bold'),
     'Mod-i': spoken('italic', 'Italic'),
     'Mod-u': spoken('underline', 'Underline'),
