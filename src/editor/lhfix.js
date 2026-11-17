@@ -10,6 +10,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { lineHeightOf } from './util.js';
 import { pictureFix, pictureAlone } from './picfix.js';
+import { mixedLines } from './mixlines.js';
 
 const key = new PluginKey('odx-lhfix');
 export const lineFixPlugin = new Plugin({
@@ -38,7 +39,13 @@ function pitch(box, el, chain, lh, length) {
   q.setAttribute('style', (el.getAttribute('style') || '').replace(OURS, ''));
   q.style.setProperty('--odx-lhv', length ? `${lh}px` : String(lh / parseFloat(getComputedStyle(el).fontSize)));
   let inner = q;
-  for (const c of chain) { const k = c.cloneNode(false); inner.append(k); inner = k; }
+  for (const c of chain) {
+    const k = c.cloneNode(false);
+    // (Not a run box of Word's from an earlier pass, mixlines.js: the probe measures the stylesheet's line height.)
+    if (el.dataset.odxMix === '1') for (const p of ['line-height', 'vertical-align', 'position', 'top']) k.style.removeProperty(p);
+    inner.append(k);
+    inner = k;
+  }
   box.append(q);
   inner.textContent = 'x';
   const one = q.getBoundingClientRect().height;
@@ -86,6 +93,31 @@ function picture(view, node, pos, el, box, value) {
   return { d: fix.d, mts };
 }
 
+/**
+ * Word's boxes for the runs of a paragraph of mixed sizes, fonts or raises (mixlines.js), as [from, to, css] by offset
+ * from the paragraph's position, or null.
+ */
+function mixed(view, pos, el, box) {
+  const got = mixedLines(el, box);
+  if (!got) return null;
+  const out = [];
+  try {
+    for (const [span, css] of got.spans) {
+      const from = view.posAtDOM(span.firstChild, 0) - pos;
+      const to = from + span.firstChild.data.length;
+      if (!(from > 0) || to > view.state.doc.nodeAt(pos).nodeSize - 1) return null;
+      out.push([from, to, css]);
+    }
+  } catch { return null; }
+  return out;
+}
+
+/** The pitch (px) of the document's grid of lines (w:docGrid type lines or linesAndChars), or 0. */
+export function lineGrid(doc) {
+  const g = /<w:docGrid\b[^>]*>/.exec(doc.attrs.sectPr || '')?.[0] || '';
+  return /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
+}
+
 let last = '';
 let gridPitch = 0;
 // Results by paragraph node ({ value, want }, null for none), until fonts load: probing every paragraph again on each
@@ -111,13 +143,16 @@ export function applyLineFix(view) {
   // the grid, its pitch (w:linePitch) times the spacing, or the whole number of pitches its text needs, with the text
   // centred in it (Word's PDFs of the generated documents, tools/doc-generator: 11pt at 1.08 lines on an 18pt grid
   // 25.9px a line, 16pt headings 48px, double spacing 48px).
-  const g = /<w:docGrid\b[^>]*>/.exec(view.state.doc.attrs.sectPr || '')?.[0] || '';
-  const pitch = /w:type="(lines|linesAndChars)"/.test(g) ? Number(/w:linePitch="(\d+)"/.exec(g)?.[1] || 0) / 15 : 0;
+  const pitch = lineGrid(view.state.doc);
   if (pitch !== gridPitch) { memo = new WeakMap(); gridPitch = pitch; }
   // A paragraph's decorations from its result: its line height, and a picture line's fix (picfix.js) on it and its pictures.
   const put = (pos, node, r) => {
     if (!r) return;
     if (r.value != null) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
+    if (r.mix) {
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-odx-mix': '1' }, { key: 'mx' }));
+      for (const [from, to, css] of r.mix) decos.push(Decoration.inline(pos + from, pos + to, { style: css }, { key: `mx:${css}` }));
+    }
     if (!r.pic) return;
     decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-picb:${r.pic.d}px` }, { key: `pb:${r.pic.d}` }));
     for (const [off, mt] of r.pic.mts) decos.push(Decoration.node(pos + 1 + off, pos + 2 + off, { style: `--odx-picmt:${mt}px${mt < 0 ? `;--odx-picclip:${-mt}px` : ''}` }, { key: `pm:${mt}` }));
@@ -139,10 +174,7 @@ export function applyLineFix(view) {
     if (!want || !fs) return false;
     // The text's own elements (Word documents often set the font and size on runs, not the paragraph). Not an equation's:
     // its parts (a script with one of its two children copied) aren't a line of text, and Firefox reports them as errors.
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('math') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
-    const text = walk.nextNode();
-    const chain = [];
-    for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
+    const chain = chainOf(el);
     const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
     // (Not in a table: Word sets a cell's lines as without the grid.)
     if (pitch && !length && parseFloat(cs.getPropertyValue('--odx-runmult')) !== 0 && !el.closest('td')) {
@@ -157,8 +189,9 @@ export function applyLineFix(view) {
     const best = bestHeight(box, el, chain, want, length);
     const value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
     const pic = picture(view, node, pos, el, box, value);
-    if (value == null && !pic) return false;
-    const r = { value, want, pic };
+    const mix = mixed(view, pos, el, box);
+    if (value == null && !pic && !mix) return false;
+    const r = { value, want, pic, mix };
     memo.set(node, r);
     put(pos, node, r);
     return false;
@@ -169,4 +202,13 @@ export function applyLineFix(view) {
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));
   return true;
+}
+
+/** A paragraph's first text's elements below it (where its line height is probed), or []. */
+function chainOf(el) {
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('math') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  const text = walk.nextNode();
+  const chain = [];
+  for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
+  return chain;
 }
