@@ -1527,9 +1527,10 @@ const thin = await page.evaluate(() => {
 });
 const wordWidth = { triple: (w) => 5 * w, double: (w) => 3 * w, thinThickMediumGap: (w) => 2 * w, thickThinMediumGap: (w) => 2 * w, thinThickThinMediumGap: (w) => 3 * w, thinThickSmallGap: (w) => w + 1.5, thickThinSmallGap: (w) => w + 1.5 };
 const thinOnes = thin.filter((b) => wordWidth[b.val](b.sz / 8) < 2.25);
-const off = thinOnes.map((b) => ({ ...b, want: 2 * ((wordWidth[b.val](b.sz / 8) + 1) * 4) / 3 })).filter((b) => !b.image || Math.abs(b.extra - b.want) > 0.1 || b.widths.some((w) => w !== Math.round(w)));
-check(thinOnes.length === 14 && !off.length && thin.filter((b) => !thinOnes.includes(b)).every((b) => !b.image),
-  `thin compound borders drawn as Word prints them, at Word's width (${thinOnes.length} thin; off: ${JSON.stringify(off)})`);
+// (Wider ones the same since 0.8.3: CSS double drew a triple as two lines, a thick-thin pair's lines equal.)
+const off = thin.map((b) => ({ ...b, want: 2 * ((wordWidth[b.val](b.sz / 8) + 1) * 4) / 3 })).filter((b) => !b.image || Math.abs(b.extra - b.want) > 0.1 || b.widths.some((w) => w !== Math.round(w)));
+check(thinOnes.length === 14 && thin.length === 18 && !off.length,
+  `compound borders drawn as Word prints them, at Word's width (${thinOnes.length} thin of ${thin.length}; off: ${JSON.stringify(off)})`);
 
 // Where printed text sits in its line, as Word's PDFs put it (lines.docx, Times New Roman, mklines.mjs): an exactly 40pt
 // line's baseline four fifths of the way down it; a line of 10pt text with a 12pt run, raised 3pt or not, on the 12pt
