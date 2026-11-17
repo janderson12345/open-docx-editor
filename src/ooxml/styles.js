@@ -1,7 +1,7 @@
 // styles.xml, theme fonts and numbering.xml: read once per document, turned
 // into a CSS stylesheet for the editor and a list-label resolver.
 import { kids, kid, attr, onOff, NS, REL_TYPES } from './xml.js';
-import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss } from './props.js';
+import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss, compoundSide, cellLines } from './props.js';
 import { twipsToPx } from './units.js';
 
 export function readTheme(pkg) {
@@ -602,8 +602,30 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     const below = !lastRow && resolved.some((n) => n.c.row === c.row + c.rowspan && overlaps(n.c.col, n.c.col + n.c.colspan, c.col, c.col + c.colspan) && drawn(n.edge.top));
     const DIR = { top: [0, 1], bottom: [0, -1], left: [1, 0], right: [-1, 0] };
     const r3 = (v) => +v.toFixed(3);
+    // Compound lines (double, triple, thick-thin) drawn by pictures behind the cell (cellLines), each at Word's width and
+    // where Word puts it: a line between rows the lower row's, as above; a line between cells the right-hand one's, from
+    // the grid line in (bdr3-word's tables: each cell's text still half the line's width in from it, as with CSS's).
+    const nearBy = (pred) => { for (let k = c.row - 1; k <= c.row + c.rowspan; k++) for (const n of byRow.get(k) || []) if (n.c !== c && pred(n.c)) return n; return null; };
+    const rightOf = !lastCol && nearBy((m) => m.col === c.col + c.colspan && overlaps(m.row, m.row + m.rowspan, c.row, c.row + c.rowspan));
+    const leftAt = (row) => nearBy((m) => m.col + m.colspan === c.col && m.row + (row ? m.rowspan : 0) === c.row + (row ? c.rowspan : 0));
+    const aboveAt = (end) => nearBy((m) => m.row + m.rowspan === c.row && (end ? m.col + m.colspan === c.col + c.colspan : m.col === c.col));
+    const compound = Object.fromEntries(['top', 'bottom', 'left', 'right'].map((s) => [s, compoundSide(edge[s])]));
+    const lt = leftAt(false), lb = leftAt(true), au = aboveAt(false), ar = aboveAt(true);
+    const pic = cellLines(
+      { top: compound.top, bottom: below ? null : compound.bottom, left: compound.left, right: rightOf ? null : compound.right },
+      { tl: lt && compoundSide(lt.edge.top), bl: lt && lb && compoundSide(lb.edge.bottom), tu: au && compoundSide(au.edge.left), ru: ar && compoundSide(ar.edge.right) },
+    );
+    const sideGrow = { left: 0, right: 0 };
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const b = edge[side];
+      const cb = compound[side];
+      if (cb) {
+        css.push(`border-${side}:none`);
+        if (side === 'left' || side === 'right') sideGrow[side] = cb.px / 2;
+        else if (side === 'bottom' && below) css.push(`--odx-bdb:${r3(cb.px)}px`);
+        else grow[side] = cb.px + (b.space > 0 ? (b.space * 4) / 3 : 0);
+        continue;
+      }
       const solid = b && b.val && !['nil', 'none'].includes(b.val) && borderCss(b).includes(' solid ');
       if (!solid) {
         css.push(`border-${side}:${b ? borderCss(b) : 'none'}`);
@@ -623,12 +645,13 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       if ((side === 'top' || side === 'bottom') && b.space > 0) grow[side] += (b.space * 4) / 3;
     }
     if (shadows.length) css.push(`box-shadow:${shadows.join(',')}`);
+    if (pic) css.push(pic.css, `--odx-lines:${pic.lines}`);
     if (shading) css.push(`background-color:${shading}`);
     if (vAlign) css.push(`vertical-align:${vAlign}`);
     if (dir) css.push(`writing-mode:${dir}`);
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
-    if (cellPad.left != null) css.push(`padding-left:${r3(pad('left'))}px`);
-    if (cellPad.right != null) css.push(`padding-right:${r3(pad('right'))}px`);
+    if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
+    if (cellPad.right != null || sideGrow.right) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
     css.push(`--odx-pt:${r3(pad('top'))}px;padding-top:${r3(pad('top'))}px`); // pagination adds to --odx-pt
     css.push(`--odx-pb:${r3(pad('bottom'))}px;padding-bottom:${r3(pad('bottom'))}px`);
     const r = rPrToCss(rPr, theme);
