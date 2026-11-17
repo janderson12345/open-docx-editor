@@ -447,6 +447,10 @@ export class DocxSession {
    */
   syncBindings(doc, except = null) {
     if (this.bindings.empty) return doc;
+    // (A value changed: the headers and footers not read yet are read now, showing it, so a save writes them so.)
+    if (this.bindings.parts.some((p) => p.dirty)) {
+      for (const r of this.pkg.readRels(this.pkg.mainPath)) if (/\/(header|footer)$/.test(r.type) && !this._stories?.has(r.id)) this.story(r.id);
+    }
     for (const [rId, d] of this._stories || []) {
       if (!d || rId === except) continue;
       const now = syncBound(d, this.bindings);

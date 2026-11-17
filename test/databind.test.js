@@ -11,6 +11,7 @@ import { DocxSession } from '../src/ooxml/docx.js';
 import { compileXPath, parseXmlDate } from '../src/ooxml/databind.js';
 import { listFields, formsPlugin } from '../src/editor/fields.js';
 import { bindingsPlugin } from '../src/editor/bindings.js';
+import { fillFields, readFieldValues } from '../src/fieldsNode.js';
 import { bindingDocx, bound, FIXTURE, PH } from './fixtures/mkbinding.mjs';
 
 const P = (x) => `<w:p>${x}</w:p>`;
@@ -169,4 +170,15 @@ test('crafted bindings and parts stay quick and harmless', () => {
   assert.ok(Date.now() - t < 3000, `${Date.now() - t}ms`);
   assert.deepEqual(texts(s.doc), ['v', '.', '.', 'p', '.', 'x']);
   assert.equal({}.constructor, Object);
+});
+
+test('filling bound fields without an editor (fillFields) updates their nodes too', () => {
+  const { bytes, missing } = fillFields(bindingDocx(FIXTURE), { Order: 'filled order' });
+  assert.deepEqual(missing, []);
+  const out = unzipSync(bytes);
+  assert.match(strFromU8(out['customXml/item1.xml']), /<order>filled order<\/order>/);
+  assert.match(strFromU8(out['word/header1.xml']), /filled order/);
+  const v = readFieldValues(bytes);
+  assert.equal(v.Order, 'filled order');
+  assert.equal(v.OrderAgain, 'filled order');
 });
