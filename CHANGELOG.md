@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 (2026-11-16)
 
+- **Security fixes from the release reviews**: a crafted document could make the editor hang or crawl through work
+  without a bound: text measured beside a shape with text on both sides, a WordArt word broken letter by letter, bevel
+  sizes and reflection blurs of any size, settings, form fields and note separators read by patterns that went back
+  over long runs of unclosed tags, a note of thousands of lines fitted into columns, borders millions of pixels wide,
+  columns by the million, paragraphs of thousands of pictures. All are bounded now; font tables are read for their own
+  entries only.
+- **The arrow keys in tables**: Left and Right go on from cell to cell in right-to-left tables too (at a
+  right-to-left cell's end the caret had stayed stuck there), and from the paragraph under or over a table into it,
+  not over it; Up and Down in and out of tables keep the caret's column, as in Word, instead of going to the start of
+  the cell.
 - **Mail merge: NEXT, NEXTIF and SKIPIF**, as in Word's merge: NEXT and NEXTIF move on to the next record within the
   same document (several records to a page), and SKIPIF leaves a document out. Headers and footers are filled from the
   record the document ended on, MERGESEQ counts the merged documents, and Preview Results shows them as Word's preview
