@@ -3,12 +3,12 @@
 // in one, each record starting on a new page (a next-page section break, as Word joins them). The fields become plain
 // text in the result, in their results' formatting, as in Word's merged document. Works without an editor (in Node,
 // call setXmlImpl(...) with a DOMParser/XMLSerializer first) and in the browser.
-import { Fragment, Slice } from 'prosemirror-model';
+import { Fragment } from 'prosemirror-model';
 import { DocxSession } from './ooxml/docx.js';
 import { schema } from './editor/schema.js';
 import { marksFromRPr } from './ooxml/reader.js';
 import { withSectType } from './editor/commands.js';
-import { unescapeXml } from './ooxml/xml.js';
+import { unescapeXml, parseXml, serializeXml, kids, NS } from './ooxml/xml.js';
 
 const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'fldChar' ? (/fldCharType="(\w+)"/.exec(n.attrs.xml) || [])[1] : null);
 const instrOf = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'instrText' ? unescapeXml((/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/.exec(n.attrs.xml) || [])[1] || '') : null);
@@ -238,7 +238,8 @@ export function mergeTargets(doc, ctx) {
 /**
  * The formatting a field's text takes: its result's first character's (\* MERGEFORMAT), else its code's. `inside`, the
  * textblock holding the field and its content's start ({ node, start }): looked through alone, not from the document's
- * start (a preview of many fields, mailmerge.js).
+ * start (a preview of many fields, mailmerge.js). With `index`, the child of it the field starts at, looked through
+ * from there (a merge of many fields in one paragraph, mergeRecord).
  */
 export function fieldMarks(doc, f, inside = null) {
   if (f.simple) {
@@ -248,7 +249,14 @@ export function fieldMarks(doc, f, inside = null) {
   const range = f.resultFrom != null && f.resultTo > f.resultFrom ? [f.resultFrom, f.resultTo] : [f.from, f.to];
   let found = null;
   const take = (n) => { if (found == null && (n.isText || n.type === schema.nodes.opaque_inline)) found = n.marks; return found == null; };
-  if (inside) inside.node.nodesBetween(range[0] - inside.start, range[1] - inside.start, take);
+  if (inside?.index != null) {
+    const { node } = inside;
+    for (let i = inside.index, pos = f.from; found == null && i < node.childCount && pos < range[1]; i++) {
+      const c = node.child(i);
+      if (pos + c.nodeSize > range[0]) take(c);
+      pos += c.nodeSize;
+    }
+  } else if (inside) inside.node.nodesBetween(range[0] - inside.start, range[1] - inside.start, take);
   else doc.nodesBetween(range[0], range[1], take);
   return found || [];
 }
@@ -329,18 +337,54 @@ export function recordValue(record, name) {
  * formatting); the cursor is left where the document's NEXT and NEXTIF fields moved it.
  */
 export function mergeRecord(doc, ctx) {
-  let out = doc;
   // (IF fields too: Word's merged document has their text, the field gone; NEXT, NEXTIF and SKIPIF leave nothing.)
-  for (const { field: f, value } of mergeTargets(doc, ctx).reverse()) {
-    const marks = fieldMarks(out, f);
-    const $from = out.resolve(f.from);
-    const $to = out.resolve(f.to);
-    // (A field spanning paragraphs: only its first paragraph's part is replaced; such fields aren't merge fields in Word.)
-    if ($from.parent !== $to.parent) continue;
-    const text = value ? Fragment.from(schema.text(value, marks)) : Fragment.empty;
-    out = out.replace(f.from, f.to, new Slice(text, 0, 0));
-  }
-  return out;
+  const targets = mergeTargets(doc, ctx);
+  if (!targets.length) return doc;
+  // One pass, the fields in order: each textblock holding fields made again once, its fields' nodes swapped for their
+  // text, and the blocks above it copied once (a replace and two resolves a field went through the whole document for
+  // each, as many times as it had fields).
+  let next = 0;
+  const block = (node, start) => {
+    const end = start + node.content.size;
+    const kids = [];
+    let pos = start;
+    let skipTo = -1;
+    node.forEach((child, _, index) => {
+      const at = pos;
+      pos += child.nodeSize;
+      if (at < skipTo) return;
+      while (next < targets.length && targets[next].field.from < at) next++;
+      while (next < targets.length && targets[next].field.from === at) {
+        const { field: f, value } = targets[next++];
+        // (A field spanning paragraphs: left as it is; such fields aren't merge fields in Word.)
+        if (f.to > end) continue;
+        if (value) kids.push(schema.text(value, fieldMarks(doc, f, { node, start, index })));
+        skipTo = f.to;
+        return;
+      }
+      kids.push(child);
+    });
+    // (Text either side of a field's place joined when its formatting is the same, as a replace joins it.)
+    return node.copy(Fragment.fromArray(kids));
+  };
+  // `node` at content start `start`: the same node when no field starts inside it.
+  const walk = (node, start) => {
+    if (next >= targets.length || targets[next].field.from >= start + node.content.size) return node;
+    if (node.inlineContent) return block(node, start);
+    const kids = [];
+    let changed = false;
+    let pos = start;
+    node.forEach((child) => {
+      // (A field before this child that wasn't in a textblock: none in this schema, passed over.)
+      while (next < targets.length && targets[next].field.from < pos) next++;
+      const k = child.isLeaf ? child : walk(child, pos + 1);
+      if (k !== child) changed = true;
+      kids.push(k);
+      pos += child.nodeSize;
+    });
+    return changed ? node.copy(Fragment.fromArray(kids)) : node;
+  };
+  return walk(doc, 0);
 }
 
 /** w14:paraId and the like dropped (each must be unique; Word gives new ones). */
@@ -389,19 +433,61 @@ function mapSections(doc, fn) {
   return doc.type.create({ ...doc.attrs, sectPr: fn(doc.attrs.sectPr || '<w:sectPr/>') }, kids);
 }
 
-/** A copy of a header or footer part (its own relationships too, for its pictures); returns the copy's rId. */
-function copyStory(session, rId) {
+/**
+ * Copies of header and footer parts (their own relationships too, for their pictures): `copy(rId)` makes one and
+ * returns its rId, the names and rIds those pkg.addOverride and pkg.addRel give, and `done()` writes the content types
+ * and the document's relationships once, after the last (adding each copy to them read and wrote them whole, for
+ * every record: time that grew with the square of the records). Nothing reads the new relationships before `done`.
+ */
+function storyCopier(session) {
   const pkg = session.pkg;
-  const rel = pkg.relById(rId);
-  const kind = /footer$/.test(rel.type) ? 'footer' : 'header';
   const relsOf = (p) => `${p.slice(0, p.lastIndexOf('/') + 1)}_rels/${p.slice(p.lastIndexOf('/') + 1)}.rels`;
-  let n = 1;
-  while (pkg.files[`${pkg.mainDir}${kind}${n}.xml`]) n++;
-  const path = `${pkg.mainDir}${kind}${n}.xml`;
-  pkg.files[path] = pkg.files[rel.target];
-  if (pkg.files[relsOf(rel.target)]) pkg.files[relsOf(path)] = pkg.files[relsOf(rel.target)];
-  pkg.addOverride(path, `application/vnd.openxmlformats-officedocument.wordprocessingml.${kind}+xml`);
-  return pkg.addRel(rel.type, path.slice(pkg.mainDir.length));
+  const relsPath = relsOf(pkg.mainPath);
+  const relDoc = pkg.xml(relsPath) || parseXml(`<Relationships xmlns="${NS.rel}"/>`);
+  const used = new Set(kids(relDoc.documentElement, 'Relationship', NS.rel).map((r) => r.getAttribute('Id')));
+  const ctDoc = pkg.xml('[Content_Types].xml');
+  const parts = new Set(kids(ctDoc.documentElement, 'Override', NS.ct).map((o) => o.getAttribute('PartName')));
+  const prefix = pkg.idPrefix || 'rId';
+  // (The first free number of each part name and, with an editor's own prefix, of the rIds: they only go up.)
+  const free = { header: 1, footer: 1, id: 1 };
+  let rels = false;
+  let types = false;
+  return {
+    copy(rId) {
+      const rel = pkg.relById(rId);
+      const kind = /footer$/.test(rel.type) ? 'footer' : 'header';
+      let n = free[kind];
+      while (pkg.files[`${pkg.mainDir}${kind}${n}.xml`]) n++;
+      free[kind] = n + 1;
+      const path = `${pkg.mainDir}${kind}${n}.xml`;
+      pkg.files[path] = pkg.files[rel.target];
+      if (pkg.files[relsOf(rel.target)]) pkg.files[relsOf(path)] = pkg.files[relsOf(rel.target)];
+      if (!parts.has(`/${path}`)) {
+        const o = ctDoc.createElementNS(NS.ct, 'Override');
+        o.setAttribute('PartName', `/${path}`);
+        o.setAttribute('ContentType', `application/vnd.openxmlformats-officedocument.wordprocessingml.${kind}+xml`);
+        ctDoc.documentElement.appendChild(o);
+        parts.add(`/${path}`);
+        types = true;
+      }
+      let k = pkg.idPrefix ? free.id : used.size + 1;
+      while (used.has(prefix + k)) k++;
+      if (pkg.idPrefix) free.id = k;
+      const id = prefix + k;
+      used.add(id);
+      const r = relDoc.createElementNS(NS.rel, 'Relationship');
+      r.setAttribute('Id', id);
+      r.setAttribute('Type', rel.type);
+      r.setAttribute('Target', path.slice(pkg.mainDir.length));
+      relDoc.documentElement.appendChild(r);
+      rels = true;
+      return id;
+    },
+    done() {
+      if (types) pkg.setText('[Content_Types].xml', serializeXml(ctDoc));
+      if (rels) { pkg.setText(relsPath, serializeXml(relDoc)); pkg.rels = pkg.readRels(pkg.mainPath); }
+    },
+  };
 }
 
 /**
@@ -438,12 +524,12 @@ export function mergeUnits(doc, records) {
  * parts (filled with its values), each later record a copy of each, every section naming its headers and footers
  * (a section that inherited them would get the record before's).
  */
-function withRecordStories(session, doc, stories, i) {
+function withRecordStories(session, doc, stories, i, copier) {
   if (!stories.size) return doc;
   const copies = new Map();
   const idFor = (id) => {
     if (!stories.has(id)) return id;
-    if (!copies.has(id)) copies.set(id, i === 0 ? id : copyStory(session, id));
+    if (!copies.has(id)) copies.set(id, i === 0 ? id : copier.copy(id));
     return copies.get(id);
   };
   let refs = {};
@@ -458,6 +544,7 @@ function withRecordStories(session, doc, stories, i) {
     const rest = xml.replace(REF, '');
     return /^<w:sectPr\b[^>]*\/>$/.test(rest) ? rest.replace(/\/>$/, `>${own}</w:sectPr>`) : rest.replace(/^(<w:sectPr\b[^>]*>)/, `$1${own}`);
   });
+  // (A copy's relationship is written after the last record, storyCopier: its merged story is set now, saved after.)
   for (const [id, copy] of copies) {
     session.story(copy);
     session.setStory(copy, stories.get(id)[i]);
@@ -483,7 +570,12 @@ export function mailMerge(bytes, records, { combine = true } = {}) {
   const docs = units.map((u) => u.doc);
   // Merge fields in headers and footers are filled for each document too, as in Word.
   const stories = mergedStories(session, records, units);
-  if (combine) return { bytes: session.save(joinRecords(docs.map((d, i) => withRecordStories(session, d, stories, i)))), fields, missing };
+  if (combine) {
+    const copier = storyCopier(session);
+    const joined = joinRecords(docs.map((d, i) => withRecordStories(session, d, stories, i, copier)));
+    copier.done();
+    return { bytes: session.save(joined), fields, missing };
+  }
   return {
     files: docs.map((d, i) => {
       const s = new DocxSession(bytes);

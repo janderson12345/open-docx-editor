@@ -3,7 +3,7 @@
 // times slower (4 when linear, 16 when quadratic, as Accept All was when each change's position went through every
 // step made before it). A ratio, so it doesn't depend on the machine's speed; the best of several runs, after one to
 // warm up, so a pause on a busy machine doesn't count. The same for the decorations (comments, formatting marks...) as a
-// document opens and as a key is typed. And the faster ways the long documents take give what the plain ones do:
+// document opens and as a key is typed, and for Finish & Merge (with the merge fields and with the records). And the faster ways the long documents take give what the plain ones do:
 // Accept and Reject All a run of blocks at a time (track.js), the text spans a block at a time, the other decorations'
 // sets from sorted decorations (decoset.js), the soft hyphens mapped through an edit.
 import './setup.js';
@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { EditorState } from 'prosemirror-state';
-import { Fragment } from 'prosemirror-model';
+import { Fragment, Slice } from 'prosemirror-model';
+import { schema } from '../src/editor/schema.js';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { blankDocxBytes } from '../src/ooxml/template.js';
@@ -25,7 +26,7 @@ import { marksPlugin } from '../src/editor/marks.js';
 import { mailMergePlugin } from '../src/editor/mailmerge.js';
 import { joinsPlugin } from '../src/editor/joins.js';
 import { hyphenatePlugin, loadHyphenation, hyphenSet, mapHyphens } from '../src/editor/hyphenate.js';
-import { mergeTargets, fieldMarks, mergeCursor } from '../src/merge.js';
+import { mergeTargets, fieldMarks, mergeCursor, mergeRecord, mailMerge } from '../src/merge.js';
 
 const N = 600;
 const LIMIT = 10;
@@ -308,6 +309,108 @@ test('merge field previews: a field\'s paragraph and formatting found from its p
     const shown = decosOf(plugin, opened(plugin, doc)).find().filter((d) => d.spec.key).map((d) => [d.from, d.spec.marks.map((m) => m.type.name)]);
     const plain = targets.filter(({ field: x }) => doc.resolve(x.from).parent === doc.resolve(x.to).parent).map(({ field: x }) => [x.from, fieldMarks(doc, x).map((m) => m.type.name)]);
     assert.deepEqual(shown, plain, f);
+  }
+});
+
+// Mail merge's documents: `n` paragraphs of merge fields (complex and simple, an IF testing one, MERGEREC and MERGESEQ,
+// NEXTIF and SKIPIF that stay false, one in a table), or the same fields in one paragraph; headers and footers (first,
+// even and default) with a merge field each, every merged document its own copies of them.
+const mr = (t, b = false) => `<w:r>${b ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${t}</w:t></w:r>`;
+const mfield = (parts, shown = '') => `<w:r><w:fldChar w:fldCharType="begin"/></w:r>${parts.map((p) => (p.startsWith('<') ? p : `<w:r><w:instrText xml:space="preserve">${p}</w:instrText></w:r>`)).join('')}`
+  + `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${mr(shown)}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+const mf = (name) => mfield([` MERGEFIELD ${name} `], `«${name}»`);
+const mfSimple = (name) => `<w:fldSimple w:instr=" MERGEFIELD ${name} \\* Upper "><w:r><w:t>«${name}»</w:t></w:r></w:fldSimple>`;
+function mergeDocx(n, onePara = false) {
+  const runs = [];
+  for (let k = 0; k < n; k++) {
+    const c = k % 5;
+    if (c === 0) runs.push(mr(`Dear ${k} `) + mf('Name') + mr(', of ') + mf('City') + mr('.', true));
+    else if (c === 1) runs.push(mfield([' IF ', mf('Amount'), ' > 10 "big" "small" '], 'small') + mr(' ') + mfSimple('Name'));
+    else if (c === 2) runs.push(mfield([' MERGEREC ']) + mr(' ') + mfield([' MERGESEQ ']) + mf('Missing'));
+    else if (c === 3) runs.push(mfield([' NEXTIF ', mf('Group'), ' = "none" ']) + mfield([' SKIPIF ', mf('Name'), ' = "Q*" ']) + mr(`plain ${k}`));
+    else runs.push(onePara ? mf('City') : `<w:tbl><w:tr><w:tc><w:p>${mf('Name')}</w:p></w:tc></w:tr></w:tbl>`);
+  }
+  const body = onePara ? `<w:p>${runs.join('')}</w:p>` : runs.map((r) => (r.startsWith('<w:tbl') ? r : `<w:p>${r}</w:p>`)).join('');
+  const files = unzipSync(blankDocxBytes());
+  const stories = ['header', 'footer'].flatMap((kind) => ['first', 'even', 'default'].map((type) => ({ kind, type, id: `rIdM${kind}${type}`, file: `${kind}${type}.xml` })));
+  let rels = '', types = '', refs = '';
+  for (const s of stories) {
+    const tag = s.kind === 'header' ? 'hdr' : 'ftr';
+    files[`word/${s.file}`] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p>${mr(`${s.type}: `)}${mf('Name')}</w:p></w:${tag}>`);
+    rels += `<Relationship Id="${s.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${s.kind}" Target="${s.file}"/>`;
+    types += `<Override PartName="/word/${s.file}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${s.kind}+xml"/>`;
+    refs += `<w:${s.kind}Reference w:type="${s.type}" r:id="${s.id}"/>`;
+  }
+  const relsPath = 'word/_rels/document.xml.rels';
+  files[relsPath] = strToU8(strFromU8(files[relsPath]).replace('</Relationships>', `${rels}</Relationships>`));
+  files['[Content_Types].xml'] = strToU8(strFromU8(files['[Content_Types].xml']).replace('</Types>', `${types}</Types>`));
+  files['word/document.xml'] = strToU8(strFromU8(files['word/document.xml']).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`).replace(/(<w:sectPr\b[^>]*>)/, `$1${refs}`));
+  return zipSync(files);
+}
+const mergeRecords = (n) => Array.from({ length: n }, (_, i) => ({ Name: `Name ${i}`, City: `Town ${i}`, Amount: String(i % 20), Group: 'x' }));
+
+test('Finish & Merge grows linearly: with the merge fields, in paragraphs or all in one, and with the records', (t) => {
+  const records = mergeRecords(3);
+  const one = (doc) => () => mergeRecord(doc, mergeCursor(records));
+  const cases = {
+    // (Each field had a replace and two resolves through the whole document, and its formatting looked for from the
+    // paragraph's start.)
+    'fields in paragraphs': [N, 4 * N].map((n) => one(new DocxSession(mergeDocx(n)).doc)),
+    'fields in one paragraph': [N, 4 * N].map((n) => one(new DocxSession(mergeDocx(n, true)).doc)),
+    // (Each record's copies of the headers and footers had the relationships and content types read and written whole.)
+    records: [N / 8, N / 2].map((n) => { const bytes = mergeDocx(5); const rs = mergeRecords(n); return () => mailMerge(bytes, rs).bytes; }),
+  };
+  const report = {};
+  for (const [name, [smallFn, largeFn]] of Object.entries(cases)) {
+    smallFn();
+    const [small, large] = timedPair(smallFn, largeFn, 3);
+    report[name] = `${small.t.toFixed(1)}ms, ${large.t.toFixed(1)}ms`;
+    if (large.t > 5) assert.ok(large.t / Math.max(small.t, 0.5) < LIMIT, `${name}: ${small.t.toFixed(1)}ms, 4x ${large.t.toFixed(1)}ms (${(large.t / small.t).toFixed(1)}x)`);
+    if (name !== 'records') {
+      const text = large.out.textContent;
+      assert.match(text, /Dear 0 Name 0, of Town 0\.small NAME 01 1/, name);
+      let fields = 0;
+      large.out.descendants((n) => { if (n.attrs.kind === 'fldChar' || n.attrs.kind === 'fldSimple') fields++; });
+      assert.equal(fields, 0, `${name}: every field merged`);
+    }
+  }
+  const merged = unzipSync(cases.records[1]());
+  const xml = strFromU8(merged['word/document.xml']);
+  assert.equal(xml.match(/<w:sectPr\b/g).length, N / 2);
+  assert.equal(Object.keys(merged).filter((k) => /^word\/(header|footer)\w*\.xml$/.test(k)).length, 6 * (N / 2));
+  t.diagnostic(JSON.stringify(report));
+});
+
+// Finish & Merge's record as it was made before it took one pass: each field replaced from the last, its formatting
+// found in the document as it then was.
+function mergedByReplace(doc, ctx) {
+  let out = doc;
+  for (const { field: f, value } of mergeTargets(doc, ctx).reverse()) {
+    const marks = fieldMarks(out, f);
+    if (out.resolve(f.from).parent !== out.resolve(f.to).parent) continue;
+    out = out.replace(f.from, f.to, new Slice(value ? Fragment.from(schema.text(value, marks)) : Fragment.empty, 0, 0));
+  }
+  return out;
+}
+
+test('Finish & Merge in one pass gives what replacing each field does, every record (NEXT, NEXTIF and SKIPIF too)', () => {
+  const group = [['Ada', 'x', '5'], ['Bob', 'x', '20'], ['Cy', 'y', '30'], ['Di', 'x', '2'], ['Ed', 'y', '40'], ['Quin', 'x', '50'], ['Gus', 'y', '60']]
+    .map(([Name, Group, Amount]) => ({ Name, Group, Amount, City: `${Name}ville` }));
+  const docs = ['mailmerge.docx', 'mergeif.docx', 'mergenext.docx', 'mergeskip.docx', 'mergeskip2.docx', 'merge-format.docx'].map((f) => [f, fixtureSession(f)]);
+  docs.push(['paragraphs', new DocxSession(mergeDocx(40))], ['one paragraph', new DocxSession(mergeDocx(40, true))]);
+  for (const [name, session] of docs) {
+    for (const doc of [session.doc, ...session.pkg.rels.filter((r) => /\/(header|footer)$/.test(r.type)).map((r) => session.story(r.id)).filter(Boolean)]) {
+      for (let i = 0; i < group.length; i++) {
+        for (const preview of [false, true]) {
+          const a = mergeCursor(group, i, { preview });
+          const b = mergeCursor(group, i, { preview });
+          const got = mergeRecord(doc, a);
+          assert.deepEqual(got.toJSON(), mergedByReplace(doc, b).toJSON(), `${name}, record ${i + 1}${preview ? ', preview' : ''}`);
+          assert.deepEqual([a.i, a.skip], [b.i, b.skip]);
+          got.check();
+        }
+      }
+    }
   }
 });
 
