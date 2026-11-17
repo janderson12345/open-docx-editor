@@ -3,6 +3,7 @@
 // the fields, on screen only: the document keeps its fields) and Finish & Merge (merge.js: one document of every record).
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { decoSet } from './decoset.js';
 import { Node, Slice, Fragment } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { blocksFromXml } from '../ooxml/reader.js';
@@ -93,6 +94,27 @@ export function previewStory(session, doc) {
   return doc && m?.preview && m.records.length ? mergeRecord(doc, mergeCursor(m.records, m.last ?? m.index, { preview: true })) : doc;
 }
 
+/** The textblocks of `doc` (each { node, start: its content's start }) and a lookup: the one whose content holds a position. */
+function textblocks(doc) {
+  const list = [];
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true;
+    list.push({ node, start: pos + 1 });
+    return false;
+  });
+  return (p) => {
+    let lo = 0, hi = list.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const b = list[mid];
+      if (p < b.start) hi = mid - 1;
+      else if (p > b.start + b.node.content.size) lo = mid + 1;
+      else return b;
+    }
+    return null;
+  };
+}
+
 /**
  * Each field shown as the record's value: its own content hidden, the value drawn in its place in its formatting. As
  * Word's preview: from the record shown on, NEXT and NEXTIF moving on to the records after it, SKIPIF and MERGESEQ
@@ -102,16 +124,21 @@ function previewDecos(doc, m) {
   const decos = [];
   const ctx = mergeCursor(m.records, m.index, { preview: true });
   // (IF fields too, their text for the record as in the merged document: merge.js mergeTargets.)
+  const blockAt = textblocks(doc);
   for (const { field: f, value } of mergeTargets(doc, ctx)) {
-    if (doc.resolve(f.from).parent !== doc.resolve(f.to).parent) continue;
-    const marks = fieldMarks(doc, f);
+    // (A field in one paragraph. Its textblock found by its position, not resolved from the document's start, and its
+    // formatting looked for there alone: a position resolved goes through the blocks before it, quadratic in a long
+    // letter's fields.)
+    const block = blockAt(f.from);
+    if (block ? f.to > block.start + block.node.content.size : doc.resolve(f.from).parent !== doc.resolve(f.to).parent) continue;
+    const marks = fieldMarks(doc, f, block);
     decos.push(Decoration.inline(f.from, f.to, { class: 'odx-mm-hide' }));
     decos.push(Decoration.widget(f.from, () => { const s = document.createElement('span'); s.className = 'odx-mm-val'; s.textContent = value; return s; },
       { side: -1, marks: marks || [], key: `mm:${m.index}:${f.from}:${value}` }));
   }
   // (The record the body ended on, for the headers and footers: previewStory.)
   m.last = ctx.i;
-  return DecorationSet.create(doc, decos);
+  return decoSet(doc, decos);
 }
 
 /** The preview's decorations, rebuilt as the document or the record changes. */
