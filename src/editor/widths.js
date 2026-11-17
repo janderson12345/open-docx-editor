@@ -52,6 +52,15 @@ function isHinted(cs) {
   return hinted.get(k);
 }
 
+// Bold over the Microsoft 365 cloud SemiBold and Demi families. They have no bold face (open-metric-fonts' stand-ins
+// neither: omf.js gives each a 400 face only), so Word fakes the Bold, and its PDFs show the faked text at the Regular's
+// advances: the same line breaks and line ends to 0.01pt (Word COM, 8 to 72pt, compatibility modes 12 and 15;
+// docs/LAYOUT.md). Edge's faked bold keeps the widths too; Firefox's widens every character (0.42px at 10.67px, 2px at
+// 96px), which broke each bold line a word or two early. Such a run is measured at weight 400 and given the difference.
+const FAKE_BOLD = new Set(['aptos semibold', 'avenir next lt pro demi', 'georgia pro semibold', 'verdana pro semibold']);
+const fakeBold = (cs) => (parseInt(cs.fontWeight, 10) || 400) >= 600
+  && FAKE_BOLD.has(cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase());
+
 // A run in another font than its paragraph's (Cambria or Courier New words in a Calibri paragraph). Word makes a line
 // as tall as the highest ascent and the deepest descent on it (hhea, with the line gap above), so a run whose font
 // reaches no further than the paragraph's leaves the line as it is, and one with a deeper descent (Courier New) makes
@@ -137,17 +146,20 @@ export function applyWidths(view) {
     // A character scale (w:w): the run's text as wide as Word makes it, its width times the scale (scaleCss's
     // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
     const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
-    const hinted = isHinted(cs);
+    // Bold over a cloud SemiBold or Demi family (fakeBold): measured, and so set, at the Regular's widths.
+    const fake = fakeBold(cs);
+    const m = fake ? { fontStyle: cs.fontStyle, fontWeight: '400', fontFamily: cs.fontFamily, fontSize: cs.fontSize } : cs;
+    const hinted = isHinted(m);
     // Small caps as Word sets them: lowercase letters as capitals at 80% of the size (to half a point: 9pt in 11pt
     // text, Word's PDF), the rest as they are; the browser's own small capitals are another width.
     const smallCaps = cs.fontVariantCaps === 'small-caps';
-    if (hinted || scale !== 1 || smallCaps) {
+    if (hinted || scale !== 1 || smallCaps || fake) {
       const px = parseFloat(cs.fontSize);
       const actual = width(cs, px, node.text, smallCaps ? 'small-caps' : 'normal');
-      let design = hinted ? (width(cs, 100, node.text) * px) / 100 : actual;
+      let design = hinted ? (width(m, 100, node.text) * px) / 100 : fake ? width(m, px, node.text) : actual;
       if (smallCaps) {
         const sc = (Math.round(px * 0.75 * 0.8 * 2) / 2) / 0.75;
-        design = node.text.match(/\p{Ll}+|\P{Ll}+/gu).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? width(cs, sc, part.toUpperCase()) : width(cs, px, part)), 0);
+        design = node.text.match(/\p{Ll}+|\P{Ll}+/gu).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? width(m, sc, part.toUpperCase()) : width(m, px, part)), 0);
       }
       const target = design * scale;
       const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
