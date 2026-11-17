@@ -40,11 +40,21 @@ export function createNoteBoxes({ page, sheet, session }) {
       const bidi = (x) => /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(x || '');
       const part = session.pkg?.partByType?.(`http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}s`);
       const text = part ? session.pkg.text(part) || '' : '';
-      const sep = (kind === 'endnote' ? /<w:endnote\b[^>]*w:type="separator"[\s\S]*?<\/w:endnote>/ : /<w:footnote\b[^>]*w:type="separator"[\s\S]*?<\/w:footnote>/).exec(text)?.[0];
+      // (The separator found tag by tag, xml.js startTags, and its end looked for once: a pattern scanning on to a
+      // closing tag from every start went over the part once for each of thousands of unclosed ones.)
+      const tag = kind === 'endnote' ? 'w:endnote' : 'w:footnote';
+      let sep;
+      for (const t of startTags(text, tag)) {
+        if (tagAttr(t.tag, 'w:type') !== 'separator') continue;
+        const end = t.selfClosing ? -1 : text.indexOf(`</${tag}>`, t.end);
+        if (end >= 0) sep = text.slice(t.at, end + tag.length + 3);
+        break;
+      }
       const ppr = sep && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(sep)?.[0];
       const stylesPart = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
       const styles = stylesPart ? session.pkg.text(stylesPart) || '' : '';
-      const defaults = /<w:pPrDefault>[\s\S]*?<\/w:pPrDefault>/.exec(styles)?.[0];
+      const d0 = styles.indexOf('<w:pPrDefault>'), d1 = d0 < 0 ? -1 : styles.indexOf('</w:pPrDefault>', d0);
+      const defaults = d1 < 0 ? undefined : styles.slice(d0, d1 + 15);
       // (The default paragraph style's element, read tag by tag: xml.js startTag.)
       let normal = null;
       for (const t of startTags(styles, 'w:style')) {
@@ -215,9 +225,20 @@ export function createNoteBoxes({ page, sheet, session }) {
     };
     // The heights a column can come to: from any place it can start (`from`, a break) to any place it can end.
     const starts = [from, ...breaks.filter((y) => y > from + 0.5)], ends = [...breaks, total].filter((y) => y > from + 0.5);
-    const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).flatMap((y) => [+(y - x).toFixed(2), +(y - x + lead).toFixed(2)])))].filter((h) => h >= (total - from) / m - 1 && h <= room + 0.5).sort((x, y) => x - y);
     let cols = null;
-    for (const H of cands) if ((cols = fill(H))) break;
+    const lo = (total - from) / m - 1;
+    if (starts.length * ends.length <= 40000) {
+      const cands = [...new Set(starts.flatMap((x) => ends.filter((y) => y > x).flatMap((y) => [+(y - x).toFixed(2), +(y - x + lead).toFixed(2)])))].filter((h) => h >= lo && h <= room + 0.5).sort((x, y) => x - y);
+      for (const H of cands) if ((cols = fill(H))) break;
+    } else {
+      // (A note of thousands of lines: every start against every end would be millions of heights, on every page the band
+      // goes on to. A taller band never holds less, so the lowest that holds them all is found by halving instead.)
+      let a = Math.max(0, lo), b = Math.min(room + 0.5, total - from + lead);
+      if (fill(b)) {
+        for (let i = 0; i < 40 && b - a > 0.01; i++) { const c = (a + b) / 2; if (fill(c)) b = c; else a = c; }
+        cols = fill(b);
+      }
+    }
     if (!cols) cols = room === Infinity ? [[from, total]] : fill(room, true);
     if (!cols.length) cols = [[from, from]];
     const out = { h: Math.max(...cols.map(([x, y], c) => y - x + (c ? 0 : lead))), spans: cols, end: cols[cols.length - 1][1], lead };

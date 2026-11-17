@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyInfo } from '../src/ooxml/ffdata.js';
 import { bevelFx, textEffectsCss } from '../src/ooxml/texteffects.js';
+import { readBorders, borderCss } from '../src/ooxml/props.js';
+import { parseXml } from '../src/ooxml/xml.js';
 
 // Crafted values from a file, bounded (the security review of the leftovers after 0.8.0).
 
@@ -24,6 +26,15 @@ test("a bevel's size kept to 64px however large the file says", () => {
   for (const m of out.matchAll(/(?:radius|stdDeviation|surfaceScale)="([\d.\s]+)"/g)) {
     for (const n of m[1].trim().split(/\s+/)) assert.ok(Number(n) <= 64, `${m[0]} past 64`);
   }
+});
+
+test("a border's size and space bounded as Word bounds them", () => {
+  const doc = parseXml('<w:pBdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="triple" w:sz="100000000" w:space="99999" w:color="000000"/><w:bottom w:val="single" w:sz="12" w:space="1"/></w:pBdr>');
+  const b = readBorders(doc.documentElement);
+  assert.equal(b.top.sz, 255);
+  assert.equal(b.top.space, 31);
+  assert.equal(b.bottom.sz, 12);
+  assert.ok(parseFloat(borderCss(b.top)) <= 5 * 255 / 8);
 });
 
 test("a reflection's blur bounded", () => {

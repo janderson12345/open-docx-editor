@@ -92,7 +92,7 @@ export function shiftFor(el, host, anchored = false) {
   const own = el.classList.contains('odx-markers') && !/^(SPAN|STRONG|EM|U|S|B|I|SUB|SUP|A)$/.test(el.firstElementChild?.tagName || 'SPAN');
   const pcs = own ? rcs : getComputedStyle(el);
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
-  const known = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => ASCENT[f]) || '';
+  const known = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
   let family = known(rcs);
   let asc = ASCENT[family];
   if (!asc || lineHeightOf(pcs) === 'normal') return 0;

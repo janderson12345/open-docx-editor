@@ -22,6 +22,7 @@ const cache = new Map();
 function strut(box, el, chain, lhv) {
   const k = [el.className, (el.getAttribute('style') || '').replace(/;?\s*--odx-picb:[^;]*/g, ''), lhv,...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`)].join('|');
   if (cache.has(k)) return cache.get(k);
+  if (cache.size > 2000) cache.clear(); // (kept bounded: keyed by whole style strings, which a document can vary endlessly)
   const q = el.cloneNode(false);
   q.removeAttribute('data-odx-lh');
   q.classList.remove('odx-pictext-end');
@@ -58,13 +59,14 @@ export function pictureFix(el, box, lhv) {
   for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t);
   if (!texts.length) return null;
   const rcs = getComputedStyle(texts[0].parentElement);
-  const family = rcs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => ASCENT[f]);
+  // (Own entries only: a font named "constructor" isn't a known font.)
+  const family = rcs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f));
   if (!family) return null;
   const pcs = getComputedStyle(el);
   const fs = parseFloat(rcs.fontSize);
   const lf = parseFloat(rcs.getPropertyValue('--odx-lh')) || 1.17;
   const asc = ASCENT[family] * fs;
-  const desc = (DESCENT[family] ?? Math.max(0, lf - ASCENT[family])) * fs;
+  const desc = (Object.hasOwn(DESCENT, family) ? DESCENT[family] : Math.max(0, lf - ASCENT[family])) * fs;
   const exact = parseFloat(pcs.getPropertyValue('--odx-runmult')) === 0;
   const atLeast = !exact && pcs.getPropertyValue('--odx-lhlen').trim() === '1';
   const mult = exact || atLeast ? 1 : parseFloat(pcs.getPropertyValue('--odx-mult')) || 1;
@@ -80,8 +82,24 @@ export function pictureFix(el, box, lhv) {
     r.selectNodeContents(t);
     for (const b of r.getClientRects()) if (b.height) boxes.push(b);
   }
+  // (Sorted by top, with the lowest foot so far: whether a text box spans a height is one search, not a scan, for
+  // each of a paragraph's thousands of pictures.)
+  boxes.sort((a, b) => a.top - b.top);
+  const footTo = [];
+  for (let i = 0, m = -Infinity; i < boxes.length; i++) footTo.push((m = Math.max(m, boxes[i].bottom)));
+  const onText = (base) => {
+    let lo = 0, hi = boxes.length; // the boxes whose top is above base: [0, lo)
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (boxes[mid].top < base) lo = mid + 1; else hi = mid; }
+    return lo > 0 && footTo[lo - 1] > base - 1;
+  };
   // Pictures in the line (not floating or set apart), by line: their baseline (the margin box's foot) and height above it.
   const lines = [];
+  const byBase = new Map(); // whole px -> lines there
+  const lineAt = (base) => {
+    const k = Math.round(base);
+    for (const j of [k, k - 1, k + 1]) for (const l of byBase.get(j) || []) if (Math.abs(l.base - base) < 1) return l;
+    return null;
+  };
   for (const img of el.querySelectorAll('img')) {
     if (img.classList.contains('ProseMirror-separator') || /position:|float:/.test(img.getAttribute('style') || '')) continue;
     const ics = getComputedStyle(img);
@@ -91,10 +109,16 @@ export function pictureFix(el, box, lhv) {
     const h = (parseFloat(ics.height) || img.offsetHeight) + fx + fxt;
     // (Its box as laid out: a turned picture's rect is its turned outline.)
     const base = layoutRect(img).bottom + fx;
-    if (!boxes.some((b) => b.top < base && b.bottom > base - 1)) continue; // (not on a line with text)
-    const line = lines.find((l) => Math.abs(l.base - base) < 1);
+    if (!onText(base)) continue; // (not on a line with text)
+    const line = lineAt(base);
     if (line) { line.imgs.push(img); line.h = Math.max(line.h, h); }
-    else lines.push({ base, h, imgs: [img] });
+    else {
+      const l = { base, h, imgs: [img] };
+      lines.push(l);
+      const k = Math.round(base);
+      if (!byBase.has(k)) byBase.set(k, []);
+      byBase.get(k).push(l);
+    }
   }
   let d = 0;
   const mts = [];
@@ -141,7 +165,7 @@ export function pictureAlone(el, box) {
   const bottoms = imgs.map((i) => layoutRect(i).bottom);
   if (Math.max(...bottoms) - Math.min(...bottoms) > 1) return null; // (on one line)
   const pcs = getComputedStyle(el);
-  const family = pcs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => ASCENT[f]);
+  const family = pcs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f));
   if (!family) return null;
   const fs = parseFloat(pcs.fontSize);
   const lf = parseFloat(pcs.getPropertyValue('--odx-lh')) || 1.17;

@@ -81,7 +81,7 @@ function spanBox(font, lh, where) {
   boxes.set(k, v);
   return v;
 }
-const famOf = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => ASCENT[f]) || '';
+const famOf = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
 const fontOfCs = (cs) => `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
 /** The line height (px) for a text span in another font than its paragraph's, or 0 to leave it. */
 function mixedLine(host, cs) {
