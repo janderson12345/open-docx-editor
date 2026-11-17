@@ -26,7 +26,10 @@ for (const f of [...fixtures, '(blank)']) {
     // 1. Every part except the main document is untouched, byte for byte.
     const a = unzipSync(bytes), b = unzipSync(out);
     assert.deepEqual(Object.keys(b).sort(), Object.keys(a).sort());
-    for (const k of Object.keys(a)) if (k !== s1.pkg.mainPath) assert.deepEqual(b[k], a[k], `part changed: ${k}`);
+    // (binding.docx's bound controls hold placeholders where their custom XML has values: they're saved showing the
+    // values, as Word saves them, its header too; test/databind.test.js checks them.)
+    const refreshed = f === 'binding.docx';
+    for (const k of Object.keys(a)) if (k !== s1.pkg.mainPath && !(refreshed && k === 'word/header1.xml')) assert.deepEqual(b[k], a[k], `part changed: ${k}`);
 
     // 2. The new document.xml is well-formed.
     parseXml(strFromU8(b[s1.pkg.mainPath]));
@@ -36,7 +39,7 @@ for (const f of [...fixtures, '(blank)']) {
     assert.deepEqual(s2.doc.toJSON(), s1.doc.toJSON());
 
     // 4. An independent reader (mammoth) sees the same text.
-    assert.equal(await rawText(out), await rawText(bytes));
+    if (!refreshed) assert.equal(await rawText(out), await rawText(bytes));
   });
 }
 
