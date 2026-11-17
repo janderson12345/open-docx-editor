@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Content controls bound to custom XML show their values** as Word does, instead of their placeholder text, in the
+  body, headers and footers and table cells; empty values show blank. Typing into a bound control changes every control
+  bound to the same value, the headers' too, and saving (or `fillFields`) writes the new value into the document's
+  custom XML part.
+- **Lines holding text in different sizes or fonts, or raised and lowered text, are as tall as Word makes them**: each
+  run's top and foot from its own font, runs of only spaces or tabs not counted (lines were up to 0.5px off at single
+  spacing, 1.5px at double). Headers and footers get the same line-height matching as the body.
+- **Shapes placed against their paragraph sit where Word puts them under space before**: the offset counts from the
+  paragraph's top above that space (less the space after the paragraph above, from the top margin on a new page), and
+  text under a top-and-bottom shape gets the space before again. One-sided floating shapes no longer print 0.8pt low.
+- **Lines beside shapes with text on both sides split as in Word**: a line reaching any distance into a shape's room is
+  split, offsets keep fractions of a pixel, overlapping shapes are wrapped as one room, and a shape the page layout
+  moves gets its lines split again.
+- **Compound borders drawn as Word prints them**: paragraph borders of 2.25pt and over (a triple shows three lines, a
+  thick-thin pair's lines their own widths), and table cells' compound borders at Word's width, including where lines
+  meet, with rows as tall as Word's line widths make them (text in such tables was up to 4.5pt off). The PDF export
+  draws the cells' lines too.
+- **Finish & Merge takes time in proportion to the merge fields and records**, not their square: 7,400 fields in one
+  paragraph from 2.7s a record to 39ms, 300 records with six headers and footers from 26s to 0.3s. The merged documents
+  are the same as before, and the scaling test covers Finish & Merge.
+
 ## 0.8.2 (2026-11-17)
 
 - **Hardening from the release review**: a co-editor's paragraph borders of any shape are drawn safely (sizes and
