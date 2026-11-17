@@ -678,6 +678,15 @@ function turnAbout(f) {
   return [f.rot ? `rotate(${r(f.rot)} ${r(cx)} ${r(cy)})` : '', f.fh || f.fv ? `matrix(${f.fh ? -1 : 1} 0 0 ${f.fv ? -1 : 1} ${f.fh ? r(2 * cx) : 0} ${f.fv ? r(2 * cy) : 0})` : ''].filter(Boolean).join(' ');
 }
 
+/**
+ * The width (px) of a shape's outline that its text is inset from (textBox: half of it, the half inside the box), 0 for
+ * none. (The editing overlay places its text by this too: docx.js textBoxes.)
+ */
+export function outlineWidth(spPr) {
+  const ln = child(spPr, 'ln');
+  return ln && !child(ln, 'noFill') && child(ln, 'solidFill') ? px(ln.getAttribute('w') || EMU_PER_PX) : 0;
+}
+
 function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   const name = el.localName;
   if (GROUPS.includes(name)) {
@@ -708,8 +717,7 @@ function shapeSvg(el, ctx, top = false, m = NO_MAP) {
   const style = child(el, 'style');
   const pt = paints(spPr, style, ctx.colors);
   const txbx = child(el, 'txbx');
-  const ln = child(spPr, 'ln');
-  const line = ln && !child(ln, 'noFill') && child(ln, 'solidFill') ? px(ln.getAttribute('w') || EMU_PER_PX) : 0;
+  const line = outlineWidth(spPr);
   // (Text without a colour of its own takes the shape's font colour, wps:style's fontRef: white on Word's default shapes.)
   const fontRef = style && child(style, 'fontRef');
   const textColor = fontRef && els(fontRef)[0] ? color(els(fontRef)[0], ctx.colors)?.hex : null;
