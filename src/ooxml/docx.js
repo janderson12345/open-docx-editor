@@ -6,6 +6,8 @@ import { REL_TYPES, NS, kids, parseXml, serializeXml, esc, startTag, startTags, 
 import { readDocument, readStory } from './reader.js';
 import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
 import { chunkKind } from './altchunk.js';
+import { BindingStore, applyBindings } from './databind.js';
+import { syncBound } from '../editor/bindings.js';
 import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle, resolveTableStyle } from './styles.js';
 import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
@@ -110,7 +112,11 @@ export class DocxSession {
     // lists kept for showing them, and written into it only by a save that writes them: save().)
     const numPath = this.pkg.partByType(REL_TYPES.numbering);
     const numBytes = numPath && this.pkg.files[numPath];
-    const json = readDocument(parseXml(this.originalXml), this._resolvers);
+    // Content controls bound to custom XML show their nodes' values, as Word shows them on opening (databind.js).
+    this.bindings = new BindingStore(this.pkg);
+    const dom = parseXml(this.originalXml);
+    applyBindings(dom, this.bindings);
+    const json = readDocument(dom, this._resolvers);
     if (this._chunkNums && numBytes) {
       this._chunkNumbering = { path: numPath, bytes: this.pkg.files[numPath], ids: this._chunkNums };
       this.pkg.files[numPath] = numBytes;
@@ -395,6 +401,8 @@ export class DocxSession {
     const rel = this.pkg.relById(rId);
     const xml = rel && this.pkg.xml(rel.target);
     let doc = null;
+    // (Its bound controls showing their values: saved so, as Word saves them.)
+    if (xml && applyBindings(xml, this.bindings)) (this._dirtyStories ||= new Set()).add(rId);
     if (xml) {
       const rels = this.pkg.readRels(rel.target);
       const relOf = (id) => rels.find((r) => r.id === id);
@@ -430,6 +438,25 @@ export class DocxSession {
       const st = this.pkg.text(this.settingsPath);
       if (!/<w:displayBackgroundShape/.test(st)) this.pkg.setText(this.settingsPath, st.replace(/(<w:settings\b[^>]*>)/, '$1<w:displayBackgroundShape/>'));
     }
+  }
+
+  /**
+   * `doc` (the body, or a header or footer) with its bound controls showing their nodes' values now; the headers and
+   * footers read so far are brought up to date too (but `except`, the rId of one being edited). The same doc when
+   * nothing differs.
+   */
+  syncBindings(doc, except = null) {
+    if (this.bindings.empty) return doc;
+    // (A value changed: the headers and footers not read yet are read now, showing it, so a save writes them so.)
+    if (this.bindings.parts.some((p) => p.dirty)) {
+      for (const r of this.pkg.readRels(this.pkg.mainPath)) if (/\/(header|footer)$/.test(r.type) && !this._stories?.has(r.id)) this.story(r.id);
+    }
+    for (const [rId, d] of this._stories || []) {
+      if (!d || rId === except) continue;
+      const now = syncBound(d, this.bindings);
+      if (now !== d) { this._stories.set(rId, now); this._hfCache?.clear(); (this._dirtyStories ||= new Set()).add(rId); this._bindRestory = true; }
+    }
+    return doc ? syncBound(doc, this.bindings) : doc;
   }
 
   /** Replace a header or footer's content (saved with the document). */
@@ -1038,6 +1065,9 @@ export class DocxSession {
 
   /** Serialize `doc` (default: the loaded one) to .docx bytes. */
   save(doc = this.doc) {
+    // Bound controls showing their nodes' values (each edit keeps them so: editor/bindings.js), and the custom XML parts
+    // edited through them written back.
+    doc = this.syncBindings(doc);
     const xml = writeDocument(doc, this.originalXml, { linkRel: (href) => this._linkRel(href) });
     // Imported content's lists, written into numbering.xml once a save writes them as paragraphs (an edited chunk).
     const cn = this._chunkNumbering;
@@ -1072,6 +1102,7 @@ export class DocxSession {
       }));
     }
     this._dirtyStories?.clear();
+    this.bindings.save();
     saveNotes(this.pkg, this.notes, noteRefs(doc));
     if (this.commentsDirty) {
       writeComments(this.pkg, this.comments);
