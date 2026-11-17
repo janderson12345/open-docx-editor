@@ -1454,6 +1454,17 @@ export function createPages(view, session, { sheet, scope }) {
   const unfloated = new WeakSet();
   const floatUp = new Map(); // block index -> { el, up: Map(picture's index in it -> px drawn up) }, this pass's (floatsPast)
   let drawnUp = new Set(); // pictures drawn up now
+  // A float drawn up (floatsPast) is drawn there, but the browser still lays its paragraph's lines out round where it
+  // is: on the next page, the lines it went on to were kept off its side too, where Word has them the column's width
+  // (wrap-word2 wl-up, wl-upj, wr-up: page 2's first lines narrowed by a picture drawn on page 1). Its box ends that much
+  // higher (a margin below it less by as much), at the page's edge, as drawn. Its own margin there kept, by picture.
+  const ownMb = new WeakMap();
+  const liftBox = (img, dy) => {
+    if (getComputedStyle(img).float === 'none') return; // (a shape set out of the flow takes no room in it)
+    if (!ownMb.has(img)) ownMb.set(img, img.style.marginBottom);
+    const mb = dy > 0 ? `calc(${ownMb.get(img) || '0px'} - ${dy.toFixed(2)}px)` : ownMb.get(img);
+    if (img.style.marginBottom !== mb) img.style.marginBottom = mb;
+  };
   const shapeUp = new Map(); // block index -> { el, up }: its shapes with text on both sides drawn up (shapesPast), this pass's
   let applied = new Map(); // block index -> { extra px we added above it }
   const keep = (node) => node.type === schema.nodes.paragraph && (node.attrs.view.keepNext ?? session.styleProp(node.attrs.styleId, 'keepNext'));
@@ -2598,8 +2609,11 @@ export function createPages(view, session, { sheet, scope }) {
     // (Only when there's one: quiet() holds the editor's watch on its DOM, which would miss what's typed meanwhile.)
     if (drawnUp.size || upNow.size) {
       quiet(() => {
-        for (const img of drawnUp) if (!upNow.has(img)) img.style.translate = '';
-        for (const [img, dy] of upNow) if (img.style.translate !== `0 ${(-dy).toFixed(2)}px`) img.style.translate = `0 ${(-dy).toFixed(2)}px`;
+        for (const img of drawnUp) if (!upNow.has(img)) { img.style.translate = ''; liftBox(img, 0); }
+        for (const [img, dy] of upNow) {
+          if (img.style.translate !== `0 ${(-dy).toFixed(2)}px`) img.style.translate = `0 ${(-dy).toFixed(2)}px`;
+          liftBox(img, dy);
+        }
       });
       drawnUp = new Set(upNow.keys());
     }
