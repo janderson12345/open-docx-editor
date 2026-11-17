@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.8.3 (2026-11-17)
 
+- **Hardening from the release review**: bound controls' lookups are remembered and bounded (a crafted part of
+  millions of nodes with thousands of controls bound past them had hung the tab), a co-editor's control properties are
+  read in one pass however many unclosed tags they hold, characters XML can't hold are left out of saved text (a pasted
+  control character made a file Word wouldn't open), and very deeply nested control content no longer stops a file
+  opening.
 - **Content controls bound to custom XML show their values** as Word does, instead of their placeholder text, in the
   body, headers and footers and table cells; empty values show blank. Typing into a bound control changes every control
   bound to the same value, the headers' too, and saving (or `fillFields`) writes the new value into the document's
