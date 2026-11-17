@@ -6,6 +6,7 @@
 // the marks never print.
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { decoSet } from './decoset.js';
 import { zoomOf } from './zoom.js';
 
 const key = new PluginKey('odx-marks');
@@ -19,7 +20,7 @@ function compute(doc) {
     }
     return true;
   });
-  return DecorationSet.create(doc, decos);
+  return decoSet(doc, decos);
 }
 
 /** Draws the space, paragraph and line-break marks of the paragraphs on screen into `layer`. */

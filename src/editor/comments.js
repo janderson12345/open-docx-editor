@@ -4,7 +4,8 @@
 // the comment text lives in session.comments.
 import { announce } from './live.js';
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
-import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Decoration } from 'prosemirror-view';
+import { decoSet } from './decoset.js';
 import { schema } from './schema.js';
 import { now, xmlId } from './util.js';
 import { commentsAllowed } from './protect.js';
@@ -38,7 +39,7 @@ export function commentsPlugin(session) {
       const active = session.activeComment === id;
       decos.push(Decoration.inline(m.start, m.end, { class: `odx-cmt${resolved.has(id) ? ' odx-cmt-done' : ''}${active ? ' odx-cmt-active' : ''}`, 'data-cid': id }));
     }
-    return DecorationSet.create(doc, decos);
+    return decoSet(doc, decos);
   };
   return new Plugin({
     key,
