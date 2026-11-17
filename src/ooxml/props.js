@@ -87,7 +87,8 @@ const COMPOUND = {
 
 // Their lines and gaps (pt, line first) as Word prints them, in the page's order whichever side they're on: top to
 // bottom across the page, left to right down it (thinbdr-word: boxes of each at 0.25pt to 1.5pt, Word's PDF; a
-// thin-thick border's size line above or left of its thin one on all four sides). Their sums are COMPOUND's.
+// thin-thick border's size line above or left of its thin one on all four sides; bdr3-word: 3pt to 6pt the same, and
+// a large gap's lines 1.5pt and 0.75pt at every size, the size its gap). Their sums are COMPOUND's.
 const STRIPES = {
   double: (w) => [w, w, w],
   triple: (w) => [w, w, w, w, w],
@@ -95,11 +96,11 @@ const STRIPES = {
   thickThinSmallGap: (w) => [0.75, 0.75, w],
   thinThickMediumGap: (w) => [w, w / 2, w / 2],
   thickThinMediumGap: (w) => [w / 2, w / 2, w],
-  thinThickLargeGap: (w) => [w, 1.5, 0.75],
-  thickThinLargeGap: (w) => [0.75, 1.5, w],
+  thinThickLargeGap: (w) => [1.5, w, 0.75],
+  thickThinLargeGap: (w) => [0.75, w, 1.5],
   thinThickThinSmallGap: (w) => [0.75, 0.75, w, 0.75, 0.75],
   thinThickThinMediumGap: (w) => [w / 2, w / 2, w, w / 2, w / 2],
-  thinThickThinLargeGap: (w) => [0.75, w / 2 + 0.75, w, w / 2 + 0.75, 0.75],
+  thinThickThinLargeGap: (w) => [0.75, w, 1.5, w, 0.75],
 };
 
 const BROKEN = { dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dotDash: 'dashed' };
@@ -124,7 +125,7 @@ export function cleanBorders(borders) {
 }
 
 /**
- * Paragraph borders with a compound side thinner than the 2.25pt the browser needs to draw two lines (CSS double): all
+ * Paragraph borders with a compound side (CSS double draws two equal lines, none under 2.25pt, a triple as two): all
  * their sides drawn by one picture (a border-image cut in nine, its edges stretched along the sides), each side's lines as
  * Word prints them, each corner's lines joined one inside the other, as Word's are. Null when there's none, or a side
  * the picture can't draw (dotted, dashed: those keep CSS's own). Returns the image's CSS and each side's width (px, whole:
@@ -133,7 +134,7 @@ export function cleanBorders(borders) {
 function stripedBorders(borders) {
   const sides = ['top', 'right', 'bottom', 'left'];
   const has = (s) => drawnSide(borders[s]);
-  if (!sides.some((s) => has(s) && Object.hasOwn(COMPOUND, borders[s].val) && COMPOUND[borders[s].val](borders[s].sz / 8) < 2.25)) return null;
+  if (!sides.some((s) => has(s) && Object.hasOwn(COMPOUND, borders[s].val))) return null;
   if (sides.some((s) => has(s) && Object.hasOwn(BROKEN, borders[s].val))) return null;
   const width = {}, lines = {}, color = {};
   for (const s of sides) {
@@ -174,6 +175,142 @@ function stripedBorders(borders) {
   }
   const data = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" preserveAspectRatio="none">${svg}</svg>`;
   return { width, color, css: `border-image:url('data:image/svg+xml,${encodeURIComponent(data).replace(/'/g, '%27')}') 10 stretch` };
+}
+
+/**
+ * A compound border side (double, triple, thick-thin...) as Word prints it: its lines ([start, length], fractions of its
+ * width, in the page's order), its width (px) and colour (#rrggbb). Null for any other side.
+ */
+export function compoundSide(b) {
+  if (!b || typeof b !== 'object' || !drawnSide(b) || !Object.hasOwn(STRIPES, b.val)) return null;
+  const n = Number(b.sz);
+  const segs = STRIPES[b.val]((Number.isFinite(n) && n > 0 ? Math.min(255, n) : 4) / 8);
+  const total = segs.reduce((a, v) => a + v, 0);
+  const lines = [];
+  for (let i = 0, at = 0; i < segs.length; at += segs[i], i++) if (i % 2 === 0) lines.push([at / total, segs[i] / total]);
+  return { lines, px: (total * 4) / 3, color: /^[0-9A-Fa-f]{6}$/.test(b.color || '') ? '#' + b.color : '#000000' };
+}
+
+/**
+ * Where two compound borders meet, as Word prints the square they share (bdr3-word, tables of each: a cross, a T, a
+ * corner): its lines H across (fractions down the square) and V down it (fractions across), and which arms the junction
+ * has (l, r: the line across goes on to the left, right; u, d: the line down goes on up, down). Each line comes in from
+ * its arm and stops at the far edge of the line it turns into: a line on the upper side of the middle turns up, on the
+ * lower side down (the middle one both ways), its partner the line as far from that corner; with no such arm it goes
+ * straight through, or, with nothing beyond, turns the other way (a corner's nested Ls). Rects [x, y, w, h, 'h' | 'v'].
+ */
+export function junctionRects(H, V, arms) {
+  const out = [];
+  // Along one line from one of its arms: [from, to] across the square.
+  const reach = (i, n, m, P, fromHigh, sides, through) => {
+    const mid = (n - 1) / 2;
+    let turns = (i < mid ? [sides[0]] : i > mid ? [sides[1]] : sides).filter((t) => arms[t]);
+    if (!turns.length) {
+      if (arms[through]) return [0, 1];
+      turns = sides.filter((t) => arms[t]);
+      if (!turns.length) return [0, 1];
+    }
+    let lo = 1, hi = 0;
+    for (const t of turns) {
+      const p = fromHigh ? (t === sides[0] ? m - 1 - i : m - 1 - (n - 1 - i)) : (t === sides[0] ? i : n - 1 - i);
+      if (p < 0 || p >= m) return [0, 1];
+      lo = Math.min(lo, P[p][0]);
+      hi = Math.max(hi, P[p][0] + P[p][1]);
+    }
+    return fromHigh ? [lo, 1] : [0, hi];
+  };
+  const along = (L, P, hiArm, loArm, sides, kind) => L.forEach(([at, len], i) => {
+    const parts = [];
+    if (arms[hiArm]) parts.push(reach(i, L.length, P.length, P, true, sides, loArm));
+    if (arms[loArm]) parts.push(reach(i, L.length, P.length, P, false, sides, hiArm));
+    if (parts.length === 2 && parts[1][1] >= parts[0][0]) parts.splice(0, 2, [0, 1]);
+    for (const [a, b] of parts) if (b > a) out.push(kind === 'h' ? [a, at, b - a, len, 'h'] : [at, a, len, b - a, 'v']);
+  });
+  along(H, V, 'r', 'l', ['u', 'd'], 'h');
+  along(V, H, 'd', 'u', ['l', 'r'], 'v');
+  return out;
+}
+
+/**
+ * A table cell's compound border lines, drawn as Word prints them by pictures behind the cell (border-collapse leaves no
+ * border-image): each side's lines along its edge, and a square where two meet (junctionRects). `sides` are the sides this
+ * cell draws (compoundSide; a line between rows is the lower row's, between cells the right-hand one's, as Word puts
+ * them: from the grid line in); `near` the borders meeting its corners from outside it: tl and bl the left neighbour's
+ * top and bottom, tu and ru the left and right lines of the cell above. Returns the background CSS and the same lines as
+ * `--odx-lines` (each rect x, y, width, height as a share of the cell's width or height plus px, then its colour) for the
+ * PDF export; null when there's nothing to draw.
+ */
+export function cellLines(sides, near) {
+  const { top: T, bottom: B, left: L, right: R } = sides;
+  if (!T && !B && !L && !R) return null;
+  const layers = [];
+  // A layer: anchored left or right, top or bottom, whole px from there (the browser puts a cell's pictures on whole
+  // pixels: a 4.33px square beside a strip 4.33px in left a pixel's gap); each way either a fixed size (px, drawn in the
+  // next whole px up, its lines reaching the inner edge carried on to it) or the cell's less some px. Its rects in
+  // fractions of that.
+  const layer = (ax, ox, ay, oy, w, h, rects) => { if (rects.length) layers.push({ ax, ox, ay, oy, w, h, rects }); };
+  const up = (v) => Math.ceil(v - 1e-6);
+  const tlV = L || (T && near.tu) || null;
+  const tl = T && tlV ? junctionRects(T.lines, tlV.lines, { l: !!near.tl, r: true, u: !!near.tu, d: !!L }) : null;
+  const tr = T && R ? junctionRects(T.lines, R.lines, { l: true, r: false, u: !!near.ru, d: true }) : null;
+  const bl = B && L ? junctionRects(B.lines, L.lines, { l: !!near.bl, r: true, u: true, d: false }) : null;
+  const br = B && R ? junctionRects(B.lines, R.lines, { l: true, r: false, u: true, d: false }) : null;
+  const paint = (rects, hc, vc) => rects.map(([x, y, w, h, k]) => [x, y, w, h, k === 'h' ? hc : vc]);
+  const across = (S) => S.lines.map(([a, l]) => [0, a, 1, l, S.color]);
+  const down = (S) => S.lines.map(([a, l]) => [a, 0, l, 1, S.color]);
+  const fix = (px) => ({ fix: px }), cut = (px) => ({ cut: px });
+  if (T) {
+    const a = tl ? up(tlV.px) : 0, b = tr ? up(R.px) : 0;
+    if (tl) layer('l', 0, 't', 0, fix(tlV.px), fix(T.px), paint(tl, T.color, tlV.color));
+    layer('l', a, 't', 0, cut(a + b), fix(T.px), across(T));
+    if (tr) layer('r', 0, 't', 0, fix(R.px), fix(T.px), paint(tr, T.color, R.color));
+  }
+  if (B) {
+    const a = bl ? up(L.px) : 0, b = br ? up(R.px) : 0;
+    if (bl) layer('l', 0, 'b', 0, fix(L.px), fix(B.px), paint(bl, B.color, L.color));
+    layer('l', a, 'b', 0, cut(a + b), fix(B.px), across(B));
+    if (br) layer('r', 0, 'b', 0, fix(R.px), fix(B.px), paint(br, B.color, R.color));
+  }
+  const t = T ? up(T.px) : 0, b = B ? up(B.px) : 0;
+  if (L) layer('l', 0, 't', t, fix(L.px), cut(t + b), down(L));
+  if (R) layer('r', 0, 't', t, fix(R.px), cut(t + b), down(R));
+  if (!layers.length) return null;
+  const f = (v) => +v.toFixed(3);
+  const images = [], pos = [], size = [], lines = [];
+  for (const { ax, ox, ay, oy, w, h, rects } of layers) {
+    // Each way: the layer's size [share of the cell, px], where it starts [share, px], and a rect's [start, length] in
+    // the picture's own units (px when fixed, hundredths when stretched).
+    const axis = (d, far, o) => {
+      const sz = d.fix != null ? [0, up(d.fix)] : [1, -d.cut];
+      const at = far ? [1 - sz[0], -o - sz[1]] : [0, o];
+      const place = (x, l) => {
+        if (d.fix == null) return [100 * x, 100 * l];
+        let p = x * d.fix + (far ? sz[1] - d.fix : 0), n = l * d.fix;
+        if (!far && x + l >= 1 - 1e-6) n = sz[1] - p;
+        if (far && x <= 1e-6) { n += p; p = 0; }
+        return [p, n];
+      };
+      return { sz, at, place, units: d.fix != null ? sz[1] : 100, css: d.fix != null ? `${sz[1]}px` : d.cut ? `calc(100% - ${f(d.cut)}px)` : '100%' };
+    };
+    const X = axis(w, ax === 'r', ox), Y = axis(h, ay === 'b', oy);
+    let svg = '';
+    for (const [x, y, rw, rh, c] of rects) {
+      const [px, pw] = X.place(x, rw), [py, ph] = Y.place(y, rh);
+      svg += `<rect x="${f(px)}" y="${f(py)}" width="${f(pw)}" height="${f(ph)}" fill="${c}"/>`;
+      // For the PDF: a share of the cell and px each way, from the cell's top left.
+      const one = (A, p, n) => (A.units === 100 ? [A.at[0] + (p / 100) * A.sz[0], A.at[1] + (p / 100) * A.sz[1], (n / 100) * A.sz[0], (n / 100) * A.sz[1]] : [A.at[0], A.at[1] + p, 0, n]);
+      const [x0, x1, w0, w1] = one(X, px, pw), [y0, y1, h0, h1] = one(Y, py, ph);
+      lines.push([x0, x1, y0, y1, w0, w1, h0, h1].map(f).join(' ') + ' ' + c);
+    }
+    const data = `<svg xmlns="http://www.w3.org/2000/svg" width="${X.units}" height="${Y.units}" viewBox="0 0 ${X.units} ${Y.units}" preserveAspectRatio="none">${svg}</svg>`;
+    images.push(`url('data:image/svg+xml,${encodeURIComponent(data).replace(/'/g, '%27')}')`);
+    pos.push(`${ax === 'l' ? 'left' : 'right'} ${ox}px ${ay === 't' ? 'top' : 'bottom'} ${oy}px`);
+    size.push(`${X.css} ${Y.css}`);
+  }
+  return {
+    css: `background-image:${images.join(',')};background-position:${pos.join(',')};background-size:${size.join(',')};background-repeat:no-repeat`,
+    lines: lines.join(','),
+  };
 }
 
 /** CSS for one border side; Word sizes are eighths of a point. */
