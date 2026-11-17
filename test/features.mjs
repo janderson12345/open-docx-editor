@@ -1568,6 +1568,14 @@ check(printedBase.length === 3 && printedBase.every((b, i) => Math.abs(b - baseW
 const mixedH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(5, 8).map((p) => [+p.getBoundingClientRect().height.toFixed(2), p.dataset.odxMix === '1']));
 const mixedWant = [14.932, 17.111, 18.438].map((pt) => +(pt * 4 / 3).toFixed(2));
 check(mixedH.length === 3 && mixedH.every(([h, on], i) => on && Math.abs(h - mixedWant[i]) < 0.15), `lines of mixed sizes, raised and lowered, as tall as Word's (${JSON.stringify(mixedH)}, want ${JSON.stringify(mixedWant)})`);
+// The same in a header and a footer (lhfix.js storyLineFix): 10pt Calibri with a 12pt run raised 3pt; 10pt Times New
+// Roman with a 12pt raised run between 12pt tabs, which don't size the line (hf-lines.docx, mkhflines.mjs; Word's PDFs:
+// 17.111pt, 16.366pt).
+await open('hf-lines.docx');
+await page.waitForTimeout(500);
+const hfH = await page.evaluate(() => ['.odx-header p', '.odx-footer p'].map((s) => { const p = document.querySelector(s); return p ? [+p.getBoundingClientRect().height.toFixed(2), p.dataset.odxMix === '1'] : null; }));
+const hfWant = [17.111, 16.366].map((pt) => +(pt * 4 / 3).toFixed(2));
+check(hfH.every((x, i) => x && x[1] && Math.abs(x[0] - hfWant[i]) < 0.15), `header and footer lines of mixed sizes as tall as Word's (${JSON.stringify(hfH)}, want ${JSON.stringify(hfWant)})`);
 // A large document (over 1,500 blocks: those far off screen skip layout) still gets its line heights fixed (lhfix.js):
 // its probes are laid out, as many of its paragraphs fixed as in the same lines in a document a quarter as long.
 const fixedShare = async (f) => { await open(f); await page.waitForTimeout(1500); return page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')].slice(0, 400); return [ps.filter((p) => p.dataset.odxLh).length, document.querySelector('.odx-large') != null]; }); };

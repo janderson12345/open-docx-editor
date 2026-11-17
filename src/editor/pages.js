@@ -28,7 +28,7 @@ import { drawBalloons } from './balloons.js';
 import { noteRefs } from './notes.js';
 import { createNoteBoxes, CONT_LEAD } from './notebox.js';
 import { applySqueeze } from './justify.js';
-import { applyLineFix } from './lhfix.js';
+import { applyLineFix, lineGrid, storyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
 import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
@@ -1510,6 +1510,8 @@ export function createPages(view, session, { sheet, scope }) {
     return found;
   };
 
+  // Header and footer line heights as the body's (lhfix.js), not on a document grid of lines.
+  const storyLines = (el) => { if (!lineGrid(view.state.doc)) storyLineFix(el, (p) => hfNodes.get(p)); };
   const heights = new Map();
   const storyHeight = (doc) => {
     if (!doc) return 0;
@@ -1517,6 +1519,7 @@ export function createPages(view, session, { sheet, scope }) {
       const el = story(doc, 'odx-header', 1, 1);
       el.style.cssText = `visibility:hidden;top:0;left:${page.left}px;right:${page.right}px`;
       sheet.append(el);
+      storyLines(el);
       settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
@@ -2793,7 +2796,7 @@ export function createPages(view, session, { sheet, scope }) {
       frag.append(s);
     }
     layer.replaceChildren(frag);
-    for (const hf of layer.querySelectorAll('.odx-hf')) settleStoryShapes(hf); // (drawn now, so they can be measured)
+    for (const hf of layer.querySelectorAll('.odx-hf')) { storyLines(hf); settleStoryShapes(hf); } // (drawn now, so they can be measured)
     clipExactRows(layer); // (drawn now, so they can be measured)
     fitRowspans(layer);
     // Header and footer tabs to their stops (center, right...), as the body's: they had stayed plain tab characters,
