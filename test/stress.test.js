@@ -5,7 +5,7 @@
 // warm up, so a pause on a busy machine doesn't count. The same for the decorations (comments, formatting marks...) as a
 // document opens and as a key is typed. And the faster ways the long documents take give what the plain ones do:
 // Accept and Reject All a run of blocks at a time (track.js), the text spans a block at a time, the other decorations'
-// sets from sorted decorations (decoset.js).
+// sets from sorted decorations (decoset.js), the soft hyphens mapped through an edit.
 import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,6 +24,7 @@ import { commentsPlugin } from '../src/editor/comments.js';
 import { marksPlugin } from '../src/editor/marks.js';
 import { mailMergePlugin } from '../src/editor/mailmerge.js';
 import { joinsPlugin } from '../src/editor/joins.js';
+import { hyphenatePlugin, loadHyphenation, hyphenSet, mapHyphens } from '../src/editor/hyphenate.js';
 import { mergeTargets, fieldMarks, mergeCursor } from '../src/merge.js';
 
 const N = 600;
@@ -171,6 +172,7 @@ const decoDocs = {
   marks: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`text ${k}`)}</w:p><w:p/>`).join(''),
   'merge fields': (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`Dear ${k} `)}${fld('begin')}<w:r><w:instrText xml:space="preserve"> MERGEFIELD Name </w:instrText></w:r>${fld('separate')}${run('«Name»')}${fld('end')}${run(',')}</w:p>`).join(''),
   joins: (n) => Array.from({ length: n }, (_, k) => `<w:p><w:pPr><w:rPr><w:del ${rev(2 * k + 1)}/></w:rPr></w:pPr>${run(`joins ${k} `)}</w:p><w:p><w:pPr><w:rPr><w:ins ${rev(2 * k + 2)}/></w:rPr></w:pPr>${run(`into ${k}`)}</w:p><w:p>${run(`plain ${k}`)}</w:p>`).join(''),
+  hyphenation: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`Characterization of hyphenation considerations ${k} demonstrates extraordinary international communication`)}</w:p>`).join(''),
 };
 /** Each decoration's plugin for a session (Preview Results on, automatic hyphenation on). */
 const decoPlugins = {
@@ -178,6 +180,7 @@ const decoPlugins = {
   marks: () => marksPlugin,
   'merge fields': (s) => { s.merge = { records: [{ Name: 'Ada' }], fields: ['Name'], index: 0, preview: true }; return mailMergePlugin(s); },
   joins: () => joinsPlugin,
+  hyphenation: (s) => { s.autoHyphenation = true; return hyphenatePlugin(s); },
 };
 /** The plugin's decorations in `state`. */
 const decosOf = (plugin, state) => { const v = plugin.getState(state); return v.set || v; };
@@ -208,6 +211,7 @@ function repeated(doc, times) {
 }
 
 test('decorations: comments, formatting marks, merge fields, joins and hyphenation grow linearly, as a document opens and as a key is typed', async (t) => {
+  await loadHyphenation();
   const report = {};
   for (const [name, body] of Object.entries(decoDocs)) {
     const session = new DocxSession(docx(body(DN)));
@@ -241,6 +245,7 @@ function tree(set, decos) {
 const fixtureSession = (f) => new DocxSession(new Uint8Array(fs.readFileSync(new URL(`./fixtures/${f}`, import.meta.url))));
 
 test('the decorations\' sets made from sorted decorations are the sets DecorationSet.create makes', async () => {
+  await loadHyphenation();
   const cases = [];
   // Each plugin's own decorations, on its generated document and on the fixtures it is for.
   const fixtures = { comments: ['find-all.docx', 'rich.docx'], marks: ['rich.docx', 'lists-more.docx'], 'merge fields': ['mailmerge.docx', 'mergeif.docx', 'mergenext.docx'], joins: ['original.docx', 'rich.docx'], hyphenation: ['hyphenation.docx', 'hyphenation-zone.docx', 'other-app.docx'] };
@@ -289,5 +294,42 @@ test('merge field previews: a field\'s paragraph and formatting found from its p
     const shown = decosOf(plugin, opened(plugin, doc)).find().filter((d) => d.spec.key).map((d) => [d.from, d.spec.marks.map((m) => m.type.name)]);
     const plain = targets.filter(({ field: x }) => doc.resolve(x.from).parent === doc.resolve(x.to).parent).map(({ field: x }) => [x.from, fieldMarks(doc, x).map((m) => m.type.name)]);
     assert.deepEqual(shown, plain, f);
+  }
+});
+
+test('soft hyphens mapped through edits, the paragraphs touched made again, are the set made whole', async () => {
+  await loadHyphenation();
+  const flat = (set) => set.find().map((d) => [d.from, d.to, d.spec.key ?? '', JSON.stringify(d.type.attrs ?? null)]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || (a[2] + a[3] < b[2] + b[3] ? -1 : 1));
+  const tables = strFromU8(unzipSync(mixedDocx(3))['word/document.xml']).match(/<w:body>([\s\S]*?)<w:sectPr/)[1];
+  const sessions = [new DocxSession(docx(decoDocs.hyphenation(30) + tables)), ...['hyphenation-zone.docx', 'hyphenation-limit.docx', 'hyphenation-free.docx'].map(fixtureSession)];
+  for (const session of sessions) {
+    for (const own of [false, true]) {
+      let state = EditorState.create({ doc: session.doc });
+      let set = hyphenSet(state.doc, session, own);
+      assert.ok(set.find().length > 0);
+      // (A position 6 letters into the first long text node after `from`; the paragraphs, [pos, node].)
+      const inText = (from) => { let at = null; state.doc.nodesBetween(from, state.doc.content.size, (n, p) => { if (at == null && n.isText && n.text.length > 12) at = Math.max(p, from) + 6; return at == null; }); return at; };
+      const para = (i) => { const ps = []; state.doc.descendants((n, p) => { if (n.type.name !== 'paragraph') return true; ps.push([p, n]); return false; }); return ps[1 + (i % (ps.length - 1))]; };
+      const bold = state.schema.marks.strong || state.schema.marks.bold || Object.values(state.schema.marks)[0];
+      const edits = [
+        (tr) => tr.insertText('hyphenationx', inText(0)), // typed into a word
+        (tr) => tr.split(inText(Math.floor(tr.doc.content.size / 3))), // Enter in a word
+        (tr) => { const [p] = para(4); return tr.delete(p - 1, p + 1); }, // two paragraphs joined
+        (tr) => { const [p, n] = para(2); return tr.delete(p, p + n.nodeSize); }, // a paragraph deleted
+        (tr) => { const [p, n] = para(1); return tr.setNodeMarkup(p, null, { ...n.attrs, view: { ...n.attrs.view, noHyph: true } }); }, // left unhyphenated
+        (tr) => tr.addMark(5, Math.min(tr.doc.content.size, 60), bold.create()), // formatted
+        (tr) => tr.insert(para(5)[0], [para(1)[1], para(2)[1]]), // paragraphs pasted
+        (tr) => { const at = inText(0); return tr.insertText('extraordinarily', at).insertText('characterization', at + 30); }, // two steps
+        (tr) => tr.setDocAttribute('odxTest', 1), // a step with no range
+      ];
+      for (const [i, edit] of edits.entries()) {
+        const tr = state.tr;
+        edit(tr);
+        assert.ok(tr.docChanged, `edit ${i}`);
+        set = mapHyphens(tr, set, session, own);
+        state = state.apply(tr);
+        assert.deepEqual(flat(set), flat(hyphenSet(state.doc, session, own)), `edit ${i}, ${own ? 'the browser\'s hyphens' : 'soft hyphens'}`);
+      }
+    }
   }
 });
