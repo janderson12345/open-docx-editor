@@ -1512,6 +1512,25 @@ const afterApi = await ribbonPage.evaluate(() => { window.odx.setRibbon('simple'
 check(simpleNow.join() === 'true,simple' && afterBtn.join() === 'false,classic' && afterApi.join() === 'true,simple', `ribbon: 'simple' starts the one-line ribbon over the user's classic; the button and setRibbon() switch it (${simpleNow} | ${afterBtn} | ${afterApi})`);
 await ribbonPage.close();
 
+// Thin compound borders (thinborders-word.docx, made in Word, its print checked: boxes of triple, medium-gap, double and
+// small-gap borders at 0.25 to 1pt, 14 of them under 2.25pt in all): each drawn by a picture of its lines, the box as tall as Word lays it out: its
+// line, and above and below it the border's whole width (lines and gaps) and its 1pt space, not CSS double's 2.25pt.
+await open('thinborders-word.docx');
+const thin = await page.evaluate(() => {
+  const ps = [...document.querySelectorAll('.odx-content p')];
+  return ps.flatMap((p, i) => {
+    const m = /^Box \d+ (\w+) (\d+)/.exec(p.textContent);
+    if (!m || !ps[i + 1]) return [];
+    const cs = getComputedStyle(p);
+    return [{ val: m[1], sz: +m[2], extra: p.getBoundingClientRect().height - ps[i + 1].getBoundingClientRect().height, image: /svg/.test(cs.borderImageSource), widths: [cs.borderTopWidth, cs.borderLeftWidth].map(parseFloat) }];
+  });
+});
+const wordWidth = { triple: (w) => 5 * w, double: (w) => 3 * w, thinThickMediumGap: (w) => 2 * w, thickThinMediumGap: (w) => 2 * w, thinThickThinMediumGap: (w) => 3 * w, thinThickSmallGap: (w) => w + 1.5, thickThinSmallGap: (w) => w + 1.5 };
+const thinOnes = thin.filter((b) => wordWidth[b.val](b.sz / 8) < 2.25);
+const off = thinOnes.map((b) => ({ ...b, want: 2 * ((wordWidth[b.val](b.sz / 8) + 1) * 4) / 3 })).filter((b) => !b.image || Math.abs(b.extra - b.want) > 0.1 || b.widths.some((w) => w !== Math.round(w)));
+check(thinOnes.length === 14 && !off.length && thin.filter((b) => !thinOnes.includes(b)).every((b) => !b.image),
+  `thin compound borders drawn as Word prints them, at Word's width (${thinOnes.length} thin; off: ${JSON.stringify(off)})`);
+
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
 server.close();
