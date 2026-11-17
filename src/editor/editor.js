@@ -324,6 +324,19 @@ function paragraphPlugin(session) {
           if (cs || (prev.cs && !prev.node.textContent)) style.push('margin-top:0');
           if (prev.cs) prev.style.push('margin-bottom:0');
         }
+        // Holding a drawing placed from its paragraph's top (reader.js fromParagraphTop): how far above the text that top is,
+        // the space this paragraph adds to the space after the one above (the two collapse, the larger kept).
+        let fromTop = false;
+        node.descendants((c) => { if (fromTop) return false; if (c.type.name === 'image' && /--odx-sb/.test(c.attrs.place || '')) fromTop = true; return true; });
+        if (fromTop) {
+          const last = (list, k) => { const v = [...list].reverse().find((x) => x.startsWith(`${k}:`)); return v == null ? null : parseFloat(v.slice(k.length + 1)) || 0; };
+          const pt = 4 / 3;
+          const before = last(style, 'margin-top') != null ? last(style, 'margin-top') * pt
+            : auto(node, 'beforeAuto') ? (plainAuto ? 5 : 14) * pt : twipsToPx(spacing(node, 'before'));
+          const after = !prev ? 0 : last(prev.style, 'margin-bottom') != null ? last(prev.style, 'margin-bottom') * pt
+            : auto(prev.node, 'afterAuto') ? (plainAuto ? 5 : 14) * pt : twipsToPx(spacing(prev.node, 'after'));
+          style.push(`--odx-sb:${+Math.max(0, before - after).toFixed(2)}px`);
+        }
         const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');
         headingRole(node, session, attrs);

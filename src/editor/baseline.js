@@ -183,8 +183,16 @@ export function baselineCss(blocks, scope, host) {
     const anchored = el.tagName === 'P' && !!el.querySelector(':scope > [style*="position: absolute"], :scope > [style*="position:absolute"]');
     let d = node ? blockMemo.get(node) : undefined;
     if (d === undefined) { d = shiftFor(el, host, anchored); if (node) blockMemo.set(node, d); }
-    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"]){position:relative;top:${d}px}`);
-    else if (d) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
+    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"], img[style*="float:"], img.odx-wrap-block)){position:relative;top:${d}px}`);
+    else if (d) {
+      rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
+      // Its floating pictures (wrapped round on one side, or top and bottom) drawn back where they were: the shift is the
+      // text's, Word draws them at their offsets (wrap-word5 sb-sqright, sb-tb: rectangles 0.8pt lower than Word's, as
+      // much as the text's shift, where those not in the flow were at their place).
+      if (el.tagName === 'P' && el.querySelector(':scope > img[style*="float:"], :scope > img.odx-wrap-block')) {
+        rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :is(img[style*="float:"], img.odx-wrap-block){translate:0 ${-d}px}`);
+      }
+    }
   }
   // Paragraphs in table cells carry their shift as --odx-bl (see cellShifts), headers' and footers' too (hfShifts).
   rules.push(`.${scope}:not(.odx-bl-off) td > p[style*="--odx-bl"]{position:relative;top:var(--odx-bl)}`);
