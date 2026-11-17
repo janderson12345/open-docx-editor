@@ -21,6 +21,7 @@ import { findAll } from '../src/editor/find.js';
 import { textSpansPlugin, spansSet, spanDecos } from '../src/editor/textspans.js';
 import { decoSet } from '../src/editor/decoset.js';
 import { commentsPlugin } from '../src/editor/comments.js';
+import { marksPlugin } from '../src/editor/marks.js';
 
 const N = 600;
 const LIMIT = 10;
@@ -163,10 +164,12 @@ const DN = N;
 /** Body XML of `n` repeats of what each decoration is made for. */
 const decoDocs = {
   comments: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run('before ')}<w:commentRangeStart w:id="${k}"/>${run(`commented ${k}`)}<w:commentRangeEnd w:id="${k}"/><w:r><w:commentReference w:id="${k}"/></w:r>${run(' after')}</w:p>`).join(''),
+  marks: (n) => Array.from({ length: n }, (_, k) => `<w:p>${run(`text ${k}`)}</w:p><w:p/>`).join(''),
 };
 /** Each decoration's plugin for a session (Preview Results on, automatic hyphenation on). */
 const decoPlugins = {
   comments: (s) => commentsPlugin(s),
+  marks: () => marksPlugin,
 };
 /** The plugin's decorations in `state`. */
 const decosOf = (plugin, state) => { const v = plugin.getState(state); return v.set || v; };
