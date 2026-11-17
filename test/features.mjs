@@ -1152,6 +1152,61 @@ check(!hyFree || (hyFree.most > 1 && hyZone.breaks < hyFree.breaks / 3 && hyLimi
   }
 }
 
+// Bold over the cloud SemiBold and Demi families (mksemibold.mjs): Word fakes it at the Regular's widths, so each
+// paragraph's lines end on the words of Word's PDF of it, the Bold ones as the Regular (widths.js fakeBold). With the
+// open-metric-fonts stand-ins from jsDelivr: skipped where they don't load (no network).
+const WORD_LINES = [
+  'by of waltzes grapes.', 'by of waltzes grapes.', 'by of waltzes grapes.', 'by of waltzes grapes.',
+  'stored 0123456789 black and mixed grapes.', 'rewritten jugs; jaunty grapes.', 'were dozen quack, grapes.',
+  'procedures with vixens boxes grapes.',
+];
+const lineEnds = (pg) => pg.evaluate(async () => {
+  await document.fonts.ready;
+  const faces = [...document.fonts].filter((f) => /odx-omf/.test(f.family) && f.style === 'normal' && f.status === 'loaded');
+  if (new Set(faces.map((f) => f.family.replace(/"/g, ''))).size < 4) return null;
+  return [...document.querySelectorAll('.odx-content > p')].map((p) => {
+    const ends = [];
+    let top = null, word = '';
+    const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      for (const m of t.data.matchAll(/\S+/g)) {
+        const r = document.createRange();
+        r.setStart(t, m.index);
+        r.setEnd(t, m.index + 1);
+        const at = r.getClientRects()[0]?.top;
+        if (top != null && at - top > 3) ends.push(word);
+        top = at;
+        word = m[0];
+      }
+    }
+    return [...ends, word].join(' ');
+  });
+});
+// (Word's words on Windows, where the browser sets the stand-ins at their design widths as Word does. Elsewhere, whose
+// fonts can be set differently, the Bold paragraphs' lines end where the Regular's and the Italic's do.)
+const sameAsWord = (ends) => (process.platform === 'win32' ? JSON.stringify(ends) === JSON.stringify(WORD_LINES)
+  : ends[1] === ends[0] && ends[3] === ends[2]);
+await open('semibold-bold.docx');
+{
+  const ends = await lineEnds(page);
+  if (!ends) console.log('skip SemiBold with Bold (the open-metric-fonts stand-ins did not load)');
+  else check(sameAsWord(ends), `SemiBold with Bold: lines end as in Word's PDF (${JSON.stringify(ends)})`);
+  let ff = null;
+  try { ff = await firefox.launch(); } catch { console.log('skip SemiBold with Bold in Firefox (not installed)'); }
+  if (ff) {
+    const fp = await ff.newPage({ viewport: { width: 1300, height: 950 } });
+    await fp.goto(`http://localhost:${server.address().port}/`);
+    await fp.waitForSelector('.odx-content p');
+    await fp.setInputFiles('input[type=file]', 'test/fixtures/semibold-bold.docx');
+    await fp.waitForFunction(() => window.odx?.fileName === 'semibold-bold.docx');
+    await fp.waitForTimeout(2500);
+    const fends = await lineEnds(fp);
+    if (!fends) console.log('skip SemiBold with Bold in Firefox (the open-metric-fonts stand-ins did not load)');
+    else check(sameAsWord(fends), `SemiBold with Bold in Firefox: lines end as in Word's PDF (${JSON.stringify(fends)})`);
+    await ff.close();
+  }
+}
+
 // Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
 // its fields), the next record, Insert Merge Field, a CSV file of recipients, and Finish & Merge's merged document.
 await open('mailmerge.docx');
