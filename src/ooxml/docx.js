@@ -11,7 +11,7 @@ import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
 import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
-import { shapesSvg, diagramSvg, unmeasured } from './shapes.js';
+import { shapesSvg, diagramSvg, unmeasured, outlineWidth } from './shapes.js';
 import { redrawLater } from '../editor/svgfonts.js';
 import { PRESETS } from './presets.js';
 import { fontAlts } from './fonts.js';
@@ -788,7 +788,10 @@ export class DocxSession {
     return main.map((i, k) => {
       const wsp = up(els[i], 'wsp');
       const bodyPr = kid(wsp, 'bodyPr');
-      const ins = (a, d) => Math.round(emuToPx(bodyPr?.getAttribute(a) ?? d));
+      // Where the drawn text sits (shapes.js textBox): the insets, not rounded, from the inside of the outline, half of
+      // which is inside the box (a thick outline's text had jumped out by half its width as editing started).
+      const half = outlineWidth(kid(wsp, 'spPr')) / 2;
+      const ins = (a, d) => Math.round((emuToPx(bodyPr?.getAttribute(a) ?? d) + half) * 100) / 100;
       // The box's frame in its group's coordinates, mapped out through any nested groups to the drawing.
       let rect = [0, 0, 1, 1];
       const xfrm = kid(kid(wsp, 'spPr'), 'xfrm');

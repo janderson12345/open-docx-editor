@@ -145,6 +145,61 @@ check(first.every((p, i) => p.shown === again[i]?.node), 'each as a reload with 
 check(again.every((p) => p.shown === p.node), 'and not again after that reload (measured right the first time)');
 check(quiet.same && !quiet.dirty && quiet.undo === 0, `the redraw is no edit: the document unchanged, not dirty, no undo step (${JSON.stringify(quiet)})`);
 await fresh.close();
+
+// A text box with an 8pt outline (shapeclip-word.docx, made in Word): its text, opened for editing, where its picture
+// draws it, inset from the inside of the outline (shapes.js textBox), so it doesn't move as editing starts. Each first
+// letter's box on the screen: the drawn one (its picture's SVG put in the page over the picture, getExtentOfChar), the
+// editor's (a range round its first letter).
+const ob = await browser.newPage({ viewport: { width: 1300, height: 950 } });
+ob.on('pageerror', (e) => errors.push(e.message));
+await ob.goto(`http://localhost:${server.address().port}/`);
+await ob.waitForSelector('.odx-content p');
+await ob.setInputFiles('input[type=file]', 'test/fixtures/shapeclip-word.docx');
+await ob.waitForFunction(() => window.odx?.fileName === 'shapeclip-word.docx');
+await ob.waitForTimeout(1500);
+const outlined = () => ob.evaluate(() => {
+  let pos = null;
+  window.odx.view.state.doc.descendants((n, p) => { if (pos == null && n.type.name === 'image' && /8pt outline/.test(n.attrs.xml)) pos = p; });
+  return pos;
+});
+const boxPos = await outlined();
+const drawn = await ob.evaluate((pos) => {
+  const img = window.odx.view.nodeDOM(pos);
+  img.scrollIntoView({ block: 'center' });
+  const r = img.getBoundingClientRect();
+  const src = img.getAttribute('src');
+  const holder = document.createElement('div');
+  holder.id = 'odx-test-drawn';
+  holder.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;pointer-events:none;opacity:0`;
+  holder.innerHTML = decodeURIComponent(src.slice(src.indexOf(',') + 1));
+  document.body.append(holder);
+  const text = [...holder.querySelectorAll('text')].find((t) => t.textContent.trim());
+  const e = text.getExtentOfChar(0);
+  const m = text.getScreenCTM();
+  const at = (x, y) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+  const p0 = at(e.x, e.y), p1 = at(e.x + e.width, e.y + e.height);
+  holder.remove();
+  return { left: p0.x, top: p0.y, bottom: p1.y, ch: text.textContent.trim()[0], img: { x: r.left, y: r.top, w: r.width, h: r.height } };
+}, boxPos);
+await ob.mouse.dblclick(drawn.img.x + drawn.img.w / 2, drawn.img.y + drawn.img.h / 2);
+await ob.waitForSelector('.odx-txbxedit .ProseMirror');
+await ob.waitForTimeout(300);
+const edited = await ob.evaluate(() => {
+  const pm = document.querySelector('.odx-txbxedit .ProseMirror');
+  const walk = document.createTreeWalker(pm, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  const t = walk.nextNode();
+  const i = t.data.search(/\S/);
+  const range = document.createRange();
+  range.setStart(t, i);
+  range.setEnd(t, i + 1);
+  const r = range.getBoundingClientRect();
+  return { left: r.left, top: r.top, bottom: r.bottom, ch: t.data[i] };
+});
+await ob.keyboard.press('Escape');
+const dx = edited.left - drawn.left, dy = (edited.top + edited.bottom) / 2 - (drawn.top + drawn.bottom) / 2;
+check(drawn.ch === edited.ch && Math.abs(dx) < 1 && Math.abs(dy) < 1.5,
+  `a text box with an 8pt outline: its text opened for editing where its picture draws it (first letter ${dx.toFixed(2)}px across, ${dy.toFixed(2)}px down; ${JSON.stringify({ drawn, edited })})`);
+await ob.close();
 check(errors.length === 0, `no page errors ${errors.join('; ')}`);
 
 await browser.close();

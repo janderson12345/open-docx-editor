@@ -85,7 +85,79 @@ const COMPOUND = {
   thinThickThinLargeGap: (w) => 2 * w + 3,
 };
 
+// Their lines and gaps (pt, line first) as Word prints them, in the page's order whichever side they're on: top to
+// bottom across the page, left to right down it (thinbdr-word: boxes of each at 0.25pt to 1.5pt, Word's PDF; a
+// thin-thick border's size line above or left of its thin one on all four sides). Their sums are COMPOUND's.
+const STRIPES = {
+  double: (w) => [w, w, w],
+  triple: (w) => [w, w, w, w, w],
+  thinThickSmallGap: (w) => [w, 0.75, 0.75],
+  thickThinSmallGap: (w) => [0.75, 0.75, w],
+  thinThickMediumGap: (w) => [w, w / 2, w / 2],
+  thickThinMediumGap: (w) => [w / 2, w / 2, w],
+  thinThickLargeGap: (w) => [w, 1.5, 0.75],
+  thickThinLargeGap: (w) => [0.75, 1.5, w],
+  thinThickThinSmallGap: (w) => [0.75, 0.75, w, 0.75, 0.75],
+  thinThickThinMediumGap: (w) => [w / 2, w / 2, w, w / 2, w / 2],
+  thinThickThinLargeGap: (w) => [0.75, w / 2 + 0.75, w, w / 2 + 0.75, 0.75],
+};
+
 const BROKEN = { dotted: 'dotted', dashed: 'dashed', dashSmallGap: 'dashed', dotDash: 'dashed' };
+
+const drawnSide = (b) => b && b.val && b.val !== 'nil' && b.val !== 'none';
+
+/**
+ * Paragraph borders with a compound side thinner than the 2.25pt the browser needs to draw two lines (CSS double): all
+ * their sides drawn by one picture (a border-image cut in nine, its edges stretched along the sides), each side's lines as
+ * Word prints them, each corner's lines joined one inside the other, as Word's are. Null when there's none, or a side
+ * the picture can't draw (dotted, dashed: those keep CSS's own). Returns the image's CSS and each side's width (px, whole:
+ * the browser draws a border's width in whole pixels).
+ */
+function stripedBorders(borders) {
+  const sides = ['top', 'right', 'bottom', 'left'];
+  const has = (s) => drawnSide(borders[s]);
+  if (!sides.some((s) => has(s) && Object.hasOwn(COMPOUND, borders[s].val) && COMPOUND[borders[s].val](borders[s].sz / 8) < 2.25)) return null;
+  if (sides.some((s) => has(s) && Object.hasOwn(BROKEN, borders[s].val))) return null;
+  const width = {}, lines = {}, color = {};
+  for (const s of sides) {
+    const b = borders[s];
+    if (!has(s)) continue;
+    const segs = Object.hasOwn(STRIPES, b.val) ? STRIPES[b.val](b.sz / 8) : [Math.max(0.25, b.sz / 8)];
+    const total = segs.reduce((a, v) => a + v, 0);
+    width[s] = total * 4 / 3;
+    // Each line as [start, length], fractions of the side's width from its top or left edge.
+    lines[s] = [];
+    for (let i = 0, at = 0; i < segs.length; at += segs[i], i++) if (i % 2 === 0) lines[s].push([at / total, segs[i] / total]);
+    color[s] = /^[0-9A-Fa-f]{6}$/.test(b.color || '') ? '#' + b.color : '#000'; // (only a colour goes into the picture)
+  }
+  // The picture: 30 units square, cut at 10 and 20 (border-image-slice 10), its middle not drawn.
+  const f = (v) => +v.toFixed(3);
+  const rect = (x, y, w, h, c) => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" fill="${c}"/>`;
+  let svg = '';
+  for (const [s, x0, y0, across] of [['top', 10, 0, true], ['bottom', 10, 20, true], ['left', 0, 10, false], ['right', 20, 10, false]]) {
+    for (const [a, l] of lines[s] || []) svg += across ? rect(x0, y0 + 10 * a, 10, 10 * l, color[s]) : rect(x0 + 10 * a, y0, 10 * l, 10, color[s]);
+  }
+  // Corners: the lines of its two sides from the outside in (`flip`: a bottom or right side's run from the inside out
+  // in page order); paired one to one, each pair an L whose arms run from its partner's outer edge into the side;
+  // otherwise each side's lines straight across.
+  const out = (s, flip) => (flip ? lines[s].map(([a, l]) => [1 - a - l, l]).reverse() : lines[s]);
+  for (const [h, v, cx, cy] of [['top', 'left', 0, 0], ['top', 'right', 20, 0], ['bottom', 'left', 0, 20], ['bottom', 'right', 20, 20]]) {
+    if (!lines[h] || !lines[v]) continue;
+    const H = out(h, h === 'bottom'), V = out(v, v === 'right');
+    // From the corner's outer point: u along the page's width, t down it, in the corner's own fractions.
+    const put = (u0, t0, du, dt, c) => {
+      const x = v === 'right' ? 1 - u0 - du : u0, y = h === 'bottom' ? 1 - t0 - dt : t0;
+      svg += rect(cx + 10 * x, cy + 10 * y, 10 * du, 10 * dt, c);
+    };
+    for (let i = 0; i < Math.max(H.length, V.length); i++) {
+      const paired = H.length === V.length;
+      if (H[i]) put(paired ? V[i][0] : 0, H[i][0], paired ? 1 - V[i][0] : 1, H[i][1], color[h]);
+      if (V[i]) put(V[i][0], paired ? H[i][0] : 0, V[i][1], paired ? 1 - H[i][0] : 1, color[v]);
+    }
+  }
+  const data = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" preserveAspectRatio="none">${svg}</svg>`;
+  return { width, color, css: `border-image:url('data:image/svg+xml,${encodeURIComponent(data).replace(/'/g, '%27')}') 10 stretch` };
+}
 
 /** CSS for one border side; Word sizes are eighths of a point. */
 export function borderCss(b) {
@@ -359,9 +431,29 @@ export function pPrToCss(p) {
   if (p.indRight != null) css.push(`margin-inline-end:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
   if (p.indFirst != null) css.push(`text-indent:${twipsToPt(p.indFirst)}pt`);
   if (p.borders) {
+    const striped = stripedBorders(p.borders);
+    // (Or none: a style's picture isn't to draw the paragraph's own borders.)
+    if (striped) css.push(striped.css);
+    else if (['top', 'bottom', 'left', 'right'].some((s) => p.borders[s])) css.push('border-image:none');
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const b = p.borders[side];
       if (!b) continue;
+      if (striped && drawnSide(b)) {
+        // Drawn by the picture, at Word's width less what the browser can't draw (it draws whole pixels: the nearest,
+        // or fewer when the space beside it can't give up the difference), the rest added to that space, so the text
+        // is where Word's width puts it; a side's width and space both outside the indent, as below.
+        const want = striped.width[side];
+        const space = ((b.space || 0) * 4) / 3;
+        const near = Math.max(1, Math.round(want));
+        const px = (side === 'top' || side === 'bottom') && near - want > space ? Math.max(1, Math.floor(want)) : near;
+        css.push(`border-${side}:${px * 0.75}pt solid ${striped.color[side]}`);
+        if (side === 'top' || side === 'bottom') css.push(`padding-${side}:${+Math.max(0, space + want - px).toFixed(3)}px`);
+        else {
+          if (b.space) css.push(`padding-${side}:${b.space}pt`);
+          css.push(`--odx-bd${side[0]}:${+(px * 0.75 + (b.space || 0)).toFixed(3)}pt`);
+        }
+        continue;
+      }
       const bc = borderCss(b);
       css.push(`border-${side}:${bc}`);
       // Edge draws a border a whole number of pixels wide (under 1px as 1, else rounded down): a 1pt (1.333px) rule takes

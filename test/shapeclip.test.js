@@ -101,3 +101,12 @@ test('an outline\'s corners: round on a shape with no style (a text box), mitred
   assert.match(svgOf(named('Rectangle 3')), /stroke-miterlimit="8"/);
   assert.doesNotMatch(svgOf(named('Rectangle 3')), /stroke-linejoin="round"/);
 });
+
+test('a text box opened for editing: its text inset from the inside of its outline, as its picture draws it', () => {
+  // (8pt outline: half of it, 5.33px, in from the insets, which aren't rounded: 0.1in is 9.6px.)
+  const [box] = s.textBoxes(named('Text Box 8').xml);
+  assert.deepEqual(box.ins, [4.8, 9.6, 4.8, 9.6].map((v) => Math.round((v + 16 / 3) * 100) / 100));
+  // (No outline drawn: the insets alone.)
+  const plain = named('Text Box 8').xml.replace(/<a:ln w="\d+"[\s\S]*?<\/a:ln>/, '<a:ln><a:noFill/></a:ln>');
+  assert.deepEqual(s.textBoxes(plain)[0].ins, [4.8, 9.6, 4.8, 9.6]);
+});
