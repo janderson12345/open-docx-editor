@@ -100,6 +100,7 @@ export function mixedLines(el, host) {
         if (!(f > a)) return null;
         Object.assign(g, { T: a * fs + raise, B: (f - a) * fs - raise, L: f * fs });
       }
+      g.word = `${family}|${cs.fontSize}|${raise}`;
       groups.set(key, g);
     }
     g.chars += t.data.length;
@@ -107,7 +108,9 @@ export function mixedLines(el, host) {
   }
   const all = [...groups.values()];
   const gs = all.filter((g) => !g.blank);
-  if (!gs.length || all.length < 2) return null;
+  // (Runs differing only in weight or slant are one size to Word: sample 24's DejaVu Sans paragraphs with bold and
+  // italic runs, whose stand-in's bold face the browser gives other metrics, came out 0.75px a line short as mixed.)
+  if (!gs.length || (all.length === gs.length && new Set(gs.map((g) => g.word)).size < 2)) return null;
   const max = (k) => Math.max(...gs.map((g) => g[k]));
   const word = max('T') + max('B') + (mult - 1) * max('L');
   // The browser's line as drawn now, all of the runs on one line: each span's box centred on its own text.
