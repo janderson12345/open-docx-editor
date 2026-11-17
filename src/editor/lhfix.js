@@ -55,9 +55,12 @@ function pitch(box, el, chain, lh, length) {
   return (five - one) / 4;
 }
 
-/** The line height (px) whose pitch is nearest `want`, or null when Edge already lays it within 0.002px. */
-function bestHeight(box, el, chain, want, length) {
-  const k = [el.className, (el.getAttribute('style') || '').replace(OURS, ''), ...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`), want, length].join('|');
+/**
+ * The line height (px) whose pitch is nearest `want`, or null when Edge already lays it within 0.002px. `where`: the
+ * kind of box probed in, part of what's remembered (a header's paragraph styles aren't the body's).
+ */
+function bestHeight(box, el, chain, want, length, where = '') {
+  const k = [where, el.className, (el.getAttribute('style') || '').replace(OURS, ''), ...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`), want, length].join('|');
   if (cache.has(k)) return cache.get(k);
   let best = null;
   let err = Math.abs(pitch(box, el, chain, want, length) - want);
@@ -211,4 +214,61 @@ function chainOf(el) {
   const chain = [];
   for (let n = text?.parentElement; n && n !== el; n = n.parentElement) chain.unshift(n);
   return chain;
+}
+
+// Header and footer paragraphs' results by paragraph node ({ value, want, mix: [css by odx-t span], spans }), until
+// fonts load: a story is drawn again for every page.
+let storyMemo = new WeakMap();
+let storyFonts = -1;
+/**
+ * The same line heights for the header and footer paragraphs under `root` (drawn, in the document): each paragraph's
+ * pitch as Word's (as the body's: a 10pt Times New Roman footer line 15.31px, not 15.33), and Word's run boxes in a
+ * line of mixed sizes (mixlines.js: sample S078's footer, 10pt text and a 12pt run raised 3pt, drawn 0.7px low).
+ * `nodeOf`: a paragraph element's node, for remembering its result (or undefined). Not on a document grid (lines on a
+ * grid are the body's: left as they were).
+ */
+export function storyLineFix(root, nodeOf) {
+  if (storyFonts !== fontLoads) { storyMemo = new WeakMap(); storyFonts = fontLoads; }
+  let box = null;
+  const probeBox = (el) => {
+    if (box) return box;
+    const hf = el.closest('.odx-hf') || root;
+    box = hf.cloneNode(false);
+    box.removeAttribute('id');
+    box.classList.add('odx-probes');
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = `position:absolute;left:-99999px;top:0;width:${hf.clientWidth}px;visibility:hidden;contain:layout;white-space:pre-wrap`;
+    hf.parentElement.append(box);
+    return box;
+  };
+  try {
+    for (const el of root.querySelectorAll('p')) {
+      const node = nodeOf?.(el);
+      const spans = el.querySelectorAll('span.odx-t');
+      let r = node && storyMemo.get(node);
+      if (!r || r.spans !== spans.length) {
+        const cs = getComputedStyle(el);
+        const fs = parseFloat(cs.fontSize);
+        const want = parseFloat(lineHeightOf(cs));
+        const length = cs.getPropertyValue('--odx-lhlen').trim() === '1';
+        r = { value: null, want, mix: null, spans: spans.length };
+        if (want && fs) {
+          const best = bestHeight(probeBox(el), el, chainOf(el), want, length, 'hf');
+          r.value = best == null ? null : length ? `${best.toFixed(4)}px` : `${(best / fs).toFixed(6)}`;
+        }
+        if (r.value != null) el.style.setProperty('--odx-lhv', r.value);
+        const got = mixedLines(el, probeBox(el));
+        if (got) {
+          const at = new Map([...spans].map((s, i) => [s, i]));
+          r.mix = got.spans.map(([s, css]) => [at.get(s), css]);
+        }
+        if (node) storyMemo.set(node, r);
+      } else if (r.value != null) el.style.setProperty('--odx-lhv', r.value);
+      if (r.value != null) el.dataset.odxLh = String(r.want);
+      if (r.mix) {
+        for (const [i, css] of r.mix) if (spans[i]) spans[i].style.cssText += `;${css}`;
+        el.dataset.odxMix = '1';
+      }
+    }
+  } finally { box?.remove(); }
 }
