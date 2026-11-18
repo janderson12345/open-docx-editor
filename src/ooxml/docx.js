@@ -402,7 +402,7 @@ export class DocxSession {
     const xml = rel && this.pkg.xml(rel.target);
     let doc = null;
     // (Its bound controls showing their values: saved so, as Word saves them.)
-    if (xml && applyBindings(xml, this.bindings)) (this._dirtyStories ||= new Set()).add(rId);
+    if (xml && applyBindings(xml, this.bindings, rel.target)) (this._dirtyStories ||= new Set()).add(rId);
     if (xml) {
       const rels = this.pkg.readRels(rel.target);
       const relOf = (id) => rels.find((r) => r.id === id);

@@ -54,7 +54,7 @@ export function writeDocument(doc, originalXml, ctx = {}) {
  */
 export function writeBlocks(parent, ctx) {
   let out = '';
-  let open = null;
+  const open = []; // the content controls being written around the blocks, outermost first
   const blocks = [];
   parent.forEach((b) => blocks.push(b));
   for (let i = 0; i < blocks.length; i++) {
@@ -65,18 +65,23 @@ export function writeBlocks(parent, ctx) {
       while (j < blocks.length && blocks[j].attrs.chunk === chunk) j++;
       const sigs = blocks.slice(i, j).map(chunkSig);
       if (chunk.sigs && sigs.length === chunk.sigs.length && sigs.every((s, k) => s === chunk.sigs[k])) {
-        if (open) { out += open.close; open = null; }
+        while (open.length) out += open.pop().close;
         out += chunk.xml;
         i = j - 1;
         continue;
       }
     }
-    const sdt = b.attrs.sdt || null;
-    if (open && (!sdt || sdt.g !== open.g)) { out += open.close; open = null; }
-    if (sdt && !open) { out += sdt.open; open = sdt; }
+    // Its content controls, outermost first (a repeating section, then its item): those it shares with the block
+    // before stay open, the others are closed and opened.
+    const chain = [];
+    for (let s = b.attrs.sdt; s; s = s.parent) chain.unshift(s);
+    let k = 0;
+    while (k < open.length && k < chain.length && open[k].g === chain[k].g) k++;
+    while (open.length > k) out += open.pop().close;
+    for (const s of chain.slice(k)) { out += s.open; open.push(s); }
     out += writeBlock(b, ctx);
   }
-  if (open) out += open.close;
+  while (open.length) out += open.pop().close;
   return out;
 }
 
