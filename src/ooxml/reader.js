@@ -114,7 +114,9 @@ function sdtBlocks(el, ctx, out) {
   // A control that only wraps another (a page-number gallery around a footer's table): one wrapper of both, written back as it was.
   if (inner.length === 1 && inner[0].namespaceURI === NS.w && inner[0].localName === 'sdt') {
     const sub = [];
-    if (!sdtBlocks(inner[0], ctx, sub)) return false;
+    // (Not around a control of controls, a repeating section: its own w:sdt would be lost and this one written around
+    // each item. Kept as it is instead.)
+    if (!sdtBlocks(inner[0], ctx, sub) || sub.some((b) => b.attrs.sdt.parent)) return false;
     const head = kids(el).filter((c) => c !== content).map((c) => ctx.xml(c)).join('');
     for (const b of sub) {
       const s = b.attrs.sdt;

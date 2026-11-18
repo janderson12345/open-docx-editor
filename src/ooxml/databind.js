@@ -20,7 +20,14 @@ const MAX_CACHE = 2048;
 // bound past them would otherwise cost their product. Found nodes are remembered, so only new bindings spend it.)
 const MAX_WORK = 2e7;
 const MAX_ITEMS = 1000; // a repeating section's items
+// (Elements copied into repeating sections' new items over one part: a crafted file of many sections, or sections
+// whose items hold large content, would otherwise grow the document a thousandfold or more as it opens.)
+const MAX_CLONED = 200000;
 const MAX_PICTURE = 16 * 1024 * 1024; // a bound picture's base64 text
+// (Bound pictures over a package: each distinct picture decoded and stored once, at most this many and this much.)
+const MAX_PICTURES = 100;
+const MAX_PICTURE_BYTES = 64 * 1024 * 1024;
+const MAX_PH_RPR = 64; // a placeholder building block's run properties copied into controls (elements)
 const REL_GLOSSARY = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/glossaryDocument';
 const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
 const NS_W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
@@ -40,7 +47,7 @@ const normId = (id) => (id ? String(id).trim().replace(/^\{|\}$/g, '').toUpperCa
 
 /** The binding in a w:sdtPr's XML: { xpath, store, prefixes } or null. */
 export function bindingOf(prXml) {
-  const t = prXml && prXml.length < 1e6 ? startTag(prXml, 'w:dataBinding') : null;
+  const t = typeof prXml === 'string' && prXml.length < 1e6 ? startTag(prXml, 'w:dataBinding') : null;
   if (!t) return null;
   const get = (n) => unescapeXml(tagAttr(t.tag, n) ?? '');
   const xpath = get('w:xpath');
@@ -195,7 +202,9 @@ export class BindingStore {
     if (!rel || !(this.pkg.files[rel.target]?.length <= MAX_PART_BYTES)) return map;
     let doc;
     try { doc = this.pkg.xml(rel.target); } catch { return map; }
-    const parts = doc?.documentElement ? doc.documentElement.getElementsByTagNameNS(NS.w, 'docPart') : [];
+    // (The glossary's own building blocks only, not ones nested in another's text; a block's run formatting kept when
+    // it is a few properties, as Word's are: it's copied into every empty control that shows the block.)
+    const parts = doc?.documentElement ? kids(kids(doc.documentElement, 'docParts')[0], 'docPart') : [];
     for (let i = 0; i < parts.length && map.size < 10000; i++) {
       const dp = parts[i];
       const nm = kids(kids(dp, 'docPartPr')[0], 'name')[0]?.getAttributeNS(NS.w, 'val');
@@ -203,7 +212,8 @@ export class BindingStore {
       if (!nm || !body || map.has(nm)) continue;
       const text = kids(body, 'p').map(textWithBreaks).join('\n');
       const r = body.getElementsByTagNameNS(NS.w, 'r')[0];
-      map.set(nm, { text, rPr: r ? kids(r, 'rPr')[0] || null : null });
+      const rPr = r ? kids(r, 'rPr')[0] || null : null;
+      map.set(nm, { text, rPr: rPr && rPr.getElementsByTagName('*').length <= MAX_PH_RPR ? rPr : null });
     }
     return map;
   }
@@ -423,7 +433,7 @@ const kindOf = (pr) => {
 
 /** A w:sdtPr's XML with w:showingPlcHdr added (before its binding, where Word writes it). */
 export function withPlc(prXml) {
-  if (/<w:showingPlcHdr\b/.test(prXml)) return prXml;
+  if (typeof prXml !== 'string' || /<w:showingPlcHdr\b/.test(prXml)) return prXml;
   const at = prXml.search(/<w(?:15)?:dataBinding\b/);
   if (at >= 0) return `${prXml.slice(0, at)}<w:showingPlcHdr/>${prXml.slice(at)}`;
   return prXml.replace(/<\/w:sdtPr>/, '<w:showingPlcHdr/></w:sdtPr>');
@@ -529,10 +539,18 @@ function repeatSections(xmlDoc, store) {
   const W = NS.w;
   let changed = 0;
   let nextId = 0x2f000000;
+  let cloned = 0;
+  // (A section inside another's item is left as it is: in a crafted file, its marker after its content, it would be
+  // filled first and the outer section then copy its copies, a thousand times a thousand.)
+  const isSection = (s) => s?.localName === 'sdt' && kids(kids(s, 'sdtPr')[0], 'repeatingSection', NS_W15).length > 0;
+  const nested = (s) => {
+    for (let a = s.parentNode, d = 0; a && a.nodeType === 1 && d < 256; a = a.parentNode, d++) if (a.localName === 'sdtContent' && isSection(a.parentNode)) return true;
+    return false;
+  };
   for (const sec of [...xmlDoc.getElementsByTagNameNS(NS_W15, 'repeatingSection')]) {
     const pr = sec.parentNode;
     const sdt = pr?.parentNode;
-    if (!pr || pr.localName !== 'sdtPr' || !sdt || sdt.localName !== 'sdt') continue;
+    if (!pr || pr.localName !== 'sdtPr' || !sdt || sdt.localName !== 'sdt' || nested(sdt)) continue;
     const bind = kids(pr).find((e) => e.localName === 'dataBinding' && (e.namespaceURI === NS_W15 || e.namespaceURI === W));
     const xpath = bind?.getAttributeNS(W, 'xpath');
     const content = kids(sdt, 'sdtContent')[0];
@@ -545,11 +563,17 @@ function repeatSections(xmlDoc, store) {
     if (count == null) continue;
     const items = kids(content, 'sdt').filter((it) => kids(kids(it, 'sdtPr')[0], 'repeatingSectionItem', NS_W15).length);
     if (!items.length || items.length !== kids(content).length) continue;
-    const want = Math.min(MAX_ITEMS, Math.max(1, count));
+    let want = Math.min(MAX_ITEMS, Math.max(1, count));
     if (want === items.length) continue;
-    for (const extra of items.slice(want)) content.removeChild(extra);
     const model = items[Math.min(items.length, want) - 1];
     const from = Math.min(items.length, want);
+    // (New items only while the part's copying budget lasts: a section that would pass it gets the items that fit.)
+    if (want > from) {
+      const size = model.getElementsByTagName('*').length + 1;
+      want = Math.min(want, from + Math.max(0, Math.floor((MAX_CLONED - cloned) / size)));
+      cloned += (want - from) * size;
+    }
+    for (const extra of items.slice(want)) content.removeChild(extra);
     const base = xpath.trim();
     for (let k = from + 1; k <= want; k++) {
       const copy = model.cloneNode(true);
@@ -611,20 +635,38 @@ function bindPicture(content, value, store, partPath) {
   const pkg = store.pkg;
   const blip = content.getElementsByTagNameNS(NS_A, 'blip')[0];
   const extent = content.getElementsByTagNameNS(NS_WP, 'extent')[0];
-  const bytes = blip && extent && partPath ? fromBase64(value) : null;
-  const info = bytes && pictureInfo(bytes);
-  if (!info || !(info.w > 0) || !(info.h > 0)) return false;
+  if (!blip || !extent || !partPath) return false;
+  // (Each distinct picture decoded and stored once, however many controls show it, a bounded number and size of them
+  // over the package: { byValue: value -> { info, path (its part), rels: part -> rId } | null, bytes, n }.)
+  const pics = store._pics || (store._pics = { byValue: new Map(), bytes: 0, n: 0 });
+  let pic = pics.byValue.get(value);
+  if (pic === undefined) {
+    const bytes = pics.byValue.size < MAX_PICTURES ? fromBase64(value) : null;
+    const info = bytes && pictureInfo(bytes);
+    pic = info && info.w > 0 && info.h > 0 && pics.bytes + bytes.length <= MAX_PICTURE_BYTES ? { info, bytes, path: null, rels: new Map() } : null;
+    if (pic) pics.bytes += bytes.length;
+    pics.byValue.set(value, pic);
+  }
+  if (!pic) return false;
+  const { info } = pic;
   const rId = blip.getAttributeNS(NS_R, 'embed');
   const rel = rId && pkg.readRels(partPath).find((r) => r.id === rId);
-  const had = rel && !rel.external && pkg.files[rel.target];
-  if (had && had.length === bytes.length && had.every((x, i) => x === bytes[i])) return false;
   const dir = partPath.slice(0, partPath.lastIndexOf('/') + 1);
-  let n = 1;
-  while (pkg.files[`${dir}media/bound${n}.${info.ext}`]) n++;
-  const name = `media/bound${n}.${info.ext}`;
-  pkg.files[`${dir}${name}`] = bytes;
-  pkg.addOverride(`${dir}${name}`, info.mime);
-  blip.setAttributeNS(NS_R, 'r:embed', pkg.addRel(REL_IMAGE, name, false, partPath));
+  if (rel && !rel.external && rel.target === pic.path) return false;
+  if (!pic.path) {
+    const had = rel && !rel.external && pkg.files[rel.target];
+    if (had && had.length === pic.bytes.length && had.every((x, i) => x === pic.bytes[i])) return false;
+    do pics.n++; while (pkg.files[`${dir}media/bound${pics.n}.${info.ext}`]);
+    pic.path = `${dir}media/bound${pics.n}.${info.ext}`;
+    pkg.files[pic.path] = pic.bytes;
+    pkg.addOverride(pic.path, info.mime);
+  }
+  if (!pic.rels.has(partPath)) {
+    // (Relative to the part's folder when it's there, as the part's other pictures are.)
+    const target = pic.path.startsWith(dir) ? pic.path.slice(dir.length) : `/${pic.path}`;
+    pic.rels.set(partPath, pkg.addRel(REL_IMAGE, target, false, partPath));
+  }
+  blip.setAttributeNS(NS_R, 'r:embed', pic.rels.get(partPath));
   // Fitted in the box (wp:extent), and the picture's own size (a:ext in pic:spPr) with it.
   const cx = Number(extent.getAttribute('cx')), cy = Number(extent.getAttribute('cy'));
   if (cx > 0 && cy > 0) {

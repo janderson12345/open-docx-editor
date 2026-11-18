@@ -163,3 +163,44 @@ test('crafted repeating sections and pictures stay bounded', async () => {
     assert.ok(Number(cx) <= 1905000 && Number(cy) <= 1905000, `${cx}x${cy}`);
   }
 });
+
+// The security review before 0.8.4.
+
+test('a repeating section inside another is left as it is, however its file orders it', async () => {
+  // (Each control's w:sdtPr after its content: the inner section's marker comes first in the file.)
+  const itemOf = (x) => `<w:sdt><w:sdtContent>${x}</w:sdtContent><w:sdtPr><w15:repeatingSectionItem/></w:sdtPr></w:sdt>`;
+  const sectionOf = (x) => `<w:sdt><w:sdtContent>${x}</w:sdtContent><w:sdtPr><w15:repeatingSection/><w15:dataBinding w:xpath="/r/i"/></w:sdtPr></w:sdt>`;
+  const body = sectionOf(itemOf(sectionOf(itemOf(P(R('x')))))) + P(R('After'));
+  const t0 = Date.now();
+  const s = new DocxSession(await zip(w15(bindingDocx({ body, parts: [{ xml: `<r>${'<i/>'.repeat(1000)}</r>` }] }))));
+  assert.ok(Date.now() - t0 < 20000, `${Date.now() - t0}ms`);
+  assert.ok(paras(s.doc).length <= 1001, `${paras(s.doc).length} paragraphs`);
+});
+
+test("repeating sections' new items stay within one budget of copied elements", async () => {
+  const big = P(R('x')).repeat(400);
+  const many = `<root><items>${'<item><name>n</name></item>'.repeat(1000)}</items></root>`;
+  const body = Array.from({ length: 20 }, () => section(`<w:sdt><w:sdtPr><w:id w:val="7"/><w15:repeatingSectionItem/></w:sdtPr><w:sdtContent>${big}</w:sdtContent></w:sdt>`)).join('');
+  const t0 = Date.now();
+  const s = new DocxSession(await zip(w15(bindingDocx({ body, parts: [{ xml: many }] }))));
+  assert.ok(Date.now() - t0 < 20000, `${Date.now() - t0}ms`);
+  // (20 sections of 1,000 items of 400 paragraphs would be 8 million; the budget is 200,000 elements.)
+  assert.ok(paras(s.doc).length < 80000, `${paras(s.doc).length} paragraphs`);
+});
+
+test('one picture shown by many controls is decoded and stored once', () => {
+  const body = Array.from({ length: 300 }, () => picCtl).join('') + P(R('end'));
+  const s = new DocxSession(bindingDocx({ body, parts: [{ xml: `<r><pic>${b64(png(40, 20))}</pic></r>` }], media: { 'media/image1.png': png(1, 1) } }));
+  const files = unzipSync(s.save());
+  assert.equal(Object.keys(files).filter((f) => /^word\/media\/bound/.test(f)).length, 1);
+  const xml = strFromU8(files['word/document.xml']);
+  assert.equal(new Set([...xml.matchAll(/r:embed="([^"]+)"/g)].map((m) => m[1])).size, 1);
+});
+
+test("a placeholder building block's long run formatting isn't copied into controls", () => {
+  const s = new DocxSession(bindingDocx({ body: P(bound({ xpath: '/r/e', plc: false, content: R('cached'), docPart: 'PH1' })), parts: [{ xml: '<r><e></e></r>' }], glossary: { PH1: 'Type here' } }));
+  const store = s.bindings;
+  const ph = store.placeholder('<w:placeholder><w:docPart w:val="PH1"/></w:placeholder>', 'text');
+  assert.equal(ph.text, 'Type here');
+  assert.ok(!ph.rPr || ph.rPr.getElementsByTagName('*').length <= 64);
+});
