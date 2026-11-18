@@ -109,6 +109,17 @@ function holdWords(view, session) {
   const limit = session.consecutiveHyphenLimit;
   const native = nativeHyphens();
   let changed = false;
+  // (The paragraphs are measured left aligned, their style set and put back: unobserved, else the editor reads that as
+  // a change made in the page, draws the paragraph again, and its plugins' update starts the next settle 60ms on: a
+  // justified paragraph redrawn every 85ms for as long as the document is open.)
+  const observer = view.domObserver;
+  observer?.stop?.();
+  try {
+    measureHolds();
+  } finally { observer?.start?.(); }
+  return changed;
+
+  function measureHolds() {
   view.state.doc.descendants((node, pos) => {
     if (node.type !== schema.nodes.paragraph) return true;
     const el = view.nodeDOM(pos);
@@ -148,7 +159,7 @@ function holdWords(view, session) {
     } finally { el.style.textAlign = align; }
     return false;
   });
-  return changed;
+  }
 }
 
 const sameLine = (a, b) => Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < (b.bottom - b.top) / 2;

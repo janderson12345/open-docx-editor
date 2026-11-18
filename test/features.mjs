@@ -1110,6 +1110,18 @@ const hyZone = await hyLines('hyphenation-zone.docx');
 const hyLimit = await hyLines('hyphenation-limit.docx');
 check(!hyFree || (hyFree.most > 1 && hyZone.breaks < hyFree.breaks / 3 && hyLimit.most === 1 && hyLimit.breaks > 0),
   `hyphenation zone and consecutive-hyphen limit (${JSON.stringify({ hyFree, hyZone, hyLimit })})`);
+// Settled, not drawn again for good: the limit's justified paragraphs were measured in a way the editor read as a change
+// in the page, which redrew them, which measured them again (every 85ms, as long as the document stayed open).
+{
+  const redraws = await page.evaluate(() => new Promise((res) => {
+    let first = document.querySelector('.odx-content p');
+    let n = 0;
+    const tick = () => { const p = document.querySelector('.odx-content p'); if (p !== first) { first = p; n++; } };
+    const id = setInterval(tick, 20);
+    setTimeout(() => { clearInterval(id); res(n); }, 1500);
+  }));
+  check(redraws === 0, `a hyphenated document with the consecutive-hyphen limit settles (first paragraph redrawn ${redraws} times in 1.5s)`);
+}
 // The same in Firefox, which hyphenates itself (hyphens:auto; the words left whole marked hyphens:manual): lines that
 // end inside a word, its letters on two lines. (Where Playwright's Firefox is installed: CI installs only Chromium.)
 {
