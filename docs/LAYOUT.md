@@ -91,6 +91,16 @@ comments say *why* a rule exists; this file says what the rules are and how to c
   (DejaVu Sans in Verdana, Liberation fonts in their Microsoft equivalents).
 - Edge shapes text at its font size cut to 1/100px; the missing share comes back as letter spacing.
 - Kerning is off unless the document turns it on (w:kern).
+- Bold over the Microsoft 365 cloud SemiBold and Demi families (Aptos SemiBold, Avenir Next LT Pro Demi, Georgia Pro
+  Semibold, Verdana Pro Semibold) is faked: they have no bold face, and nor do their open-metric-fonts stand-ins.
+  Word's faked Bold takes no extra width. Its PDFs (new documents made through Word COM, 8 to 72pt, compatibility
+  modes 12 and 15) show Bold lines breaking on the same words as Regular and ending at the same point to 0.01pt;
+  only the letters are drawn heavier (the PDF names the face "…,Bold"). Edge's faked bold keeps the widths too.
+  Firefox's adds width to every character, about 0.42px at 10.67px and 2px at 96px, which ended each Bold line a
+  word or two early. So such a run is measured at weight 400 and gets the difference back as letter spacing
+  (`editor/widths.js`, `fakeBold`). `test/fixtures/semibold-bold.docx` holds Word's line ends, checked in
+  `test/features.mjs`. The heavier drawing is left to the browser's own faked bold, whose stroke weight was not
+  matched to Word's.
 
 **Print**
 - Each font has a fixed print baseline offset (a pixel amount, not a share of the em), fitted on Word's PDFs.
