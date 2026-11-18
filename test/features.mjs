@@ -1160,11 +1160,10 @@ const WORD_LINES = [
   'stored 0123456789 black and mixed grapes.', 'rewritten jugs; jaunty grapes.', 'were dozen quack, grapes.',
   'procedures with vixens boxes grapes.',
 ];
+// (Read until two readings half a second apart agree: the stand-ins' files, one per alphabet, can arrive late, and
+// the lines meanwhile are set in the fallback font.)
 const lineEnds = (pg) => pg.evaluate(async () => {
-  await document.fonts.ready;
-  const faces = [...document.fonts].filter((f) => /odx-omf/.test(f.family) && f.style === 'normal' && f.status === 'loaded');
-  if (new Set(faces.map((f) => f.family.replace(/"/g, ''))).size < 4) return null;
-  return [...document.querySelectorAll('.odx-content > p')].map((p) => {
+  const read = () => [...document.querySelectorAll('.odx-content > p')].map((p) => {
     const ends = [];
     let top = null, word = '';
     const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
@@ -1181,6 +1180,16 @@ const lineEnds = (pg) => pg.evaluate(async () => {
     }
     return [...ends, word].join(' ');
   });
+  let last = null;
+  for (let i = 0; i < 30; i++) {
+    await document.fonts.ready;
+    await new Promise((r) => setTimeout(r, 500));
+    const faces = [...document.fonts].filter((f) => /odx-omf/.test(f.family) && f.style === 'normal' && f.status === 'loaded');
+    const now = new Set(faces.map((f) => f.family.replace(/"/g, ''))).size >= 4 ? JSON.stringify(read()) : null;
+    if (now && now === last) return JSON.parse(now);
+    last = now;
+  }
+  return null;
 });
 // (Word's words on Windows, where the browser sets the stand-ins at their design widths as Word does. Elsewhere, whose
 // fonts can be set differently, the Bold paragraphs' lines end where the Regular's and the Italic's do.)
@@ -1189,7 +1198,7 @@ const sameAsWord = (ends) => (process.platform === 'win32' ? JSON.stringify(ends
 await open('semibold-bold.docx');
 {
   const ends = await lineEnds(page);
-  if (!ends) console.log('skip SemiBold with Bold (the open-metric-fonts stand-ins did not load)');
+  if (!ends) console.log('skip SemiBold with Bold (the open-metric-fonts stand-ins did not load, or the lines did not settle)');
   else check(sameAsWord(ends), `SemiBold with Bold: lines end as in Word's PDF (${JSON.stringify(ends)})`);
   let ff = null;
   try { ff = await firefox.launch(); } catch { console.log('skip SemiBold with Bold in Firefox (not installed)'); }
@@ -1201,7 +1210,7 @@ await open('semibold-bold.docx');
     await fp.waitForFunction(() => window.odx?.fileName === 'semibold-bold.docx');
     await fp.waitForTimeout(2500);
     const fends = await lineEnds(fp);
-    if (!fends) console.log('skip SemiBold with Bold in Firefox (the open-metric-fonts stand-ins did not load)');
+    if (!fends) console.log('skip SemiBold with Bold in Firefox (the open-metric-fonts stand-ins did not load, or the lines did not settle)');
     else check(sameAsWord(fends), `SemiBold with Bold in Firefox: lines end as in Word's PDF (${JSON.stringify(fends)})`);
     await ff.close();
   }
