@@ -73,8 +73,11 @@ export function writeBlocks(parent, ctx) {
     }
     // Its content controls, outermost first (a repeating section, then its item): those it shares with the block
     // before stay open, the others are closed and opened.
+    // (A co-editor's attrs: a few levels at most, each with its tags as text; else the block is written without them.)
     const chain = [];
-    for (let s = b.attrs.sdt; s; s = s.parent) chain.unshift(s);
+    for (let s = b.attrs.sdt; s && chain.length < 8; s = s.parent) chain.push(s);
+    chain.reverse();
+    if (chain.some((s) => typeof s.open !== 'string' || typeof s.close !== 'string')) chain.length = 0;
     let k = 0;
     while (k < open.length && k < chain.length && open[k].g === chain[k].g) k++;
     while (open.length > k) out += open.pop().close;
