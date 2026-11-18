@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A document with a section of columns between one-column text no longer hangs the tab** when a paragraph in the
+  columns is taller than the column it moves to and can't be cut there: since 0.8.1 it was moved on and walked again
+  without end, and the page never drew. Each such paragraph is now walked again a bounded number of times.
 - **A justified, hyphenated document with Word's consecutive-hyphen limit settles once opened**: since 0.8.2 its
   paragraphs were drawn again every 85ms for as long as it stayed open (measuring them for the limit was read as a
   change in the page), using the processor and at times making a click miss.
