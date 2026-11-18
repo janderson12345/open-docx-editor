@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 (2026-11-18)
 
+- **Hardening from the release review**: repeating sections bound to custom XML are filled within one budget of copied
+  content and a section inside another's item is left as it is (a crafted file could multiply them into millions of
+  items as it opened); a bound picture shown by many controls is decoded and stored once, a bounded number and size of
+  them; a placeholder building block's run formatting is copied into controls only when it is small; a co-editor's
+  control properties that aren't text are ignored, and the controls written around a block held to a few levels.
+- **More of Word's bound content controls**: an empty node shows the control's placeholder from the document's
+  glossary (or Word's default for its kind), and an emptied control shows it again; a repeating section gets an item
+  for each node it is bound to, each item editing its own node; a picture control shows the picture its node holds,
+  fitted in its box; bound values typed by one co-editor reach the others' controls.
 - **A document with a section of columns between one-column text no longer hangs the tab** when a paragraph in the
   columns is taller than the column it moves to and can't be cut there: since 0.8.1 it was moved on and walked again
   without end, and the page never drew. Each such paragraph is now walked again a bounded number of times.
