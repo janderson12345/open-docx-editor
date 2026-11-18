@@ -5,6 +5,10 @@
 - **A justified, hyphenated document with Word's consecutive-hyphen limit settles once opened**: since 0.8.2 its
   paragraphs were drawn again every 85ms for as long as it stayed open (measuring them for the limit was read as a
   change in the page), using the processor and at times making a click miss.
+- **Bold over the Microsoft 365 cloud SemiBold and Demi families** (Aptos SemiBold, Avenir Next LT Pro Demi, Georgia
+  Pro Semibold, Verdana Pro Semibold) is laid out at the regular face's widths, as Word lays out its faked bold: lines
+  break on the same words as Word's in every browser (Firefox's faked bold had widened each letter, ending bold lines
+  a word or two early).
 
 ## 0.8.3 (2026-11-17)
 
