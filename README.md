@@ -301,16 +301,16 @@ only `'self'`.
 
    And the open-metric-fonts fonts. The simplest is the release's web bundle, every family in one zip: its folder
    holds each package as `<package>/files/`, as the editor looks for them. Use the version the editor was made with
-   (`OMF_VERSION`, exported by the package; 1.0.1 for this release):
+   (`OMF_VERSION`, exported by the package; 1.1.0 for this release):
 
    ```bash
-   curl -LO https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.0.1/open-metric-fonts-web-1.0.1.zip
-   unzip -q open-metric-fonts-web-1.0.1.zip && mkdir -p public/docx-fonts/omf && cp -R open-metric-fonts-web-1.0.1/. public/docx-fonts/omf/
+   curl -LO https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.1.0/open-metric-fonts-web-1.1.0.zip
+   unzip -q open-metric-fonts-web-1.1.0.zip && mkdir -p public/docx-fonts/omf && cp -R open-metric-fonts-web-1.1.0/. public/docx-fonts/omf/
    ```
 
    ```powershell
-   Invoke-WebRequest https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.0.1/open-metric-fonts-web-1.0.1.zip -OutFile omf-web.zip
-   Expand-Archive omf-web.zip -DestinationPath . ; robocopy open-metric-fonts-web-1.0.1 public\docx-fonts\omf /E
+   Invoke-WebRequest https://github.com/open-metric-fonts/open-metric-fonts/releases/download/v1.1.0/open-metric-fonts-web-1.1.0.zip -OutFile omf-web.zip
+   Expand-Archive omf-web.zip -DestinationPath . ; robocopy open-metric-fonts-web-1.1.0 public\docx-fonts\omf /E
    ```
 
    (About 70 MB on disk, every family and alphabet; a browser still downloads only the files a document needs. Check
@@ -318,7 +318,7 @@ only `'self'`.
    npm installs it:
 
    ```bash
-   npm install @open-metric-fonts/overlook@1.0.1 @open-metric-fonts/morrow-sans@1.0.1   # ... the packages you want
+   npm install @open-metric-fonts/overlook@1.1.0 @open-metric-fonts/morrow-sans@1.1.0   # ... the packages you want
    mkdir -p public/docx-fonts/omf && cp -R node_modules/@open-metric-fonts/. public/docx-fonts/omf/
    ```
 
