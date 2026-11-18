@@ -2227,6 +2227,10 @@ export function createPages(view, session, { sheet, scope }) {
     const splits = new Map(); // table block index -> { rows: Map(row -> extra px), heads: [page top] }
     const paraSplits = new Map(); // paragraph block index -> { pushes: [{ pos, delta }], total }
     const colSplits = new Map(); // (columns) paragraph block index -> { cut, height }: its lines from cut go on in the next column
+    // (Columns: how often a paragraph moved on to a column it's taller than has been walked again, to be cut there. A
+    // bound: one that can't be cut there either moved on and was walked again for good, and the page never drew.)
+    const recut = new Map();
+    const RECUT_MAX = 8;
     // Tables set down at a place on their page (styles.js: --odx-fy) and the blocks moved below them: block index ->
     // [[block index, px]...] added to those blocks' margin-top; taken back off when the walk comes past the block again.
     const pulls = new Map();
@@ -2564,7 +2568,10 @@ export function createPages(view, session, { sheet, scope }) {
       }
       k = m; // re-check everything after the moved block
       // (In columns, a paragraph taller than the column it moved to: itself too, so it's cut at that column's foot.)
-      if (inCols && moved.node.type === schema.nodes.paragraph && moved.bottom + shift > contentBottom(target) + 1) k = m - 1;
+      if (inCols && moved.node.type === schema.nodes.paragraph && moved.bottom + shift > contentBottom(target) + 1 && (recut.get(moved.i) || 0) < RECUT_MAX) {
+        recut.set(moved.i, (recut.get(moved.i) || 0) + 1);
+        k = m - 1;
+      }
       breakPending = (!lineSplits || regs.some((r) => m >= r.k0 && m < r.k1)) && hasPageBreak(moved.node);
       breakKind = breakKindOf(moved.node);
       if (!inCols && moved.node.type === schema.nodes.paragraph) {
