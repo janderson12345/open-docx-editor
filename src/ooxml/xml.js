@@ -12,6 +12,54 @@ export const NS = {
   ct: 'http://schemas.openxmlformats.org/package/2006/content-types',
 };
 
+// The prefixes Word declares on a part's root, for XML kept from a part and parsed again on its own (a table's w:tblPr,
+// a run's w:rPr inside a tracked change): their declarations were left on the root (outerXml), and a browser won't
+// parse a prefix nothing declares (Word 2023's w16du:dateUtc on a tracked table change stopped documents opening).
+const PREFIX_NS = {
+  w: NS.w, r: NS.r, a: NS.a, wp: NS.wp, pic: NS.pic,
+  mc: 'http://schemas.openxmlformats.org/markup-compatibility/2006',
+  m: 'http://schemas.openxmlformats.org/officeDocument/2006/math',
+  v: 'urn:schemas-microsoft-com:vml',
+  o: 'urn:schemas-microsoft-com:office:office',
+  w10: 'urn:schemas-microsoft-com:office:word',
+  wne: 'http://schemas.microsoft.com/office/word/2006/wordml',
+  w14: 'http://schemas.microsoft.com/office/word/2010/wordml',
+  w15: 'http://schemas.microsoft.com/office/word/2012/wordml',
+  w16: 'http://schemas.microsoft.com/office/word/2018/wordml',
+  w16cex: 'http://schemas.microsoft.com/office/word/2018/wordml/cex',
+  w16cid: 'http://schemas.microsoft.com/office/word/2016/wordml/cid',
+  w16du: 'http://schemas.microsoft.com/office/word/2023/wordml/word16du',
+  w16se: 'http://schemas.microsoft.com/office/word/2015/wordml/symex',
+  w16sdtdh: 'http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash',
+  w16sdtfl: 'http://schemas.microsoft.com/office/word/2024/wordml/sdtformatlock',
+  wp14: 'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing',
+  wps: 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
+  wpg: 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup',
+  wpc: 'http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas',
+  a14: 'http://schemas.microsoft.com/office/drawing/2010/main',
+};
+
+/**
+ * Declarations (` xmlns:p="..."`) for the prefixes `xml` uses that `declared` (prefixes already declared where it will
+ * be parsed) doesn't hold: Word's own namespaces, and a stand-in for any other, so the piece parses. (Read only: a
+ * piece written back goes without them, under the part's root that declares them.)
+ */
+export function missingDecls(xml, declared = []) {
+  const have = new Set(['xml', 'xmlns', ...declared]);
+  // (Not again those its first tag declares: the declarations may be added to that tag, and twice is an error.)
+  const first = /^\s*<[^>]*>/.exec(String(xml))?.[0] || '';
+  for (const m of first.matchAll(/\sxmlns:([A-Za-z_][\w.-]*)\s*=/g)) have.add(m[1]);
+  let out = '';
+  for (const m of String(xml).matchAll(/(?:<\/?|\s)([A-Za-z_][\w.-]*):[A-Za-z_]/g)) {
+    const p = m[1];
+    if (have.has(p)) continue;
+    have.add(p);
+    if (have.size > 300) break;
+    out += ` xmlns:${p}="${Object.hasOwn(PREFIX_NS, p) ? PREFIX_NS[p] : `urn:odx:undeclared:${p}`}"`;
+  }
+  return out;
+}
+
 export const REL_TYPES = {
   officeDocument: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
   styles: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',

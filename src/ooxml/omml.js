@@ -1,7 +1,7 @@
 // Word equations (Office Math, m:oMath / m:oMathPara) drawn as MathML, which browsers lay out natively: fractions,
 // scripts, roots, n-ary operators (sums, integrals), delimiters, accents, bars, limits, functions, matrices and
 // equation arrays. Display only: the equation's own XML is what the document keeps and saves.
-import { parseXml, esc, elementKids as kidsOf, childNamed as child, childrenNamed } from './xml.js';
+import { parseXml, missingDecls, esc, elementKids as kidsOf, childNamed as child, childrenNamed } from './xml.js';
 
 const M = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
 
@@ -117,7 +117,7 @@ export function ommlToMathML(xml) {
   // (Kept as it stood in the document, its prefixes declared on the document's root: declared again around it.)
   let el;
   try {
-    const root = parseXml(`<x xmlns:m="${M}" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${xml}</x>`).documentElement;
+    const root = parseXml(`<x xmlns:m="${M}" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(xml, ['m', 'w'])}>${xml}</x>`).documentElement;
     el = kidsOf(root)[0];
   } catch { return null; }
   if (!el) return null;

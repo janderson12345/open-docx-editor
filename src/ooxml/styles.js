@@ -1,6 +1,6 @@
 // styles.xml, theme fonts and numbering.xml: read once per document, turned
 // into a CSS stylesheet for the editor and a list-label resolver.
-import { kids, kid, attr, onOff, NS, REL_TYPES } from './xml.js';
+import { kids, kid, attr, onOff, NS, REL_TYPES, missingDecls } from './xml.js';
 import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss, compoundSide, cellLines } from './props.js';
 import { twipsToPx } from './units.js';
 
@@ -411,7 +411,7 @@ export function tablePlacementCss(info, tblPrXml, compatMode, parseXml) {
   return memo.get(key);
 }
 function placementCss(info, tblPrXml, compatMode, parseXml) {
-  const el = parseXml(tblPrXml.replace(/^<w:tblPr/, '<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"')).documentElement;
+  const el = parseXml(tblPrXml.replace(/^<w:tblPr/, () => `<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(tblPrXml, ['w'])}`)).documentElement;
   const styleId = attr(kid(el, 'tblStyle'), 'val') || info.defaultTable;
   const ts = (styleId && resolveTableStyle(info.styles, styleId)) || { cellMar: {} };
   const mar = { ...ts.cellMar, ...readCellMar(kid(el, 'tblCellMar')) };
@@ -472,7 +472,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   let look = { firstRow: true, firstColumn: true, noVBand: true };
   let cellMar = {};
   if (tblPrXml) {
-    const el = parseXml(tblPrXml.replace(/^<w:tblPr/, '<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"')).documentElement;
+    const el = parseXml(tblPrXml.replace(/^<w:tblPr/, () => `<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(tblPrXml, ['w'])}`)).documentElement;
     styleId = attr(kid(el, 'tblStyle'), 'val');
     direct = readBorders(kid(el, 'tblBorders'));
     cellMar = readCellMar(kid(el, 'tblCellMar'));
@@ -547,7 +547,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       // Text running up (btLr) or down (tbRl) the cell: the cell is as tall as its text is long, not one letter a line.
       if (name === 'textDirection') dir = { btLr: 'sideways-lr', tbRl: 'vertical-rl', tbRlV: 'vertical-rl' }[(/w:val="(\w+)"/.exec(xml) || [])[1]] || null;
       if (name !== 'tcBorders' && name !== 'shd' && name !== 'tcMar') continue;
-      const el = parseXml(xml.replace(/^<w:(\w+)/, '<w:$1 xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"')).documentElement;
+      const el = parseXml(xml.replace(/^<w:(\w+)/, (m, n) => `<w:${n} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(xml, ['w'])}`)).documentElement;
       if (name === 'shd') shading = shdFill(el) ?? shading;
       else if (name === 'tcMar') Object.assign(cellPad, readCellMar(el));
       else Object.assign(edge, readBorders(el));

@@ -2,7 +2,7 @@
 // original package so every part we don't edit is written back unchanged.
 import { Node } from 'prosemirror-model';
 import { DocxPackage } from './package.js';
-import { REL_TYPES, NS, kids, parseXml, serializeXml, esc, startTag, startTags, tagAttr as attrOf, setTagAttr, elementText } from './xml.js';
+import { REL_TYPES, NS, kids, parseXml, serializeXml, esc, missingDecls, startTag, startTags, tagAttr as attrOf, setTagAttr, elementText } from './xml.js';
 import { readDocument, readStory } from './reader.js';
 import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from './writer.js';
 import { chunkKind } from './altchunk.js';
@@ -304,7 +304,7 @@ export class DocxSession {
         // (From another editor in the room: only the element its key names, with that id, and well-formed; anything
         // else is skipped, so a broken or stray definition can't go into the parts or stop the rest.)
         let src = null;
-        try { src = kids(parseXml(`<x xmlns:w="${NS.w}">${d.xml}</x>`).documentElement)[0]; } catch { continue; }
+        try { src = kids(parseXml(`<x xmlns:w="${NS.w}"${missingDecls(d.xml, ['w'])}>${d.xml}</x>`).documentElement)[0]; } catch { continue; }
         if (!src || src.namespaceURI !== NS.w || src.localName !== d.kind || src.getAttributeNS(NS.w, idAttr[d.kind]) !== String(d.id)) continue;
         const el = doc.importNode(src, true);
         const have = kids(root, d.kind).find((e) => e.getAttributeNS(NS.w, idAttr[d.kind]) === d.id);
@@ -709,7 +709,8 @@ export class DocxSession {
     const maxId = (els, a) => els.reduce((m, e) => Math.max(m, Number(e.getAttributeNS(NS.w, a)) || 0), 0);
     const absId = maxId(kids(root, 'abstractNum'), 'abstractNumId') + 1;
     const numId = String(maxId(kids(root, 'num'), 'numId') + 1);
-    const frag = parseXml(`<x xmlns:w="${NS.w}">${abstractXml(absId)}<w:num w:numId="${numId}"><w:abstractNumId w:val="${absId}"/></w:num></x>`);
+    const absXml = abstractXml(absId);
+    const frag = parseXml(`<x xmlns:w="${NS.w}"${missingDecls(absXml, ['w'])}>${absXml}<w:num w:numId="${numId}"><w:abstractNumId w:val="${absId}"/></w:num></x>`);
     const [abs, num] = kids(frag.documentElement);
     // All abstractNum elements must precede the num elements.
     root.insertBefore(doc.importNode(abs, true), kids(root, 'num')[0] || null);
@@ -789,7 +790,7 @@ export class DocxSession {
     const open = /<w:document\b[^>]*?>/.exec(this.originalXml)[0].replace(/^<w:document/, '<w:hdr').replace(/\s*\/>$/, '>');
     // (On the body's page when it's for the body: a box as wide as the column is a band there, not a float.)
     const s0 = body ? this.doc.attrs.sectPr : null;
-    const sect = s0 ? (/^<w:sectPr\b[^>]*xmlns:w=/.test(s0) ? s0 : s0.replace(/^<w:sectPr\b/, `<w:sectPr xmlns:w="${NS.w}"`)) : null;
+    const sect = s0 ? (/^<w:sectPr\b[^>]*xmlns:w=/.test(s0) ? s0 : s0.replace(/^<w:sectPr\b/, () => `<w:sectPr xmlns:w="${NS.w}"${missingDecls(s0, ['w'])}`)) : null;
     return Node.fromJSON(schema, readStory(parseXml(`${open}${inner}</w:hdr>`), this._resolvers, sect));
   }
 
