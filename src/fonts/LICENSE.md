@@ -450,7 +450,7 @@ If the Work includes a "NOTICE" text file as part of its distribution, then any 
 
 END OF TERMS AND CONDITIONS
 
-## odx Standin Sans and odx Standin Display (the Aptos stand-ins, odx-aptos-*.woff2: modified from Morrow Sans and Morrow Sans Display, @open-metric-fonts/morrow-sans 1.0.1)
+## odx Standin Sans and odx Standin Display (the Aptos stand-ins, odx-aptos-*.woff2: modified from Morrow Sans and Morrow Sans Display, @open-metric-fonts/morrow-sans 1.1.0)
 
 Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans); Copyright 2022 The Noto Project
 Authors (https://github.com/notofonts/latin-greek-cyrillic); Copyright 2026 The Open Metric Fonts Authors.

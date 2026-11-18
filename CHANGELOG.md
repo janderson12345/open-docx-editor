@@ -9,6 +9,9 @@
   Pro Semibold, Verdana Pro Semibold) is laid out at the regular face's widths, as Word lays out its faked bold: lines
   break on the same words as Word's in every browser (Firefox's faked bold had widened each letter, ending bold lines
   a word or two early).
+- **open-metric-fonts 1.1.0**: the stand-in fonts load from the 1.1.0 packages (cleaner letters: overlaps and cramped
+  or gapped letters fixed; same widths and line spacing), and the bundled Aptos stand-ins are rebuilt from Morrow Sans
+  1.1.0. `OMF_VERSION` is 1.1.0; the README's self-hosting steps name the 1.1.0 download.
 
 ## 0.8.3 (2026-11-17)
 
