@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **A justified, hyphenated document with Word's consecutive-hyphen limit settles once opened**: since 0.8.2 its
+  paragraphs were drawn again every 85ms for as long as it stayed open (measuring them for the limit was read as a
+  change in the page), using the processor and at times making a click miss.
+
 ## 0.8.3 (2026-11-17)
 
 - **Hardening from the release review**: bound controls' lookups are remembered and bounded (a crafted part of
