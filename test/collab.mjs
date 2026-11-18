@@ -166,6 +166,30 @@ const c = await open('C');
 check(await until(c, (id) => { const v = window.odx.view; let pos = -1; v.state.doc.forEach((n, p) => { if (pos < 0 && n.attrs.numId === id) pos = p; }); return pos >= 0 && v.nodeDOM(pos)?.getAttribute('data-label') === 'I.'; }, numId), 'an editor joining after numbers the paragraph in the new list');
 check(await heading(c) === headA, `... and draws the TOC Heading as A does (${await heading(c)})`);
 check(defsSaved(unzipSync(new Uint8Array(Buffer.from(await c.evaluate(() => [...window.odx.save()]))))), "... and its saved file has them");
+// Controls bound to custom XML (test/fixtures/mkbinding.mjs): A types into one; in B the other control bound to the
+// same node shows the value once (not twice: B only follows the steps A's editor made), B's header shows it, and
+// B's saved custom XML part has it; so does what an editor joining after saves.
+await a.evaluate((bytes) => window.odx.open(new Uint8Array(bytes), 'binding.docx'), [...fs.readFileSync('test/fixtures/binding.docx')]);
+check(await until(b, () => window.odx.view.state.doc.textContent.includes('Order no again: first order')), 'B follows A to the document with bound controls');
+await a.waitForTimeout(800);
+const orderRange = (page) => page.evaluate(() => {
+  let r = null;
+  window.odx.view.state.doc.descendants((n, pos) => { const m = n.isText && n.marks.find((k) => k.type.name === 'sdt' && k.attrs.tag === 'Order'); if (m) r = r ? { from: r.from, to: pos + n.nodeSize } : { from: pos, to: pos + n.nodeSize }; });
+  return r;
+});
+const ord = await orderRange(a);
+await a.evaluate(({ from, to }) => { const v = window.odx.view; v.focus(); v.dispatch(v.state.tr.insertText('shared order', from, to)); }, ord);
+check(await until(b, () => window.odx.view.state.doc.textContent.includes('Order no again: shared order')), "A's typing in a bound control shows in B's other control bound to it");
+await b.waitForTimeout(800);
+const bText = await text(b);
+check((bText.match(/shared order/g) || []).length === 2 && !bText.includes('shared ordershared order'), `... once each (${bText.slice(0, 120)})`);
+check(await until(b, () => [...document.querySelectorAll('.odx-hf')].some((e) => e.textContent.includes('Header order: shared order'))), "... and in B's header");
+const bBind = unzipSync(new Uint8Array(Buffer.from(await b.evaluate(() => [...window.odx.save()]))));
+check(/<order>shared order<\/order>/.test(strFromU8(bBind['customXml/item1.xml'])), "B's saved custom XML part has A's value");
+const d = await open('D');
+check(await until(d, () => window.odx.view.state.doc.textContent.includes('Order no again: shared order')), 'an editor joining after shows the value');
+const dBind = unzipSync(new Uint8Array(Buffer.from(await d.evaluate(() => [...window.odx.save()]))));
+check(/<order>shared order<\/order>/.test(strFromU8(dBind['customXml/item1.xml'])) && (strFromU8(dBind['word/document.xml']).match(/shared order/g) || []).length === 2, "... and saves it, in the part and the controls");
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 
 await browser.close();
