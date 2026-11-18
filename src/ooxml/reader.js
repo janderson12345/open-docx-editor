@@ -2,7 +2,7 @@
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
 import { shapesPad, shapeTurn, pictureFlip, turnedInside } from './shapes.js';
-import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, parseHtml, childNamed, elementKids } from './xml.js';
+import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, missingDecls, parseHtml, childNamed, elementKids } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
@@ -83,7 +83,7 @@ export function readStory(xmlDoc, { resolveImage = () => null, resolveLink = () 
 // when such a change is rejected.
 const FRAGMENT_NS = `xmlns:w="${NS.w}" xmlns:r="${NS.r}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"`;
 function fragment(xml) {
-  const root = parseXml(`<w:root ${FRAGMENT_NS}>${xml}</w:root>`).documentElement;
+  const root = parseXml(`<w:root ${FRAGMENT_NS}${missingDecls(xml, ['w', 'r', 'w14', 'mc'])}>${xml}</w:root>`).documentElement;
   const ctx = { rootNs: nsDecls(root), resolveImage: () => null, resolveLink: () => null, resolveChart: () => null, resolveShape: () => null };
   ctx.xml = (el) => outerXml(el, ctx.rootNs);
   return { root, ctx };
@@ -186,7 +186,7 @@ function chunkBlocks(el, ctx, out) {
   });
   if (wml == null) return false;
   let root;
-  try { root = parseXml(`<w:root xmlns:w="${NS.w}" xmlns:r="${NS.r}">${wml}</w:root>`).documentElement; } catch { return false; }
+  try { root = parseXml(`<w:root xmlns:w="${NS.w}" xmlns:r="${NS.r}"${missingDecls(wml, ['w', 'r'])}>${wml}</w:root>`).documentElement; } catch { return false; }
   const sub = { ...ctx, resolveLink: (id) => (links.has(id) ? links.get(id) : ctx.resolveLink(id)), xml: (e) => outerXml(e, nsDecls(root)) };
   const blocks = readBlocks(kids(root), sub);
   const fix = (n) => {
