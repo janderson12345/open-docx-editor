@@ -202,15 +202,12 @@ fs.writeFileSync('out.docx', s.save());
 
 ## Not yet
 
-- Tracked cell deletions (w:cellDel) are shown, accepted and rejected, but not recorded while tracking (the editor
-  has no "delete cells, shift left" of its own).
 - Co-editing shares headers, footers and notes only as each is closed after editing, not keystroke by keystroke.
-- PDF export falls back to the PDF standard fonts where it can't get the real one: in browsers without Local Font
-  Access (Firefox, Safari), when the user declines it, and for fonts neither installed nor embedded in the document.
-  Lines and pages are the layout's either way, but characters outside Windows-1252 (Hebrew, Arabic, Greek beyond
-  the Symbol font's) come out as "?".
-- In newspaper columns: a table longer than a whole column; line numbers sit left of the page's text, not each column.
+- Content controls bound to custom XML: a bound picture can't be changed from the editor (there is no Change Picture
+  command yet), a repeating section's items can't be added or removed from the editor (Word's + button), and deleting
+  all of an inline control's text removes the control rather than bringing back its placeholder.
 - Safari (WebKit) rounds each line to a whole pixel, so long documents can break a page a line earlier than Word.
+- WOPI hosting is tested against a stand-in host, not yet a real one with its own login and proof keys.
 
 See the roadmap in docs/ARCHITECTURE.md.
 
