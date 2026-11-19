@@ -579,10 +579,10 @@ export function pPrToCss(p) {
     // auto: a multiple of the font's single line; exact: fixed; atLeast: the larger of the two.
     if (!p.lineRule || p.lineRule === 'auto') {
       css.push(`--odx-lhv:calc(var(--odx-lh, 1.17) * ${+(p.line / 240).toFixed(4)});--odx-mult:${+(p.line / 240).toFixed(4)};--odx-runmult:${+(p.line / 240).toFixed(4)}`);
-      // Under a single line, the empty-paragraph floor (editor.css) by the same multiple: Word's lines are that much
-      // shorter, empty or not (generated documents: ten paragraphs at 0.25 lines 3.8px apart in the body, an empty one at
-      // 0.06 lines under a footer's text taking 1px, the footer that much lower and the text above it a line longer).
-      if (p.line > 0 && p.line < 240) css.push(`min-height:${+(1.15 * p.line / 240).toFixed(4)}em`);
+      // Under a single line, an empty paragraph's floor (editor.css) by the same multiple: Word's empty line is that much
+      // shorter (generated documents: ten empty paragraphs at 0.25 lines 3.8px apart in the body; one at 0.06 lines under a
+      // footer's text taking 1px, the footer that much lower and the text above it a line longer).
+      if (p.line > 0 && p.line < 240) css.push(`--odx-floor:${+(1.15 * p.line / 240).toFixed(4)}em`);
     }
     else if (p.lineRule === 'exact') css.push(`--odx-lhv:${twipsToPt(p.line)}pt;--odx-mult:1;--odx-runmult:0;--odx-lhlen:1;min-height:0`); // runs in other fonts can't make it taller, nor the empty-paragraph floor (sample S085's 11.2pt headings in 10pt Times)
     else css.push(`--odx-lhv:max(${twipsToPt(p.line)}pt, calc(var(--odx-lh, 1.17) * 1em));--odx-mult:1;--odx-runmult:1;--odx-lhlen:1;--odx-atleast:${twipsToPt(p.line)}pt`);
