@@ -656,7 +656,7 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
-  function splitTable(b, shift, tableFirstOnPage) {
+  function splitTable(b, shift, tableFirstOnPage, chainAtTop = false) {
     const { rows, headerRows } = b;
     const headH = headerRows ? rows[headerRows - 1].bottom - rows[0].top : 0;
     const pushes = new Map();
@@ -682,7 +682,7 @@ export function createPages(view, session, { sheet, scope }) {
         while (s > headerRows && rowKeeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
         if (s < j) {
           const topS = rows[s].top + shift + extraAt[s];
-          const firstS = s === 0 ? tableFirstOnPage : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
+          const firstS = s === 0 ? tableFirstOnPage || chainAtTop : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
           const tall = rows[j].bottom - rows[s].top + headH > pageHeight(pg + 1);
           if (!firstS && !tall && s <= headerRows && !tableFirstOnPage) return null;
           if (!firstS && !tall && s > headerRows) {
@@ -2071,6 +2071,20 @@ export function createPages(view, session, { sheet, scope }) {
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
   const outOfFlow = (el) => { const cs = getComputedStyle(el); return cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed'; };
+  // Whether a floating table leaves room beside it for text. Word wraps only short words into a strip under half an inch
+  // (single letters from 18px, a four-letter word not in 22px), and none into 16px; the text after such a table goes
+  // below it, and the table breaks across pages row by row as one in the flow does (generated documents: a table of 40
+  // rows from mid-page, 24px narrower than the column, split at the page's foot; two in a row each split too). Laid out
+  // in the flow, it does both here.
+  const ROOM_BESIDE = 48;
+  function roomBeside(t) {
+    const host = t.parentElement;
+    if (!host) return true;
+    const hs = getComputedStyle(host), ts = getComputedStyle(t);
+    const inner = host.clientWidth - (parseFloat(hs.paddingLeft) || 0) - (parseFloat(hs.paddingRight) || 0);
+    const used = t.getBoundingClientRect().width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
+    return inner - used >= ROOM_BESIDE;
+  }
   function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
@@ -2211,7 +2225,8 @@ export function createPages(view, session, { sheet, scope }) {
     doc.forEach((node, pos, i) => {
       const t = topEls ? topEls[i] : view.nodeDOM(pos);
       if (!t || t.nodeType !== 1) return;
-      if (getComputedStyle(t).float !== 'none' && t.getBoundingClientRect().height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      if (getComputedStyle(t).float === 'none') return;
+      if (t.getBoundingClientRect().height > pageHeight(0) || (node.type === schema.nodes.table && !roomBeside(t))) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
     });
     const colRegs = colRegions(doc);
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);
@@ -2340,6 +2355,28 @@ export function createPages(view, session, { sheet, scope }) {
       carryOn(k, cs);
       breakPending = false;
       return true;
+    };
+    // Whether the blocks before block k that keep with it (keep with next) reach back to page p's top: moving them on
+    // with the table's first rows gains nothing, and Word breaks the table where it runs out of room instead (generated
+    // documents: a heading kept with a table of 70 rows each keeping with the next, on the next page with its first 55
+    // rows; it had been left there alone, the table starting the page after).
+    // Whether a block keeps with the one after it: a paragraph set to; a table whose rows all do (a paragraph in each
+    // first cell keeps with the next), whole on page p, as Word moves such a table on with the paragraph after it that
+    // doesn't fit (generated documents: five rows ending 5px above the foot, every paragraph in them kept with the next,
+    // on page 2 under the empty paragraph after it; without the keeps, on page 1).
+    const keepsOn = (blk, p) => {
+      if (blk.node.type !== schema.nodes.table) return keep(blk.node);
+      if (!blk.node.childCount || splits.has(blk.i)) return false;
+      for (let j = 0; j < blk.node.childCount; j++) if (!rowKeeps(blk.node.child(j))) return false;
+      return pageOf(blk.top + shift) === p;
+    };
+    const keptFromTop = (k, p) => {
+      for (let m = k - 1; m >= 0 && keepsOn(blocks[m], p); m--) {
+        const t = blocks[m].top + shift;
+        if (pageOf(t) !== p) return false;
+        if (t <= contentTop(p) + 1) return true;
+      }
+      return false;
     };
     for (let k = 0; k < blocks.length; k++) {
       const b = blocks[k];
@@ -2522,7 +2559,7 @@ export function createPages(view, session, { sheet, scope }) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
-        const split = b.rows && splitTable(b, shift, firstOnPage);
+        const split = b.rows && splitTable(b, shift, firstOnPage, !firstOnPage && keptFromTop(k, p));
         if (split) {
           splits.set(b.i, split);
           shift += split.total;
@@ -2545,7 +2582,7 @@ export function createPages(view, session, { sheet, scope }) {
         // takes a paragraph on with the one it keeps with column by column, to the next page's first column at most.
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
-        while (m > 0 && keep(blocks[m - 1].node) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
       }
       const moved = blocks[m];
       // With "page break before" or a new section Word keeps the paragraph's space before.
