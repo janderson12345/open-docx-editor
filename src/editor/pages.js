@@ -17,7 +17,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
-import { storyDrawer, hfNodes, settleStoryShapes } from './hfstory.js';
+import { storyDrawer, hfNodes, settleStoryShapes, flowHeight } from './hfstory.js';
 import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
@@ -32,6 +32,7 @@ import { applyLineFix, lineGrid, storyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
 import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
+import { applyTableClear } from './tableclear.js';
 import { settleHyphens } from './hyphenate.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
@@ -75,6 +76,14 @@ const cellTable = (el) => (el.tagName === 'TABLE' ? el : el.classList.contains('
 // it a single line the page couldn't split, the paragraph moved on whole; Word breaks such a paragraph as any other,
 // the shape staying with its first lines (wrap-word3 vt-thin: Text 7's three lines beside its rectangle at page 1's
 // foot, the rest on page 2 the column's width).
+// A paragraph with nothing on its line: no content, or only drawings out of the line (floating or set where they are,
+// reader.js anchorCss), as a section's closing paragraph holding the cover page's pictures (Word kept such a paragraph,
+// 12px past the footer's room, on its page; moved on alone, it made a blank page before the next section).
+const lineless = (node) => {
+  let only = true;
+  node.forEach((c) => { if (!(c.type === schema.nodes.image && /(?:^|;)\s*(?:position:absolute|float:(?:left|right))/.test(c.attrs.place || ''))) only = false; });
+  return only;
+};
 const bothShape = (e) => e.tagName === 'IMG' && !!e.style.getPropertyValue('--odx-both') && getComputedStyle(e).position === 'absolute';
 
 const GAP = 24; // px between sheets
@@ -1528,7 +1537,7 @@ export function createPages(view, session, { sheet, scope }) {
       settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
-      heights.set(doc, el.getBoundingClientRect().height);
+      heights.set(doc, flowHeight(el)); // (what floats in it doesn't count: hfstory.js flowHeight)
       el.remove();
     }
     return heights.get(doc);
@@ -2213,6 +2222,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
     if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
+    if (applyTableClear(view)) return schedule(); // a table that doesn't fit beside a float moved under it: measure again
     // (Its own pass: a view update only lays out again when the document changed, and a squeeze that settled after
     // everything else (lines split beside a shape, wrapboth.js) had left the pages undrawn.)
     if (applySqueeze(view, session)) return schedule(); // lines changed: measure again once they're drawn
@@ -2445,7 +2455,7 @@ export function createPages(view, session, { sheet, scope }) {
       // (Less the space after the paragraph above: Word drops it at the page's foot, so a page filled exactly keeps its
       // section's empty last paragraph.)
       // (Not after a column break: that paragraph goes to the next column, and a next-page section starts the page after.)
-      if (!firstOnPage && !b.node.childCount && sectEnds.get(b.i) && !(breakPending && breakKind === 'column') && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
+      if (!firstOnPage && lineless(b.node) && sectEnds.get(b.i) && !(breakPending && breakKind === 'column') && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
       // (In columns of their own widths, a paragraph's bottom at the width of the column it's in: atColumnWidth.)
       const wide = inCols ? atColumnWidth(b, cols || inReg, p, shift, top <= contentTop(p) + 1) : null;
       const bottom = wide ? wide.bottom : b.bottom;

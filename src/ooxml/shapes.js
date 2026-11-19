@@ -376,7 +376,10 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           // Words keep their trailing spaces; a word that doesn't fit starts the next line (one wider than a whole line in
           // a box fitted to the column, WordArt's, broken letter by letter, as Word breaks it).
           const words = [];
-          for (const word of n.textContent.match(/\S*\s*/g).filter(Boolean)) {
+          // (All caps, w:caps, from the run or its styles: drawn in capitals, as Word does; a header banner's bound title
+          // had kept its lower case.)
+          const text = on('caps', 'caps') ? n.textContent.toUpperCase() : n.textContent;
+          for (const word of text.match(/\S*\s*/g).filter(Boolean)) {
             if (!fit || textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
             let part = '', partW = 0;
             for (const ch of word) {

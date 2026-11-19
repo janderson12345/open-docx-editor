@@ -1213,6 +1213,45 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   });
   check(r.text1 < 0 && Math.abs(r.text2 - 55) <= 2, `an empty paragraph after a table placed down from the text with no room beside it goes under it (${JSON.stringify(r)})`);
 }
+// Tables beside floats (mkfloatroom.mjs): one indented past the room a page-top logo leaves beside it starts under the
+// logo, as in Word's PDF of it (the logo's foot at 113.9px, the table's first line at 128.7px; it had stayed beside the
+// logo, 6px higher); one that fits beside a logo placed from its paragraph stays beside it, moved over to its wrap
+// distance.
+{
+  await open('float-room.docx');
+  const r = await page.evaluate(() => {
+    const logos = [...document.querySelectorAll('.odx-content img')].map((i) => i.getBoundingClientRect()).filter((q) => q.height > 50 && q.width > 50).sort((a, b) => a.top - b.top);
+    const tables = [...document.querySelectorAll('.odx-content > .tableWrapper > table, .odx-content > table')].map((t) => t.getBoundingClientRect());
+    const r1 = (v) => Math.round(v * 10) / 10;
+    return logos.length === 2 && tables.length === 2 ? { under: r1(tables[0].top - logos[0].bottom), besideTop: r1(tables[1].top - logos[1].bottom), besideLeft: r1(tables[1].left - logos[1].right) } : { logos: logos.length, tables: tables.length };
+  });
+  check(r.under >= -0.5 && r.under < 2 && r.besideTop < -40 && r.besideLeft >= 11 && r.besideLeft < 13.5,
+    `a table that doesn't fit beside a float starts under it; one that fits stays beside it, at its wrap distance (${JSON.stringify(r)})`);
+}
+// A header holding a logo wrapped square beside its paragraph, reaching into the body's top margin, and a floating table
+// placed 10pt above the paragraph after it (mkfloatroom.mjs): Word starts the body at its top margin (its first line's
+// text 110px down in Word's PDF; it had been under the logo, 145px) and draws the table 13.3px above that paragraph.
+{
+  await open('header-float.docx');
+  const r = await page.evaluate(() => {
+    const s0 = document.querySelector('.odx-sheet').getBoundingClientRect();
+    const hf = document.querySelector('.odx-sheet .odx-hf');
+    const t = hf?.querySelector('table');
+    const after = t?.nextElementSibling;
+    const first = document.querySelector('.odx-content > p');
+    const r1 = (v) => Math.round(v * 10) / 10;
+    return { body: r1(first.getBoundingClientRect().top - s0.top), table: t && after ? r1(t.getBoundingClientRect().top - after.getBoundingClientRect().top) : null };
+  });
+  check(Math.abs(r.body - 96) < 1.5 && r.table != null && Math.abs(r.table + 13.33) < 1.5,
+    `a header's floats don't push the body down; its floating table placed above its paragraph is drawn there (${JSON.stringify(r)})`);
+}
+// A section's closing paragraph holding only a picture, its top above the footer's room and its foot in it
+// (mkfloatroom.mjs): Word keeps it on its page, two pages in all (it had gone on alone: a blank page, three).
+{
+  await open('sect-hang.docx');
+  const sheets = await page.evaluate(() => document.querySelectorAll('.odx-sheet').length);
+  check(sheets === 2, `a section's closing paragraph of only a picture stays on its page, as an empty one does (${sheets} pages; Word 2)`);
+}
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
 // same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
