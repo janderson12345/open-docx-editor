@@ -475,7 +475,9 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     const side = (gap, room) => (wSet ? `max(${gap}px, min(${room}, calc((24px + ${gap}px - ${room}) * 1000)))` : `${gap}px`);
     const x = +(left + tw('tblpX')).toFixed(2), lft = +tw('leftFromText').toFixed(2), rft = +tw('rightFromText').toFixed(2);
     const y = tw('tblpY');
-    const down = y > twipsToPx(100) && v === 'text' && !attr(fp, 'tblpYSpec');
+    // (No vertAnchor with room beside it, against the margin in Word: placed so too, down from where it is, with the text
+    // after it filling the room above and beside it; the samples' such tables open their documents, at the margin.)
+    const down = y > twipsToPx(100) && (v === 'text' || !v) && !attr(fp, 'tblpYSpec');
     // Placed down from the paragraph it's anchored to with no room beside it: the empty paragraphs after it are marked
     // (editor.js, --odx-fnoroom) to go under it, as in Word (a line with nothing on it fits beside a float in no room).
     if (down && wSet && colW && (right ? colW - wSet - lft : colW - x - wSet - rft) < 24) css.push('--odx-fnoroom:1');
