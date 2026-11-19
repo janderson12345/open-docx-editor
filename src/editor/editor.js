@@ -427,8 +427,9 @@ function paragraphPlugin(session) {
         }
         // A cell whose end mark is left out of its row's height (w:hideMark): its last paragraph, empty, takes no room, its
         // spacing and size with it (Word: a row of such cells is as tall as its cells' margins; one with text, or an
-        // unmarked empty cell beside it, keeps its line). Still there, at no height, for the caret.
-        if (parent.type === schema.nodes.table_cell && !node.childCount && (parent.attrs.tcPr || []).some((x) => x[0] === 'hideMark') && lastIn(parent) === node) {
+        // unmarked empty cell beside it, keeps its line). Still there, at no height, for the caret. (Not a numbered one:
+        // Word keeps its line, as it would its number's.)
+        if (parent.type === schema.nodes.table_cell && !node.childCount && !l && (parent.attrs.tcPr || []).some((x) => x[0] === 'hideMark') && lastIn(parent) === node) {
           style.push('height:0', 'min-height:0', 'margin-top:0', 'margin-bottom:0', 'padding-top:0', 'padding-bottom:0', 'overflow:hidden');
         }
         prev = { node, pos, attrs, style, cs, bdr, list: l };
