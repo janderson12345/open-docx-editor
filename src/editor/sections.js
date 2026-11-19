@@ -92,10 +92,14 @@ export function sectionBreaks(doc, session, page, storyHeight) {
     // Word moves the body down when the header reaches past the top margin.
     // (But the page keeps a line of body text however tall they are, as Word's does: a footer longer than the page leaves
     // one line at its top, each page of the body one line.)
+    // (A page with no header (or footer) of its kind has none to move the body: its margin, whatever its header distance.
+    // A first-page header alone, a 1in header distance over a 0.26in top margin: pages 2 on had their text from 1in down,
+    // where Word's start at the margin.)
     const fit = (type) => {
       const H = m.height || page.height;
-      const top = Math.min(Math.max(m.top, m.hf.headerDist + storyHeight(m.hf.header[type])), Math.max(m.top, H - m.bottom - BODY_LINE));
-      const bottom = Math.min(Math.max(m.bottom, m.hf.footerDist + storyHeight(m.hf.footer[type])), Math.max(m.bottom, H - top - BODY_LINE));
+      const hs = m.hf.header[type], fs = m.hf.footer[type];
+      const top = hs ? Math.min(Math.max(m.top, m.hf.headerDist + storyHeight(hs)), Math.max(m.top, H - m.bottom - BODY_LINE)) : m.top;
+      const bottom = fs ? Math.min(Math.max(m.bottom, m.hf.footerDist + storyHeight(fs)), Math.max(m.bottom, H - top - BODY_LINE)) : m.bottom;
       return { top, bottom };
     };
     if (m.hf.titlePg) m.first = fit('first');

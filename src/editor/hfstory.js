@@ -61,6 +61,7 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
  * `el` must be in the document, to be measured.
  */
 export function settleStoryShapes(el) {
+  placeStoryShapes(el);
   const below = [];
   for (const img of el.querySelectorAll('img[style*="--odx-hfwrap"]')) {
     const p = img.closest('p');
@@ -73,6 +74,50 @@ export function settleStoryShapes(el) {
     const now = img.getBoundingClientRect();
     img.style.translate = `${(at.left - now.left).toFixed(2)}px ${(at.top - now.top).toFixed(2)}px`;
   }
+}
+
+/**
+ * A header's or footer's shapes placed against the page or its margins (reader.js anchorCss: --odx-lrel wrapped round,
+ * --odx-arel not), set there out of the story's flow, as Word draws them: from the page's top, or from the margin's,
+ * which is where the body starts on that page (pushed down by a header taller than its margin), aligned in that if they
+ * say so. They had stayed where their paragraph is: a header's page-placed banner (wrapped square) drawn at the header's
+ * top, half an inch below where Word puts it, its paragraph pushed down under it and the body with it (a third of an
+ * inch in the samples), and a logo placed above the margin pulled down with the body.
+ * The page's geometry comes from `el.dataset` (odxPh: the page's height, odxMtop and odxMbot: where its body starts and
+ * how far from the foot it ends), set where the page is drawn; without it (a story measured for its height) the shapes
+ * only leave the flow. Their side to side position stays.
+ */
+function placeStoryShapes(el) {
+  const imgs = [...el.querySelectorAll('img[style*="--odx-lrel"], img[style*="--odx-arel"]')];
+  if (!imgs.length) return;
+  const d = el.dataset;
+  const geo = d.odxPh != null ? { ph: Number(d.odxPh), mtop: Number(d.odxMtop), mbot: Number(d.odxMbot), top: el.offsetTop } : null;
+  const lefts = imgs.map((img) => img.offsetLeft);
+  imgs.forEach((img, i) => {
+    const st = img.style;
+    const v = (k) => st.getPropertyValue(k).trim();
+    const lifted = !!v('--odx-lrel');
+    const rel = lifted ? v('--odx-lrel') : v('--odx-arel');
+    const off = parseFloat(lifted ? v('--odx-ly') : v('--odx-ay')) || 0;
+    const align = lifted ? v('--odx-lyalign') : v('--odx-ayalign');
+    st.float = 'none';
+    st.position = 'absolute';
+    st.marginTop = '0';
+    st.left = `${lefts[i]}px`;
+    st.marginLeft = '0';
+    if (!geo || !Object.values(geo).every(Number.isFinite)) return;
+    // Its area on the page (px from the page's top): the page, its margin box, or the margin above or below it.
+    const [from, span] = rel === 'margin' ? [geo.mtop, geo.ph - geo.mtop - geo.mbot] : rel === 'topMargin' ? [0, geo.mtop]
+      : rel === 'bottomMargin' ? [geo.ph - geo.mbot, geo.mbot] : [0, geo.ph];
+    const h = img.offsetHeight;
+    const y = align === 'top' ? from : align === 'center' ? from + (span - h) / 2 : align === 'bottom' ? from + span - h : from + off;
+    // (Its top in its containing block, which may be its paragraph: from where it is now, at the story's zoom.)
+    st.top = '0px';
+    const er = el.getBoundingClientRect();
+    const scale = el.offsetHeight ? er.height / el.offsetHeight : 1;
+    const now = img.getBoundingClientRect().top;
+    st.top = `${((er.top + (y - geo.top) * scale - now) / (scale || 1)).toFixed(2)}px`;
+  });
 }
 
 /**

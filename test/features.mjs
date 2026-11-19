@@ -1101,6 +1101,23 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   });
   check(r.probes === 0 && r.tracked === 0, `measuring probes stay out of the document's paragraphs; an untouched tracked document gains no changes (${JSON.stringify(r)})`);
 }
+// A first-page header (and no other) with its distance far below a small top margin, holding a picture placed against
+// the page, wrapped square (mkhdrplace.mjs). Word's PDF of it: the picture 48px down and 192px in, the first page's
+// text from under the header's line, the other pages' from the top margin (their first line's text 38.7px down in Word's
+// PDF, 140px on the first page).
+{
+  await open('header-page-placed.docx');
+  const r = await page.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.odx-sheet')];
+    const img = sheets[0]?.querySelector('.odx-hf img');
+    const s0 = sheets[0].getBoundingClientRect(), s1 = sheets[1]?.getBoundingClientRect();
+    const firstText = (top) => { for (const p of document.querySelectorAll('.odx-content > p')) { const q = p.getBoundingClientRect(); if (q.top >= top && q.height) return Math.round((q.top - top) * 10) / 10; } return null; };
+    const ir = img?.getBoundingClientRect();
+    return { imgTop: ir && Math.round((ir.top - s0.top) * 10) / 10, imgLeft: ir && Math.round((ir.left - s0.left) * 10) / 10, page1: firstText(s0.top), page2: s1 && firstText(s1.top) };
+  });
+  check(Math.abs(r.imgTop - 48) <= 1 && Math.abs(r.imgLeft - 192) <= 1 && r.page1 > 100 && r.page2 < 40,
+    `a header's picture placed against the page, as Word draws it; pages without a header from the top margin (${JSON.stringify(r)})`);
+}
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
 // same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
