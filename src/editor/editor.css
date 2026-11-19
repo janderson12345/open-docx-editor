@@ -72,6 +72,7 @@
 .odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]:only-child)::after { content: "\200b"; }
 .odx-content { position: relative; box-sizing: border-box; outline: none; white-space: pre-wrap; word-wrap: break-word; min-height: 1em; }
 :where(.odx-content, .odx-hf) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
+:where(.odx-content, .odx-hf) p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: var(--odx-floor, 1.15em); } /* an empty paragraph's floor: shorter under spacing below a single line (props.js) */
 /* Lines as tall as the text on them, as in Word (textspans.js): a paragraph's line height is carried in --odx-lhv, which
    inherits as line-height does; the paragraph and the elements around its text have line-height 0 (no strut of their
    own on each line), and the text (odx-t), content drawn as it is (fields, labels) and an empty paragraph's line take
