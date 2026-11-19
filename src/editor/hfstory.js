@@ -5,6 +5,7 @@ import { TableMap } from 'prosemirror-tables';
 import { schema } from './schema.js';
 import { tableCellCss, tablePlacementCss } from '../ooxml/styles.js';
 import { parseXml } from '../ooxml/xml.js';
+import { twipsToPx } from '../ooxml/units.js';
 import { fontStack, lineFactor } from '../ooxml/props.js';
 import { deletedWhole } from './pararules.js';
 import { wrapText } from './textspans.js';
@@ -27,6 +28,11 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
     const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml);
     // (A note's tables don't float: Word has no text wrapping in notes, and puts one that says so in the note's flow.)
     if (place && !(note && /(?:^|;)float:/.test(place))) dom.style.cssText += ';' + place;
+    // (Floating, placed from the text above its own place: up too, as Word draws it in a header (its PDF: a table at
+    // tblpY -200 starts 10pt above the paragraph after it; it had been drawn at that paragraph's top). The body's own
+    // floating tables keep theirs at 0 or below, pages.js.)
+    const up = !note && /(?:^|;)float:/.test(place) && !/\bw:vertAnchor="page"/.test(t.attrs.tblPr || '') ? /\bw:tblpY="(-\d{1,6})"/.exec(t.attrs.tblPr || '') : null;
+    if (up) dom.style.top = `${Math.max(-1440, twipsToPx(Number(up[1]))).toFixed(2)}px`;
     const map = TableMap.get(t);
     const cells = [];
     const seen = new Set();
@@ -60,6 +66,25 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
  * where Word keeps both as without the shape (footwrap-word fw-header, a rectangle 250pt below its header paragraph).
  * `el` must be in the document, to be measured.
  */
+/**
+ * A header's or footer's height as Word sets the body clear of it: down to its last block in the flow, through that
+ * block's space after. What floats in it (a picture wrapped square or tight, a floating table) reaches below that without
+ * moving the body, which wraps round it instead (Word's PDFs: a header's 60pt logo wrapped square beside its paragraph,
+ * reaching 26pt into the body's top margin, and a floating table 6 rows tall under an empty paragraph, the body's first
+ * line where it is with no header; both had pushed the body down under them).
+ */
+export function flowHeight(el) {
+  const ecs = getComputedStyle(el);
+  const top = el.getBoundingClientRect().top + (parseFloat(ecs.borderTopWidth) || 0);
+  let bottom = top + (parseFloat(ecs.paddingTop) || 0);
+  for (const c of el.children) {
+    const cs = getComputedStyle(c);
+    if (cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed' || cs.display === 'none') continue;
+    bottom = Math.max(bottom, c.getBoundingClientRect().bottom + Math.max(0, parseFloat(cs.marginBottom) || 0));
+  }
+  return bottom - top + (parseFloat(ecs.paddingBottom) || 0) + (parseFloat(ecs.borderBottomWidth) || 0);
+}
+
 export function settleStoryShapes(el) {
   placeStoryShapes(el);
   const below = [];
