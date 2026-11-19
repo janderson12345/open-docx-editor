@@ -451,8 +451,16 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // Set down at a place on its page (vertAnchor page or margin): out of the floats, in its own band; pagination
     // (pages.js, floatBands) puts it there and lets the text after it fill the page above and below it, as Word does
     // (the contingency plan's validation table at 9877tw down page 4, the captions after it in the file above it).
-    // (No vertAnchor: against the margin, as Word reads it, with the text after it filling the page above it.)
-    const v = attr(fp, 'vertAnchor') || 'margin';
+    // Its width: set (dxa), or for one of no set width its grid's.
+    const tblW = kid(el, 'tblW');
+    const wTw = tblW && attr(tblW, 'type') === 'dxa' ? Number(attr(tblW, 'w')) : tblW && attr(tblW, 'type') === 'pct' ? NaN : gridTw;
+    const wSet = Number.isFinite(wTw) && wTw > 0 ? +twipsToPx(Math.min(31680, wTw)).toFixed(2) : 0;
+    // (No vertAnchor: against the margin, as Word reads it, with the text after it filling the page above it; when no
+    // text fits beside it, as the band lays it out. With room beside it, a float, as before: the band would put the text
+    // Word sets beside it under it, a landscape page's 200px beside a table of 9625tw.)
+    const v0 = attr(fp, 'vertAnchor');
+    const noRoom = wSet && colW && colW - (left + tw('tblpX')) - wSet - tw('rightFromText') < 24;
+    const v = v0 || (noRoom ? 'margin' : null);
     if ((v === 'page' || v === 'margin') && !attr(fp, 'tblpYSpec')) {
       const x = attr(fp, 'horzAnchor') === 'page' ? `calc(${tw('tblpX')}px - var(--odx-page-left, 96px))` : `${left + tw('tblpX')}px`;
       return [`margin-left:${x}`, `--odx-fy:${tw('tblpY')}px`, `--odx-fyrel:${v}`, `--odx-fyb:${tw('bottomFromText')}px`, `--odx-fyt:${tw('topFromText')}px`].join(';');
@@ -464,9 +472,6 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // Less than a quarter inch left beside a table of a set width (or of no set width, its grid's) takes no text in Word
     // (21.5px left of the column beside it stayed empty, 24.9px took short words; nor an empty paragraph, which would
     // fit any room): that room is its margin too.
-    const tblW = kid(el, 'tblW');
-    const wTw = tblW && attr(tblW, 'type') === 'dxa' ? Number(attr(tblW, 'w')) : tblW && attr(tblW, 'type') === 'pct' ? NaN : gridTw;
-    const wSet = Number.isFinite(wTw) && wTw > 0 ? +twipsToPx(Math.min(31680, wTw)).toFixed(2) : 0;
     const side = (gap, room) => (wSet ? `max(${gap}px, min(${room}, calc((24px + ${gap}px - ${room}) * 1000)))` : `${gap}px`);
     const x = +(left + tw('tblpX')).toFixed(2), lft = +tw('leftFromText').toFixed(2), rft = +tw('rightFromText').toFixed(2);
     const y = tw('tblpY');

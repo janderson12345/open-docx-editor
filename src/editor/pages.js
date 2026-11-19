@@ -2238,7 +2238,10 @@ export function createPages(view, session, { sheet, scope }) {
       const t = topEls ? topEls[i] : view.nodeDOM(pos);
       if (!t || t.nodeType !== 1) return;
       if (getComputedStyle(t).float === 'none') return;
-      if (t.getBoundingClientRect().height > pageHeight(0) || (node.type === schema.nodes.table && !roomBeside(t))) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      // (Not one placed down from the text with no room beside it, styles.js --odx-fnoroom: it stays a float, so the
+      // text after it fills the room above it, as in Word, and its empty paragraphs go under it, editor.js.)
+      const above = node.type === schema.nodes.table && /--odx-fnoroom/.test(t.getAttribute('style') || '');
+      if (t.getBoundingClientRect().height > pageHeight(0) || (node.type === schema.nodes.table && !above && !roomBeside(t))) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
     });
     const colRegs = colRegions(doc);
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);
