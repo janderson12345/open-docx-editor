@@ -2071,6 +2071,20 @@ export function createPages(view, session, { sheet, scope }) {
   // widgets inside split paragraphs and cells, baseline shifts and lifted floats. Returns the CSS and the header rows to
   // draw again.
   const outOfFlow = (el) => { const cs = getComputedStyle(el); return cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed'; };
+  // Whether a floating table leaves room beside it for text. Word wraps only short words into a strip under half an inch
+  // (single letters from 18px, a four-letter word not in 22px), and none into 16px; the text after such a table goes
+  // below it, and the table breaks across pages row by row as one in the flow does (generated documents: a table of 40
+  // rows from mid-page, 24px narrower than the column, split at the page's foot; two in a row each split too). Laid out
+  // in the flow, it does both here.
+  const ROOM_BESIDE = 48;
+  function roomBeside(t) {
+    const host = t.parentElement;
+    if (!host) return true;
+    const hs = getComputedStyle(host), ts = getComputedStyle(t);
+    const inner = host.clientWidth - (parseFloat(hs.paddingLeft) || 0) - (parseFloat(hs.paddingRight) || 0);
+    const used = t.getBoundingClientRect().width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
+    return inner - used >= ROOM_BESIDE;
+  }
   function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
@@ -2211,7 +2225,8 @@ export function createPages(view, session, { sheet, scope }) {
     doc.forEach((node, pos, i) => {
       const t = topEls ? topEls[i] : view.nodeDOM(pos);
       if (!t || t.nodeType !== 1) return;
-      if (getComputedStyle(t).float !== 'none' && t.getBoundingClientRect().height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      if (getComputedStyle(t).float === 'none') return;
+      if (t.getBoundingClientRect().height > pageHeight(0) || (node.type === schema.nodes.table && !roomBeside(t))) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
     });
     const colRegs = colRegions(doc);
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);
