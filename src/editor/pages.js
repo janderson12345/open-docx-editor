@@ -2910,12 +2910,12 @@ export function createPages(view, session, { sheet, scope }) {
     }
     // Lifted floats read where pages are from the layout before (liftFloats): settle them on the gapless pages.
     if (view.dom.querySelector('img[style*="--odx-lrel"], img[style*="--odx-arel"]')) for (let k = 0; k < 2; k++) { if (frame) cancelAnimationFrame(frame); layout(); }
-    if (engineOn()) buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope);
+    if (engineOn()) buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope, quiet);
     printBox?.remove();
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
+  const afterPrint = () => { removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 
@@ -2951,8 +2951,8 @@ export function createPages(view, session, { sheet, scope }) {
      *  returns a function removing it. */
     printLayer() {
       if (!engineOn()) return () => {};
-      buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope);
-      return () => removePrintLines(sheet);
+      buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope, quiet);
+      return () => removePrintLines(sheet, quiet);
     },
     pageTop: (p) => pageTop(p),
     get pages() { return pages; },
