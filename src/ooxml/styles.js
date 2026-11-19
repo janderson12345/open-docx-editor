@@ -413,15 +413,29 @@ export function tableStylesCss(scope, info, theme) {
 // The same table properties give the same placement: remembered per document's styles (the editor asks again for every
 // table on every keystroke, and parsing their XML was most of a long document's typing time).
 const placements = new WeakMap(); // info -> Map(key -> css)
-export function tablePlacementCss(info, tblPrXml, compatMode, parseXml) {
+// (gridXml: the table's w:tblGrid, whose columns give a floating table of no set width its width; colW: the column's
+// width in px, when known.)
+export function tablePlacementCss(info, tblPrXml, compatMode, parseXml, gridXml = null, colW = 0) {
   if (!tblPrXml) return compatMode < 15 ? 'margin-left:-7.2px' : '';
   if (!placements.has(info)) placements.set(info, new Map());
   const memo = placements.get(info);
-  const key = `${compatMode}|${tblPrXml}`;
-  if (!memo.has(key)) memo.set(key, placementCss(info, tblPrXml, compatMode, parseXml));
+  const floats = tblPrXml.includes('tblpPr');
+  const gridTw = floats && gridXml ? gridWidthTw(gridXml) : 0;
+  const cw = floats && Number.isFinite(colW) ? Math.min(2112, Math.max(0, Math.round(colW * 100) / 100)) : 0;
+  const key = `${compatMode}|${gridTw}|${cw}|${tblPrXml}`;
+  if (!memo.has(key)) memo.set(key, placementCss(info, tblPrXml, compatMode, parseXml, gridTw, cw));
   return memo.get(key);
 }
-function placementCss(info, tblPrXml, compatMode, parseXml) {
+/** The sum of a w:tblGrid's columns in twips (each bounded: 0 to 31680, 22in). */
+function gridWidthTw(gridXml) {
+  let sum = 0;
+  for (const m of String(gridXml).matchAll(/<w:gridCol\b[^>]*\bw:w="([^"]*)"/g)) {
+    const w = Number(m[1]);
+    if (Number.isFinite(w)) sum += Math.min(31680, Math.max(0, w));
+  }
+  return Math.min(31680, sum);
+}
+function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0) {
   const el = parseXml(tblPrXml.replace(/^<w:tblPr/, () => `<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(tblPrXml, ['w'])}`)).documentElement;
   const styleId = attr(kid(el, 'tblStyle'), 'val') || info.defaultTable;
   const ts = (styleId && resolveTableStyle(info.styles, styleId)) || { cellMar: {} };
@@ -437,7 +451,8 @@ function placementCss(info, tblPrXml, compatMode, parseXml) {
     // Set down at a place on its page (vertAnchor page or margin): out of the floats, in its own band; pagination
     // (pages.js, floatBands) puts it there and lets the text after it fill the page above and below it, as Word does
     // (the contingency plan's validation table at 9877tw down page 4, the captions after it in the file above it).
-    const v = attr(fp, 'vertAnchor');
+    // (No vertAnchor: against the margin, as Word reads it, with the text after it filling the page above it.)
+    const v = attr(fp, 'vertAnchor') || 'margin';
     if ((v === 'page' || v === 'margin') && !attr(fp, 'tblpYSpec')) {
       const x = attr(fp, 'horzAnchor') === 'page' ? `calc(${tw('tblpX')}px - var(--odx-page-left, 96px))` : `${left + tw('tblpX')}px`;
       return [`margin-left:${x}`, `--odx-fy:${tw('tblpY')}px`, `--odx-fyrel:${v}`, `--odx-fyb:${tw('bottomFromText')}px`, `--odx-fyt:${tw('topFromText')}px`].join(';');
@@ -446,8 +461,27 @@ function placementCss(info, tblPrXml, compatMode, parseXml) {
     css.push('width:fit-content', `float:${right ? 'right' : 'left'}`, `position:relative;z-index:1`);
     // At the right, its edge is on the margin and its distance from the text is on its left (rightFromText is the
     // gap a table at the left keeps from the text after it), as in Word.
-    css.push(`margin-left:${right ? tw('leftFromText') : left + tw('tblpX')}px`, `margin-right:${right ? 0 : tw('rightFromText')}px`, `margin-bottom:${tw('bottomFromText')}px`);
-    if (tw('tblpY') > 0 && attr(fp, 'vertAnchor') !== 'page') css.push(`top:${tw('tblpY')}px`);
+    // Less than a quarter inch left beside a table of a set width (or of no set width, its grid's) takes no text in Word
+    // (21.5px left of the column beside it stayed empty, 24.9px took short words; nor an empty paragraph, which would
+    // fit any room): that room is its margin too.
+    const tblW = kid(el, 'tblW');
+    const wTw = tblW && attr(tblW, 'type') === 'dxa' ? Number(attr(tblW, 'w')) : tblW && attr(tblW, 'type') === 'pct' ? NaN : gridTw;
+    const wSet = Number.isFinite(wTw) && wTw > 0 ? +twipsToPx(Math.min(31680, wTw)).toFixed(2) : 0;
+    const side = (gap, room) => (wSet ? `max(${gap}px, min(${room}, calc((24px + ${gap}px - ${room}) * 1000)))` : `${gap}px`);
+    const x = +(left + tw('tblpX')).toFixed(2), lft = +tw('leftFromText').toFixed(2), rft = +tw('rightFromText').toFixed(2);
+    const y = tw('tblpY');
+    const down = y > twipsToPx(100) && v === 'text' && !attr(fp, 'tblpYSpec');
+    // Placed down from the paragraph it's anchored to with no room beside it: the empty paragraphs after it are marked
+    // (editor.js, --odx-fnoroom) to go under it, as in Word (a line with nothing on it fits beside a float in no room).
+    if (down && wSet && colW && (right ? colW - wSet - lft : colW - x - wSet - rft) < 24) css.push('--odx-fnoroom:1');
+    css.push(`margin-left:${right ? side(lft, `calc(100% - ${wSet}px)`) : `${x}px`}`, `margin-right:${right ? '0px' : side(rft, `calc(100% - ${x}px - ${wSet}px)`)}`, `margin-bottom:${tw('bottomFromText')}px`);
+    // Placed down from the paragraph it's anchored to: there, with the text after it filling the room above it (its
+    // margin, which no line wraps around) and wrapping beside it below, as in Word (a table 1in down from the text had
+    // been drawn there over the text, which went on under it from where it starts).
+    // (Under 100tw, room for no line above it: drawn that far down where it is, as before; the samples with such
+    // offsets, most 36 to 71tw, lost lines laid out the other way, 121 documents.)
+    if (down) css.push(`margin-top:${+y.toFixed(2)}px`, `shape-outside:inset(${+y.toFixed(2)}px 0 0 0)`);
+    else if (y > 0 && v !== 'page') css.push(`top:${y}px`);
     return css.join(';');
   }
   // A centred table of a set width wider than the column overhangs both margins equally, as in Word (auto margins
