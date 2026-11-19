@@ -6,6 +6,7 @@
 // - two numIds over one abstract list count as one list for it;
 // - a web style's auto spacing turned off outright (w:afterAutospacing="0", w:after="150"): the items keep 7.5pt;
 //   a plain w:after over that style, not turning it off, is still the auto 14pt;
+// - a 10pt Symbol bullet over the style's 12pt text: no taller than a plain line;
 // - an empty paragraph whose mark is in the theme's font (w:asciiTheme, Calibri) under the Times style: a Calibri line.
 import '../setup.js';
 import fs from 'fs';
@@ -29,6 +30,8 @@ const body = [
   P('auto-b1', num(1) + BA), P('auto-b2', num(2) + BA), P('auto-b3', num(2) + BA), P('auto-b4'),
   P('Turned off'),
   P('off-1', WEB + num(1) + OFF), P('off-2', WEB + num(1) + OFF), P('off-3', WEB + num(1) + OFF), P('off-4', WEB + '<w:spacing w:after="150"/>'), P('off-5'),
+  P('Small bullets'),
+  P('small-1', num(3)), P('small-2', num(3)), P('small-3', num(3)), P('small-4'), P('small-5'),
   P('Empty theme mark'),
   P('mark-1'), P('', '', THEME + '<w:sz w:val="24"/>'), P('mark-2'), P('', ''), P('mark-3'),
 ].join('');
@@ -42,7 +45,8 @@ const normal = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:
 const web = '<w:style w:type="paragraph" w:styleId="NormalWeb"><w:name w:val="Normal (Web)"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:afterAutospacing="1"/></w:pPr></w:style>';
 files['word/styles.xml'] = strToU8(stylesXml.replace(/<w:style w:type="paragraph" w:default="1" w:styleId="Normal">[\s\S]*?<\/w:style>/, normal).replace('</w:styles>', `${web}</w:styles>`));
 const lvl = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>';
-files['word/numbering.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0">${lvl}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/></w:num></w:numbering>`);
+const bullet = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w:sz w:val="20"/></w:rPr></w:lvl>';
+files['word/numbering.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0">${lvl}</w:abstractNum><w:abstractNum w:abstractNumId="1">${bullet}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="3"><w:abstractNumId w:val="1"/></w:num></w:numbering>`);
 const ct = '[Content_Types].xml', rels = 'word/_rels/document.xml.rels';
 if (!strFromU8(files[ct]).includes('/word/numbering.xml')) files[ct] = strToU8(strFromU8(files[ct]).replace('</Types>', '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>'));
 if (!strFromU8(files[rels]).includes('numbering.xml')) files[rels] = strToU8(strFromU8(files[rels]).replace('</Relationships>', '<Relationship Id="rIdNum" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>'));
