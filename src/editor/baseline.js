@@ -226,31 +226,38 @@ export function shiftFor(el, host, anchored = false) {
 }
 
 /**
- * CSS for the print-only shift of each top-level paragraph whose first run is in a font we know.
- * `blocks`: [{ el, i }] in document order; `scope`: the editor's class.
+ * The print-only shift of each top-level paragraph whose first run is in a font we know, as a custom property for the
+ * block itself (block index -> its style; pages.js puts it on the block, a node decoration): --odx-pshift, or
+ * --odx-pshifta for one holding anchored pictures (its text moved, not the paragraph: position:relative would make it
+ * their containing block, and move them; rotpic-word's text beside a floating picture at 1.16 printed 0.7px low,
+ * unshifted). (Not a rule each on its place among its siblings, :nth-child: those are tried on every element at each
+ * restyle of the print, and of each page's copy of the sheet (printcopies.js); a 535-page document's 2,500 of them kept
+ * its print from finishing in 10 minutes.) `blocks`: [{ el, i, node }] in document order.
  */
-export function baselineCss(blocks, scope, host) {
-  const rules = [];
+export function blockShifts(blocks, host) {
+  const out = new Map();
   // (An unchanged paragraph keeps its shift, as cellShifts' do: reading every paragraph's formatting again each pass
   // took 80ms a keystroke in a 750-page document.)
   if (blockEpoch !== fontLoads) { blockMemo = new WeakMap(); blockEpoch = fontLoads; }
   for (const { el, i, node } of blocks) {
-    // One holding anchored pictures: its text moved, not the paragraph (position:relative would make it their containing
-    // block, and move them): rotpic-word's text beside a floating picture at 1.16 printed 0.7px low, unshifted.
     const anchored = el.tagName === 'P' && !!el.querySelector(':scope > [style*="position: absolute"], :scope > [style*="position:absolute"]');
     let d = node ? blockMemo.get(node) : undefined;
     if (d === undefined) { d = shiftFor(el, host, anchored); if (node) blockMemo.set(node, d); }
-    if (d && anchored) rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :not([style*="position: absolute"], [style*="position:absolute"], img[style*="float:"], img.odx-wrap-block){position:relative;top:${d}px}`);
-    else if (d) {
-      rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}){position:relative;top:${d}px}`);
-      // Its floating pictures (wrapped round on one side, or top and bottom) drawn back where they were: the shift is the
-      // text's, Word draws them at their offsets (wrap-word5 sb-sqright, sb-tb: rectangles 0.8pt lower than Word's, as
-      // much as the text's shift, where those not in the flow were at their place).
-      if (el.tagName === 'P' && el.querySelector(':scope > img[style*="float:"], :scope > img.odx-wrap-block')) {
-        rules.push(`.${scope}:not(.odx-bl-off) > .odx-content > :nth-child(${i + 1}) > :is(img[style*="float:"], img.odx-wrap-block){translate:0 ${-d}px}`);
-      }
-    }
+    if (d) out.set(i, `${anchored ? '--odx-pshifta' : '--odx-pshift'}:${d}px`);
   }
+  return out;
+}
+
+/** The print-only baseline shifts' rules (the top-level paragraphs' from blockShifts, cells', headers' and footers'). */
+export function baselineCss(scope) {
+  const rules = [];
+  const on = `.${scope}:not(.odx-bl-off) > .odx-content > `;
+  rules.push(`${on}[style*="--odx-pshifta:"] > :not([style*="position: absolute"], [style*="position:absolute"], img[style*="float:"], img.odx-wrap-block){position:relative;top:var(--odx-pshifta)}`);
+  rules.push(`${on}[style*="--odx-pshift:"]{position:relative;top:var(--odx-pshift)}`);
+  // Its floating pictures (wrapped round on one side, or top and bottom) drawn back where they were: the shift is the
+  // text's, Word draws them at their offsets (wrap-word5 sb-sqright, sb-tb: rectangles 0.8pt lower than Word's, as
+  // much as the text's shift, where those not in the flow were at their place).
+  rules.push(`${on}p[style*="--odx-pshift:"] > :is(img[style*="float:"], img.odx-wrap-block){translate:0 calc(-1 * var(--odx-pshift))}`);
   // Paragraphs in table cells carry their shift as --odx-bl (see cellShifts), headers' and footers' too (hfShifts).
   rules.push(`.${scope}:not(.odx-bl-off) td > p[style*="--odx-bl"]{position:relative;top:var(--odx-bl)}`);
   rules.push(`.odx-hf p[style*="--odx-bl:"]{position:relative;top:var(--odx-bl)}`);
