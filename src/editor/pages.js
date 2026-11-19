@@ -2760,6 +2760,8 @@ export function createPages(view, session, { sheet, scope }) {
           const h = story(header, 'odx-header', numText, pages);
           // (In the section's own side margins: sample S106's 0.75in sections under a 1in last one.)
           h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          // (The page's geometry, for its shapes placed against the page or margins: hfstory.js placeStoryShapes.)
+          Object.assign(h.dataset, { odxPh: pageH(p), odxMtop: marginsAt(p).top, odxMbot: marginsAt(p).bottom });
           // A header reaching most of the way down the page (past 70% of it) is cut off 60px above the middle of the page,
           // as Word draws it. (Word's PDFs of the generated documents: a 0.8-page header cut there, a 0.6-page one whole.)
           if (hf.headerDist + storyHeight(header) > pageH(p) * (1 - HF_FAR)) h.style.cssText += `;max-height:${Math.max(0, pageH(p) / 2 - HF_GAP - hf.headerDist)}px;overflow:hidden`;
@@ -2778,6 +2780,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (footer) {
           const f = story(footer, 'odx-footer', numText, pages);
           f.style.cssText = `bottom:${hf.footerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          Object.assign(f.dataset, { odxPh: pageH(p), odxMtop: marginsAt(p).top, odxMbot: marginsAt(p).bottom });
           // A footer reaching most of the way up the page (above 30% of it) starts 46pt below the middle of the page and is
           // cut off at its distance from the foot, as Word draws it (not running up off the page).
           const fTop = pageH(p) / 2 + HF_GAP + 4 / 3;
