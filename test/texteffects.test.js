@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { DocxSession } from '../src/ooxml/docx.js';
-import { w14Color, textEffectsCss, setThemeColors, innerShadowFilter, svgTextEffects, bevelFx, hasTextEffects } from '../src/ooxml/texteffects.js';
+import { w14Color, textEffectsCss, setThemeColors, innerShadowFilter, svgTextEffects, bevelFx, hasTextEffects, shadowRoom } from '../src/ooxml/texteffects.js';
 import { WORDART, wordArtItems, wordArtRPr } from '../src/ooxml/wordart.js';
 
 // Word 2010's text effects as Word writes them (odx-test/mkeffects14.ps1: Word's own XML for each effect set through
@@ -28,7 +28,13 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   assert.match(css, /-webkit-text-fill-color:#FFFFFF/);
   const sh = textEffectsCss(items('<w14:shadow w14:blurRad="38100" w14:dist="71843" w14:dir="2700113" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="b"><w14:srgbClr w14:val="808080"><w14:alpha w14:val="30000"/></w14:srgbClr></w14:shadow>')).join(';');
   assert.match(sh, /text-shadow:4pt 4pt 3pt rgba\(128,128,128,0.7\)/);
-  assert.doesNotMatch(sh, /--odx-grow/);
+  // Its room: none above (its 4pt drop is more than its 3pt blur), 7pt times the size's share below (Word's PDF at 36pt
+  // Arial: 4.05pt; texteffects.js shadowRoom).
+  assert.doesNotMatch(sh, /--odx-grow|--odx-sh-up/);
+  assert.match(sh, /--odx-sh-down:calc\(0.868pt \+ 0.0966em\)/);
+  assert.deepEqual(shadowRoom(0, 0, 0), null);
+  assert.deepEqual(shadowRoom(50800, 0, 0), ['calc(0.496pt + 0.0552em)', 'calc(0.496pt + 0.0552em)']);
+  assert.deepEqual(shadowRoom(1e12, -5, NaN), ['calc(12.4pt + 1.38em)', 'calc(12.4pt + 1.38em)']); // (bounded: 100pt at most)
   const glow = textEffectsCss(items('<w14:glow w14:rad="127000"><w14:srgbClr w14:val="00B050"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:glow>')).join(';');
   assert.match(glow, /0 0 10pt rgba\(0,176,80,0.4\)/);
   assert.match(glow, /--odx-glow:10pt rgba\(0,176,80,0.4\)/);
