@@ -1077,6 +1077,30 @@ await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.emulateMedia({ media: 'screen' });
 check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.includes('\u00ad') && /<w:suppressAutoHyphens\/>/.test(hySaved) && hyPrinted > 0,
   `automatic hyphenation: break points shown, not saved, printed with hyphens (${JSON.stringify({ ...hy, hyPrinted })})`);
+// Nothing the layout measures with is put inside the document's own paragraphs: the editor reads a change there as an
+// edit made in the page and draws the paragraph again from it. A probe measuring a run in another font than its
+// paragraph's went there, and with Track Changes on a document of tables with merged cells saved, untouched, its tables
+// twice over as tracked deletions and insertions (mktrackmixed.mjs: tracked, merged cells, mixed fonts).
+{
+  await page.evaluate(() => {
+    window.__inContent = 0;
+    const content = () => document.querySelector('.odx-content');
+    window.__probeWatch?.disconnect();
+    window.__probeWatch = new MutationObserver((list) => {
+      for (const m of list) for (const n of m.addedNodes) {
+        if (n.nodeType === 1 && n.getAttribute('aria-hidden') === 'true' && /visibility:\s*hidden/.test(n.getAttribute('style') || '') && content()?.contains(m.target)) window.__inContent++;
+      }
+    });
+    window.__probeWatch.observe(document.body, { subtree: true, childList: true });
+  });
+  await open('track-mixed-table.docx');
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(() => {
+    window.__probeWatch.disconnect();
+    return { probes: window.__inContent, tracked: document.querySelectorAll('.odx-content ins.odx-ins, .odx-content del.odx-del').length };
+  });
+  check(r.probes === 0 && r.tracked === 0, `measuring probes stay out of the document's paragraphs; an untouched tracked document gains no changes (${JSON.stringify(r)})`);
+}
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
 // same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
