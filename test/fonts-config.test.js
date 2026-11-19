@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { VERSION, FONTS_CDN } from '../src/index.js';
-import { fontStack, setFontSubstitutes } from '../src/ooxml/props.js';
+import { fontStack, setFontSubstitutes, lineFactor } from '../src/ooxml/props.js';
 
 test('src/version.js is the package\'s version, and the stand-ins load from that release on jsDelivr', () => {
   assert.equal(VERSION, JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
@@ -19,4 +19,10 @@ test('a host\'s substitute comes after the font itself and before the editor\'s 
   assert.match(fontStack('Grandview'), /^"Grandview", "Inter", sans-serif$/);
   assert.match(fontStack('Aptos'), /^"Aptos", "Source Sans 3", "odx-aptos"/);
   assert.match(fontStack('Calibri'), /^"Calibri", "Carlito"/);
+});
+
+test('"Times" is drawn and measured as Times New Roman, as Windows and Word print it', () => {
+  assert.equal(fontStack('Times'), fontStack('Times New Roman'));
+  assert.equal(fontStack('TIMES'), fontStack('Times New Roman'));
+  assert.equal(lineFactor('Times'), lineFactor('Times New Roman'));
 });
