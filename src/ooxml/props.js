@@ -507,7 +507,9 @@ const LINE = {
   'segoe ui': 1.3301, 'segoe ui light': 1.3301, 'segoe ui semibold': 1.3301, verdana: 1.2153, tahoma: 1.2070,
   georgia: 1.1362, aptos: 1.2207, 'aptos display': 1.2207, 'century schoolbook': 1.2021, century: 1.2021, 'aptos narrow': 1.2207, 'open sans': 1.3618, 'noto sans': 1.362, 'noto serif': 1.362,
   ubuntu: 1.149, 'arial unicode ms': 1.3398, roboto: 1.1719, lato: 1.2, candara: 1.2207, corbel: 1.2207, constantia: 1.2207,
-  'trebuchet ms': 1.1621, 'comic sans ms': 1.3936, impact: 1.2197, 'arial black': 1.4097,
+  // (Arial Narrow: its Windows ascent + descent, Word's 11.473pt at 10pt and 13.769pt at 12pt; measured in the browser
+  // from its hhea it came out 1.13, lines of 1.08 and 1.15 spacing 0.2pt short each, 10px a page in the samples.)
+  'arial narrow': 1.1474, 'trebuchet ms': 1.1621, 'comic sans ms': 1.3936, impact: 1.2197, 'arial black': 1.4097,
   'ms gothic': 1.3, // (not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
 };
 const measured = new Map();
