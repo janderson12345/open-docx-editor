@@ -272,7 +272,9 @@ function paragraphPlugin(session) {
           edgePrev = null;
           floatGap = null;
           if (node.type === schema.nodes.table) {
-            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, parent === doc ? page.width - page.left - page.right : 0);
+            // (Its column: its own section's, which may be narrower than the last's, a portrait page before landscape ones.)
+            const own = parent === doc ? sides.get(index) || [0, 0] : null;
+            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, own ? page.width - page.left - page.right - own[0] - own[1] : 0);
             if (!/(?:^|;)float:/.test(place || '')) { tableEdges(node, before); edgePrev = mark; }
             noRoom = /--odx-fnoroom/.test(place || '') ? 40 : 0;
             // A floating table in the text between two paragraphs: Word keeps both their spaces, the one after the first
