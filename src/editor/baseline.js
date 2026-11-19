@@ -35,6 +35,9 @@ const OFFSET = {
 // above the baseline (Word's PDFs: 12pt Calibri raised 3pt in 10pt text, 17.11pt lines), where ASCENT has hhea's
 // ascender plus line gap, which the print offsets below were fitted on.
 const WORD_ASCENT = { calibri: 0.9521, 'calibri light': 0.9521, carlito: 0.9521, consolas: 0.9199 };
+// (Looked up by the font a document names: no prototype, so "constructor" finds nothing.)
+Object.setPrototypeOf(ASCENT, null);
+Object.setPrototypeOf(OFFSET, null);
 /** Word's ascent per em of a font ASCENT knows (its lowercase family name). */
 export const wordAscent = (family) => (Object.hasOwn(WORD_ASCENT, family) ? WORD_ASCENT[family] : ASCENT[family]);
 /** The first family of a computed style's stack that ASCENT knows, lowercase, or ''. */

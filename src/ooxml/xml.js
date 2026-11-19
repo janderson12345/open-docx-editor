@@ -47,7 +47,9 @@ const PREFIX_NS = {
 export function missingDecls(xml, declared = []) {
   const have = new Set(['xml', 'xmlns', ...declared]);
   // (Not again those its first tag declares: the declarations may be added to that tag, and twice is an error.)
-  const first = /^\s*<[^>]*>/.exec(String(xml))?.[0] || '';
+  // (Its end found past quoted values: a ">" in one isn't the tag's end. The three branches start on different
+  // characters, so the match is linear.)
+  const first = /^\s*<(?:[^>"']|"[^"]*"|'[^']*')*>/.exec(String(xml))?.[0] || '';
   for (const m of first.matchAll(/\sxmlns:([A-Za-z_][\w.-]*)\s*=/g)) have.add(m[1]);
   let out = '';
   for (const m of String(xml).matchAll(/(?:<\/?|\s)([A-Za-z_][\w.-]*):[A-Za-z_]/g)) {
