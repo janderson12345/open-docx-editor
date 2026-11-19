@@ -161,7 +161,10 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
   noteMarks = null;
   const layer = document.createElement('div');
   layer.className = LAYER;
-  sheet.append(layer);
+  // (Built off the page and put on it once, its copies measured after: reading the page's paragraphs between copies
+  // added to it laid the whole page out again for each one, 30s and more for a document of a few thousand table
+  // paragraphs.)
+  const placed = []; // [line copy, its original line, the paragraph's shift]
   // Inside an .odx-content of its own, so the editor's paragraph rules (list labels, line heights) apply to the lines;
   // not a direct child of the sheet, so the rules on the document's own blocks by position don't.
   const host = document.createElement('div');
@@ -304,14 +307,7 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
         if (cutL || cutR) line.style.clipPath = `inset(-50px ${cutR}px -50px ${cutL}px)`;
       }
       at.append(line);
-      // Where the clone's text sits in it, then move it so the text lands on the original line's, plus the shift.
-      const lt = line.getBoundingClientRect().top;
-      const t0 = texts(line).find((n) => !boxed(n, line));
-      let off = 0;
-      if (t0) { r.selectNodeContents(t0); off = (r.getClientRects()[0]?.top ?? lt) - lt; }
-      // Edge rounds the line's text offset inside the clone when printing: compensate with the rounded one.
-      const y = ln.top - origin.top - Math.round(off) + d;
-      line.style.transform = `translateY(${y.toFixed(3)}px)`;
+      placed.push([line, ln, d]);
     });
     // Its borders and shading: the paragraph is hidden in print, so its box is drawn here, under its lines (a framed
     // paragraph's box, a ruled heading's line).
@@ -326,6 +322,17 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
     }
     hide.push(`.${scope} > ${pathOf(el, sheet)}`);
   }
+  sheet.append(layer);
+  // Where each copy's text sits in it (all read, then all moved): moved so the text lands on its original line's, plus
+  // the shift. Edge rounds the line's text offset inside the copy when printing: compensated with the rounded one.
+  const ys = placed.map(([line, ln, d]) => {
+    const lt = line.getBoundingClientRect().top;
+    const t0 = texts(line).find((n) => !boxed(n, line));
+    let off = 0;
+    if (t0) { r.selectNodeContents(t0); off = (r.getClientRects()[0]?.top ?? lt) - lt; }
+    return ln.top - origin.top - Math.round(off) + d;
+  });
+  placed.forEach(([line], i) => { line.style.transform = `translateY(${ys[i].toFixed(3)}px)`; });
   const style = document.createElement('style');
   // A rule each: one selector the browser can't read would drop a combined rule for all of them.
   style.textContent = hide.map((sel) => `${sel}{visibility:hidden !important}`).join('\n');
