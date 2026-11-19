@@ -6,7 +6,8 @@
 // - two numIds over one abstract list count as one list for it;
 // - a web style's auto spacing turned off outright (w:afterAutospacing="0", w:after="150"): the items keep 7.5pt;
 //   a plain w:after over that style, not turning it off, is still the auto 14pt;
-// - a 10pt Symbol bullet over the style's 12pt text: no taller than a plain line;
+// - a 10pt Symbol bullet over the style's 12pt text: no taller than a plain line; a 10pt Courier New "o" too; and a
+//   Symbol bullet sized only by a 10pt paragraph mark, over 11pt text;
 // - an empty paragraph whose mark is in the theme's font (w:asciiTheme, Calibri) under the Times style: a Calibri line.
 import '../setup.js';
 import fs from 'fs';
@@ -21,6 +22,8 @@ const BA = '<w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:af
 const B = '<w:spacing w:before="100" w:beforeAutospacing="1" w:after="0"/>';
 const WEB = '<w:pStyle w:val="NormalWeb"/>';
 const OFF = '<w:spacing w:before="0" w:beforeAutospacing="0" w:after="150" w:afterAutospacing="0"/>';
+const T11 = '<w:pStyle w:val="T11"/>';
+const MK = '<w:sz w:val="20"/><w:szCs w:val="20"/>';
 const THEME = '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/>';
 
 const body = [
@@ -34,6 +37,11 @@ const body = [
   P('small-1', num(3)), P('small-2', num(3)), P('small-3', num(3)), P('small-4'), P('small-5'),
   P('Empty theme mark'),
   P('mark-1'), P('', '', THEME + '<w:sz w:val="24"/>'), P('mark-2'), P('', ''), P('mark-3'),
+  '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
+  P('Courier bullets'),
+  P('cour-1', num(4)), P('cour-2', num(4)), P('cour-3', num(4)), P('cour-4'), P('cour-5'),
+  P('Mark-sized bullets', T11),
+  P('msz-1', T11 + num(5), MK), P('msz-2', T11 + num(5), MK), P('msz-3', T11 + num(5), MK), P('msz-4', T11), P('msz-5', T11),
 ].join('');
 
 const files = unzipSync(blankDocxBytes());
@@ -42,11 +50,14 @@ files[main] = strToU8(strFromU8(files[main]).replace(/<w:body>[\s\S]*?(<w:sectPr
 const stylesXml = strFromU8(files['word/styles.xml']);
 const TNR = '<w:rFonts w:ascii="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:sz w:val="24"/><w:szCs w:val="24"/>';
 const normal = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr>${TNR}</w:rPr></w:style>`;
+const t11 = '<w:style w:type="paragraph" w:customStyle="1" w:styleId="T11"><w:name w:val="T11"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style>';
 const web = '<w:style w:type="paragraph" w:styleId="NormalWeb"><w:name w:val="Normal (Web)"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:afterAutospacing="1"/></w:pPr></w:style>';
-files['word/styles.xml'] = strToU8(stylesXml.replace(/<w:style w:type="paragraph" w:default="1" w:styleId="Normal">[\s\S]*?<\/w:style>/, normal).replace('</w:styles>', `${web}</w:styles>`));
+files['word/styles.xml'] = strToU8(stylesXml.replace(/<w:style w:type="paragraph" w:default="1" w:styleId="Normal">[\s\S]*?<\/w:style>/, normal).replace('</w:styles>', `${web}${t11}</w:styles>`));
 const lvl = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>';
 const bullet = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w:sz w:val="20"/></w:rPr></w:lvl>';
-files['word/numbering.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0">${lvl}</w:abstractNum><w:abstractNum w:abstractNumId="1">${bullet}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="3"><w:abstractNumId w:val="1"/></w:num></w:numbering>`);
+const cour = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="o"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default"/><w:sz w:val="20"/></w:rPr></w:lvl>';
+const sym = '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl>';
+files['word/numbering.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0">${lvl}</w:abstractNum><w:abstractNum w:abstractNumId="1">${bullet}</w:abstractNum><w:abstractNum w:abstractNumId="2">${cour}</w:abstractNum><w:abstractNum w:abstractNumId="3">${sym}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="3"><w:abstractNumId w:val="1"/></w:num><w:num w:numId="4"><w:abstractNumId w:val="2"/></w:num><w:num w:numId="5"><w:abstractNumId w:val="3"/></w:num></w:numbering>`);
 const ct = '[Content_Types].xml', rels = 'word/_rels/document.xml.rels';
 if (!strFromU8(files[ct]).includes('/word/numbering.xml')) files[ct] = strToU8(strFromU8(files[ct]).replace('</Types>', '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>'));
 if (!strFromU8(files[rels]).includes('numbering.xml')) files[rels] = strToU8(strFromU8(files[rels]).replace('</Relationships>', '<Relationship Id="rIdNum" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>'));

@@ -163,14 +163,17 @@ export function labelLine(node, session, l, label, run, style) {
   const lblSize = label != null && (listLevel(session.numbering, l.numId, l.ilvl)?.size || markSize(node) || session.styleRunProp(node.attrs.styleId, 'size') || 20);
   // (Also smaller than text in its style's size, no run setting one: a 10pt Symbol bullet over 12pt Times adds nothing
   // to Word's line, its top under the text's; drawn at the text's size it made each item 1.2px taller.)
-  // (Only a size the level sets itself, where no run sets one: runs of mixed sizes leave run.size empty too, their text
-  // not the style's size; and a smaller paragraph mark under unsized text, or a number in a smaller size, keeps the old
-  // drawing, unmeasured in Word. Samples 3024 and 2620 lost lines with those.)
+  // (A size the level sets itself, any bullet font, where no run sets one: Courier New's "o" in 10pt over 12pt text too,
+  // samples 1203 and 3751. A size from the paragraph mark for a Symbol bullet: a 10pt mark under 12pt or 11pt Times,
+  // unsized, adds nothing to Word's line (a new Word test; samples 3128, 3851), nor under runs of mixed sizes, which
+  // leave run.size empty (sample 1687). A number in a smaller size keeps the old drawing, unmeasured in Word.)
   let sized = false;
   node.descendants((c) => { if (!sized && c.isText && c.marks.some((m) => m.type.name === 'size')) sized = true; return !sized; });
   const lvlSize = label != null && Number(listLevel(session.numbering, l.numId, l.ilvl)?.size || 0);
   const styleSize = Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20);
-  if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : !sized && lvlSize && lvlSize < styleSize && /^symbol/i.test(lvlFont || ''))) style.push(`--odx-lsize:${lblSize / 2}pt`);
+  const symbol = /^symbol/i.test(lvlFont || '');
+  const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
+  if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
   // Wingdings (ascent 0.899em, descent 0.211em) fits inside Calibri's line and adds nothing.
   if (lvlFont && /^symbol/i.test(lvlFont)) {
