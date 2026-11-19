@@ -17,7 +17,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { layoutTabs, layoutTabsIn } from './tabs.js';
 import { fitRowspans, clipExactRows } from './rowfit.js';
-import { storyDrawer, hfNodes, settleStoryShapes } from './hfstory.js';
+import { storyDrawer, hfNodes, settleStoryShapes, flowHeight } from './hfstory.js';
 import { printCopies } from './printcopies.js';
 import { sectionBreaks, columnsIn, sectionXmls } from './sections.js';
 import { drawLineNumbers } from './linenumbers.js';
@@ -1529,7 +1529,7 @@ export function createPages(view, session, { sheet, scope }) {
       settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
-      heights.set(doc, el.getBoundingClientRect().height);
+      heights.set(doc, flowHeight(el)); // (what floats in it doesn't count: hfstory.js flowHeight)
       el.remove();
     }
     return heights.get(doc);
