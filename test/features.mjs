@@ -1856,6 +1856,11 @@ const blankH = await page.evaluate(() => [...document.querySelectorAll('.odx-con
 const xH = blankH[0];
 const blankOk = blankH.length >= 13 && [2, 4, 6, 8].every((i) => Math.abs(blankH[i - 1] - xH) < 0.4) && Math.abs(blankH[9] - 22.35) < 0.5 && Math.abs(blankH[11] - 22.35) < 0.5;
 check(blankOk, `lines of spaces as tall as their paragraph mark's line, as in Word (${JSON.stringify(blankH)})`);
+// A cell's lone space, its paragraph of no size of its own, keeps its table style's size (mkspacing.mjs): as tall as the
+// cell of text beside it.
+await open('spaces-table-style.docx');
+const cellH = await page.evaluate(() => [...document.querySelectorAll('.odx-content td p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(cellH.length === 2 && Math.abs(cellH[0] - cellH[1]) < 0.3 && cellH[0] < 17, `a cell's lone space keeps its table style's size (${JSON.stringify(cellH)})`);
 // An empty section-break paragraph that is all a columns section holds keeps its line, as in one column (mkspacing.mjs;
 // Word: the text after it two lines under the line before it).
 await open('columns-empty-section.docx');
