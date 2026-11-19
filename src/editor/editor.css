@@ -83,6 +83,7 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :is(span.odx-t, .odx-opaque-inline:not(:empty, [data-kind$="Ref"], [data-kind$="Reference"]), .odx-page-break, :where(span, strong, em, s, u, a, del, ins):has(> br)) { line-height: var(--odx-lhv); } /* (a line break counts as text for the element it's in, as in quirks mode) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p[data-odx-mix="mark"] { line-height: var(--odx-lhv); } /* nothing but spaces: the mark's line, as an empty paragraph's (mixlines.js blankOnly) */
 /* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
    paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
 .odx-content p.odx-endbreak::after { content: "\200b"; }
@@ -211,7 +212,9 @@
    w:bCs, w:iCs, w:szCs and the w:cs font (set as custom properties by styles and direct formatting), not w:b, w:i, w:sz.
    An unset size or font is the one around it. */
 .odx-cs { font-weight: var(--odx-bcs, normal); font-style: var(--odx-ics, normal); font-size: var(--odx-szcs); font-family: var(--odx-fcs); }
-:where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-grow-up, 0); padding-bottom: var(--odx-grow-down, 0); }
+:where(.odx-content, .odx-hf) .odx-grow::before { content: '\200b'; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: max(var(--odx-grow-up, 0px), var(--odx-sh-up, 0px)); padding-bottom: max(var(--odx-grow-down, 0px), var(--odx-sh-down, 0px)); }
+/* A shadow's room (texteffects.js shadowRoom) on a run of nothing but spaces: none, as in Word (spaces don't size a line). */
+:where(.odx-content, .odx-hf) .odx-grow:not(:has(.odx-t:not(.odx-blank)))::before { --odx-sh-up: 0px; --odx-sh-down: 0px; }
 /* A reflection (w14:reflection, texteffects.js): each word of the run drawn again (textspans.js), flipped about its
    baseline as Word does (algn="bl"), its gap below, fading from its start opacity to its end one, blurred as Word's.
    Placed at the word's top (its font's ascent above the baseline) and trimmed to exactly that ascent (text-box), with

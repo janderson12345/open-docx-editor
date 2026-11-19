@@ -3,6 +3,7 @@
 import { kids, kid, attr, onOff, NS, REL_TYPES, missingDecls } from './xml.js';
 import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss, compoundSide, cellLines } from './props.js';
 import { twipsToPx } from './units.js';
+import { shadowRoom } from './texteffects.js';
 
 export function readTheme(pkg) {
   const path = pkg.partByType(REL_TYPES.theme);
@@ -104,6 +105,16 @@ export function stylesToCss(scope, info, theme) {
       : `${scope} span[data-cstyle="${cssEsc(st.id)}"]`;
     const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(r.rPr, theme)].filter(Boolean).join(';');
     if (css) rules.push(`${sel}{${css}}`);
+    // A shadow on the style's text (w14:shadow): its lines that much taller, as in Word (texteffects.js shadowRoom); an
+    // empty paragraph's line too, and one of nothing but spaces (its mark's line, pararules.js). (A run's own shadow:
+    // schema.js rextraCss.)
+    const sh = r.rPr.shadow14;
+    const room = sh && !sh.flat ? shadowRoom(sh.blur, sh.dist, sh.dir) : null;
+    if (room) {
+      const pad = `padding-top:${room[0] || 0};padding-bottom:${room[1] || 0}`;
+      rules.push(`:is(${sel}) span.odx-t:not(.odx-is, .odx-blank)::before{content:'\\200b';display:inline-block;width:0;line-height:var(--odx-lhv);${pad}}`);
+      if (st.type === 'paragraph') rules.push(`:is(${sel}):not(:has(span.odx-t:not(.odx-blank))){${pad}}`);
+    }
   }
   // (A style the document uses without defining it, a built-in Heading 1 or Title too, is Normal in Word: drawn so.)
   return rules.join('\n');

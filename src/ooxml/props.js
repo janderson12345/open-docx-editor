@@ -49,8 +49,12 @@ export function readRPr(rPr) {
   if (scale) p.scale = Number(attr(scale, 'val') || 100);
   const csp = kid(rPr, 'spacing'); // character spacing, twips (a style's: Title's -10)
   if (csp) p.charSpacing = Number(attr(csp, 'val')) || 0;
+  // Word 2010's outer shadow (a style's: the room it takes on the line, texteffects.js shadowRoom). Numbers, bounded there.
+  const sh = kid(rPr, 'shadow', W14);
+  if (sh) p.shadow14 = { blur: Number(attr(sh, 'blurRad', W14)) || 0, dist: Number(attr(sh, 'dist', W14)) || 0, dir: Number(attr(sh, 'dir', W14)) || 0, flat: attr(sh, 'sx', W14) === '0' && attr(sh, 'sy', W14) === '0' };
   return p;
 }
+const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
 
 /** A w:pBdr / w:tblBorders / w:tcBorders element -> { top: {val, sz, color, space}, ... } */
 export function readBorders(el) {

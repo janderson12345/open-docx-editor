@@ -44,7 +44,8 @@ function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
   node.forEach((c, off) => {
     const at = pos + 1 + off;
-    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: 'odx-t' }));
+    // (Plain spaces alone also odx-blank: they don't size their line in Word, nor does a shadow on them: editor.css.)
+    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: /^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t' }));
     const rf = c.isText && reflects(c), is = c.isText && pressed(c);
     if (rf || is) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, wordAttrs(m[0], rf, is)));
     if (c.type.name === 'hard_break') {
@@ -134,7 +135,7 @@ export function wrapText(root) {
   for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t);
   for (const t of texts) {
     const s = document.createElement('span');
-    s.className = 'odx-t';
+    s.className = /^ +$/.test(t.data) ? 'odx-t odx-blank' : 'odx-t';
     t.replaceWith(s);
     s.append(t);
     // (A reflected or inner-shadowed run's words, as in the editor.)

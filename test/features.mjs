@@ -1745,6 +1745,28 @@ const [smallFixed] = await fixedShare('lines-small.docx');
 const [largeFixed, isLarge] = await fixedShare('lines-large.docx');
 check(isLarge && largeFixed >= smallFixed, `a large document's line heights fixed as a small one's (${largeFixed} of its first 400 paragraphs, ${smallFixed} in the small one)`);
 
+// Lines of nothing but spaces are the paragraph mark's line in Word, whatever size the spaces are (mixlines.js blankOnly,
+// pararules.js lineSize; mkspacing.mjs, Word: 15pt apart as the "X" lines between them, 21.75pt over an 18pt mark);
+// a no-break space is a letter, sizing its line (22.5pt).
+await open('spaces-lines.docx');
+const blankH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +(p.getBoundingClientRect().height * 0.75).toFixed(2)));
+const xH = blankH[0];
+const blankOk = blankH.length >= 13 && [2, 4, 6, 8].every((i) => Math.abs(blankH[i - 1] - xH) < 0.4) && Math.abs(blankH[9] - 22.35) < 0.5 && Math.abs(blankH[11] - 22.35) < 0.5;
+check(blankOk, `lines of spaces as tall as their paragraph mark's line, as in Word (${JSON.stringify(blankH)})`);
+// An empty section-break paragraph that is all a columns section holds keeps its line, as in one column (mkspacing.mjs;
+// Word: the text after it two lines under the line before it).
+await open('columns-empty-section.docx');
+const colGap = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; const t = (i) => ps[i].getBoundingClientRect().top; return ps.length >= 4 ? [+(t(3) - t(1)).toFixed(2), +(t(1) - t(0)).toFixed(2)] : null; });
+check(colGap && Math.abs(colGap[0] - 2 * colGap[1]) < 1, `a lone empty paragraph in a columns section keeps its line (${JSON.stringify(colGap)})`);
+
+// Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
+// paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
+// for an 8pt blur at 10pt).
+await open('shadow-lines.docx');
+const shH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+const shOk = shH.length >= 11 && [2, 4, 6].every((i) => Math.abs(shH[i] - shH[0] - 3.6) < 0.4) && Math.abs(shH[9] - shH[8] - 5.33) < 0.5 && shH.length >= 13 && Math.abs(shH[11] - shH[0]) < 0.3;
+check(shOk, `shadowed lines as much taller as Word makes them (${JSON.stringify(shH)})`);
+
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
 server.close();

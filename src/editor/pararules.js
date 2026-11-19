@@ -77,6 +77,13 @@ export function lineSize(node, session, run, label, attrs, style) {
   // Under a leading break's smaller strut, a closing break's empty line is the mark's size again (doc 07: 11pt, 12.5pt
   // text, 12.5pt last line), not the strut's.
   const tail = run.size && breakSize && breakSize < Number(run.size) && node.lastChild?.type.name === 'hard_break' && (markSize(node) || Number(run.size));
+  // A line of spaces over a smaller mark, or of spaces in several sizes: Word's line is the mark's alone (Word: an 18pt
+  // space over a 12pt mark, a 12pt line). Plain spaces only: a no-break space is a letter to Word, sizing its line (a 12pt
+  // one over an 11pt mark: a 12pt line, the samples' pasted mail). The paragraph takes the mark's size, and its larger
+  // spaces no box (mixlines.js blankOnly).
+  const spaces = node.textContent && !/[^ \u200b]/.test(node.textContent) && node.content.content.every((c) => c.isText);
+  const markAll = spaces && (own || markSize(node) || Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20));
+  if (markAll && (!run.size || markAll < Number(run.size))) style.push(sizeCss(markAll / 2));
   if (tail && tail > breakSize && !(mark && mark > run.size)) {
     style.push(`--odx-mark:${tail / 2}pt`);
     attrs.class = [attrs.class, 'odx-mark odx-tailmark'].filter(Boolean).join(' ');
