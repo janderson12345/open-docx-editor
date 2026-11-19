@@ -97,6 +97,33 @@ const longTable = await page.evaluate(() => {
 });
 check(longTable.sheets === 2 && longTable.parts === 3, `a table over four columns: ${longTable.parts} carried parts, ${longTable.sheets} pages`);
 
+// Page breaks as Word's prints of these show (test/fixtures/mkpagebreaks.mjs): where a paragraph of the given text is,
+// by sheet, and its top and bottom on it.
+const placeOf = (texts) => page.evaluate((ts) => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const ps = [...document.querySelectorAll('.odx-content p')];
+  return { sheets: sheets.length, at: ts.map((t) => {
+    const p = ps.find((q) => q.textContent === t);
+    if (!p) return null;
+    const r = p.getBoundingClientRect();
+    const k = sheets.findIndex((q) => r.top >= q.top && r.top < q.bottom);
+    return { sheet: k, top: r.top - (sheets[k]?.top ?? 0), bottom: r.bottom - (sheets[k]?.top ?? 0) };
+  }) };
+}, texts);
+// Two floating tables a little narrower than the column: nothing wraps beside them, the second breaks at page 1's foot.
+await open('pagebreak-float-table.docx');
+const fts = await placeOf(['Row 23', 'Row 24', 'Row 40', 'After paragraph 1']);
+check(fts.sheets === 2 && fts.at[0]?.sheet === 0 && fts.at[1]?.sheet === 1 && fts.at[3]?.sheet === 1 && fts.at[3].top >= fts.at[2].bottom, `a floating table breaks across pages row by row, the text after it below it (${JSON.stringify(fts)})`);
+// A footer's closing paragraph at 0.06 lines takes a pixel, not a line: the page above it holds a line more.
+await open('pagebreak-tiny-footer.docx');
+const tf = await placeOf(['Body paragraph 54', 'Body paragraph 55']);
+check(tf.at[0]?.sheet === 0 && tf.at[1]?.sheet === 1, `a footer's 0.06-line empty paragraph leaves the body its room (${JSON.stringify(tf.at)})`);
+// A heading kept with a table longer than a page whose rows all keep with the next: on page 2 together, the table broken
+// at that page's foot.
+await open('pagebreak-keep-long.docx');
+const kl = await placeOf(['Heading text', 'Row 1', 'Row 53', 'Row 54']);
+check(kl.at.every(Boolean) && kl.at[0].sheet === 1 && kl.at[1].sheet === 1 && kl.at[2].sheet === 1 && kl.at[3].sheet === 2, `a heading kept with a long table starts the page with it (${JSON.stringify(kl.at.map((a) => a?.sheet))})`);
+
 // Footnotes in columns (Word's prints of these, odx-test/mkrtlfootnotes.ps1): one band across each page's foot, in the
 // section's columns (the first on the right in a right-to-left section), each note on the page of its reference; one
 // band the text's width with w15:footnoteColumns 1; the separator at the right when its paragraph is right to left.
