@@ -8,6 +8,9 @@
 //     heading starts page 2 with the table's first 53 rows under it, the rest on page 3.
 //   pagebreak-keep-table.docx  a table of five rows ending 5px above page 1's foot, every paragraph in it kept with the
 //     next, then an empty paragraph: the table goes on to page 2 with it.
+//   pagebreak-float-keeps.docx  a full-width floating table set 1437tw down from its text, every paragraph in its 11 rows
+//     kept with the next, reaching past page 1's foot: Word breaks it there row by row as one without keeps, and the text
+//     after it goes under it on page 2.
 import fs from 'fs';
 import { zipSync, strToU8 } from 'fflate';
 
@@ -41,4 +44,7 @@ docx('pagebreak-float-table.docx', paras(10) + table(20, { floating: true, width
 docx('pagebreak-tiny-footer.docx', paras(60), { footer: p('Footer line') + p('Footer two') + p('', '<w:spacing w:line="14" w:lineRule="auto"/>'), bottom: 1680, footerDist: 1495 });
 docx('pagebreak-keep-long.docx', paras(50) + p('Heading text', '<w:keepNext/>') + table(70, { ppr: '<w:keepNext/><w:keepLines/>' }) + paras(3, 'After'));
 const keepRows = Array.from({ length: 5 }, (_, i) => `<w:tr>${[0, 1, 2].map((c) => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>${p(`R${i + 1} c${c + 1} text`, '<w:keepNext/><w:keepLines/>')}</w:tc>`).join('')}</w:tr>`).join('');
-docx('pagebreak-keep-table.docx', paras(49) + p('Lead text') + p('') + `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>${BORDERS}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${keepRows}</w:tbl>` + p('') + p('') + paras(3, 'After'));
+const floatKeeps = `<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="1437"/><w:tblW w:w="5000" w:type="pct"/>${BORDERS}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="6360"/></w:tblGrid>`
+  + Array.from({ length: 11 }, (_, i) => `<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>${p(`Cell ${i + 1}`, '<w:keepNext/>')}</w:tc><w:tc><w:tcPr><w:tcW w:w="6360" w:type="dxa"/></w:tcPr>${p(`Row ${i + 1} line 1`, '<w:keepNext/>')}${p(`Row ${i + 1} line 2`, '<w:keepNext/>')}</w:tc></w:tr>`).join('') + '</w:tbl>';
+docx('pagebreak-float-keeps.docx', paras(40) + p('Before table') + floatKeeps + p('') + paras(4, 'After'));
+docx('pagebreak-keep-table.docx',paras(49) + p('Lead text') + p('') + `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>${BORDERS}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${keepRows}</w:tbl>` + p('') + p('') + paras(3, 'After'));

@@ -123,6 +123,11 @@ check(tf.at[0]?.sheet === 0 && tf.at[1]?.sheet === 1, `a footer's 0.06-line empt
 await open('pagebreak-keep-long.docx');
 const kl = await placeOf(['Heading text', 'Row 1', 'Row 53', 'Row 54']);
 check(kl.at.every(Boolean) && kl.at[0].sheet === 1 && kl.at[1].sheet === 1 && kl.at[2].sheet === 1 && kl.at[3].sheet === 2, `a heading kept with a long table starts the page with it (${JSON.stringify(kl.at.map((a) => a?.sheet))})`);
+// A floating table set down from its text, its rows all keeping with the next, reaching past page 1's foot: broken there
+// row by row (its keeps don't hold), the text after it under it on page 2.
+await open('pagebreak-float-keeps.docx');
+const fk = await placeOf(['Cell 4', 'Cell 5', 'Cell 11', 'After paragraph 1']);
+check(fk.at.every(Boolean) && fk.at[0].sheet === 0 && fk.at[1].sheet === 1 && fk.at[2].sheet === 1 && fk.at[3].sheet === 1 && fk.at[3].top >= fk.at[2].bottom, `a floating table set down breaks at the page's foot, its keeps aside (${JSON.stringify(fk.at)})`);
 // A table whose rows all keep with the next goes on with the paragraph after it that doesn't fit, though it fits itself.
 await open('pagebreak-keep-table.docx');
 const kt = await placeOf(['Lead text', 'R1 c1 text', 'R5 c3 text']);
