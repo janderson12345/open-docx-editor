@@ -82,6 +82,7 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :is(span.odx-t, .odx-opaque-inline:not(:empty, [data-kind$="Ref"], [data-kind$="Reference"]), .odx-page-break, :where(span, strong, em, s, u, a, del, ins):has(> br)) { line-height: var(--odx-lhv); } /* (a line break counts as text for the element it's in, as in quirks mode) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p[data-odx-mix="mark"] { line-height: var(--odx-lhv); } /* nothing but spaces: the mark's line, as an empty paragraph's (mixlines.js blankOnly) */
 /* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
    paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
 .odx-content p.odx-endbreak::after { content: "\200b"; }

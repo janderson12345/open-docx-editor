@@ -1758,7 +1758,9 @@ export function createPages(view, session, { sheet, scope }) {
       if (!x) continue;
       const v = pageOf(x.top);
       vEnd = Math.max(vEnd, v);
-      if (!blocks[j].node.childCount && sectEnds.get(blocks[j].i)) continue; // (an empty section-break paragraph: Word's columns end above it)
+      // (An empty section-break paragraph: Word's columns end above it. Unless it's all the section holds: then it keeps
+      // its line, as in one column.)
+      if (j > re.k0 && !blocks[j].node.childCount && sectEnds.get(blocks[j].i)) continue;
       bottoms.set(v, Math.max(bottoms.get(v) ?? -Infinity, x.bottom));
       ends.set(v, Math.max(ends.get(v) ?? -Infinity, x.bottom + (x.carry ? 0 : spaceAfter(blocks[j].node)))); // (a paragraph cut there has none)
       // (Its parts carried on, each at a column's top: the last ends with its space after.)

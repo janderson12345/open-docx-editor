@@ -105,7 +105,7 @@ function mixed(view, node, pos, el, box) {
   // (Text all in one formatting has one box: nothing to read from the page. Most paragraphs.)
   let marks = null, one = true;
   node.descendants((c) => { if (c.isText) { if (!marks) marks = c.marks; else if (one && !Mark.sameSet(marks, c.marks)) one = false; } return one; });
-  if (one) return null;
+  if (one && node.textContent.trim()) return null; // (nothing but spaces in one size: the mark's line, mixlines.js)
   const got = mixedLines(el, box);
   if (!got) return null;
   const out = [];
@@ -117,6 +117,7 @@ function mixed(view, node, pos, el, box) {
       out.push([from, to, css]);
     }
   } catch { return null; }
+  out.mark = !!got.mark;
   return out;
 }
 
@@ -158,7 +159,7 @@ export function applyLineFix(view) {
     if (!r) return;
     if (r.value != null) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-lhv:${r.value}`, 'data-odx-lh': String(r.want), ...(r.grid ? { 'data-odx-grid': '1' } : {}) }, { key: `lh:${r.value}${r.grid ? 'g' : ''}` }));
     if (r.mix) {
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-odx-mix': '1' }, { key: 'mx' }));
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-odx-mix': r.mix.mark ? 'mark' : '1' }, { key: r.mix.mark ? 'mxm' : 'mx' }));
       for (const [from, to, css] of r.mix) decos.push(Decoration.inline(pos + from, pos + to, { style: css }, { key: `mx:${css}` }));
     }
     if (!r.pic) return;
@@ -266,13 +267,14 @@ export function storyLineFix(root, nodeOf) {
         if (got) {
           const at = new Map([...spans].map((s, i) => [s, i]));
           r.mix = got.spans.map(([s, css]) => [at.get(s), css]);
+          r.mark = !!got.mark;
         }
         if (node) storyMemo.set(node, r);
       } else if (r.value != null) el.style.setProperty('--odx-lhv', r.value);
       if (r.value != null) el.dataset.odxLh = String(r.want);
       if (r.mix) {
         for (const [i, css] of r.mix) if (spans[i]) spans[i].style.cssText += `;${css}`;
-        el.dataset.odxMix = '1';
+        el.dataset.odxMix = r.mark ? 'mark' : '1';
       }
     }
   } finally { box?.remove(); }

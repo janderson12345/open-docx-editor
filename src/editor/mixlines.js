@@ -55,6 +55,31 @@ function cssLine(cs, fs) {
 const MAX_TEXTS = 2000; // (a paragraph of more runs than this is left as it is)
 
 /**
+ * A paragraph of nothing but spaces (no text, no tabs or breaks): Word makes its line the paragraph mark's alone, as an
+ * empty paragraph's, whatever size the spaces are in (Word: an 18pt space, an 18pt and a 12pt one, or an 18pt lowered
+ * one, over a 12pt mark: a 12pt line; a 12pt space over an 18pt mark: an 18pt line). So its spans get no box and the
+ * paragraph its own line, as an empty one has (editor.css, data-odx-mix="mark"). undefined: not such a paragraph; null:
+ * one already laid out as Word does (all its spaces in the mark's size, none raised or lowered).
+ */
+function blankOnly(el, pcs) {
+  if (el.textContent.trim() || !el.textContent || el.querySelector('.odx-tab, .odx-opaque-inline')) return undefined;
+  const pfs = parseFloat(pcs.fontSize) || 0;
+  const spans = [];
+  let differs = false;
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+    if (!t.data) continue;
+    if (spans.length >= MAX_TEXTS) return null;
+    const span = t.parentElement;
+    if (span.closest('sup, sub')) differs = true;
+    if (!span.classList.contains('odx-t') || span.childNodes.length !== 1) { if (span !== el) differs = true; continue; }
+    if (Math.abs(parseFloat(getComputedStyle(span).fontSize) - pfs) > 0.01) differs = true;
+    spans.push([span, 'line-height:0']);
+  }
+  return differs ? { spans, mark: true } : null;
+}
+
+/**
  * Word's boxes for the text spans of a paragraph `el` (drawn, in the document) whose runs differ in font, size or raise,
  * where the browser's lines would come out more than 0.05px off Word's: { spans: [[span, css]] }, or null to leave it.
  * Only "auto" spacing of 1 or more (exact and at-least lines aren't sized from their runs this way), and not a paragraph
@@ -68,6 +93,8 @@ export function mixedLines(el, host) {
   if (!(mult >= 1) || pcs.getPropertyValue('--odx-lhlen').trim() === '1') return null;
   if (el.querySelector('img:not(.ProseMirror-separator), math, svg, br:not(.ProseMirror-trailingBreak), .odx-opaque-inline:not(:empty), .odx-strut')) return null;
   if (/--odx-lbl-/.test(el.getAttribute('style') || '')) return null;
+  const blankLine = blankOnly(el, pcs);
+  if (blankLine !== undefined) return blankLine;
   const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const groups = new Map();
   const spans = [];
