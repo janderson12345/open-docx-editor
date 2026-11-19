@@ -21,6 +21,10 @@ within 1px of Word's went from 47% to 63%, and documents laid out exactly as Wor
 - **Tables and page breaks**: a table kept with the heading above it breaks where it runs out of room; rows that keep
   with the next move on with the paragraph after them; contextual spacing works across a table's edges; an empty
   numbered paragraph in a hidden-mark cell keeps its line; a section's closing paragraph of drawings stays on its page.
+- **Font size in table cells**: text in the Normal style takes the size Normal sets, over the table style's and the
+  document defaults' (defaults 11pt, Normal 12pt: 12pt in the cells, where the editor drew 11pt and wrapped
+  differently). The table style's size applies where Normal sets none. In a document of Word 2010's layout or older, a
+  12pt Normal still gives way to a table style that formats its text or paragraphs, as it does in Word.
 - **Paragraph spacing**: a paragraph of spaces or no-break spaces takes its mark's line; multiple spacing below one
   line is as short as Word's; a cell's space-only paragraph keeps its table style's size; shadowed text has Word's
   taller line, a shadowed space none.

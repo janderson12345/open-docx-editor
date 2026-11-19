@@ -324,6 +324,10 @@ function readTableStyle(s) {
     pPr: readPPr(kid(el, 'pPr')),
   });
   const t = part(s);
+  // It formats its text or paragraphs at all: a colour, a language, a spacing, or in a part of the table (a bold first
+  // row); cell and table settings alone don't count (tableStylesCss: Word's older rule for a cell's font size).
+  const any = (el) => kids(kid(el, 'rPr')).length + kids(kid(el, 'pPr')).length > 0;
+  t.formats = any(s) || kids(s, 'tblStylePr').some(any);
   t.cond = {};
   for (const c of kids(s, 'tblStylePr')) t.cond[attr(c, 'type')] = part(c);
   return t;
@@ -351,6 +355,7 @@ export function resolveTableStyle(styles, id, seen = new Set()) {
     pPr: { ...a.pPr, ...b.pPr },
   });
   const out = merge(base, st.table);
+  out.formats = !!(st.table.formats || (base.formats && !styles.get(st.basedOn)?.isDefault)); // (not the default table style's)
   out.cond = { ...base.cond };
   for (const [k, v] of Object.entries(st.table.cond)) out.cond[k] = base.cond[k] ? merge(base.cond[k], v) : v;
   return out;
@@ -359,23 +364,48 @@ export function resolveTableStyle(styles, id, seen = new Set()) {
 /**
  * CSS rules for table styles' whole-table text and paragraph formatting.
  * Like Word, a table style's paragraph settings beat the Normal style but not other paragraph styles.
+ * (oldSizes: the document is laid out as Word 2010 or older did, compatibility mode under 15, and doesn't set
+ * overrideTableStyleFontSizeAndJustification: Word's older rule for a cell's font size, below.)
  */
-export function tableStylesCss(scope, info, theme) {
+export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
   const rules = [];
   const def = info.defaultParagraph;
+  const normalSize = def ? resolveStyle(info.styles, def).rPr.size : null;
+  const dflt = info.defaults.rPr.size;
+  // The paragraph styles that take their size from the Normal style: based on it, with none of their own on the way.
+  const fromNormal = (id, seen = new Set()) => {
+    const ps = info.styles.get(id);
+    if (!ps || seen.has(id) || ps.type !== 'paragraph') return false;
+    if (id === def) return true;
+    seen.add(id);
+    return ps.rPr?.size == null && !!ps.basedOn && fromNormal(ps.basedOn, seen);
+  };
   for (const st of info.styles.values()) {
     if (st.type !== 'table') continue;
     const t = resolveTableStyle(info.styles, st.id);
     if (!t) continue;
-    const sel = (x) => `${scope} table[data-tstyle="${st.id.replace(/["\\]/g, '\\$&')}"] ${x}`;
-    // Like its paragraph settings, a table style's text formatting beats the Normal style's.
-    // Word counts a font size set in the document defaults as part of the table style here.
-    // (A size the table style sets itself loses to one the Normal style sets: Consultant Request Form, Normal's 12pt over
-    // Table Grid's 11. The document defaults' size still beats Normal's, sample S125.)
-    const normalSize = def ? resolveStyle(info.styles, def).rPr.size : null;
-    const ownSize = t.rPr.size != null && normalSize != null && normalSize !== info.defaults.rPr.size ? null : t.rPr.size;
-    const r = rPrToCss({ ...t.rPr, size: t.rPr.size != null ? ownSize : info.defaults.rPr.size }, theme);
+    const sel = (x) => `${scope} table[data-tstyle="${cssEsc(st.id)}"] ${x}`;
+    // Like its paragraph settings, a table style's text formatting beats the Normal style's: all but the font size.
+    // A size the Normal style sets itself is the cell's, over the table style's and over the document defaults'
+    // (Word's prints of 632 generated documents: defaults 11pt, Normal 12pt, a Table Grid of 10pt or none: 12pt; the
+    // table style's size only where Normal sets none).
+    // Laid out as Word 2010 or older did, a Normal of exactly 12pt is taken as no size of its own under a table style
+    // that formats its text or paragraphs at all (a colour, a language, Table Grid's own line spacing, a bold first
+    // row; not the default table style's, nor borders, cell margins or shading alone): the cell's text is the table
+    // style's size, the document defaults' when it sets none, unless that is 10pt, where Normal's 12pt stays. So are
+    // the cells' paragraphs in styles that take their size from Normal. (Defaults 11pt, Normal 12pt, a table style of
+    // fonts alone: 11pt in the cells, 12pt outside; of 14pt: 14pt; of 10pt: 12pt. A Normal of 10, 11, 13 or 14pt is
+    // kept.)
+    const tSize = t.rPr.size ?? dflt ?? 20;
+    const old = oldSizes && normalSize === 24 && t.formats && !st.isDefault && tSize !== 20;
+    // (With no size in Normal the document defaults' is set here too: a table nested in another style's cell.)
+    const size = normalSize == null ? t.rPr.size ?? dflt : old ? tSize : null;
+    const r = rPrToCss({ ...t.rPr, size }, theme);
     if (r) rules.push(`${sel('td')},${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${r}}`);
+    if (old) {
+      const based = [...info.styles.values()].filter((ps) => ps.id !== def && fromNormal(ps.id)).map((ps) => sel(`td > p[data-style="${cssEsc(ps.id)}"]`));
+      if (based.length) rules.push(`${based.join(',')}{${sizeCss(tSize / 2)}}`);
+    }
     // The table style's spacing beats the Normal style's only where Normal leaves it to the document defaults (unset, or
     // set to the same value): sample S072's Normal sets 12pt after, which its Table Grid's 0 doesn't undo.
     const normal = def ? resolveStyle(info.styles, def).pPr : {};
@@ -397,10 +427,11 @@ export function tableStylesCss(scope, info, theme) {
       if (css) rules.push(`${sel(`td > p[data-style="${ps.id.replace(/["\\]/g, '\\$&')}"]`)}{${css}}`);
     }
   }
-  const size = info.defaults.rPr.size;
-  if (size) {
+  // A table of no style inside a styled table's cell: its text is not the outer table style's size. (Where the Normal
+  // style sets a size, that is the cell's as anywhere.)
+  if (dflt && normalSize == null) {
     const sel = (x) => `${scope} table:not([data-tstyle]) ${x}`;
-    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${sizeCss(size / 2)}}`);
+    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${sizeCss(dflt / 2)}}`);
   }
   return rules.join('\n');
 }

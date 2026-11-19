@@ -2,7 +2,7 @@ import './setup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOMParser } from '@xmldom/xmldom';
-import { readStyles, tableCellCss } from '../src/ooxml/styles.js';
+import { readStyles, tableCellCss, tableStylesCss } from '../src/ooxml/styles.js';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const cond = (type, fill) => `<w:tblStylePr w:type="${type}"><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="${fill}"/></w:tcPr></w:tblStylePr>`;
@@ -30,4 +30,47 @@ test('a corner applies only when both its row and its column are switched on', (
   const bg = css('w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"');
   assert.equal(bg[0], '111111');
   assert.equal(bg[2], '111111');
+});
+
+// The font size of a cell's text in the default paragraph style: the size the table style's rule sets on it, or null
+// where it leaves the Normal style's (Word's prints of generated documents: defaults, Normal, table style; each mode).
+const cellSize = (dd, normal, tableRPr, oldSizes = false, other = '', baseRPr = '') => {
+  const sz = (v) => (v ? `<w:rPr><w:sz w:val="${v}"/></w:rPr>` : '');
+  const xml = `<w:styles ${W}><w:docDefaults><w:rPrDefault>${sz(dd)}</w:rPrDefault></w:docDefaults>`
+    + `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>${sz(normal)}</w:style>`
+    + `<w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body Text"/><w:basedOn w:val="Normal"/></w:style>`
+    + `<w:style w:type="paragraph" w:styleId="Own"><w:name w:val="Own"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>`
+    + `<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/>${baseRPr}</w:style>`
+    + `<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/>${tableRPr ? `<w:rPr>${tableRPr}</w:rPr>` : ''}${other}</w:style></w:styles>`;
+  const info = readStyles({ partByType: () => 'styles.xml', xml: () => new DOMParser().parseFromString(xml, 'text/xml') });
+  const rules = tableStylesCss('.d', info, {}, { oldSizes }).split('\n');
+  const size = (re) => { const r = rules.find((x) => re.test(x.split('{')[0]) && /font-size/.test(x)); return r ? Number(/font-size:([\d.]+)pt/.exec(r)[1]) : null; };
+  return { cell: size(/data-tstyle="TableGrid"\] td > p:not\(\[data-style\]\)/), based: size(/td > p\[data-style="Body"\]/), own: size(/td > p\[data-style="Own"\]/) };
+};
+
+test('a size the Normal style sets is the cell\'s, over the table style\'s and the document defaults\'', () => {
+  assert.equal(cellSize(22, 24, '').cell, null); // defaults 11pt, Normal 12pt: Normal's
+  assert.equal(cellSize(22, 20, '<w:color w:val="000000"/>').cell, null);
+  assert.equal(cellSize(22, 24, '<w:sz w:val="20"/>').cell, null); // nor the table style's 10pt
+  assert.equal(cellSize(22, 22, '<w:sz w:val="20"/>').cell, null); // nor when Normal's is the defaults' size
+  assert.equal(cellSize(22, 0, '<w:sz w:val="20"/>').cell, 10); // the table style's only where Normal sets none
+  assert.equal(cellSize(0, 0, '<w:sz w:val="28"/>').cell, 14);
+});
+
+test('laid out as Word 2010 or older, a 12pt Normal gives way to a table style that formats its text', () => {
+  assert.deepEqual(cellSize(22, 24, '<w:color w:val="000000"/>', true), { cell: 11, based: 11, own: null }); // the defaults' size
+  assert.equal(cellSize(22, 24, '<w:lang w:val="en-GB"/>', true).cell, 11); // a language is enough
+  assert.equal(cellSize(22, 24, '<w:color w:val="000000"/><w:sz w:val="28"/>', true).cell, 14); // the table style's own
+  assert.equal(cellSize(22, 24, '', true).cell, null); // a table style of no text formatting: Normal's
+  assert.equal(cellSize(22, 24, '', true, '<w:pPr><w:spacing w:after="0"/></w:pPr>').cell, 11); // a paragraph setting is enough
+  assert.equal(cellSize(22, 24, '', true, '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/></w:rPr></w:tblStylePr>').cell, 11); // or a part's
+  assert.equal(cellSize(22, 24, '', true, '<w:tcPr><w:shd w:val="clear" w:fill="FFFFFF"/></w:tcPr>').cell, null); // not a cell setting
+  assert.equal(cellSize(22, 24, '', true, '<w:rPr/>').cell, null); // nor an empty one
+  assert.equal(cellSize(22, 24, '', true, '', '<w:rPr><w:color w:val="000000"/></w:rPr>').cell, null); // nor the default table style's
+  assert.equal(cellSize(22, 24, '<w:sz w:val="20"/>', true).cell, null); // 10pt is no size: Normal's 12pt stays
+  assert.equal(cellSize(20, 24, '<w:color w:val="000000"/>', true).cell, null);
+  assert.equal(cellSize(0, 24, '<w:color w:val="000000"/>', true).cell, null);
+  assert.equal(cellSize(22, 20, '<w:color w:val="000000"/>', true).cell, null); // only a Normal of 12pt
+  assert.equal(cellSize(22, 26, '<w:sz w:val="28"/>', true).cell, null);
+  assert.equal(cellSize(22, 24, '<w:color w:val="000000"/>', false).cell, null); // Word 2013's layout, or the override set
 });
