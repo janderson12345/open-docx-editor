@@ -105,7 +105,7 @@ function mixed(view, node, pos, el, box) {
   // (Text all in one formatting has one box: nothing to read from the page. Most paragraphs.)
   let marks = null, one = true;
   node.descendants((c) => { if (c.isText) { if (!marks) marks = c.marks; else if (one && !Mark.sameSet(marks, c.marks)) one = false; } return one; });
-  if (one && node.textContent.trim()) return null; // (nothing but spaces in one size: the mark's line, mixlines.js)
+  if (one && /[^ \u200b]/.test(node.textContent)) return null; // (nothing but spaces in one size: the mark's line, mixlines.js)
   const got = mixedLines(el, box);
   if (!got) return null;
   const out = [];

@@ -1715,11 +1715,12 @@ const [largeFixed, isLarge] = await fixedShare('lines-large.docx');
 check(isLarge && largeFixed >= smallFixed, `a large document's line heights fixed as a small one's (${largeFixed} of its first 400 paragraphs, ${smallFixed} in the small one)`);
 
 // Lines of nothing but spaces are the paragraph mark's line in Word, whatever size the spaces are (mixlines.js blankOnly,
-// pararules.js lineSize; mkspacing.mjs, Word: 15pt apart as the "X" lines between them, 21.75pt over an 18pt mark).
+// pararules.js lineSize; mkspacing.mjs, Word: 15pt apart as the "X" lines between them, 21.75pt over an 18pt mark);
+// a no-break space is a letter, sizing its line (22.5pt).
 await open('spaces-lines.docx');
 const blankH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +(p.getBoundingClientRect().height * 0.75).toFixed(2)));
 const xH = blankH[0];
-const blankOk = blankH.length >= 11 && [2, 4, 6, 8].every((i) => Math.abs(blankH[i - 1] - xH) < 0.4) && Math.abs(blankH[9] - 22.35) < 0.5;
+const blankOk = blankH.length >= 13 && [2, 4, 6, 8].every((i) => Math.abs(blankH[i - 1] - xH) < 0.4) && Math.abs(blankH[9] - 22.35) < 0.5 && Math.abs(blankH[11] - 22.35) < 0.5;
 check(blankOk, `lines of spaces as tall as their paragraph mark's line, as in Word (${JSON.stringify(blankH)})`);
 // An empty section-break paragraph that is all a columns section holds keeps its line, as in one column (mkspacing.mjs;
 // Word: the text after it two lines under the line before it).

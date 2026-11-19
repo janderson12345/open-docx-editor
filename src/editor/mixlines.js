@@ -62,7 +62,7 @@ const MAX_TEXTS = 2000; // (a paragraph of more runs than this is left as it is)
  * one already laid out as Word does (all its spaces in the mark's size, none raised or lowered).
  */
 function blankOnly(el, pcs) {
-  if (el.textContent.trim() || !el.textContent || el.querySelector('.odx-tab, .odx-opaque-inline')) return undefined;
+  if (/[^ \u200b]/.test(el.textContent) || !el.textContent || el.querySelector('.odx-tab, .odx-opaque-inline')) return undefined; // (plain spaces: a no-break space sizes its line, pararules.js)
   const pfs = parseFloat(pcs.fontSize) || 0;
   const spans = [];
   let differs = false;
