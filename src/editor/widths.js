@@ -78,7 +78,12 @@ function spanBox(font, lh, where) {
     lineProbe.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:nowrap;line-height:0';
     lineProbe.innerHTML = '<span>X</span><i style="display:inline-block;width:0;height:0"></i>';
   }
-  where.append(lineProbe);
+  // (Beside the editor's content, not in its paragraph: the editor reads a change inside its content as an edit made in
+  // the page, and drew the paragraph again from it. In a table of merged cells that remade the table, and with Track
+  // Changes on, an untouched document saved its tables twice over, as tracked deletions and insertions. The probe sets
+  // its own font and line height, so it measures the same there.)
+  const content = where.closest('.ProseMirror, [contenteditable]');
+  (content?.parentElement || document.body).append(lineProbe);
   const span = lineProbe.firstChild;
   span.style.font = font;
   span.style.lineHeight = `${lh}px`;
