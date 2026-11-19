@@ -2362,7 +2362,9 @@ export function createPages(view, session, { sheet, scope }) {
         continue;
       }
       if (band && !band.cut && band.p === p && top < band.y1 && b.bottom + shift > band.y0) {
-        const d = band.y1 - top;
+        // (Under the table, its space before less the space after the paragraph above it, as in Word: 24pt kept under
+        // none, none under a larger one.)
+        const d = band.y1 + (k > 0 ? Math.max(0, spaceBefore(b.node) - spaceAfter(blocks[k - 1].node)) : 0) - top;
         pulls.set(b.i, [[b.i, d]]);
         shift += d;
         top += d;

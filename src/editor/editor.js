@@ -224,8 +224,42 @@ function paragraphPlugin(session) {
         });
       } else if (columnsIn(doc.attrs.sectPr, page)?.unequal) doc.forEach((_, __, i) => sides.set(i, [0, 0, true]));
     }
+    // Contextual spacing across a table's edges, in Word's reading order: the paragraph before the table, then each row's
+    // cells left to right, each row closed by its end mark, a paragraph of the default style. A paragraph's neighbour out
+    // of its cell is the paragraph before the table, the next or previous cell's, or that mark (Word: the space after a
+    // paragraph above a table goes when the first cell's paragraph has its style; a cell's last paragraph of the default
+    // style loses its space after under any row; the paragraph under a table loses its space before when of that style).
+    const sid = (n) => n.attrs.styleId || session.styles.defaultParagraph || '';
+    const mark = sid({ attrs: {} });
+    const edges = new Map(); // a cell's first or last paragraph -> { prev, next }: its neighbours' styles out of the cell
+    const skip = (n) => n.type === schema.nodes.opaque_block && (ZERO_WIDTH.has(n.attrs.kind) || n.attrs.kind === 'proofErr');
+    const ends = (cell) => {
+      const kids = [];
+      cell.forEach((c) => { if (!skip(c)) kids.push(c); });
+      const para = (n) => (n && n.type === schema.nodes.paragraph ? n : null);
+      return { first: para(kids[0]), last: para(kids[kids.length - 1]) };
+    };
+    const lastIn = (cell) => { let last = null; cell.forEach((c) => { if (!skip(c)) last = c; }); return last; };
+    const edge = (n, k, v) => { if (!n) return; const e = edges.get(n) || {}; e[k] = v; edges.set(n, e); };
+    const tableEdges = (table, before) => {
+      let r = 0;
+      table.forEach((row) => {
+        if (row.type !== schema.nodes.table_row) return;
+        const cells = [];
+        row.forEach((c) => cells.push(ends(c)));
+        cells.forEach((c, i) => {
+          const left = i ? (cells[i - 1].last ? sid(cells[i - 1].last) : null) : r ? mark : before ? sid(before.node) : null;
+          edge(c.first, 'prev', left);
+          edge(c.last, 'next', i < cells.length - 1 ? (cells[i + 1].first ? sid(cells[i + 1].first) : null) : mark);
+        });
+        if (!r && before?.cs && cells[0]?.first && sid(cells[0].first) === sid(before.node)) before.style.push('margin-bottom:0');
+        r++;
+      });
+    };
     const visit = (parent, offset) => {
       let prev = null;
+      let edgePrev = null; // the style of the row end mark above this block, when it follows a table
+      let noRoom = 0; // blocks after a table placed down from the text with no room beside it (styles.js --odx-fnoroom)
       let floatGap = null; // px: the space after the paragraph before a floating table, when this block follows that table
       parent.forEach((node, rel, index) => { // (index: a top-level block's, for sides and collapse; doc.childBefore made this quadratic)
         const pos = offset + rel;
@@ -234,9 +268,12 @@ function paragraphPlugin(session) {
           if (node.type === schema.nodes.opaque_block && (ZERO_WIDTH.has(node.attrs.kind) || node.attrs.kind === 'proofErr')) return;
           const before = prev;
           prev = null;
+          edgePrev = null;
           floatGap = null;
           if (node.type === schema.nodes.table) {
-            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml);
+            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, parent === doc ? page.width - page.left - page.right : 0);
+            if (!/(?:^|;)float:/.test(place || '')) { tableEdges(node, before); edgePrev = mark; }
+            noRoom = /--odx-fnoroom/.test(place || '') ? 40 : 0;
             // A floating table in the text between two paragraphs: Word keeps both their spaces, the one after the first
             // and the one before the second (they don't overlap as they would side by side), and the table starts below
             // the first's (editor.css: while the table floats; one the layout puts in the flow, longer than a page, has its
@@ -325,6 +362,13 @@ function paragraphPlugin(session) {
           if (cs || (prev.cs && !prev.node.textContent)) style.push('margin-top:0');
           if (prev.cs) prev.style.push('margin-bottom:0');
         }
+        if (cs) {
+          const e = edges.get(node);
+          const left = prev ? null : e?.prev ?? edgePrev;
+          if (left != null && left === sid(node)) style.push('margin-top:0');
+          if (e?.next != null && e.next === sid(node)) style.push('margin-bottom:0');
+        }
+        edgePrev = null;
         // Holding a drawing placed from its paragraph's top (reader.js fromParagraphTop): how far above the text that top is,
         // the space this paragraph adds to the space after the one above (the two collapse, the larger kept).
         let fromTop = false;
@@ -340,7 +384,10 @@ function paragraphPlugin(session) {
           // (--odx-sbtb: that space again under a top-and-bottom shape, over the paragraph's own text: reader.js.)
           style.push(`--odx-sb:${sb}px`, `--odx-sbtb:${node.textContent.trim() ? sb : 0}px`);
         }
-        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse'].filter(Boolean);
+        // (An empty one after such a table: something to fit on its line, so it goes under the table, as in Word.)
+        const fempty = noRoom > 0 && !node.childCount;
+        if (noRoom > 0) noRoom--;
+        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse', fempty && 'odx-fempty'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');
         headingRole(node, session, attrs);
         // A paragraph in a frame (frames.js): at its place, the text beside it; one after another in the same frame below it.
@@ -370,6 +417,12 @@ function paragraphPlugin(session) {
           // for the column each block lands in.)
           const coln = sd[2] ? ' + var(--odx-coln, 0px)' : '';
           style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px${rtl ? coln : ''})`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px${rtl ? '' : coln})`);
+        }
+        // A cell whose end mark is left out of its row's height (w:hideMark): its last paragraph, empty, takes no room, its
+        // spacing and size with it (Word: a row of such cells is as tall as its cells' margins; one with text, or an
+        // unmarked empty cell beside it, keeps its line). Still there, at no height, for the caret.
+        if (parent.type === schema.nodes.table_cell && !node.childCount && (parent.attrs.tcPr || []).some((x) => x[0] === 'hideMark') && lastIn(parent) === node) {
+          style.push('height:0', 'min-height:0', 'margin-top:0', 'margin-bottom:0', 'padding-top:0', 'padding-bottom:0', 'overflow:hidden');
         }
         prev = { node, pos, attrs, style, cs, bdr };
         decos.push(prev);
