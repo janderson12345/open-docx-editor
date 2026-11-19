@@ -43,12 +43,26 @@ const blanks = [
 ];
 make('spaces-lines.docx', X + blanks.map((b) => b + X).join(''), sect(false, 0));
 
+// A table in a 10pt table style (over 12pt text), its cells' paragraphs of no size of their own: one holding text, one a
+// lone space. Both are the table style's 10pt line in Word; the space's had taken the paragraph style's 12pt.
+const cellP = (t) => `<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
+const sizedTable = `<w:tbl><w:tblPr><w:tblStyle w:val="SmallTable"/><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/></w:tblGrid><w:tr>${cellP('Text in the cell')}${cellP(' ')}</w:tr></w:tbl>`;
 const line = (t) => para(24, run(24, t));
 const body = line('First line.')
   + `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="259" w:lineRule="auto"/>${sect(false, 0)}</w:pPr>${run(24, 'Last line of the first section.')}</w:p>`
   + `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="259" w:lineRule="auto"/>${sect(true, 2)}</w:pPr></w:p>`
   + line('After the empty columns section.') + line('One more line.');
 make('columns-empty-section.docx', body, sect(true, 0));
+{
+  const files = unzipSync(blankDocxBytes());
+  let doc = strFromU8(files['word/document.xml']);
+  doc = doc.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${line('Before the table.')}${sizedTable}${line('After the table.')}${sect(false, 0)}</w:body>`);
+  files['word/document.xml'] = strToU8(doc);
+  let styles = strFromU8(files['word/styles.xml']);
+  styles = styles.replace('</w:styles>', '<w:style w:type="table" w:customStyle="1" w:styleId="SmallTable"><w:name w:val="Small Table"/><w:rPr><w:sz w:val="20"/></w:rPr><w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>');
+  files['word/styles.xml'] = strToU8(styles);
+  fs.writeFileSync(new URL('./spaces-table-style.docx', import.meta.url), zipSync(files));
+}
 
 const shadow = (blur, dist, dir) => `<w14:shadow w14:blurRad="${blur}" w14:dist="${dist}" w14:dir="${dir}" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:srgbClr w14:val="000000"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:shadow>`;
 const preset = shadow(50800, 38100, 2700000);

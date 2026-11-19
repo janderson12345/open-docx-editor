@@ -82,7 +82,9 @@ export function lineSize(node, session, run, label, attrs, style) {
   // one over an 11pt mark: a 12pt line, the samples' pasted mail). The paragraph takes the mark's size, and its larger
   // spaces no box (mixlines.js blankOnly).
   const spaces = node.textContent && !/[^ \u200b]/.test(node.textContent) && node.content.content.every((c) => c.isText);
-  const markAll = spaces && (own || markSize(node) || Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20));
+  // (A mark of no size of its own over runs of none either: the size they share already, a table style's in a cell too.
+  // Set from the paragraph style instead, a cell's lines of a space in a 9pt table style had come out 11pt.)
+  const markAll = spaces && (markSize(node) || (run.size ? Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20) : null));
   if (markAll && (!run.size || markAll < Number(run.size))) style.push(sizeCss(markAll / 2));
   if (tail && tail > breakSize && !(mark && mark > run.size)) {
     style.push(`--odx-mark:${tail / 2}pt`);
