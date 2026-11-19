@@ -625,7 +625,7 @@ function sameList(session, a, b) {
 export function createEditor(mount, session, { onChange, author = 'Author', collab = null } = {}) {
   const scope = `odx-doc-${++scopeSeq}`;
   const styleEl = document.createElement('style');
-  styleEl.textContent = session.css(`.${scope}`) + '\n' + tableStylesCss(`.${scope}`, session.styles, session.theme) + '\n' + session.picBulletCss(`.${scope}`);
+  styleEl.textContent = session.css(`.${scope}`) + '\n' + tableStylesCss(`.${scope}`, session.styles, session.theme, { oldSizes: !!session.oldTableSizes }) + '\n' + session.picBulletCss(`.${scope}`);
   document.head.appendChild(styleEl);
 
   const page = session.page();
@@ -749,7 +749,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
     closeStories() { closeStory(); closeNote(); closeTextBox(); },
     pages,
     /** Styles added to the document since it opened (session.addBuiltInStyles): their CSS too. */
-    restyle() { styleEl.textContent += `\n${session.css(`.${scope}`)}\n${tableStylesCss(`.${scope}`, session.styles, session.theme)}`; },
+    restyle() { styleEl.textContent += `\n${session.css(`.${scope}`)}\n${tableStylesCss(`.${scope}`, session.styles, session.theme, { oldSizes: !!session.oldTableSizes })}`; },
     // The pages' zoom (zoom.js); onZoom, set by the host, hears each change.
     zoom: createZoom(mount, sheet, page, (z) => view.odx?.onZoom?.(z)),
     collab,

@@ -62,10 +62,16 @@ export class DocxSession {
     const settings = this.pkg.partByType(REL_TYPES.settings);
     // (Tag by tag, xml.js startTag: a regex reading its two attributes took seconds on a crafted settings part.)
     let mode = null;
+    let tableSizes = false;
     for (const t of startTags(settings ? this.pkg.text(settings) || '' : '', 'w:compatSetting')) {
-      if (attrOf(t.tag, 'w:name') === 'compatibilityMode' && /^\d+$/.test(attrOf(t.tag, 'w:val') || '')) { mode = Number(attrOf(t.tag, 'w:val')); break; }
+      const name = attrOf(t.tag, 'w:name'), val = attrOf(t.tag, 'w:val') || '';
+      if (name === 'compatibilityMode' && mode == null && /^\d+$/.test(val)) mode = Number(val);
+      else if (name === 'overrideTableStyleFontSizeAndJustification') tableSizes = !/^(?:0|false|off)$/.test(val);
     }
     this.compatMode = mode ?? 12;
+    // A cell's font size by Word 2010's rule or older (styles.js tableStylesCss): the layout of those versions, unless
+    // the document asks for the newer rule (w:compatSetting overrideTableStyleFontSizeAndJustification).
+    this.oldTableSizes = this.compatMode < 15 && !tableSizes;
     // The compatibility rules it names (w:compat's children, by their names: splitPgBreakAndParaMark...), each a
     // Word version's layout the document asks for; the layout follows those it knows (docs/LAYOUT.md).
     const compat = settings && /<w:compat>([\s\S]*?)<\/w:compat>/.exec(this.pkg.text(settings) || '')?.[1];
