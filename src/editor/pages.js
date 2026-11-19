@@ -677,12 +677,15 @@ export function createPages(view, session, { sheet, scope }) {
     const heads = [];
     let extra = 0;
     const extraAt = [];
+    // (A floating table's rows don't keep with the next: Word breaks it at the page's foot as one without keeps, set down
+    // from its text or not; generated documents, every paragraph in its 11 rows keeping with the next.)
+    const keeps = floating(b.node) ? () => false : rowKeeps;
     // Every row keeping with the next and the table longer than a page: the keeps can't all hold, and its rows split at
     // a page's foot as they would without them.
     let keepsHold = true;
     if (rows.length && rows[rows.length - 1].bottom - rows[0].top > pageHeight(pageOf(rows[0].top + shift) + 1)) {
       keepsHold = false;
-      for (let j = 0; j < b.node.childCount && !keepsHold; j++) if (!rowKeeps(b.node.child(j))) keepsHold = true;
+      for (let j = 0; j < b.node.childCount && !keepsHold; j++) if (!keeps(b.node.child(j))) keepsHold = true;
     }
     for (let j = 0; j < rows.length; j++) {
       extraAt[j] = extra;
@@ -695,11 +698,11 @@ export function createPages(view, session, { sheet, scope }) {
       // page with it, as in Word; when they reach the table's first row, the table moves (sample: Heading 1 in its cells).
       if (!brk) {
         let s = j;
-        while (s > headerRows && rowKeeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
+        while (s > headerRows && keeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
         // (Stopped by a row above that keeps with this run but was itself moved here or carried on from the page before:
         // the run already starts the page, and moving it again gains nothing; Word breaks it where it runs out, as a
         // sample's 14 such rows over four pages, each page had been left half empty.)
-        const fromTop = s > headerRows && rowKeeps(b.node.child(s - 1)) && (pushes.has(s - 1) || inRow.has(s - 1));
+        const fromTop = s > headerRows && keeps(b.node.child(s - 1)) && (pushes.has(s - 1) || inRow.has(s - 1));
         if (s < j) {
           const topS = rows[s].top + shift + extraAt[s];
           const firstS = fromTop || (s === 0 ? tableFirstOnPage || chainAtTop : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1);
@@ -723,7 +726,7 @@ export function createPages(view, session, { sheet, scope }) {
       const minM = /<w:trHeight\b[^>]*w:val="(\d+(?:\.\d+)?)"/.exec(tr);
       const minH = minM && !/<w:trHeight\b[^>]*w:hRule="(?:exact|auto)"/.test(tr) ? twipsToPx(minM[1]) : 0;
       const short = minH && contentBottom(pg) - top < minH && minH <= pageHeight(pg + 1);
-      const rs = !brk && j >= headerRows && lineSplits && !short && !(keepsHold && j > headerRows && j < rows.length - 1 && rowKeeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
+      const rs = !brk && j >= headerRows && lineSplits && !short && !(keepsHold && j > headerRows && j < rows.length - 1 && keeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
         for (const [q, cut] of rs.crossings) {
@@ -763,7 +766,9 @@ export function createPages(view, session, { sheet, scope }) {
     });
     return any && all;
   };
-  const cantSplit = (row) => /<w:cantSplit(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '') || keepsWhole(row);
+  // (A floating table's keeps don't hold: Word breaks its rows as without them; generated documents.)
+  const floating = (table) => /<w:tblpPr\b/.test(table.attrs.tblPr || '');
+  const cantSplit = (row, table) => /<w:cantSplit(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '') || (!(table && floating(table)) && keepsWhole(row));
 
   // Our spacers in a cell (not in the tables in it), and how much they have made a row of a table in a cell taller:
   // what's below them is measured less that, at its natural place.
@@ -794,7 +799,7 @@ export function createPages(view, session, { sheet, scope }) {
    * Returns null when the row should move whole (nothing of it fits, or it can't split).
    */
   function splitRow(b, j, rowShift, headH) {
-    if (cantSplit(b.node.child(j))) return null;
+    if (cantSplit(b.node.child(j), b.node)) return null;
     const tr = b.table.tBodies[0].rows[j];
     const base = view.dom.getBoundingClientRect().top + b.rows[j].undo;
     const pushes = [];
@@ -1236,7 +1241,7 @@ export function createPages(view, session, { sheet, scope }) {
     let cut = null;
     const node = b.node.child(at);
     const rowTop = trs[at].getBoundingClientRect().top - top0;
-    if (!sheet.classList.contains('odx-large') && node && !cantSplit(node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
+    if (!sheet.classList.contains('odx-large') && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
       const base = view.dom.getBoundingClientRect().top + b.undo;
       const spans = [];
       for (const el of trs[at].querySelectorAll('p')) {
@@ -1481,6 +1486,8 @@ export function createPages(view, session, { sheet, scope }) {
   // Floating tables laid out in the flow, by node (an edit above one changes its index, not its node; a changed table is
   // a new node, measured again).
   const unfloated = new WeakSet();
+  let lastMargins = new Map(); // block index -> the margin-top the last pass gave it (applyPushes), of marginsDoc
+  let marginsDoc = null;
   const floatUp = new Map(); // block index -> { el, up: Map(picture's index in it -> px drawn up) }, this pass's (floatsPast)
   let drawnUp = new Set(); // pictures drawn up now
   // A float drawn up (floatsPast) is drawn there, but the browser still lays its paragraph's lines out round where it
@@ -2111,6 +2118,9 @@ export function createPages(view, session, { sheet, scope }) {
     const y = /\sw:tblpY="(-?\d{1,6})"/.exec(fp);
     return !!y && +y[1] > 100 && /\sw:vertAnchor="text"/.test(fp) && !/\sw:tblpYSpec=/.test(fp);
   }
+  // (Unless it reaches past its page's foot: Word breaks it there row by row, and the text after it goes under it, as in
+  // the flow, its drop kept above it; generated documents. The walk finds it so, crossFoot, and the pass runs again.)
+  const crossFoot = new WeakSet();
   function inFlowGap(table, next) {
     const m = /<w:tblpPr\s[^>]*bottomFromText="(\d{1,6})"/.exec(table.attrs.tblPr || '');
     const bft = m ? twipsToPx(Math.min(+m[1], 31680)) : 0; // (at most 22in)
@@ -2145,6 +2155,7 @@ export function createPages(view, session, { sheet, scope }) {
     applied = new Map();
     const index = new Map(blocks.map((b, k) => [b.i, k]));
     const extra = new Map(starts);
+    const margins = new Map(); // block index -> its margin-top this pass (lastMargins next pass)
     for (const list of pulls.values()) for (const [i, d] of list) addTo(extra, i, d);
     for (const [i, delta] of extra) {
       const k = index.get(i);
@@ -2153,7 +2164,13 @@ export function createPages(view, session, { sheet, scope }) {
       let q = k - 1;
       while (q >= 0 && outOfFlow(blocks[q].el)) q--;
       const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - (parseFloat(getComputedStyle(dom).paddingTop) || 0); // the page's top padding is the first section's plain top margin, not one moved down for a tall header
-      const margin = Math.round((gap + delta) * 10) / 10;
+      // (Within a tenth of the last pass's, the last pass's: the browser lays that margin out to its sub-pixel grid, which
+      // can put this measure on the other side of the rounding, and it flipped a tenth up and down each pass, the pages
+      // under it 0.1-0.6px apart from one pass to the next.)
+      let margin = Math.round((gap + delta) * 10) / 10;
+      const was = marginsDoc === doc ? lastMargins.get(i) : undefined;
+      if (was !== undefined && Math.abs(was - margin) < 0.15) margin = was;
+      margins.set(i, margin);
       applied.set(i, { extra: margin - gap });
       // Under the bottom margin of the block before, a smaller margin collapses into it: give the difference as a negative
       // one. (Only after a balanced columns section does a block move up past it.)
@@ -2161,6 +2178,8 @@ export function createPages(view, session, { sheet, scope }) {
       const set = margin < mb ? Math.round((margin - mb) * 10) / 10 : margin;
       onBlock(i, { style: `margin-top:${set}px !important` }, `mt:${set}`);
     }
+    lastMargins = margins;
+    marginsDoc = doc;
     // Split tables: rows that start a page get extra top padding (room for the
     // page gap and the repeated header row), and the table is clipped across
     // that band so its borders and shading don't run through the gap.
@@ -2271,7 +2290,7 @@ export function createPages(view, session, { sheet, scope }) {
       // float, so the text after it fills the room above it, as in Word, and its empty paragraphs go under it, editor.js.)
       const above = node.type === schema.nodes.table && /--odx-fnoroom/.test(t.getAttribute('style') || '');
       if (t.getBoundingClientRect().height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
-      else if (node.type === schema.nodes.table && !above && !setDown(node) && !roomBeside(t)) {
+      else if (node.type === schema.nodes.table && !above && !(setDown(node) && !crossFoot.has(node)) && !roomBeside(t)) {
         const mb = inFlowGap(node, doc.maybeChild(i + 1));
         quiet(() => { t.style.float = 'none'; t.style.marginBottom = mb; });
         unfloated.add(node);
@@ -2290,6 +2309,7 @@ export function createPages(view, session, { sheet, scope }) {
     const carried = new Set(); // blocks after a frame moved to the next page: their push is the frame's
     const tails = new Map(); // block index -> the height of the line before it that Word starts its page with
     const splits = new Map(); // table block index -> { rows: Map(row -> extra px), heads: [page top] }
+    let crossAgain = false; // a float set down found reaching past its page's foot (crossFoot): the pass runs again
     const paraSplits = new Map(); // paragraph block index -> { pushes: [{ pos, delta }], total }
     const colSplits = new Map(); // (columns) paragraph block index -> { cut, height }: its lines from cut go on in the next column
     // (Columns: how often a paragraph moved on to a column it's taller than has been walked again, to be cut there. A
@@ -2416,7 +2436,7 @@ export function createPages(view, session, { sheet, scope }) {
     // on page 2 under the empty paragraph after it; without the keeps, on page 1).
     const keepsOn = (blk, p) => {
       if (blk.node.type !== schema.nodes.table) return keep(blk.node);
-      if (!blk.node.childCount || splits.has(blk.i)) return false;
+      if (!blk.node.childCount || splits.has(blk.i) || floating(blk.node)) return false;
       for (let j = 0; j < blk.node.childCount; j++) if (!rowKeeps(blk.node.child(j))) return false;
       return pageOf(blk.top + shift) === p;
     };
@@ -2611,6 +2631,10 @@ export function createPages(view, session, { sheet, scope }) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
+        if (b.rows && bottom + shift > contentBottom(p) + 1 && setDown(b.node) && !crossFoot.has(b.node) && outOfFlow(b.el) && !roomBeside(b.el)) {
+          crossFoot.add(b.node); // (a float set down that reaches past the foot: in the flow, next pass)
+          crossAgain = true;
+        }
         const split = b.rows && splitTable(b, shift, firstOnPage, !firstOnPage && keptFromTop(k, p));
         if (split) {
           splits.set(b.i, split);
@@ -2763,7 +2787,7 @@ export function createPages(view, session, { sheet, scope }) {
     lastMs = performance.now() - t0;
     passes++;
     // A balanced columns section's cut changed: lay out again with it (a few times at most, should it not settle).
-    if (hfWrapAgain) schedule();
+    if (hfWrapAgain || crossAgain) schedule(); // (crossAgain: once a table at most, crossFoot)
     else if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
     // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
