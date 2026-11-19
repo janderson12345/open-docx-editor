@@ -342,6 +342,13 @@ function paragraphPlugin(session) {
         if (plainAuto) {
           if (auto(node, 'beforeAuto')) style.push(`margin-top:${prev && auto(prev.node, 'afterAuto') ? 10 : 5}pt`);
           if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt');
+          // Under that rule the space after a paragraph and the space before the next are both kept, one under the other
+          // (Word's prints: 8pt after and 4pt before, the lines 37.3px apart; without the setting the larger, 32px). The
+          // margins collapse to the larger, so the one above is added to this paragraph's own.
+          if (prev && prev.node.type.name === 'paragraph' && !auto(node, 'beforeAuto') && !auto(prev.node, 'afterAuto')) {
+            const b = spacing(node, 'before'), a = prev.cs && prev.node.attrs.styleId === node.attrs.styleId ? 0 : spacing(prev.node, 'after');
+            if (a > 0 && b > 0) style.push(`margin-top:${+twipsToPx(a + b).toFixed(2)}px`);
+          }
         } else {
           // (A paragraph's own space, w:after="150", over a style with auto spacing that it doesn't turn off: still the auto
           // 14pt, as in Word's PDFs, the auto flag being kept apart from the number.)

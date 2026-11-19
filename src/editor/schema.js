@@ -6,7 +6,7 @@ import { Schema } from 'prosemirror-model';
 import { tableNodes } from 'prosemirror-tables';
 import { legacyInfo } from '../ooxml/ffdata.js';
 import { ommlToMathML } from '../ooxml/omml.js';
-import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineFactor } from '../ooxml/props.js';
+import { pPrToCss, scaleCss, sizeCss, highlightColor, hexColor, fontStack, lineFactor, faceCss } from '../ooxml/props.js';
 import { TWIPS_PER_PX } from '../ooxml/units.js';
 import { textEffectsCss, hasTextEffects } from '../ooxml/texteffects.js';
 import { wordDate } from './util.js';
@@ -300,7 +300,7 @@ export const schema = new Schema({
   marks: {
     // Order here is the w:rPr child order used when writing.
     cstyle: { attrs: { val: {} }, toDOM: (m) => ['span', { 'data-cstyle': m.attrs.val }, 0] },
-    font: { attrs: { val: {}, xml: { default: null } }, parseDOM: [{ style: 'font-family', getAttrs: pastedFont }], toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${/w:cs="([^"]+)"/.test(m.attrs.xml || '') ? `;--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(m.attrs.xml)[1])}` : ''}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
+    font: { attrs: { val: {}, xml: { default: null } }, parseDOM: [{ style: 'font-family', getAttrs: pastedFont }], toDOM: (m) => ['span', { style: `font-family:${fontStack(m.attrs.val)}${faceCss(m.attrs.val)}${/w:cs="([^"]+)"/.test(m.attrs.xml || '') ? `;--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(m.attrs.xml)[1])}` : ''}${/^cambria math$/i.test(m.attrs.val) ? ';--odx-lhv:1.02' : (lineFactor(m.attrs.val) > 1.25 ? `;--odx-lhv:calc(${lineFactor(m.attrs.val)} * var(--odx-runmult, 1));--odx-flh:${lineFactor(m.attrs.val)}` : '')}` }, 0] }, // a tall font (symbols, Segoe UI) makes its line taller, as in Word, // Word doesn't let Cambria Math's tall metrics raise a text line, only its descent (0.222em, below Arial's 0.212): a 1.02 box adds about what Word does (fitted on sample S044, Arial 10pt: +0.26px a line)
     bold: {
       attrs: { on: { default: true } },
       parseDOM: [{ tag: 'strong' }, { tag: 'b' }, { style: 'font-weight', getAttrs: (v) => (/^(bold|[6-9]\d\d)$/.test(v) ? {} : false) }],
