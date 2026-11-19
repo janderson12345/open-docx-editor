@@ -364,6 +364,10 @@ export function readPPr(pPr) {
     // HTML auto spacing is 14pt each side; Word drops it above the first paragraph of the document or a cell.
     if (/^(1|true|on)$/.test(attr(sp, 'beforeAutospacing') || '')) { p.before = 280; p.beforeAuto = true; }
     if (/^(1|true|on)$/.test(attr(sp, 'afterAutospacing') || '')) { p.after = 280; p.afterAuto = true; }
+    // (Turned off outright, w:afterAutospacing="0", over a style that has it: the paragraph's own spacing, as in Word: a
+    // web-style list's items keep their 7.5pt after between them.)
+    if (/^(0|false|off)$/.test(attr(sp, 'beforeAutospacing') || '')) p.beforeAuto = false;
+    if (/^(0|false|off)$/.test(attr(sp, 'afterAutospacing') || '')) p.afterAuto = false;
   }
   const ind = kid(pPr, 'ind');
   if (ind) {
@@ -478,7 +482,13 @@ export function fontStack(name) {
   return parts.join(', ');
 }
 
+// Names Windows itself maps to another font (its FontSubstitutes), which Word prints in that font: "Times" is Times New
+// Roman in Word's PDFs, where the browser's "Times" is another face with shorter lines (1.11 em, not 1.15).
+const WINDOWS = { times: 'Times New Roman' };
+const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
+
 function baseStack(name) {
+  if (windowsFont(name)) return fontStack(windowsFont(name));
   if (listed(name)) return '"Segoe UI", sans-serif';
   if (twin(name)) return fontStack(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...fontStack(face(name)).split(', ')].join(', ');
@@ -521,6 +531,7 @@ const face = (name) => { const m = /^(.+?) (bold|italic|bold italic)$/i.exec(nam
 export const lineFactor = (name) => {
   // (A font missing here, drawn in the host's substitute: that font's line, unless the editor knows the missing one's.)
   if (HOST.has(name) && !LINE[(name || '').toLowerCase()] && !(typeof document !== 'undefined' && measure((name || '').toLowerCase()))) return lineFactor(HOST.get(name));
+  if (windowsFont(name) && !HOST.has(name)) return lineFactor(windowsFont(name));
   if (twin(name)) return lineFactor(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return lineFactor(face(name));
   const key = listed(name) ? 'segoe ui' : (name || '').toLowerCase();

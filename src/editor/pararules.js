@@ -159,7 +159,10 @@ export function labelLine(node, session, l, label, run, style) {
   // The label is in the level's own size, else the paragraph mark's, else the style's (12pt bullets over 10pt code
   // lines make Word's bullet lines taller).
   const lblSize = label != null && (listLevel(session.numbering, l.numId, l.ilvl)?.size || markSize(node) || session.styleRunProp(node.attrs.styleId, 'size') || 20);
-  if (lblSize && run.size && Number(lblSize) !== Number(run.size)) style.push(`--odx-lsize:${lblSize / 2}pt`);
+  // (Also smaller than text in its style's size, no run setting one: a 10pt Symbol bullet over 12pt Times adds nothing
+  // to Word's line, its top under the text's; drawn at the text's size it made each item 1.2px taller.)
+  const styleSize = Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20);
+  if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : Number(lblSize) < styleSize)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
   // Wingdings (ascent 0.899em, descent 0.211em) fits inside Calibri's line and adds nothing.
   if (lvlFont && /^symbol/i.test(lvlFont)) {

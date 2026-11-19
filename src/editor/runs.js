@@ -42,7 +42,11 @@ export function uniformRun(node, charStyle, theme) {
     if (sz) size = String(sz[1]);
     else if (cs.size) size = String(cs.size);
     const rf = mark && /<w:rFonts\b[^>]*\bw:ascii="([^"]+)"/.exec(mark[1]);
+    // (Or a theme font, w:asciiTheme: an empty line whose mark is the theme's Calibri under a Times style is Calibri's
+    // 19.5px at 12pt, not Times's 18.4px; Word's PDFs.)
+    const rt = !rf && mark && theme && /<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)Theme="(major|minor)/.exec(mark[1]);
     if (rf && font === undefined) font = rf[1];
+    else if (rt && font === undefined && theme[rt[1]]) font = theme[rt[1]];
     else if (cs.font && font === undefined) font = cs.font;
   }
   // Runs of different sizes, all set: the paragraph's own size (its style's) is in none of them, so Word's lines never
