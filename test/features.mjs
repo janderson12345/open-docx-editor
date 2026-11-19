@@ -623,18 +623,20 @@ check(lbls.join(',') === 'bred,bred,i,i,b,', `list numbers take their level's (o
 
 // Auto spacing between items of one list, each side on its own; two nums of one abstract list as one list; auto spacing
 // turned off outright, or kept under a plain w:after; an empty paragraph in its mark's theme font (mklists3.mjs; Word's
-// PDF: 18.7, 26.6, 18.6, 28.0, 37.4px, and 38.0 and 36.7px over and under the empty lines).
+// PDF: 18.7, 26.6, 18.6, 28.0, 37.4px, 36.7px over two bullets as over two plain lines, and 38.0 and 36.7px over and under the empty lines).
 await open('lists-spacing.docx');
 const lsTops = await page.evaluate(() => {
   const ps = [...document.querySelectorAll('.odx-content > p')];
   const top = (t) => { const p = ps.find((x) => x.textContent === t); return p ? p.getBoundingClientRect().top : NaN; };
-  return Object.fromEntries(['auto-a1', 'auto-a2', 'auto-a3', 'auto-a4', 'auto-b1', 'auto-b2', 'off-1', 'off-2', 'off-4', 'off-5', 'mark-1', 'mark-2', 'mark-3'].map((t) => [t, top(t)]));
+  return Object.fromEntries(['auto-a1', 'auto-a2', 'auto-a3', 'auto-a4', 'auto-b1', 'auto-b2', 'off-1', 'off-2', 'off-4', 'off-5', 'small-1', 'small-2', 'small-3', 'small-4', 'small-5', 'mark-1', 'mark-2', 'mark-3'].map((t) => [t, top(t)]));
 });
 const lsGap = (a, b) => +(lsTops[b] - lsTops[a]).toFixed(1);
 check(lsGap('auto-a1', 'auto-a2') < 21 && lsGap('auto-a3', 'auto-a4') > 24 && lsGap('auto-a3', 'auto-a4') < 30 && lsGap('auto-b1', 'auto-b2') < 21,
   `auto spacing between items of one list goes, each side on its own (${lsGap('auto-a1', 'auto-a2')}, ${lsGap('auto-a3', 'auto-a4')}, ${lsGap('auto-b1', 'auto-b2')}px)`);
 check(lsGap('off-1', 'off-2') > 25 && lsGap('off-1', 'off-2') < 31 && lsGap('off-4', 'off-5') > 34,
   `auto spacing turned off keeps the items' own space; a plain space after over it stays auto (${lsGap('off-1', 'off-2')}, ${lsGap('off-4', 'off-5')}px)`);
+check(Math.abs(lsGap('small-1', 'small-3') - lsGap('small-3', 'small-5')) < 1,
+  `a 10pt Symbol bullet over 12pt text adds nothing to its line (${lsGap('small-1', 'small-3')} over ${lsGap('small-3', 'small-5')}px)`);
 check(lsGap('mark-1', 'mark-2') - lsGap('mark-2', 'mark-3') > 0.6,
   `an empty paragraph is a line of its mark's theme font (${lsGap('mark-1', 'mark-2')} over ${lsGap('mark-2', 'mark-3')}px)`);
 
