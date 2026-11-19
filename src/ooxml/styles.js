@@ -111,7 +111,7 @@ export function stylesToCss(scope, info, theme) {
     const room = sh && !sh.flat ? shadowRoom(sh.blur, sh.dist, sh.dir) : null;
     if (room) {
       const pad = `padding-top:${room[0] || 0};padding-bottom:${room[1] || 0}`;
-      rules.push(`:is(${sel}) span.odx-t:not(.odx-is)::before{content:'\\200b';display:inline-block;width:0;line-height:var(--odx-lhv);${pad}}`);
+      rules.push(`:is(${sel}) span.odx-t:not(.odx-is, .odx-blank)::before{content:'\\200b';display:inline-block;width:0;line-height:var(--odx-lhv);${pad}}`);
       if (st.type === 'paragraph') rules.push(`:is(${sel}):not(:has(span.odx-t)){${pad}}`);
     }
   }

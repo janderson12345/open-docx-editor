@@ -272,10 +272,11 @@ export function textEffectsCss(items) {
     const blur = Math.min(100, pt(num(refl, 'blurRad') || 0)) / 5; // (bounded: a huge blur on every word crawls)
     if (blur > 0) css.push(`--odx-rf-blur:${+blur.toFixed(3)}pt`);
   }
-  const room = (em, extra) => (em && extra ? `max(${+em.toFixed(4)}em, ${extra})` : em ? `${+em.toFixed(4)}em` : extra);
-  const growUp = room(up, shRoom?.[0]), growDown = room(down, shRoom?.[1]);
-  if (growUp) css.push(`--odx-grow-up:${growUp}`);
-  if (growDown) css.push(`--odx-grow-down:${growDown}`);
+  if (up) css.push(`--odx-grow-up:${+up.toFixed(4)}em`);
+  if (down) css.push(`--odx-grow-down:${+down.toFixed(4)}em`);
+  // (A shadow's apart, editor.css: none on a run of spaces alone.)
+  if (shRoom?.[0]) css.push(`--odx-sh-up:${shRoom[0]}`);
+  if (shRoom?.[1]) css.push(`--odx-sh-down:${shRoom[1]}`);
   return css;
 }
 

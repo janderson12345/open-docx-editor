@@ -335,7 +335,7 @@ export const schema = new Schema({
       toDOM: (m) => {
         const change = m.attrs.items.find((it) => it[0] === 'rPrChange');
         const a = { style: rextraCss(m.attrs.items) };
-        if (a.style.includes('--odx-grow-')) a.class = 'odx-grow'; // (editor.css: a taller line for emphasis marks and run borders)
+        if (a.style.includes('--odx-grow-') || a.style.includes('--odx-sh-')) a.class = 'odx-grow'; // (editor.css: a taller line for emphasis marks and run borders)
         // A complex-script run (right-to-left, or marked w:cs) is drawn with the bCs/iCs/szCs/cs-font members, as in Word.
         if (m.attrs.items.some(([n, x]) => (n === 'rtl' || n === 'cs') && !/w:val="(0|false|off)"/.test(x))) a.class = [a.class, 'odx-cs'].filter(Boolean).join(' ');
         if (change) Object.assign(a, { class: [a.class, 'odx-fmt'].filter(Boolean).join(' '), title: revTitle('Formatted', revXmlAttrs(change[1])) });
