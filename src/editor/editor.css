@@ -323,6 +323,9 @@ td[data-odx-phantom] > * { display: none; }
    after it both kept, as in Word (the browser collapses the first into the second, across the float). Not once the
    layout has put the table in the flow. */
 .odx-content > .tableWrapper[style*="--odx-fgap"]:not([style*="float:none"]):not([style*="float: none"]) + p { margin-top: calc(var(--odx-fgap) + var(--odx-fbefore, 0px)) !important; }
+/* The paragraph after a floating table placed down from it with no room beside it, when it doesn't fit above the table
+   (editor.js): under the table, its space before kept there, as in Word (the browser keeps the margin above, beside it). */
+.odx-content > .tableWrapper:not([style*="float:none"]):not([style*="float: none"]) + p.odx-funder { clear: both; padding-top: var(--odx-funder); }
 /* A table the layout splits over pages grows its rows by the room it leaves at each page's foot: a cell merged down over
    such a row, centred or at the bottom, would go down with it (onto the next page). Word keeps its text where it was. */
 .odx-content > [class*="odx-sp"] td[rowspan]:not([rowspan="1"]) { vertical-align: top !important; }

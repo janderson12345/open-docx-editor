@@ -262,6 +262,7 @@ function paragraphPlugin(session) {
       let edgePrev = null; // the style of the row end mark above this block, when it follows a table
       let noRoom = 0; // blocks after a table placed down from the text with no room beside it (styles.js --odx-fnoroom)
       let floatGap = null; // px: the space after the paragraph before a floating table, when this block follows that table
+      let fUnder = null; // px: how far down from this block such a table with no room beside it is placed
       parent.forEach((node, rel, index) => { // (index: a top-level block's, for sides and collapse; doc.childBefore made this quadratic)
         const pos = offset + rel;
         if (node.type !== schema.nodes.paragraph) {
@@ -271,10 +272,14 @@ function paragraphPlugin(session) {
           prev = null;
           edgePrev = null;
           floatGap = null;
+          fUnder = null;
           if (node.type === schema.nodes.table) {
-            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, parent === doc ? page.width - page.left - page.right : 0);
+            // (Its column: its own section's, which may be narrower than the last's, a portrait page before landscape ones.)
+            const own = parent === doc ? sides.get(index) || [0, 0] : null;
+            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, own ? page.width - page.left - page.right - own[0] - own[1] : 0);
             if (!/(?:^|;)float:/.test(place || '')) { tableEdges(node, before); edgePrev = mark; }
             noRoom = /--odx-fnoroom/.test(place || '') ? 40 : 0;
+            fUnder = noRoom ? Number(/(?:^|;)margin-top:([\d.]+)px/.exec(place)?.[1] || 0) : null;
             // A floating table in the text between two paragraphs: Word keeps both their spaces, the one after the first
             // and the one before the second (they don't overlap as they would side by side), and the table starts below
             // the first's (editor.css: while the table floats; one the layout puts in the flow, longer than a page, has its
@@ -398,7 +403,18 @@ function paragraphPlugin(session) {
         // (An empty one after such a table: something to fit on its line, so it goes under the table, as in Word.)
         const fempty = noRoom > 0 && !node.childCount;
         if (noRoom > 0) noRoom--;
-        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse', fempty && 'odx-fempty'].filter(Boolean);
+        // The paragraph right after it, when its space before and first line don't fit in the room above the table (an
+        // estimate from its size): Word sets it under the table with its space before kept (a Word test: 8pt before, under
+        // a table 10.45pt down; 0pt before, a 13.5pt line, stayed above one 15.45pt down). The browser leaves the margin
+        // above, beside the float (editor.css: odx-funder, while the table floats).
+        let funder = false;
+        if (fUnder != null) {
+          const b = Math.min(1056, twipsToPx(Number(spacing(node, 'before')) || 0));
+          const sz = Math.min(3276, Math.max(2, Number(run.size || session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20) || 20));
+          if (b + (sz / 2) * (4 / 3) * 1.15 > fUnder) { funder = true; style.push(`--odx-funder:${+b.toFixed(2)}px`); }
+          fUnder = null;
+        }
+        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse', fempty && 'odx-fempty', funder && 'odx-funder'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');
         headingRole(node, session, attrs);
         // A paragraph in a frame (frames.js): at its place, the text beside it; one after another in the same frame below it.
