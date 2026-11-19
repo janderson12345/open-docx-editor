@@ -53,3 +53,10 @@ test('a font missing from the computer: the open stand-in after the font and the
   assert.equal(lineFactor('Calibri'), 1.2207);
   assert.equal(lineFactor('Arial Narrow'), 1.1474); // (Word's, not the 1.13 its hhea gives when measured)
 });
+
+test('font names that are names of Object\'s own members are fonts like any other', () => {
+  for (const n of ['constructor', 'Constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+    assert.equal(lineFactor(n), 1.17, n);
+    assert.equal(fontStack(n), `"${n}", sans-serif`, n);
+  }
+});

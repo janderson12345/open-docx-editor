@@ -18,7 +18,7 @@ const n = (v) => +v.toFixed(3);
 const WIN = { arial: [0.905, 0.212], calibri: [0.952, 0.269], cambria: [0.95, 0.222], 'segoe ui': [1.079, 0.251], tahoma: [1.0, 0.207],
   verdana: [1.005, 0.21], 'times new roman': [0.891, 0.216], 'courier new': [0.833, 0.3], aptos: [1.01, 0.275], 'aptos narrow': [1.01, 0.275],
   'aptos display': [1.01, 0.275], 'arial narrow': [0.936, 0.212], consolas: [0.743, 0.257], georgia: [0.917, 0.219] };
-const win = (face) => WIN[face.toLowerCase()] || [0.92, 0.23];
+const win = (face) => (Object.hasOwn(WIN, face.toLowerCase()) && WIN[face.toLowerCase()]) || [0.92, 0.23];
 
 // Text width (px) in a CSS font, from a canvas where there is one; else about half an em a character.
 let measureCtx;

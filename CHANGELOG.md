@@ -5,6 +5,10 @@
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 63%, and documents laid out exactly as Word from 1,157 to 1,486.
 
+- **Hardening from the release review**: a document, pasted text or co-editor naming a font "constructor" or
+  "__proto__" no longer stops the document opening or breaks the editor; a quoted ">" in a piece of XML kept from a
+  part no longer has its namespaces declared twice; the extra layout passes for floating tables placed down past a
+  page's foot are capped.
 - **Documents with Word 2023's tracked-change dates open again**: a tracked table change carrying `w16du:dateUtc`
   was re-read without its namespace and the document failed to open.
 - **Saving an untouched document no longer adds tracked changes**: with Track Changes on, a document with merged-cell
