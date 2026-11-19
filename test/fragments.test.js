@@ -27,3 +27,12 @@ test('a piece using hundreds of prefixes is declared in one pass, a bounded numb
   assert.ok(Date.now() - t0 < 500);
   assert.ok((d.match(/xmlns:/g) || []).length <= 300);
 });
+
+test('a ">" inside a quoted value of the first tag doesn\'t end it: a prefix it declares isn\'t declared again', () => {
+  assert.equal(missingDecls('<w:tblPr a=">" xmlns:q="u"><q:a/></w:tblPr>', ['w']), '');
+  assert.equal(missingDecls("<w:tblPr a='>' xmlns:q=\"u\"><q:a/></w:tblPr>", ['w']), '');
+  // (An unclosed quote: no first tag found, nothing taken as declared, still quick.)
+  const t0 = Date.now();
+  missingDecls('<w:x a="' + '>'.repeat(200000), ['w']);
+  assert.ok(Date.now() - t0 < 1000);
+});

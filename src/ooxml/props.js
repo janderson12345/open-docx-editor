@@ -443,9 +443,10 @@ const quoted = (name) => `"${String(name).replace(/["\\\r\n\f{}<>]/g, '')}"`;
 
 // Metric-compatible open fonts first-class. DejaVu Sans (Bitstream Vera's
 // metrics) is what Word itself swaps for Verdana when the font is missing.
-const SUBST = { Calibri: 'Carlito', 'Calibri Light': 'Carlito', Cambria: 'Caladea', Arial: 'Liberation Sans', 'Times New Roman': 'Liberation Serif', 'Courier New': 'Liberation Mono', Consolas: 'odx-consolas', Aptos: 'odx-aptos', 'Century Schoolbook': 'Century', 'Aptos Narrow': 'odx-aptos-narrow', 'Aptos Display': 'odx-aptos-display', 'DejaVu Sans': 'Verdana', 'Arial Unicode MS': 'Segoe UI Symbol', 'Open Sans': 'odx-open-sans',
+// (These tables are looked up by font names from the document: no prototype, so "constructor" or "__proto__" find nothing.)
+const SUBST = Object.assign(Object.create(null), { Calibri: 'Carlito', 'Calibri Light': 'Carlito', Cambria: 'Caladea', Arial: 'Liberation Sans', 'Times New Roman': 'Liberation Serif', 'Courier New': 'Liberation Mono', Consolas: 'odx-consolas', Aptos: 'odx-aptos', 'Century Schoolbook': 'Century', 'Aptos Narrow': 'odx-aptos-narrow', 'Aptos Display': 'odx-aptos-display', 'DejaVu Sans': 'Verdana', 'Arial Unicode MS': 'Segoe UI Symbol', 'Open Sans': 'odx-open-sans',
   // Seen in Word's PDFs, not derived: a display font Word lacks, which it sets in Cambria (the I DO CREW forms, 8 files).
-  "Gabriel Weiss' Friends Font": 'Cambria' };
+  "Gabriel Weiss' Friends Font": 'Cambria' });
 // A font list (some generators write "Liberation Sans;Arial") names no font Word knows. One led by a Liberation font is that font's Microsoft twin (Word
 // knows the pair: "Liberation Sans;Arial" prints in Arial), but "Open Sans;Arial" Word sets in Segoe UI, its UI font.
 const listed = (name) => /^open sans;/i.test(name || '');
@@ -484,7 +485,7 @@ export function fontStack(name) {
 
 // Names Windows itself maps to another font (its FontSubstitutes), which Word prints in that font: "Times" is Times New
 // Roman in Word's PDFs, where the browser's "Times" is another face with shorter lines (1.11 em, not 1.15).
-const WINDOWS = { times: 'Times New Roman' };
+const WINDOWS = Object.assign(Object.create(null), { times: 'Times New Roman' });
 const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
 
 function baseStack(name) {
@@ -500,7 +501,7 @@ function baseStack(name) {
 
 // Word's "single" line height is the font's own ascent + descent (+ line gap),
 // so it differs per font. Units per em from each font's OS/2 and hhea tables.
-const LINE = {
+const LINE = Object.assign(Object.create(null), {
   calibri: 1.2207, 'calibri light': 1.2207, carlito: 1.2207, cambria: 1.1724, caladea: 1.1724,
   arial: 1.1499, 'liberation sans': 1.1499, helvetica: 1.1499, 'times new roman': 1.1499,
   'liberation serif': 1.1499, consolas: 1.1709, 'courier new': 1.1328, 'liberation mono': 1.1328,
@@ -511,7 +512,7 @@ const LINE = {
   // from its hhea it came out 1.13, lines of 1.08 and 1.15 spacing 0.2pt short each, 10px a page in the samples.)
   'arial narrow': 1.1474, 'trebuchet ms': 1.1621, 'comic sans ms': 1.3936, impact: 1.2197, 'arial black': 1.4097,
   'ms gothic': 1.3, // (not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
-};
+});
 const measured = new Map();
 /** ascent + descent per em of a font the table doesn't know, measured in the browser if it is installed. */
 function measure(key) {

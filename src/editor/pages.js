@@ -539,6 +539,11 @@ export function createPages(view, session, { sheet, scope }) {
   const balanced = new Map(); // section's lo -> { sheet (of its own, from 0), h }: the column height its last sheet is cut to
   let balancedDoc = null;
   let balancePasses = 0;
+  // Passes run again for floats set down that reach past the foot (crossFoot), since the document last changed: once a
+  // table, but a chain of such tables, each crossing only after the one before goes in the flow, is a pass each; capped.
+  let crossDoc = null;
+  let crossPasses = 0;
+  const CROSS_MAX = 8;
   let narrowed = new Map(); // block index -> px its column (of their own widths) is narrower than the widest, as laid out
   let colsAgain = false;
   let colsPasses = 0;
@@ -2347,6 +2352,7 @@ export function createPages(view, session, { sheet, scope }) {
     const regs = colRegs.filter((r) => r.k0 >= 0 && r.k0 < r.k1);
     curRegs = regs;
     if (balancedDoc !== doc) { balancedDoc = doc; balancePasses = 0; }
+    if (crossDoc !== doc) { crossDoc = doc; crossPasses = 0; }
     let balanceAgain = false;
     const rec = new Map(); // (columns sections) block k -> { top, bottom, carry } where it was last placed
     const frameDy = new Map(); // block index -> px a frame set down on its page is moved below where it comes
@@ -2631,7 +2637,7 @@ export function createPages(view, session, { sheet, scope }) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
-        if (b.rows && bottom + shift > contentBottom(p) + 1 && setDown(b.node) && !crossFoot.has(b.node) && outOfFlow(b.el) && !roomBeside(b.el)) {
+        if (b.rows && bottom + shift > contentBottom(p) + 1 && setDown(b.node) && !crossFoot.has(b.node) && crossPasses < CROSS_MAX && outOfFlow(b.el) && !roomBeside(b.el)) {
           crossFoot.add(b.node); // (a float set down that reaches past the foot: in the flow, next pass)
           crossAgain = true;
         }
@@ -2787,7 +2793,8 @@ export function createPages(view, session, { sheet, scope }) {
     lastMs = performance.now() - t0;
     passes++;
     // A balanced columns section's cut changed: lay out again with it (a few times at most, should it not settle).
-    if (hfWrapAgain || crossAgain) schedule(); // (crossAgain: once a table at most, crossFoot)
+    if (crossAgain) crossPasses++;
+    if (hfWrapAgain || crossAgain) schedule(); // (crossAgain: once a table at most, crossFoot, and CROSS_MAX passes)
     else if (balanceAgain && balancePasses < 6) { balancePasses++; schedule(); }
     // Blocks moved into columns of other widths: again at those widths (a few times at most, should it not settle).
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
