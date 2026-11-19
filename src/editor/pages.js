@@ -32,6 +32,7 @@ import { applyLineFix, lineGrid, storyLineFix } from './lhfix.js';
 import { applyWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
 import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
+import { applyTableClear } from './tableclear.js';
 import { settleHyphens } from './hyphenate.js';
 import { fitAutofitColumns } from './tablefit.js';
 import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
@@ -2197,6 +2198,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
     if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
+    if (applyTableClear(view)) return schedule(); // a table that doesn't fit beside a float moved under it: measure again
     // (Its own pass: a view update only lays out again when the document changed, and a squeeze that settled after
     // everything else (lines split beside a shape, wrapboth.js) had left the pages undrawn.)
     if (applySqueeze(view, session)) return schedule(); // lines changed: measure again once they're drawn
