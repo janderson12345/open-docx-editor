@@ -76,6 +76,14 @@ const cellTable = (el) => (el.tagName === 'TABLE' ? el : el.classList.contains('
 // it a single line the page couldn't split, the paragraph moved on whole; Word breaks such a paragraph as any other,
 // the shape staying with its first lines (wrap-word3 vt-thin: Text 7's three lines beside its rectangle at page 1's
 // foot, the rest on page 2 the column's width).
+// A paragraph with nothing on its line: no content, or only drawings out of the line (floating or set where they are,
+// reader.js anchorCss), as a section's closing paragraph holding the cover page's pictures (Word kept such a paragraph,
+// 12px past the footer's room, on its page; moved on alone, it made a blank page before the next section).
+const lineless = (node) => {
+  let only = true;
+  node.forEach((c) => { if (!(c.type === schema.nodes.image && /(?:^|;)\s*(?:position:absolute|float:(?:left|right))/.test(c.attrs.place || ''))) only = false; });
+  return only;
+};
 const bothShape = (e) => e.tagName === 'IMG' && !!e.style.getPropertyValue('--odx-both') && getComputedStyle(e).position === 'absolute';
 
 const GAP = 24; // px between sheets
@@ -2406,7 +2414,7 @@ export function createPages(view, session, { sheet, scope }) {
       // (Less the space after the paragraph above: Word drops it at the page's foot, so a page filled exactly keeps its
       // section's empty last paragraph.)
       // (Not after a column break: that paragraph goes to the next column, and a next-page section starts the page after.)
-      if (!firstOnPage && !b.node.childCount && sectEnds.get(b.i) && !(breakPending && breakKind === 'column') && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
+      if (!firstOnPage && lineless(b.node) && sectEnds.get(b.i) && !(breakPending && breakKind === 'column') && top - (k > 0 ? spaceAfter(blocks[k - 1].node) : 0) < contentBottom(p)) { if (sectEnds.get(b.i).page) breakPending = false; continue; }
       // (In columns of their own widths, a paragraph's bottom at the width of the column it's in: atColumnWidth.)
       const wide = inCols ? atColumnWidth(b, cols || inReg, p, shift, top <= contentTop(p) + 1) : null;
       const bottom = wide ? wide.bottom : b.bottom;

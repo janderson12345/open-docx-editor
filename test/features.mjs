@@ -1150,6 +1150,13 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   check(Math.abs(r.body - 96) < 1.5 && r.table != null && Math.abs(r.table + 13.33) < 1.5,
     `a header's floats don't push the body down; its floating table placed above its paragraph is drawn there (${JSON.stringify(r)})`);
 }
+// A section's closing paragraph holding only a picture, its top above the footer's room and its foot in it
+// (mkfloatroom.mjs): Word keeps it on its page, two pages in all (it had gone on alone: a blank page, three).
+{
+  await open('sect-hang.docx');
+  const sheets = await page.evaluate(() => document.querySelectorAll('.odx-sheet').length);
+  check(sheets === 2, `a section's closing paragraph of only a picture stays on its page, as an empty one does (${sheets} pages; Word 2)`);
+}
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
 // same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
