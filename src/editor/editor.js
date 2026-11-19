@@ -346,8 +346,12 @@ function paragraphPlugin(session) {
           // (One list: one numId, or two over one abstract list, as Word's PDFs have it. Each side on its own: an item's auto space after goes under the next item of its list even when that one has
           // none of its own, and the next's auto space before goes too, under an item with a plain 6pt after, which stays.)
           if (prev && l && prev.list && sameList(session, prev.list.numId, l.numId)) {
-            if (auto(node, 'beforeAuto')) style.push('margin-top:0');
-            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0');
+            // (In a table cell only both sides together, as before: Word drops each side there too, but cells of long
+            // lists then come out shorter than the rows the page layout splits as Word does, samples 1434 and 2665 moving
+            // a heading and its table a page on.)
+            const both = auto(node, 'beforeAuto') && auto(prev.node, 'afterAuto');
+            if (auto(node, 'beforeAuto') && (parent === doc || both)) style.push('margin-top:0');
+            if (auto(prev.node, 'afterAuto') && (parent === doc || both)) prev.style.push('margin-bottom:0');
           }
         }
         const bdr = borderKey(node.attrs);
