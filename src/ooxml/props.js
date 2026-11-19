@@ -360,6 +360,10 @@ export function readPPr(pPr) {
     // HTML auto spacing is 14pt each side; Word drops it above the first paragraph of the document or a cell.
     if (/^(1|true|on)$/.test(attr(sp, 'beforeAutospacing') || '')) { p.before = 280; p.beforeAuto = true; }
     if (/^(1|true|on)$/.test(attr(sp, 'afterAutospacing') || '')) { p.after = 280; p.afterAuto = true; }
+    // (Turned off outright, w:afterAutospacing="0", over a style that has it: the paragraph's own spacing, as in Word: a
+    // web-style list's items keep their 7.5pt after between them.)
+    if (/^(0|false|off)$/.test(attr(sp, 'beforeAutospacing') || '')) p.beforeAuto = false;
+    if (/^(0|false|off)$/.test(attr(sp, 'afterAutospacing') || '')) p.afterAuto = false;
   }
   const ind = kid(pPr, 'ind');
   if (ind) {
