@@ -245,13 +245,14 @@ export function textEffectsCss(items) {
   if (bevel) css.push(`filter:url(#${pageFilter(bevel, 'bv')})`);
   // The room Word gives them: a glow's line is taller above and below, a reflection's below (Word's PDFs of
   // mkeffects14c.ps1: 36pt Arial with glows of 2 to 30pt, the line 0.46 of the radius higher and 0.62 lower; at other
-  // sizes in proportion, near enough: 12 to 72pt with a 10pt glow). A shadow takes none.
+  // sizes in proportion, near enough: 12 to 72pt with a 10pt glow). A shadow's too (shadowRoom).
   let up = 0, down = 0;
   if (glow) {
     const r = pt(num(glow, 'rad') || 0);
     up = (0.46 * r) / 36;
     down = (0.62 * r) / 36;
   }
+  const shRoom = sh && !(num(sh, 'sx') === 0 && num(sh, 'sy') === 0) ? shadowRoom(num(sh, 'blurRad'), num(sh, 'dist'), num(sh, 'dir')) : null;
   const refl = w14('reflection');
   if (refl) {
     down = Math.max(down, reflectionRoom(num(refl, 'endPos') || 0, num(refl, 'dist') || 0));
@@ -271,9 +272,29 @@ export function textEffectsCss(items) {
     const blur = Math.min(100, pt(num(refl, 'blurRad') || 0)) / 5; // (bounded: a huge blur on every word crawls)
     if (blur > 0) css.push(`--odx-rf-blur:${+blur.toFixed(3)}pt`);
   }
-  if (up) css.push(`--odx-grow-up:${+up.toFixed(4)}em`);
-  if (down) css.push(`--odx-grow-down:${+down.toFixed(4)}em`);
+  const room = (em, extra) => (em && extra ? `max(${+em.toFixed(4)}em, ${extra})` : em ? `${+em.toFixed(4)}em` : extra);
+  const growUp = room(up, shRoom?.[0]), growDown = room(down, shRoom?.[1]);
+  if (growUp) css.push(`--odx-grow-up:${growUp}`);
+  if (growDown) css.push(`--odx-grow-down:${growDown}`);
   return css;
+}
+
+/**
+ * The room above and below its line Word gives text with an outer shadow (w14:shadow; blur radius and distance in EMUs,
+ * direction in 60,000ths of a degree), as CSS lengths ['', ''] for none, or null. Word grows the line by the blur, each
+ * side, less (above) or plus (below) the shadow's drop, times a share that grows with the font size: 0.25 at 10pt, 0.29
+ * at 12pt, 0.335 at 15pt, 0.41 at 20pt, 0.61 at 36pt, 0.124pt + 0.0138em near enough (Word's PDFs: Times New Roman and
+ * Arial, 10 to 36pt, blurs of 1 to 8pt, drops of 0 to 6pt down or up, within 0.1pt; its preset, 4pt blur and 3pt at
+ * 45 degrees down, makes a 15pt line 2.7pt taller, 0.5pt above and 2.2pt below). No blur, no drop: none.
+ */
+export function shadowRoom(blurEmu, distEmu, dir) {
+  const bound = (v) => (Number.isFinite(v) ? Math.min(1270000, Math.max(0, v)) / 12700 : 0); // (EMUs to pt, at most 100pt)
+  const blur = bound(blurEmu), dist = bound(distEmu);
+  const deg = Number.isFinite(dir) ? (dir / 60000) % 360 : 0;
+  const drop = dist * Math.sin((deg * Math.PI) / 180); // (down)
+  const css = (x) => (x > 0.005 ? `calc(${+(0.124 * x).toFixed(4)}pt + ${+(0.0138 * x).toFixed(4)}em)` : '');
+  const out = [css(blur - drop), css(blur + drop)];
+  return out[0] || out[1] ? out : null;
 }
 
 // Word's nine reflections (Text Effects > Reflection; its Font.Reflection.Type 1 to 9) as it writes them: end position

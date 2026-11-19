@@ -1727,6 +1727,14 @@ await open('columns-empty-section.docx');
 const colGap = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; const t = (i) => ps[i].getBoundingClientRect().top; return ps.length >= 4 ? [+(t(3) - t(1)).toFixed(2), +(t(1) - t(0)).toFixed(2)] : null; });
 check(colGap && Math.abs(colGap[0] - 2 * colGap[1]) < 1, `a lone empty paragraph in a columns section keeps its line (${JSON.stringify(colGap)})`);
 
+// Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
+// paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
+// for an 8pt blur at 10pt).
+await open('shadow-lines.docx');
+const shH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+const shOk = shH.length >= 11 && [2, 4, 6].every((i) => Math.abs(shH[i] - shH[0] - 3.6) < 0.4) && Math.abs(shH[9] - shH[8] - 5.33) < 0.5;
+check(shOk, `shadowed lines as much taller as Word makes them (${JSON.stringify(shH)})`);
+
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
 server.close();
