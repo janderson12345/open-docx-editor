@@ -118,12 +118,8 @@ function noteNumber(mark, contentEl) {
   return noteMarks.of.get(mark) || null;
 }
 
-/** A ':nth-child' path from `root` (exclusive) down to `el`, for a rule that hides it without touching it. */
-function pathOf(el, root) {
-  const parts = [];
-  for (let e = el; e && e !== root; e = e.parentElement) parts.unshift(`:nth-child(${[...e.parentElement.children].indexOf(e) + 1})`);
-  return parts.join(' > ');
-}
+/** The attribute marking a paragraph the layer draws (hidden while the layer is there). */
+const HIDDEN = 'data-odx-plh';
 
 /**
  * Shallow copies of `el`'s ancestors up to (not including) the first `.odx-content` or `.odx-hf`, nested under `into`
@@ -156,8 +152,8 @@ const SKIP = 'img:not(.ProseMirror-separator):not(.odx-lifted):not(.odx-lift > i
  * Builds the print layer under `sheet`: the lines of the document's paragraphs (top level and in table cells) and of
  * the headers and footers, each placed exactly. Returns a function removing it.
  */
-export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
-  removePrintLines(sheet);
+export function buildPrintLines(sheet, contentEl, shiftOf, scope, quiet = (fn) => fn()) {
+  removePrintLines(sheet, quiet);
   noteMarks = null;
   const layer = document.createElement('div');
   layer.className = LAYER;
@@ -192,7 +188,7 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
     floats.push({ r: { left: fr.left - (parseFloat(cs.marginLeft) || 0), right: fr.right + (parseFloat(cs.marginRight) || 0), top: fr.top - Math.max(0, parseFloat(cs.marginTop) || 0), bottom: fr.bottom + (parseFloat(cs.marginBottom) || 0) }, side: cs.float, ml: 0 });
   }
   // The editor owns its paragraphs' DOM (a class added to one is undone, and the element redrawn): read them all first,
-  // and hide the originals by rules on their position instead.
+  // then mark the originals, with its change observer paused (`quiet`), once the layer is built.
   const paras = [...contentEl.children].filter((e) => e.tagName === 'P');
   for (const td of contentEl.querySelectorAll('td, th')) {
     if (getComputedStyle(td).writingMode !== 'horizontal-tb') continue;
@@ -320,7 +316,7 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
         + (shaded ? `;background:${cs.backgroundColor}` : '') + (cs.clipPath && cs.clipPath !== 'none' ? `;clip-path:${cs.clipPath}` : '');
       layer.insertBefore(under, host);
     }
-    hide.push(`.${scope} > ${pathOf(el, sheet)}`);
+    hide.push(el);
   }
   sheet.append(layer);
   // Where each copy's text sits in it (all read, then all moved): moved so the text lands on its original line's, plus
@@ -333,15 +329,22 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope) {
     return ln.top - origin.top - Math.round(off) + d;
   });
   placed.forEach(([line], i) => { line.style.transform = `translateY(${ys[i].toFixed(3)}px)`; });
-  const style = document.createElement('style');
-  // A rule each: one selector the browser can't read would drop a combined rule for all of them.
-  style.textContent = hide.map((sel) => `${sel}{visibility:hidden !important}`).join('\n');
-  if (hide.length) layer.append(style);
-  return () => removePrintLines(sheet);
+  // The originals hidden by one rule on a mark, not by a rule each on its place (an :nth-child path): those are tried
+  // on every element at each restyle, and printing restyles the page, and each page's copy (printcopies.js), again and
+  // again: a 16-page document of 950 table cells took 110s in the browser's print.
+  if (hide.length) {
+    quiet(() => { for (const el of hide) el.setAttribute(HIDDEN, ''); });
+    const style = document.createElement('style');
+    style.textContent = `.${scope} [${HIDDEN}]{visibility:hidden !important}`;
+    layer.append(style);
+  }
+  return () => removePrintLines(sheet, quiet);
 }
 
-export function removePrintLines(sheet) {
+export function removePrintLines(sheet, quiet = (fn) => fn()) {
   sheet.querySelectorAll(`:scope > .${LAYER}`).forEach((e) => e.remove());
+  const marked = sheet.querySelectorAll(`[${HIDDEN}]`);
+  if (marked.length) quiet(() => marked.forEach((e) => e.removeAttribute(HIDDEN)));
 }
 
 /** On by default (with it 91.8% of lines were within 1px of Word, without 90.5%); off with window.odxEngine = false or ?noengine. */

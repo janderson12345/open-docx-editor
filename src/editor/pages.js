@@ -35,7 +35,7 @@ import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
 import { applyTableClear } from './tableclear.js';
 import { settleHyphens } from './hyphenate.js';
 import { fitAutofitColumns } from './tablefit.js';
-import { baselineCss, cellShifts, hfShifts, shiftFor } from './baseline.js';
+import { baselineCss, blockShifts, cellShifts, hfShifts, shiftFor } from './baseline.js';
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { placeVar, padOf } from '../ooxml/place.js';
@@ -2678,6 +2678,8 @@ export function createPages(view, session, { sheet, scope }) {
       blockAttrs.get(b.i).style.push(`--odx-sbtop:${Math.max(0, sbTop.get(b.i)).toFixed(2)}px`);
     }
 
+    // The top-level paragraphs' print-only baseline shifts, on the blocks themselves (baseline.js).
+    for (const [i, st] of blockShifts(blocks, sheet)) { if (!blockAttrs.has(i)) blockAttrs.set(i, { cls: [], style: [] }); blockAttrs.get(i).style.push(st); }
     const { css, heads } = applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs);
     css.push(`.${scope} > .odx-content{min-height:${pageTop(pages) - gap}px}`);
     if (cols || colRegs.length) dom.classList.remove('odx-measure');
@@ -2699,7 +2701,7 @@ export function createPages(view, session, { sheet, scope }) {
       });
       drawnUp = new Set(upNow.keys());
     }
-    let text = css.concat(colCss, baselineCss(blocks, scope, sheet)).join('\n');
+    let text = css.concat(colCss, baselineCss(scope)).join('\n');
     text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
@@ -2961,12 +2963,12 @@ export function createPages(view, session, { sheet, scope }) {
     }
     // Lifted floats read where pages are from the layout before (liftFloats): settle them on the gapless pages.
     if (view.dom.querySelector('img[style*="--odx-lrel"], img[style*="--odx-arel"]')) for (let k = 0; k < 2; k++) { if (frame) cancelAnimationFrame(frame); layout(); }
-    if (engineOn()) buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope);
+    if (engineOn()) buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope, quiet);
     printBox?.remove();
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
+  const afterPrint = () => { removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 
@@ -3002,8 +3004,8 @@ export function createPages(view, session, { sheet, scope }) {
      *  returns a function removing it. */
     printLayer() {
       if (!engineOn()) return () => {};
-      buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope);
-      return () => removePrintLines(sheet);
+      buildPrintLines(sheet, view.dom, (el) => shiftFor(el, sheet), scope, quiet);
+      return () => removePrintLines(sheet, quiet);
     },
     pageTop: (p) => pageTop(p),
     get pages() { return pages; },
