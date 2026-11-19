@@ -656,7 +656,7 @@ export function createPages(view, session, { sheet, scope }) {
    * to the next page, below a copy of the header rows. Returns null when the
    * first row doesn't fit either (the whole table moves instead).
    */
-  function splitTable(b, shift, tableFirstOnPage) {
+  function splitTable(b, shift, tableFirstOnPage, chainAtTop = false) {
     const { rows, headerRows } = b;
     const headH = headerRows ? rows[headerRows - 1].bottom - rows[0].top : 0;
     const pushes = new Map();
@@ -682,7 +682,7 @@ export function createPages(view, session, { sheet, scope }) {
         while (s > headerRows && rowKeeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
         if (s < j) {
           const topS = rows[s].top + shift + extraAt[s];
-          const firstS = s === 0 ? tableFirstOnPage : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
+          const firstS = s === 0 ? tableFirstOnPage || chainAtTop : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
           const tall = rows[j].bottom - rows[s].top + headH > pageHeight(pg + 1);
           if (!firstS && !tall && s <= headerRows && !tableFirstOnPage) return null;
           if (!firstS && !tall && s > headerRows) {
@@ -2356,6 +2356,18 @@ export function createPages(view, session, { sheet, scope }) {
       breakPending = false;
       return true;
     };
+    // Whether the blocks before block k that keep with it (keep with next) reach back to page p's top: moving them on
+    // with the table's first rows gains nothing, and Word breaks the table where it runs out of room instead (generated
+    // documents: a heading kept with a table of 70 rows each keeping with the next, on the next page with its first 55
+    // rows; it had been left there alone, the table starting the page after).
+    const keptFromTop = (k, p) => {
+      for (let m = k - 1; m >= 0 && keep(blocks[m].node); m--) {
+        const t = blocks[m].top + shift;
+        if (pageOf(t) !== p) return false;
+        if (t <= contentTop(p) + 1) return true;
+      }
+      return false;
+    };
     for (let k = 0; k < blocks.length; k++) {
       const b = blocks[k];
       if (pulls.has(b.i)) { for (const [, d] of pulls.get(b.i)) shift -= d; pulls.delete(b.i); }
@@ -2537,7 +2549,7 @@ export function createPages(view, session, { sheet, scope }) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
-        const split = b.rows && splitTable(b, shift, firstOnPage);
+        const split = b.rows && splitTable(b, shift, firstOnPage, !firstOnPage && keptFromTop(k, p));
         if (split) {
           splits.set(b.i, split);
           shift += split.total;
