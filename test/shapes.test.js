@@ -64,6 +64,18 @@ test('a text box shows the paragraphs inside block content controls; one placed 
   assert.match(node.attrs.place, /--odx-arel:page;--odx-ay:160px/);
 });
 
+test('a text box draws a run in all caps (w:caps) in capitals, its own or from its style', () => {
+  const files = unzipSync(bytes);
+  const xml = strFromU8(files['word/document.xml'])
+    .replace(/<w:txbxContent><w:p>([\s\S]*?)<\/w:p><\/w:txbxContent>/g, '<w:txbxContent><w:p><w:r><w:rPr><w:caps/></w:rPr><w:t>Banner title</w:t></w:r><w:r><w:t> plain words</w:t></w:r></w:p></w:txbxContent>');
+  files['word/document.xml'] = strToU8(xml);
+  const s = new DocxSession(zipSync(files), { imageUrl: () => 'blob:x' });
+  let node = null;
+  s.doc.descendants((n) => { if (!node && n.type.name === 'image' && /<wp:anchor/.test(n.attrs.xml)) node = n; });
+  const svg = decodeURIComponent(node.attrs.src);
+  assert.match(svg, /BANNER TITLE plain/);
+});
+
 test('the word count takes in text boxes once (not their fallback copy)', async () => {
   const { wordCount } = await import('../src/editor/commands.js');
   const s = new DocxSession(bytes);
