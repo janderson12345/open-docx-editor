@@ -1118,6 +1118,51 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   check(Math.abs(r.imgTop - 48) <= 1 && Math.abs(r.imgLeft - 192) <= 1 && r.page1 > 100 && r.page2 < 40,
     `a header's picture placed against the page, as Word draws it; pages without a header from the top margin (${JSON.stringify(r)})`);
 }
+// Contextual spacing across a table's edges (mktableedges.mjs): with it, the paragraph above, the cell's and the one
+// under the table meet with no space (Word: each line 13.5pt under the one above, and the border); without it, each
+// keeps its 10pt (the cell's line 33.75pt under the one above, the line under the table 33.75pt under the cell's).
+{
+  await open('table-edges.docx');
+  const r = await page.evaluate(() => {
+    const at = (t) => [...document.querySelectorAll('.odx-content p')].find((p) => p.textContent === t)?.getBoundingClientRect();
+    const gap = (a, b) => { const x = at(a), y = at(b); return x && y ? Math.round((y.top - x.bottom) * 10) / 10 : null; };
+    return { withTop: gap('Above with', 'Cell with'), withBottom: gap('Cell with', 'Below with'), withoutTop: gap('Above without', 'Cell without'), withoutBottom: gap('Cell without', 'Below without') };
+  });
+  check(r.withTop < 4 && r.withBottom < 4 && r.withoutTop > 24 && r.withoutBottom > 24, `contextual spacing at a table's edges, as in Word (${JSON.stringify(r)})`);
+}
+// A row of empty cells that leave their end marks out of its height (w:hideMark; mktableedges.mjs): no room, as in
+// Word (the third row's line 14.25pt under the first's), where the same row without it keeps a line (36.75pt).
+{
+  await open('hide-mark.docx');
+  const r = await page.evaluate(() => {
+    const at = (t) => [...document.querySelectorAll('.odx-content p')].find((p) => p.textContent === t)?.getBoundingClientRect().top;
+    return { hidden: Math.round((at('Third hidden') - at('First hidden')) * 10) / 10, shown: Math.round((at('Third shown') - at('First shown')) * 10) / 10 };
+  });
+  check(Math.abs(r.hidden - 19) <= 1.5 && Math.abs(r.shown - 49) <= 1.5, `a row of empty cells with hidden end marks takes no room, as in Word (${JSON.stringify(r)})`);
+}
+// A floating table with no vertical anchor, 2in down (mktableedges.mjs): against the margin, as Word reads it, with the
+// paragraphs after it above it until it (Word: "After 1" 139.5pt down the page, under "Before 5"; the table's first
+// row at 216.75pt, 2in under the top margin).
+{
+  await open('float-no-anchor.docx');
+  const r = await page.evaluate(() => {
+    const sheet = document.querySelector('.odx-sheet').getBoundingClientRect();
+    const at = (t) => { const p = [...document.querySelectorAll('.odx-content p')].find((x) => x.textContent === t); return p ? Math.round(p.getBoundingClientRect().top - sheet.top) : null; };
+    return { after1: at('After 1'), row1: at('Floating row 1'), before5: at('Before 5') };
+  });
+  check(r.after1 > r.before5 && r.after1 < r.row1 && Math.abs(r.row1 - 288) <= 3, `a floating table with no vertical anchor against the margin, the text after it above it (${JSON.stringify(r)})`);
+}
+// A table as wide as the text, placed 451tw down from the paragraph after it (mktableedges.mjs): that paragraph above
+// it, the empty one after under it, as in Word ("Text 2" 41.25pt under the table's first row; with the empty paragraph
+// left beside the table, in no room, 13.5pt less).
+{
+  await open('float-text-noroom.docx');
+  const r = await page.evaluate(() => {
+    const at = (t) => { const p = [...document.querySelectorAll('.odx-content p')].find((x) => x.textContent === t); return p ? p.getBoundingClientRect().top : null; };
+    return { text1: Math.round(at('Text 1') - at('Placed row 1')), text2: Math.round(at('Text 2') - at('Placed row 1')) };
+  });
+  check(r.text1 < 0 && Math.abs(r.text2 - 55) <= 2, `an empty paragraph after a table placed down from the text with no room beside it goes under it (${JSON.stringify(r)})`);
+}
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
 // same text with neither (mkhyphrules.mjs). Where the browser hyphenates itself these are its own, not checked.
