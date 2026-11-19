@@ -30,8 +30,8 @@ test('fill, outline, shadow and glow as Word draws them, and the room a glow or 
   assert.match(sh, /text-shadow:4pt 4pt 3pt rgba\(128,128,128,0.7\)/);
   // Its room: none above (its 4pt drop is more than its 3pt blur), 7pt times the size's share below (Word's PDF at 36pt
   // Arial: 4.05pt; texteffects.js shadowRoom).
-  assert.doesNotMatch(sh, /--odx-grow-up/);
-  assert.match(sh, /--odx-grow-down:calc\(0.868pt \+ 0.0966em\)/);
+  assert.doesNotMatch(sh, /--odx-grow|--odx-sh-up/);
+  assert.match(sh, /--odx-sh-down:calc\(0.868pt \+ 0.0966em\)/);
   assert.deepEqual(shadowRoom(0, 0, 0), null);
   assert.deepEqual(shadowRoom(50800, 0, 0), ['calc(0.496pt + 0.0552em)', 'calc(0.496pt + 0.0552em)']);
   assert.deepEqual(shadowRoom(1e12, -5, NaN), ['calc(12.4pt + 1.38em)', 'calc(12.4pt + 1.38em)']); // (bounded: 100pt at most)

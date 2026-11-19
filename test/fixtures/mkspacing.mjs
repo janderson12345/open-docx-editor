@@ -9,7 +9,9 @@
 //   column (the text after it 29.25pt under the line before, two lines; it had come up one, onto the empty paragraph's).
 // - shadow-lines.docx: 15pt Times New Roman lines, single, between plain ones: with Word's preset outer shadow (w14:shadow,
 //   4pt blur, 3pt at 45 degrees) on the run, from a paragraph style, and on an empty paragraph of that style; then an 8pt
-//   blur on 10pt text. Word's PDFs: each shadowed line 2.7pt taller (3.6px), the 10pt one 4pt (5.33px); they had none.
+//   blur on 10pt text; then a
+//   line whose only shadowed run is a space. Word's PDFs: each shadowed line 2.7pt taller (3.6px), the 10pt one 4pt
+//   (5.33px); they had none. The shadowed space's line: no taller (spaces don't size a line).
 import '../setup.js';
 import fs from 'fs';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
@@ -57,6 +59,8 @@ const shBody = [
   sp(30, 'Plain'), sp(30, 'Plain'), sp(30, 'Shadow on the run', '', preset), sp(30, 'Plain'),
   sp(30, 'Shadow from the style', styled), sp(30, 'Plain'), sp(30, null, styled), sp(30, 'Plain'),
   sp(20, 'Small plain'), sp(20, 'Small with a wide blur', '', shadow(101600, 0, 0)), sp(20, 'Small plain'),
+  `<w:p><w:pPr>${single}</w:pPr><w:r><w:rPr>${F}<w:sz w:val="30"/></w:rPr><w:t>Words and</w:t></w:r><w:r><w:rPr>${F}<w:sz w:val="30"/>${preset}</w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r><w:rPr>${F}<w:sz w:val="30"/></w:rPr><w:t>a shadowed space</w:t></w:r></w:p>`,
+  sp(30, 'Plain'),
 ].join('');
 {
   const files = unzipSync(blankDocxBytes());
