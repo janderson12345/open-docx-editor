@@ -300,10 +300,16 @@ function paragraphPlugin(session) {
           if (auto(node, 'beforeAuto')) style.push(`margin-top:${prev && auto(prev.node, 'afterAuto') ? 10 : 5}pt`);
           if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt');
         } else {
+          // (A paragraph's own space, w:after="150", over a style with auto spacing that it doesn't turn off: still the auto
+          // 14pt, as in Word's PDFs, the auto flag being kept apart from the number.)
+          if (node.attrs.view.before != null && node.attrs.view.beforeAuto == null && auto(node, 'beforeAuto')) style.push('margin-top:14pt');
+          if (node.attrs.view.after != null && node.attrs.view.afterAuto == null && auto(node, 'afterAuto')) style.push('margin-bottom:14pt');
           if (rel === 0 && auto(node, 'beforeAuto')) style.push('margin-top:0');
-          if (prev && node.attrs.numId && node.attrs.numId !== '0' && prev.node.attrs.numId === node.attrs.numId && auto(node, 'beforeAuto') && auto(prev.node, 'afterAuto')) {
-            style.push('margin-top:0');
-            prev.style.push('margin-bottom:0');
+          // (One list: one numId, or two over one abstract list, as Word's PDFs have it. Each side on its own: an item's auto space after goes under the next item of its list even when that one has
+          // none of its own, and the next's auto space before goes too, under an item with a plain 6pt after, which stays.)
+          if (prev && l && prev.list && sameList(session, prev.list.numId, l.numId)) {
+            if (auto(node, 'beforeAuto')) style.push('margin-top:0');
+            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0');
           }
         }
         const bdr = borderKey(node.attrs);
@@ -371,7 +377,7 @@ function paragraphPlugin(session) {
           const coln = sd[2] ? ' + var(--odx-coln, 0px)' : '';
           style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px${rtl ? coln : ''})`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px${rtl ? '' : coln})`);
         }
-        prev = { node, pos, attrs, style, cs, bdr };
+        prev = { node, pos, attrs, style, cs, bdr, list: l };
         decos.push(prev);
       });
     };
@@ -532,6 +538,15 @@ function localStylesPlugin(session) {
       return state.tr.setNodeMarkup(pos, null, { ...attrs, pattrs: node.attrs.pattrs, sdt: node.attrs.sdt, deco: null });
     },
   });
+}
+
+/** Are two numIds one list for Word's spacing between items: the same, or two instances of one abstract list? */
+function sameList(session, a, b) {
+  if (a === b) return true;
+  const nums = session.numbering?.nums;
+  const x = nums?.get(String(a));
+  const y = nums?.get(String(b));
+  return !!(x && y && x.abstractId != null && x.abstractId === y.abstractId);
 }
 
 export function createEditor(mount, session, { onChange, author = 'Author', collab = null } = {}) {
