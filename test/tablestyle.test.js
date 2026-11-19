@@ -74,3 +74,16 @@ test('laid out as Word 2010 or older, a 12pt Normal gives way to a table style t
   assert.equal(cellSize(22, 26, '<w:sz w:val="28"/>', true).cell, null);
   assert.equal(cellSize(22, 24, '<w:color w:val="000000"/>', false).cell, null); // Word 2013's layout, or the override set
 });
+
+test('fonts Word substitutes when missing, and faces named as fonts', async () => {
+  const { fontStack, lineFactor, faceCss, fontCss } = await import('../src/ooxml/props.js');
+  assert.match(fontStack('Palatino'), /^"Palatino", "Palatino Linotype"/);
+  assert.match(fontStack('Helvetica Neue'), /^"Helvetica Neue", "Arial"/);
+  assert.equal(lineFactor('Helvetica Neue'), lineFactor('Arial'));
+  assert.equal(lineFactor('Futura Md BT'), 1.2261);
+  assert.match(fontStack('Courier'), /^"Courier New"/);
+  assert.equal(faceCss('Arial Bold'), ';font-weight:bold');
+  assert.equal(faceCss('Times New Roman Bold Italic'), ';font-weight:bold;font-style:italic');
+  assert.equal(faceCss('Arial'), '');
+  assert.match(fontCss('Arial Bold'), /font-weight:bold$/);
+});

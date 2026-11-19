@@ -28,6 +28,13 @@ within 1px of Word's went from 47% to 63%, and documents laid out exactly as Wor
 - **Paragraph spacing**: a paragraph of spaces or no-break spaces takes its mark's line; multiple spacing below one
   line is as short as Word's; a cell's space-only paragraph keeps its table style's size; shadowed text has Word's
   taller line, a shadowed space none.
+- **Paragraph spacing, older rule**: in a document that turns off HTML paragraph spacing
+  (`doNotUseHTMLParagraphAutoSpacing`) the space after a paragraph and the space before the next are both kept, as in
+  Word, where the editor kept the larger. A paragraph of nothing but tabs takes its font's line times its line spacing.
+- **Headers**: a bookmark's end between two header paragraphs takes no room (it was drawn as an 18px block, every page
+  that much low).
+- **A list item moved to the next page inside a split table row** starts at the top of the cell there, its bullet
+  beside it, where its text sat a line low.
 - **Lists**: auto spacing between items of one list is dropped each side on its own, as in Word, in cells too; two
   numbering definitions over one list are one list; a smaller bullet whose level sets its size is drawn at that size.
 - **Fonts**: "Times" is drawn and measured as Times New Roman, as Windows substitutes it; Arial Narrow's line is
@@ -35,6 +42,11 @@ within 1px of Word's went from 47% to 63%, and documents laid out exactly as Wor
 
 ## 0.8.4 (2026-11-18)
 
+- **Missing fonts as Word substitutes them**: Palatino in Palatino Linotype, Futura Md BT and Futura Lt BT in Century
+  Gothic, Lucida Grande in Segoe UI, Helvetica Neue in Arial, Tms Rmn, Times-Roman, TimesNewRomanPSMT, CG Times (W1)
+  and New York in Times New Roman, "Calibri (Body)" in Calibri, Charter BT and Inter in Cambria, Courier in Courier
+  New. A face named as a font ("Arial Bold", "Times New Roman Bold") is drawn in that face, and bold text under it is
+  no heavier.
 - **Hardening from the release review**: repeating sections bound to custom XML are filled within one budget of copied
   content and a section inside another's item is left as it is (a crafted file could multiply them into millions of
   items as it opened); a bound picture shown by many controls is decoded and stored once, a bounded number and size of

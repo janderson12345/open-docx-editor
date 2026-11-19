@@ -2215,6 +2215,15 @@ export function createPages(view, session, { sheet, scope }) {
     const decos = [...blockDecos];
     for (const split of splits.values()) {
       for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
+      // A list item moved whole to the row's next page: its label, the paragraph's ::before, came before the spacer and
+      // kept a line of its own above it, the item's text a line low on the new page (Word's prints: the item's first
+      // line at the top of the cell's part there, bullet or not). The paragraph is told how far it's pushed, and takes
+      // that as room above its label instead (editor.css, --odx-pushed).
+      for (const { pos, delta } of split.cellPushes) {
+        let at = null;
+        try { at = view.state.doc.resolve(pos); } catch { /* a position the document no longer has */ }
+        if (at && at.parentOffset === 0 && at.parent.type.name === 'paragraph' && at.depth > 0) decos.push(Decoration.node(at.before(), at.after(), { style: `--odx-pushed:${delta}px` }, { key: `pushed:${delta}` }));
+      }
     }
     for (const [i, split] of paraSplits) {
       const a = applied.get(i) || { extra: 0 };

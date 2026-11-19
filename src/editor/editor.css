@@ -56,7 +56,13 @@
 .odx-page { position: relative; margin: 0 auto; color: #000; isolation: isolate; }
 .odx-sheets { position: absolute; inset: 0; pointer-events: none; z-index: -2; } /* below a drawing behind the text (z-index -1, reader.js anchorCss), which had been drawn under the sheet, unseen; the page its own stacking context, so it is above the canvas */
 .odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
+/* Bold text is bold, not bolder than what it sits in (the browser's rule for <strong>): under a font drawn in its bold
+   face, "Arial Bold", it was set in Arial Black. */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) strong { font-weight: bold; }
 .odx-content .odx-push { display: block; width: 0; pointer-events: none; }
+/* A list item pushed whole to its row's next page (pages.js): the push is room above its label, the spacer laid over it. */
+.odx-content p.odx-li[style*="--odx-pushed"] { padding-top: var(--odx-pushed); position: relative; }
+.odx-content p.odx-li[style*="--odx-pushed"] > .odx-push:first-child { position: absolute; margin-top: calc(0px - var(--odx-pushed)); }
 .odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
 .odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .odx-lnnums { position: absolute; inset: 0; pointer-events: none; color: #000; user-select: none; }
@@ -84,6 +90,9 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p[data-odx-mix="mark"] { line-height: var(--odx-lhv); } /* nothing but spaces: the mark's line, as an empty paragraph's (mixlines.js blankOnly) */
+/* Nothing but tabs: the same, its font's line times the paragraph's line spacing (Word's prints: Calibri 11pt at 1.15
+   lines 20.6px, where the tabs' boxes alone left the 1.15em floor, 17px). */
+:where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(.odx-tab):not(:has(span.odx-t, .odx-opaque-inline, img:not(.ProseMirror-separator), svg, br:not(.ProseMirror-trailingBreak))) { line-height: var(--odx-lhv); }
 /* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
    paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
 .odx-content p.odx-endbreak::after { content: "\200b"; }
@@ -201,8 +210,9 @@
    of its full height, as in Word: the browser leaves such a line empty. A zero-width space before them makes the line. */
 .odx-content p.odx-markers:not(.odx-li)::before { content: "\200b"; }
 .odx-content .odx-opaque { background: repeating-linear-gradient(45deg, #f6f7f9, #f6f7f9 6px, #eef0f3 6px, #eef0f3 12px); border-left: 3px solid #c3c9d2; padding: 4px 8px; white-space: pre-wrap; color: #444; cursor: default; }
-/* Body-level markers Word doesn't show (bookmarks, proofing marks): kept in flow but take no space. */
-.odx-content .odx-opaque[data-kind="bookmarkStart"], .odx-content .odx-opaque[data-kind="bookmarkEnd"], .odx-content .odx-opaque[data-kind="proofErr"], .odx-content .odx-opaque[data-kind="permStart"], .odx-content .odx-opaque[data-kind="permEnd"], .odx-content .odx-opaque[data-kind="commentRangeStart"], .odx-content .odx-opaque[data-kind="commentRangeEnd"], .odx-content .odx-opaque[data-kind="moveFromRangeStart"], .odx-content .odx-opaque[data-kind="moveFromRangeEnd"], .odx-content .odx-opaque[data-kind="moveToRangeStart"], .odx-content .odx-opaque[data-kind="moveToRangeEnd"] { display: none; } /* not even an empty box: one would stop the paragraph spacing around it from collapsing */
+/* Block-level markers Word doesn't show (bookmarks, proofing marks), in the text and in a header or footer (a bookmark's end
+   between two header paragraphs was drawn as an 18px block, every page that much low): kept in flow but take no space. */
+:is(.odx-content, .odx-hf) .odx-opaque[data-kind="bookmarkStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="bookmarkEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="proofErr"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="permStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="permEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="commentRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="commentRangeEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveFromRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveFromRangeEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveToRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveToRangeEnd"] { display: none; } /* not even an empty box: one would stop the paragraph spacing around it from collapsing */
 .odx-content li, .odx-content p.odx-li { list-style: none; }
 .odx-content p.odx-bullet::before { font-family: Arial, 'Liberation Sans', sans-serif; }
 .odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); font-weight: var(--odx-lweight, inherit); font-style: var(--odx-lstyle, inherit); color: var(--odx-lcolor, inherit); text-decoration: var(--odx-ldeco, none); }

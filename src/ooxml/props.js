@@ -484,15 +484,23 @@ export function fontStack(name) {
 
 // Names Windows itself maps to another font (its FontSubstitutes), which Word prints in that font: "Times" is Times New
 // Roman in Word's PDFs, where the browser's "Times" is another face with shorter lines (1.11 em, not 1.15).
-const WINDOWS = { times: 'Times New Roman' };
+const WINDOWS = { times: 'Times New Roman', courier: 'Courier New' }; // (Courier: Courier New in Word's PDFs, 1.133 em a line; the browser's own "Courier" measured 1.15)
 const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
+// Fonts Word draws in another where they're missing (the fonts in its PDFs of documents naming each): drawn in that
+// font here too, after the font itself, unless the document's own font table names a stand-in.
+const WORD_ALTS = { 'tms rmn': 'Times New Roman', 'times-roman': 'Times New Roman', timesnewromanpsmt: 'Times New Roman', 'cg times (w1)': 'Times New Roman', 'new york': 'Times New Roman',
+  'helvetica neue': 'Arial', 'calibri (body)': 'Calibri', palatino: 'Palatino Linotype', 'futura md bt': 'Century Gothic', 'futura lt bt': 'Century Gothic',
+  'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria' };
+// (Futura in Century Gothic: lines of 1.2261 em in Word's prints, not the 1.19 an installed Century Gothic measures.)
+const WORD_ALT_LINE = { 'futura md bt': 1.2261, 'futura lt bt': 1.2261 };
+const altOf = (name) => ALTS.get(name) || WORD_ALTS[String(name || '').toLowerCase()] || null;
 
 function baseStack(name) {
   if (windowsFont(name)) return fontStack(windowsFont(name));
   if (listed(name)) return '"Segoe UI", sans-serif';
   if (twin(name)) return fontStack(twin(name));
   if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...fontStack(face(name)).split(', ')].join(', ');
-  const alt = !LINE[(name || '').toLowerCase()] && !SUBST[name] && ALTS.get(name);
+  const alt = !LINE[(name || '').toLowerCase()] && !SUBST[name] && altOf(name);
   if (alt) return [quoted(name), ...fontStack(alt).split(', ')].join(', ');
   const generic = /mono|courier|consol/i.test(name) ? 'monospace' : /times|cambria|georgia|garamond|serif/i.test(name) && !/sans/i.test(name) ? 'serif' : 'sans-serif';
   return [quoted(name), SUBST[name] && quoted(SUBST[name]), generic].filter(Boolean).join(', ');
@@ -540,10 +548,19 @@ export const lineFactor = (name) => {
   // (A font open-metric-fonts stands in for, missing from the computer: its line as Word sets it, from the stand-in's
   // metrics, which are the original's. An installed one is measured as before: run 419 put Book Antiqua and Century
   // Gothic forms 6 lines off with the computed value ahead of the measure.)
-  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || OMF_LINE.get(key) || LINE[(SUBST[name] || '').toLowerCase()] || (ALTS.get(name) && ALTS.get(name) !== name ? lineFactor(ALTS.get(name)) : 0) || 1.17;
+  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || OMF_LINE.get(key) || LINE[(SUBST[name] || '').toLowerCase()] || (!ALTS.get(name) && WORD_ALT_LINE[key]) || (altOf(name) && altOf(name) !== name ? lineFactor(altOf(name)) : 0) || 1.17;
 };
 /** CSS for a font: the family stack plus the custom property paragraph line heights scale. */
-export const fontCss = (name) => `font-family:${fontStack(name)};--odx-lh:${lineFactor(name)}`;
+export const fontCss = (name) => `font-family:${fontStack(name)};--odx-lh:${lineFactor(name)}${faceCss(name)}`;
+/**
+ * A face named as a font ("Arial Bold", "Times New Roman Bold Italic") is drawn in that face, bold or italic not asked
+ * for besides (Word's PDFs of such documents embed Arial-BoldMT alone): the weight and slant to add, or ''.
+ */
+export const faceCss = (name) => {
+  if (LINE[(name || '').toLowerCase()] || !face(name)) return '';
+  const w = /^.+? (bold|italic|bold italic)$/i.exec(name)[1].toLowerCase();
+  return `${w.includes('bold') ? ';font-weight:bold' : ''}${w.includes('italic') ? ';font-style:italic' : ''}`;
+};
 
 export function rPrToCss(p, theme) {
   const css = [];
