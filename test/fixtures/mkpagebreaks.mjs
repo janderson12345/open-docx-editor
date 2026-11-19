@@ -6,6 +6,8 @@
 //     lines (w:line 14): that paragraph takes about 1px, so page 1 holds body paragraphs 1-54.
 //   pagebreak-keep-long.docx  a heading kept with a table of 70 rows each keeping with the next, near page 1's foot: the
 //     heading starts page 2 with the table's first 53 rows under it, the rest on page 3.
+//   pagebreak-keep-table.docx  a table of five rows ending 5px above page 1's foot, every paragraph in it kept with the
+//     next, then an empty paragraph: the table goes on to page 2 with it.
 import fs from 'fs';
 import { zipSync, strToU8 } from 'fflate';
 
@@ -38,3 +40,5 @@ function docx(name, body, { footer = p('Footer line'), bottom = 1440, footerDist
 docx('pagebreak-float-table.docx', paras(10) + table(20, { floating: true, width: 8995 }) + p('') + table(40, { floating: true, width: 8995, bottomFromText: 160 }) + paras(5, 'After'));
 docx('pagebreak-tiny-footer.docx', paras(60), { footer: p('Footer line') + p('Footer two') + p('', '<w:spacing w:line="14" w:lineRule="auto"/>'), bottom: 1680, footerDist: 1495 });
 docx('pagebreak-keep-long.docx', paras(50) + p('Heading text', '<w:keepNext/>') + table(70, { ppr: '<w:keepNext/><w:keepLines/>' }) + paras(3, 'After'));
+const keepRows = Array.from({ length: 5 }, (_, i) => `<w:tr>${[0, 1, 2].map((c) => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>${p(`R${i + 1} c${c + 1} text`, '<w:keepNext/><w:keepLines/>')}</w:tc>`).join('')}</w:tr>`).join('');
+docx('pagebreak-keep-table.docx', paras(49) + p('Lead text') + p('') + `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>${BORDERS}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${keepRows}</w:tbl>` + p('') + p('') + paras(3, 'After'));

@@ -2360,8 +2360,18 @@ export function createPages(view, session, { sheet, scope }) {
     // with the table's first rows gains nothing, and Word breaks the table where it runs out of room instead (generated
     // documents: a heading kept with a table of 70 rows each keeping with the next, on the next page with its first 55
     // rows; it had been left there alone, the table starting the page after).
+    // Whether a block keeps with the one after it: a paragraph set to; a table whose rows all do (a paragraph in each
+    // first cell keeps with the next), whole on page p, as Word moves such a table on with the paragraph after it that
+    // doesn't fit (generated documents: five rows ending 5px above the foot, every paragraph in them kept with the next,
+    // on page 2 under the empty paragraph after it; without the keeps, on page 1).
+    const keepsOn = (blk, p) => {
+      if (blk.node.type !== schema.nodes.table) return keep(blk.node);
+      if (!blk.node.childCount || splits.has(blk.i)) return false;
+      for (let j = 0; j < blk.node.childCount; j++) if (!rowKeeps(blk.node.child(j))) return false;
+      return pageOf(blk.top + shift) === p;
+    };
     const keptFromTop = (k, p) => {
-      for (let m = k - 1; m >= 0 && keep(blocks[m].node); m--) {
+      for (let m = k - 1; m >= 0 && keepsOn(blocks[m], p); m--) {
         const t = blocks[m].top + shift;
         if (pageOf(t) !== p) return false;
         if (t <= contentTop(p) + 1) return true;
@@ -2572,7 +2582,7 @@ export function createPages(view, session, { sheet, scope }) {
         // takes a paragraph on with the one it keeps with column by column, to the next page's first column at most.
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
-        while (m > 0 && keep(blocks[m - 1].node) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
       }
       const moved = blocks[m];
       // With "page break before" or a new section Word keeps the paragraph's space before.

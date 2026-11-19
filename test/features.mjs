@@ -123,6 +123,10 @@ check(tf.at[0]?.sheet === 0 && tf.at[1]?.sheet === 1, `a footer's 0.06-line empt
 await open('pagebreak-keep-long.docx');
 const kl = await placeOf(['Heading text', 'Row 1', 'Row 53', 'Row 54']);
 check(kl.at.every(Boolean) && kl.at[0].sheet === 1 && kl.at[1].sheet === 1 && kl.at[2].sheet === 1 && kl.at[3].sheet === 2, `a heading kept with a long table starts the page with it (${JSON.stringify(kl.at.map((a) => a?.sheet))})`);
+// A table whose rows all keep with the next goes on with the paragraph after it that doesn't fit, though it fits itself.
+await open('pagebreak-keep-table.docx');
+const kt = await placeOf(['Lead text', 'R1 c1 text', 'R5 c3 text']);
+check(kt.at.every(Boolean) && kt.at[0].sheet === 0 && kt.at[1].sheet === 1 && kt.at[2].sheet === 1, `a table kept with the next goes on with the paragraph after it (${JSON.stringify(kt.at.map((a) => a?.sheet))})`);
 
 // Footnotes in columns (Word's prints of these, odx-test/mkrtlfootnotes.ps1): one band across each page's foot, in the
 // section's columns (the first on the right in a right-to-left section), each note on the page of its reference; one
