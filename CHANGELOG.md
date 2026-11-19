@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
+within 1px of Word's went from 47% to 63%, and documents laid out exactly as Word from 1,157 to 1,486.
+
+- **Documents with Word 2023's tracked-change dates open again**: a tracked table change carrying `w16du:dateUtc`
+  was re-read without its namespace and the document failed to open.
+- **Saving an untouched document no longer adds tracked changes**: with Track Changes on, a document with merged-cell
+  tables saved them a second time as tracked insertions (a probe the editor measured lines with was read as an edit).
+- **Printing and PDF export of long documents is far faster**: the slowest documents tried, which took 65-230s, now
+  take 1-13s (a 76-page document of 2,700 table paragraphs went from 53s to 13s); pages of more than one size print
+  from copies holding only what each page shows.
+- **Headers**: shapes placed against the page or margins are drawn there, out of the header's flow; a header's floats
+  don't push the body down; a page with no header of its kind keeps its top margin; all-caps text boxes draw capitals.
+- **Floating tables** follow Word's placement: one with no room beside it is set against the margin or laid in the
+  flow and broken row by row, one placed down from its text stays a float with the text after it filling the room
+  above, the room beside one is measured in its own section's column, and a table that doesn't fit beside a float goes
+  below it.
+- **Tables and page breaks**: a table kept with the heading above it breaks where it runs out of room; rows that keep
+  with the next move on with the paragraph after them; contextual spacing works across a table's edges; an empty
+  numbered paragraph in a hidden-mark cell keeps its line; a section's closing paragraph of drawings stays on its page.
+- **Paragraph spacing**: a paragraph of spaces or no-break spaces takes its mark's line; multiple spacing below one
+  line is as short as Word's; a cell's space-only paragraph keeps its table style's size; shadowed text has Word's
+  taller line, a shadowed space none.
+- **Lists**: auto spacing between items of one list is dropped each side on its own, as in Word, in cells too; two
+  numbering definitions over one list are one list; a smaller bullet whose level sets its size is drawn at that size.
+- **Fonts**: "Times" is drawn and measured as Times New Roman, as Windows substitutes it; Arial Narrow's line is
+  Word's (each line at 1.08 or 1.15 spacing was 0.2pt short, about 10px a page).
+
 ## 0.8.4 (2026-11-18)
 
 - **Hardening from the release review**: repeating sections bound to custom XML are filled within one budget of copied
