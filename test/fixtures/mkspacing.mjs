@@ -3,6 +3,7 @@
 //   an 18pt and a 12pt space, an 18pt space, two, an 18pt lowered space, all over a 12pt mark; and a 12pt space over an
 //   18pt mark. Word makes each the mark's line (15pt apart, as the X lines; 21.75pt for the 18pt mark), not its
 //   spaces': runs of only spaces don't size a line. (An 18pt space had made its line 22.35pt.)
+//   Last, an 18pt no-break space over an 11pt mark: a letter to Word, an 18pt line (22.5pt at 1.08).
 // - columns-empty-section.docx: two lines, then a continuous section in two columns holding only its empty
 //   section-break paragraph, then two lines in one column again. Word gives that empty paragraph its line, as in one
 //   column (the text after it 29.25pt under the line before, two lines; it had come up one, onto the empty paragraph's).
@@ -36,6 +37,7 @@ const blanks = [
   para(24, run(36, '  ')),
   para(24, run(36, ' ', sub)),
   para(36, run(24, ' ')),
+  para(22, run(36, ' ')),
 ];
 make('spaces-lines.docx', X + blanks.map((b) => b + X).join(''), sect(false, 0));
 
