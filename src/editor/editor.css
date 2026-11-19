@@ -369,6 +369,9 @@ td[data-odx-phantom] > * { display: none; }
 @container style(--odx-lhlen: 1) and style(--odx-runmult: 1) { .odx-content span[style*="--odx-flh"], .odx-hf span[style*="--odx-flh"] { --odx-lhv: max(var(--odx-atleast, 0px), calc(var(--odx-flh) * 1em)) !important; } }
 /* The empty paragraph carrying a section break into newspaper columns (editor.js): no room, as in Word. */
 .odx-content > p.odx-collapse { display: none; }
+/* An empty paragraph after a table placed down from the text with no room beside it (editor.js): a sliver on its line, so
+   the line goes under the table, as Word's does (a line with nothing on it fits beside a float in no room). */
+.odx-content > p.odx-fempty::before { content: ''; display: inline-block; width: 1px; height: 0; }
 
 /* ==== Comments and changes: the markup column and its balloons ==== */
 /* Markup area: deletions and formatting changes in balloons beside the page, as in Word. */

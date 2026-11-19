@@ -24,7 +24,7 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
   tables.forEach((t, k) => {
     const dom = doms[k];
     if (!dom) return;
-    const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml);
+    const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml, t.attrs.tblGrid);
     // (A note's tables don't float: Word has no text wrapping in notes, and puts one that says so in the note's flow.)
     if (place && !(note && /(?:^|;)float:/.test(place))) dom.style.cssText += ';' + place;
     const map = TableMap.get(t);
