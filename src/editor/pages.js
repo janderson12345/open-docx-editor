@@ -677,6 +677,13 @@ export function createPages(view, session, { sheet, scope }) {
     const heads = [];
     let extra = 0;
     const extraAt = [];
+    // Every row keeping with the next and the table longer than a page: the keeps can't all hold, and its rows split at
+    // a page's foot as they would without them.
+    let keepsHold = true;
+    if (rows.length && rows[rows.length - 1].bottom - rows[0].top > pageHeight(pageOf(rows[0].top + shift) + 1)) {
+      keepsHold = false;
+      for (let j = 0; j < b.node.childCount && !keepsHold; j++) if (!rowKeeps(b.node.child(j))) keepsHold = true;
+    }
     for (let j = 0; j < rows.length; j++) {
       extraAt[j] = extra;
       const top = rows[j].top + shift + extra;
@@ -689,9 +696,13 @@ export function createPages(view, session, { sheet, scope }) {
       if (!brk) {
         let s = j;
         while (s > headerRows && rowKeeps(b.node.child(s - 1)) && !pushes.has(s - 1) && !inRow.has(s - 1) && pageOf(rows[s - 1].top + shift + extraAt[s - 1]) === pg) s--;
+        // (Stopped by a row above that keeps with this run but was itself moved here or carried on from the page before:
+        // the run already starts the page, and moving it again gains nothing; Word breaks it where it runs out, as a
+        // sample's 14 such rows over four pages, each page had been left half empty.)
+        const fromTop = s > headerRows && rowKeeps(b.node.child(s - 1)) && (pushes.has(s - 1) || inRow.has(s - 1));
         if (s < j) {
           const topS = rows[s].top + shift + extraAt[s];
-          const firstS = s === 0 ? tableFirstOnPage || chainAtTop : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
+          const firstS = fromTop || (s === 0 ? tableFirstOnPage || chainAtTop : topS <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1);
           const tall = rows[j].bottom - rows[s].top + headH > pageHeight(pg + 1);
           if (!firstS && !tall && s <= headerRows && !tableFirstOnPage) return null;
           if (!firstS && !tall && s > headerRows) {
@@ -712,7 +723,7 @@ export function createPages(view, session, { sheet, scope }) {
       const minM = /<w:trHeight\b[^>]*w:val="(\d+(?:\.\d+)?)"/.exec(tr);
       const minH = minM && !/<w:trHeight\b[^>]*w:hRule="(?:exact|auto)"/.test(tr) ? twipsToPx(minM[1]) : 0;
       const short = minH && contentBottom(pg) - top < minH && minH <= pageHeight(pg + 1);
-      const rs = !brk && j >= headerRows && lineSplits && !short && !(j > headerRows && j < rows.length - 1 && rowKeeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
+      const rs = !brk && j >= headerRows && lineSplits && !short && !(keepsHold && j > headerRows && j < rows.length - 1 && rowKeeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
         for (const [q, cut] of rs.crossings) {
@@ -2088,6 +2099,24 @@ export function createPages(view, session, { sheet, scope }) {
   // rows from mid-page, 24px narrower than the column, split at the page's foot; two in a row each split too). Laid out
   // in the flow, it does both here.
   const ROOM_BESIDE = 48;
+  // Laid out in the flow, such a table keeps the gap a float leaves under it: its distance from the text (bottomFromText)
+  // and no more. The space before the paragraph after it, which a float's text below it doesn't add (it starts beside the
+  // float, as Word's anchor paragraph does), is taken back by a negative margin collapsing with it (samples: text 22px
+  // and 30px low under such tables).
+  const inFlow = new WeakMap(); // table node -> its margin-bottom in the flow
+  // One placed down from the text it's anchored to (over 100tw, styles.js) stays a float: the text after it fills the
+  // room above it, as in Word (sample: a table 451tw down, the text after it 30px low in the flow).
+  function setDown(table) {
+    const fp = /<w:tblpPr\s[^>]*>/.exec(table.attrs.tblPr || '')?.[0] || '';
+    const y = /\sw:tblpY="(-?\d{1,6})"/.exec(fp);
+    return !!y && +y[1] > 100 && /\sw:vertAnchor="text"/.test(fp) && !/\sw:tblpYSpec=/.test(fp);
+  }
+  function inFlowGap(table, next) {
+    const m = /<w:tblpPr\s[^>]*bottomFromText="(\d{1,6})"/.exec(table.attrs.tblPr || '');
+    const bft = m ? twipsToPx(Math.min(+m[1], 31680)) : 0; // (at most 22in)
+    const b = next ? spaceBefore(next) : 0;
+    return `${+(b > bft ? bft - b : bft).toFixed(2)}px`;
+  }
   function roomBeside(t) {
     const host = t.parentElement;
     if (!host) return true;
@@ -2106,7 +2135,7 @@ export function createPages(view, session, { sheet, scope }) {
     doc.forEach((node, pos, i) => posOf.set(i, [pos, pos + node.nodeSize]));
     const blockDecos = [];
     const onBlock = (i, attrs, key) => { const r = posOf.get(i); if (r) blockDecos.push(Decoration.node(r[0], r[1], attrs, { key })); };
-    doc.forEach((node, pos, i) => { if (unfloated.has(node)) onBlock(i, { style: 'float:none !important' }, 'nf'); });
+    doc.forEach((node, pos, i) => { if (unfloated.has(node)) onBlock(i, { style: `float:none !important${inFlow.has(node) ? `;margin-bottom:${inFlow.get(node)} !important` : ''}` }, 'nf'); });
     // (Columns' moves, cuts and widths, and frames' drops: placeColumns, the walk's frameDy.)
     for (const [i, a] of blockAttrs) {
       const style = a.style.join(';'), cls = a.cls.join(' ');
@@ -2238,10 +2267,16 @@ export function createPages(view, session, { sheet, scope }) {
       const t = topEls ? topEls[i] : view.nodeDOM(pos);
       if (!t || t.nodeType !== 1) return;
       if (getComputedStyle(t).float === 'none') return;
-      // (Not one placed down from the text with no room beside it, styles.js --odx-fnoroom: it stays a float, so the
-      // text after it fills the room above it, as in Word, and its empty paragraphs go under it, editor.js.)
+      // (Not one placed down from the text, setDown, or with no room beside it, styles.js --odx-fnoroom: it stays a
+      // float, so the text after it fills the room above it, as in Word, and its empty paragraphs go under it, editor.js.)
       const above = node.type === schema.nodes.table && /--odx-fnoroom/.test(t.getAttribute('style') || '');
-      if (t.getBoundingClientRect().height > pageHeight(0) || (node.type === schema.nodes.table && !above && !roomBeside(t))) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      if (t.getBoundingClientRect().height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      else if (node.type === schema.nodes.table && !above && !setDown(node) && !roomBeside(t)) {
+        const mb = inFlowGap(node, doc.maybeChild(i + 1));
+        quiet(() => { t.style.float = 'none'; t.style.marginBottom = mb; });
+        unfloated.add(node);
+        inFlow.set(node, mb);
+      }
     });
     const colRegs = colRegions(doc);
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);
