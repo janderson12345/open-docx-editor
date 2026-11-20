@@ -42,10 +42,14 @@ const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filt
 /** The decorations of one textblock at `pos`: each text node in an odx-t span, a strut before a break after a break. */
 function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
+  let first = true; // no text yet
   node.forEach((c, off) => {
     const at = pos + 1 + off;
     // (Plain spaces alone also odx-blank: they don't size their line in Word, nor does a shadow on them: editor.css.)
-    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: /^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t' }));
+    // (The block's first text is odx-first too: where a list label in a font of its own makes Word's line taller, the
+    // room is added above it, editor.css.)
+    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: (/^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t') + (first ? ' odx-first' : '') }));
+    if (c.isText) first = false;
     const rf = c.isText && reflects(c), is = c.isText && pressed(c);
     if (rf || is) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, wordAttrs(m[0], rf, is)));
     if (c.type.name === 'hard_break') {

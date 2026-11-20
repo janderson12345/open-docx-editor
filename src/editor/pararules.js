@@ -173,7 +173,10 @@ export function labelFormat(node, session, l, label, style) {
   if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
 }
 
-/** A list label's own size and font, and the room a taller Symbol bullet adds to its line. */
+const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
+const WINGDINGS_ASCENT = 0.8994; // Wingdings', 1842 of 2048
+
+/** A list label's own size and font, and the room a label reaching above the text adds to its line. */
 export function labelLine(node, session, l, label, run, style) {
   // A Symbol bullet is taller than the text (ascent 1.005em), and Word's line takes the tallest
   // ascent and descent on it, so the bullet's line comes out ~4% taller.
@@ -195,53 +198,33 @@ export function labelLine(node, session, l, label, run, style) {
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
-  // A label in a text font of its own (a bullet set in Segoe UI over Calibri text): Word's line takes the tallest ascent
-  // and the deepest descent on it, so the label's line is taller by what its font reaches past the text's (a sample's
-  // two bullets in a cell, 19.8px lines for the text's 17.9px, the row 112px in Word's own layout and 108px here).
-  if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) {
+  // A label in a font of its own (a Symbol bullet, a bullet or number set in Segoe UI over Calibri text): Word's line is
+  // taller by what the label's top reaches above the text's, its font's ascent with its external leading (baseline.js
+  // wordAscent) at the label's size; the label's descent never counts, and line spacing doesn't multiply it. Word's
+  // PDFs of 368 generated lists, each within 0.1px: bullets, "o" and numbers in Calibri, Segoe UI, Courier New, Times
+  // New Roman, Arial and Verdana over 12pt Times New Roman, Calibri and Arial, the label the text's size, 14pt (by its
+  // level or the paragraph mark) and 10pt; Symbol bullets over ten fonts at 9 to 12pt, the bullet the text's size, 2pt
+  // larger and 2pt smaller; single, 1.15 and double spacing. A Symbol bullet over 12pt Calibri is 0.85px a line, over
+  // Times New Roman 1.15px, Courier New 2.77px, Verdana and Segoe UI nothing; a Segoe UI bullet over Calibri 2.03px; a
+  // Courier New "o" nothing until it is larger than the text. The room goes above the first line's text (editor.css
+  // odx-first), so wrapped lines keep the text's own height. A Wingdings bullet (ascent 0.899em) is under every text
+  // font's at the text's size and adds nothing; 14pt over 12pt Calibri it adds 1.55px (a sample's Word PDF: 21.1px lines).
+  if (lvlFont) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
-    const la = wordAscent(String(lvlFont).toLowerCase()), ta = wordAscent(String(fname).toLowerCase());
+    const dings = /^wingdings$/i.test(lvlFont);
+    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase());
+    // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
+    const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
-    if (la && ta && rule !== 'exact') {
+    // (Lines sized from their runs: an exact line stays as set. A text font's label under "at least" isn't measured.)
+    if (la && ta && (symbol || dings ? rule !== 'exact' : !rule || rule === 'auto')) {
       const lbl = Number(lblSize) || Number(run.size) || 20;
       const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
-      // (The label's box, as tall as the text's line once it has a padding of its own, editor.css, already stands half
-      // the difference of the two fonts' heights above the text; the padding is what is left to the label's ascent.)
-      const line = node.attrs.view.line ?? session.styleProp(node.attrs.styleId, 'line') ?? session.styles.defaults.pPr.line ?? 240;
-      const mult = !rule || rule === 'auto' ? line / 240 : 1;
-      const pad = (lineFactor(lvlFont) * lbl - lineFactor(fname) * txt * mult) / 2 / lbl;
-      if (la * lbl - ta * txt > 0.001 * lbl && pad > 0) style.push(`--odx-lbl-up:${+pad.toFixed(4)}em`);
+      const up = (la * lbl - ta * txt) / 2 * (4 / 3);
+      // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
+      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
     }
-  }
-  // Wingdings (ascent 0.899em, descent 0.211em) fits inside Calibri's line and adds nothing.
-  if (lvlFont && /^symbol/i.test(lvlFont)) {
-    const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
-    const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
-    const base = lineFactor(fname);
-    // Only the line with the bullet: wrapped lines keep the text's own height (the label is padded above).
-    // Aptos lines take a bullet the text's size (sample S101), not a smaller one (a 10pt bullet over 12pt text). The
-    // extra goes above the text (sample S093: a heading's first bullet 2px lower than with it below;
-    // Fitted to Word's PDFs, not a font rule.
-    const lbl = Number(lblSize) || Number(run.size) || 20;
-    const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || lbl;
-    const line = node.attrs.view.line ?? session.styleProp(node.attrs.styleId, 'line') ?? session.styles.defaults.pPr.line ?? 240;
-    const aptos = /^aptos/i.test(fname);
-    // (Verdana's ascent, 1.0054em, already reaches the bullet's: nothing added. file-sample's DejaVu Sans list, set in
-    // Verdana: 0.11pt a bullet line over Word's.)
-    const tall = /^(verdana|dejavu sans)/i.test(fname);
-    let up = (aptos && lbl < txt) || tall ? 0 : (base >= 1.22 ? 1.2737 : Math.max(base, 1.2247)) - base;
-    // A bullet larger than the text: its own ascent over the text's descent, in the label's em (sample S071's 12pt
-    // Symbol bullets over 11pt Calibri, 24px lines in Word where the text's are 21.3).
-    if (up > 0 && !aptos && lbl > txt) up = (1.005 * lbl + (up + base - 1.005) * txt - base * txt) / lbl;
-    // (Exact line spacing: nothing makes Word's line taller, the bullet neither.)
-    const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
-    // (Multiple spacing stretches an Aptos bullet line's extra too: 1.25 lines add 1.25 times as much, Product
-    // Management. Not Calibri's at 1.15: sample S047, sample S067 and sample S125 lose lines with it.)
-    const mult = aptos && (!rule || rule === 'auto') ? Math.max(1, line / 240) : 1;
-    // (In px, rounded up to the browser's 1/64px: it cuts a length down to that, and a bullet's line came out a
-    // hundredth of a pixel short each time, a table of forty 9pt bullets 0.5px short by its foot against Word's.)
-    if (up > 0 && rule !== 'exact') style.push(`--odx-lbl-up:${Math.ceil(up * mult * (lbl / 2) * (4 / 3) * 64 - 1e-6) / 64}px`);
   }
 }
 

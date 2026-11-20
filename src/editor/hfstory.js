@@ -188,6 +188,24 @@ export function storyDrawer(session) {
       else if (run && run.strut && run.raised && node.attrs.numId == null && !node.content.content.some((c) => c.type.name === 'hard_break')) p.style.fontSize = '0';
       else if (run && run.strut && Number(run.strut) < Number(session.styleRunProp(node.attrs.styleId, 'size') || 20)) p.style.fontSize = `${run.strut / 2}pt`;
       if (run && run.font) { p.style.fontFamily = fontStack(run.font); p.style.setProperty('--odx-lh', lineFactor(run.font)); }
+      // Spaces with no size or font of their own keep the paragraph style's, not the text's given to the paragraph
+      // above: 28 spaces before 20pt text in an 11pt style are 11pt spaces in Word, 93px wide; at the text's 20pt they
+      // were 169px, the line 69px too wide for its header and wrapped to two, the whole body 33px low.
+      if (run && (run.size || run.font)) {
+        const size = Number(session.styleRunProp(node.attrs.styleId, 'size') || 20);
+        const tfn = session.styleRunProp(node.attrs.styleId, 'themeFont');
+        const fname = session.styleRunProp(node.attrs.styleId, 'font') || (tfn && session.theme?.[tfn.startsWith('major') ? 'major' : 'minor']) || null;
+        for (const b of p.querySelectorAll('span.odx-blank')) {
+          let sized = false;
+          let fonted = false;
+          for (let a = b.parentElement; a && a !== p; a = a.parentElement) {
+            if (a.style.fontSize || a.dataset.cstyle) sized = true;
+            if (a.style.fontFamily || a.dataset.cstyle) fonted = true;
+          }
+          if (run.size && !sized && size !== Number(run.size)) b.style.fontSize = `${size / 2}pt`;
+          if (run.font && !fonted && fname && fname !== run.font) b.style.fontFamily = fontStack(fname);
+        }
+      }
       return false;
     });
     // "Don't add space between paragraphs of the same style" (contextualSpacing), as in the body (editor.js): each such

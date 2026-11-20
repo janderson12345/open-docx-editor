@@ -1080,7 +1080,9 @@ export function createPages(view, session, { sheet, scope }) {
     const pcs = getComputedStyle(b.el);
     const lh1 = pcs.getPropertyValue('--odx-lhlen').trim() === '1';
     const mult = lh1 ? 1 : parseFloat(pcs.getPropertyValue('--odx-mult')) || 1;
-    const lblUp = labelPad && b.el.classList.contains('odx-li') ? parseFloat(getComputedStyle(b.el, '::before').paddingTop) || 0 : 0;
+    // (The room a label reaching above the text adds over the first line, --odx-lbl-own: pararules.js labelLine; an
+    // empty item's is its label's padding.)
+    const lblUp = labelPad && b.el.classList.contains('odx-li') ? Math.max(parseFloat(getComputedStyle(b.el, '::before').paddingTop) || 0, parseFloat(pcs.getPropertyValue('--odx-lbl-own')) || 0) : 0;
     const lead0 = lines[0].screenTop - (b.el.getBoundingClientRect().top + parseFloat(pcs.paddingTop) + parseFloat(pcs.borderTopWidth)) - lblUp;
     const atLeast = lh1 && parseFloat(pcs.getPropertyValue('--odx-runmult')) !== 0;
     const lead = (mult > 1 || atLeast) && Math.abs(lead0) <= 20 ? lead0 : 0;
@@ -1581,6 +1583,10 @@ export function createPages(view, session, { sheet, scope }) {
       settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
+      // Its tabs to their stops, as when it is drawn (below): left as plain tab characters, each kept at its full width
+      // now that header and footer spaces are (editor.css), a footer line of a page number, a tab and text that just
+      // fits wrapped here alone, the footer measured a line taller than it is drawn and every page a line short.
+      try { layoutTabsIn(el, session, (p) => { const n = hfNodes.get(p); if (!n) throw new Error('no node'); return n; }); } catch { /* measured as it is */ }
       heights.set(doc, flowHeight(el)); // (what floats in it doesn't count: hfstory.js flowHeight)
       el.remove();
     }
@@ -2663,9 +2669,11 @@ export function createPages(view, session, { sheet, scope }) {
           target = p + 1;
           overflow = true;
         }
-      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + 1 || (b.rows && rowBreakIn(b.node)))) {
+      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + (b.node.type === schema.nodes.paragraph && !b.node.content.size ? lineSlack(b.el) : 1) || (b.rows && rowBreakIn(b.node)))) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
-        // One holding only a picture has no such extra, and moves.)
+        // One holding only a picture has no such extra, and moves. An empty one's line is its mark's, with that extra
+        // under it as a line of text has: a sample's empty 10pt paragraph at 1.15 lines, reaching 1.05px past the
+        // margin, stays at its page's foot in Word and had gone to the next page's top, everything after it 32px low.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
         if (b.rows && bottom + shift > contentBottom(p) + 1 && setDown(b.node) && !crossFoot.has(b.node) && crossPasses < CROSS_MAX && outOfFlow(b.el) && !roomBeside(b.el)) {
           crossFoot.add(b.node); // (a float set down that reaches past the foot: in the flow, next pass)

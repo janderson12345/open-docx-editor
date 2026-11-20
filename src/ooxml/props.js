@@ -491,13 +491,18 @@ const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
 // font here too, after the font itself, unless the document's own font table names a stand-in.
 const WORD_ALTS = Object.assign(Object.create(null), { 'tms rmn': 'Times New Roman', 'times-roman': 'Times New Roman', timesnewromanpsmt: 'Times New Roman', 'cg times (w1)': 'Times New Roman', 'new york': 'Times New Roman',
   'helvetica neue': 'Arial', 'calibri (body)': 'Calibri', palatino: 'Palatino Linotype', 'futura md bt': 'Century Gothic', 'futura lt bt': 'Century Gothic',
-  'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria',
-  // (Roboto Condensed, not installed: Calibri in Word's print of a sample, its bold heading 146.8px wide as Calibri Bold's
-  // 146.6px, though the file's font table gives Arial as its other name: 187.2px.)
-  'roboto condensed': 'Calibri' });
+  'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria' });
+// Fonts Word fetches for itself where they're missing (Office's cloud fonts) and draws as they are, whatever other name
+// the file's font table gives: the installed font nearest in width stands in for each here. Roboto Condensed: a sample's
+// bold heading 150px wide in Word, 147px as Calibri Bold, 187px as the Arial its font table names.
+const CLOUD_ALTS = Object.assign(Object.create(null), { 'roboto condensed': 'Calibri' });
 // (Futura in Century Gothic: lines of 1.2261 em in Word's prints, not the 1.19 an installed Century Gothic measures.)
 const WORD_ALT_LINE = Object.assign(Object.create(null), { 'futura md bt': 1.2261, 'futura lt bt': 1.2261 });
-const altOf = (name) => WORD_ALTS[String(name || '').toLowerCase()] || ALTS.get(name) || null; // (what Word was seen to draw, over the file's own word for it)
+// (The file's own word for a missing font first: Word draws the font its font table names, w:altName, where that one is
+// installed. Word's PDFs of 182 generated documents: Sylfaen, Georgia, Verdana or Arial as the file named them, the
+// document's default font with no other name given. Word also keeps the first substitute it chose for a font's name
+// until it is closed, so a document printed after another naming the same font can show that one's substitute.)
+const altOf = (name) => CLOUD_ALTS[String(name || '').toLowerCase()] || ALTS.get(name) || WORD_ALTS[String(name || '').toLowerCase()] || null;
 
 function baseStack(name) {
   if (windowsFont(name)) return fontStack(windowsFont(name));
