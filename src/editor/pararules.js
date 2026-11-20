@@ -5,6 +5,7 @@ import { listLevel, resolveStyle } from '../ooxml/styles.js';
 import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 import { outlineLevel } from './commands.js';
+import { wordAscent } from './baseline.js';
 
 // The paragraph mark's own font size (half-points), if it sets one.
 export function markSize(node) {
@@ -192,6 +193,25 @@ export function labelLine(node, session, l, label, run, style) {
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
+  // A label in a text font of its own (a bullet set in Segoe UI over Calibri text): Word's line takes the tallest ascent
+  // and the deepest descent on it, so the label's line is taller by what its font reaches past the text's (a sample's
+  // two bullets in a cell, 19.8px lines for the text's 17.9px, the row 112px in Word's own layout and 108px here).
+  if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) {
+    const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
+    const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
+    const la = wordAscent(String(lvlFont).toLowerCase()), ta = wordAscent(String(fname).toLowerCase());
+    const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
+    if (la && ta && rule !== 'exact') {
+      const lbl = Number(lblSize) || Number(run.size) || 20;
+      const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
+      // (The label's box, as tall as the text's line once it has a padding of its own, editor.css, already stands half
+      // the difference of the two fonts' heights above the text; the padding is what is left to the label's ascent.)
+      const line = node.attrs.view.line ?? session.styleProp(node.attrs.styleId, 'line') ?? session.styles.defaults.pPr.line ?? 240;
+      const mult = !rule || rule === 'auto' ? line / 240 : 1;
+      const pad = (lineFactor(lvlFont) * lbl - lineFactor(fname) * txt * mult) / 2 / lbl;
+      if (la * lbl - ta * txt > 0.001 * lbl && pad > 0) style.push(`--odx-lbl-up:${+pad.toFixed(4)}em`);
+    }
+  }
   // Wingdings (ascent 0.899em, descent 0.211em) fits inside Calibri's line and adds nothing.
   if (lvlFont && /^symbol/i.test(lvlFont)) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');

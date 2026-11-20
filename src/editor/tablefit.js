@@ -68,7 +68,12 @@ export function fitAutofitColumns(view) {
     for (const { table, cols, cur, min, nest } of todo) {
       if (!min) continue;
       const before = cols.map((c) => c.style.width);
-      const put = (ws) => {
+      // Word keeps its own fitting in the file's grid. Worked out here it comes within a twip or two of that, and a
+      // tenth of a pixel wraps a word that just fits (a sample's cell of 132.13px in Word, 132.03px here, its line one
+      // word shorter): where every column is within a pixel and a half of the grid's, the grid's widths are taken.
+      const grid = (table.getAttribute('data-grid') || '').split(',').map(Number);
+      const put = (fit) => {
+        const ws = fit !== cur && grid.length === fit.length && fit.every((w, i) => grid[i] > 0 && Math.abs(grid[i] - w) <= 1.5) ? grid : fit;
         cols.forEach((col, i) => { col.style.width = `${Math.round(ws[i] * 100) / 100}px`; });
         given.set(table, { from: cur, set: cols.map((c) => parseFloat(c.style.width) || 0) });
         if (cols.some((c, i) => c.style.width !== before[i])) changed = true;

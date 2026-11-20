@@ -85,6 +85,11 @@ class StyledTableView extends TableView {
       for (const col of this.colgroup.children) col.style.width = '';
     } else {
       this.table.classList.remove('odx-autofit');
+      // (The file's own grid, px: the widths Word last laid the table out at, which the fitting takes when it comes out
+      // within a pixel and a half of them, tablefit.js.)
+      const grid = [...(node.attrs.tblGrid || '').matchAll(/<w:gridCol\b[^>]*\bw:w="(\d+)/g)].map((m) => Math.round((Number(m[1]) / 15) * 100) / 100);
+      if (grid.length) this.table.setAttribute('data-grid', grid.join(','));
+      else this.table.removeAttribute('data-grid');
       keepFitted(this.table);
     }
     // The table's placement, set property by property: the wrapper's style also carries the view's decorations (the
