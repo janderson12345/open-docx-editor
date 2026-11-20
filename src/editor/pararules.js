@@ -168,6 +168,8 @@ export function labelFormat(node, session, l, label, style) {
   if (bold != null) style.push(`--odx-lweight:${bold ? 'bold' : 'normal'}`);
   if (italic != null) style.push(`--odx-lstyle:${italic ? 'italic' : 'normal'}`);
   if (hexColor(color)) style.push(`--odx-lcolor:#${color}`);
+  // (The automatic colour, set on the mark or the level: black, over the paragraph style's colour, as the runs'.)
+  else if (color === 'auto') style.push('--odx-lcolor:var(--odx-autotext, #000)');
   if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
 }
 

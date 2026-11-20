@@ -717,7 +717,7 @@ export function createPages(view, session, { sheet, scope }) {
             const d = contentTop(pg + 1) + headH - topS;
             pushes.set(s, d);
             offs.set(s, extraAt[s]);
-            if (!headerRows) closes.push(contentTop(pg + 1));
+            if (!headerRows) closes.push(contentTop(pg + 1) + 1);
             heads.push(contentTop(pg + 1));
             extra = extraAt[s] + d;
             j = s;
@@ -750,7 +750,7 @@ export function createPages(view, session, { sheet, scope }) {
       const d = contentTop(pg + 1) + headH - top;
       pushes.set(j, d);
       offs.set(j, extra); // everything above this row has moved down by this much (pushed and split rows)
-      if (!headerRows) closes.push(contentTop(pg + 1)); // the moved row's top border, where it now starts
+      if (!headerRows) closes.push(contentTop(pg + 1) + 1); // the moved row's top border, where it now starts: at the page's top, as Word draws it (it was a pixel above)
       heads.push(contentTop(pg + 1));
       extra += d;
     }
@@ -1409,6 +1409,27 @@ export function createPages(view, session, { sheet, scope }) {
   let blockCols = new WeakMap(); // block element -> its column ({ x from the text's left, w }), in columns
   const nodeIds = new WeakMap(); // block node -> a number (a block whose content changed is a new node)
   let idSeq = 0;
+  // A line at a table's page break, `y` px down the layer: in the colour and at the width of the top line of the row
+  // there (its first cell's; else the table's first cell's), a hairline at its own width on paper (--odx-hair). False
+  // for a table with no lines.
+  function breakRule(frag, t, r, origin, y) {
+    const at = [...t.rows].find((tr) => { const q = tr.getBoundingClientRect(); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
+    const shadow = getComputedStyle((at && at.cells[0]) || t.querySelector('td') || t).boxShadow;
+    if (!shadow || shadow === 'none') return false;
+    let color = null, w = 1;
+    for (const m of shadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px/g)) {
+      if (!color) color = m[1]; // (the first line named, unless a top line is)
+      if (Number(m[2]) === 0 && Number(m[3]) > 0) { color = m[1]; w = Number(m[3]); break; }
+    }
+    const line = document.createElement('div');
+    line.className = 'odx-repeat';
+    // (As an inset shadow at the box's top, as the cells' own lines are: a box's background is drawn to whole pixels, a
+    // hairline a full pixel thick on paper.)
+    const h = w <= 1 ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
+    line.style.cssText = `top:${y}px;left:${r.left - origin.left}px;width:${r.width}px;height:${Math.max(4, Math.ceil(w) + 2)}px;box-shadow:inset 0 ${h} 0 0 ${color || '#000'}`;
+    frag.append(line);
+    return true;
+  }
   function drawHeads(list) {
     // (Unchanged repeats are left as they are: redrawing a long document's every pass took a third of its layout time.)
     const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.stop ?? ''}:${h.end ?? ''}:${h.rewrap ? `${h.rewrap.width.toFixed(1)}/${h.rewrap.h.toFixed(1)}` : ''}`; }).join(',');
@@ -1459,13 +1480,7 @@ export function createPages(view, session, { sheet, scope }) {
       if (rule) {
         // The bottom border of a row's part left behind at a page break, in the table's line colour.
         const r = t.getBoundingClientRect();
-        const shadow = getComputedStyle(t.querySelector('td') || t).boxShadow;
-        if (!shadow || shadow === 'none') continue; // a borderless table gets no break rule
-        const color = (/rgb\([^)]*\)/.exec(shadow) || ['#000'])[0];
-        const line = document.createElement('div');
-        line.className = 'odx-repeat';
-        line.style.cssText = `top:${top - 1}px;left:${r.left - origin.left}px;width:${r.width}px;height:1px;background:${color}`;
-        frag.append(line);
+        if (!breakRule(frag, t, r, origin, top - 1)) continue; // a borderless table gets no break rule
         continue;
       }
       const copy = t.cloneNode(true);
@@ -1479,6 +1494,12 @@ export function createPages(view, session, { sheet, scope }) {
       wrap.style.cssText = `top:${top}px;left:${r.left - origin.left}px;width:${r.width}px`;
       wrap.append(copy);
       frag.append(wrap);
+      // The line under the repeated header rows: the top line of the row that follows them on this page, whose own is
+      // drawn at its cell's top, above its push (Word's print of a sample: a black line under the header row at the top
+      // of the table's second page; there was none).
+      let hh = 0;
+      for (let k = 0; k < b.headerRows && k < t.rows.length; k++) hh += t.rows[k].getBoundingClientRect().height;
+      breakRule(frag, t, r, origin, top + hh);
     }
     repeats.replaceChildren(frag);
   }

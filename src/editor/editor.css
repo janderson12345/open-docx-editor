@@ -670,7 +670,9 @@ body.odx-painting .odx-content { cursor: copy; }
 
 /* ==== Print: the print layer and printing (last: it overrides the screen rules above) ==== */
 /* The print relayer's lines (src/engine/printlines.js), built for printing only, over their hidden paragraphs. */
-.odx-printlines { position: absolute; inset: 0; pointer-events: none; font-kerning: none; font-variant-ligatures: none; }
+/* (Above the repeated header rows, z-index 2: their cells' shading is drawn with them, and covered their text, which is
+   drawn here: a table's header row at the top of its next page printed as an empty shaded band.) */
+.odx-printlines { position: absolute; inset: 0; pointer-events: none; font-kerning: none; font-variant-ligatures: none; z-index: 3; }
 .odx-printlines > .odx-pl-host { position: absolute; inset: 0; min-height: 0; }
 .odx-pl-hide { visibility: hidden !important; }
 /* Printing (and Save as PDF): only the pages, one sheet per printed page. */

@@ -75,6 +75,9 @@ export function fitAutofitColumns(view) {
       const put = (fit) => {
         const ws = fit !== cur && grid.length === fit.length && fit.every((w, i) => grid[i] > 0 && Math.abs(grid[i] - w) <= 1.5) ? grid : fit;
         cols.forEach((col, i) => { col.style.width = `${Math.round(ws[i] * 100) / 100}px`; });
+        // (The table as wide as the grid's columns then: its own width was the cells' sum, a third of a pixel less, and its
+        // right edge a pixel and a half left of Word's.)
+        if (ws === grid && parseFloat(table.style.width) > 0) table.style.width = `${Math.round(grid.reduce((a, b) => a + b, 0) * 100) / 100}px`;
         given.set(table, { from: cur, set: cols.map((c) => parseFloat(c.style.width) || 0) });
         if (cols.some((c, i) => c.style.width !== before[i])) changed = true;
       };
