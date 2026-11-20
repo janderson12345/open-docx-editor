@@ -349,6 +349,8 @@ td[data-odx-phantom] > * { display: none; }
 /* An exact row height clips what doesn't fit, as in Word (a two-line placeholder in a one-line header row): each paragraph
    is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */
 .odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { max-height: calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px)); overflow-y: visible; }
+/* (An empty paragraph's floor too: an 11pt one in a 12pt row made the row 0.9px taller than Word's.) */
+.odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { min-height: min(var(--odx-floor, 1.15em), calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px))); }
 /* The last paragraph's space after is past the row's edge in an exact row: Word clips it, the browser would grow the row. */
 .odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; }
 /* The row's own edge clips (Word shows text into the cell's bottom margin, not past the row). */
@@ -382,6 +384,11 @@ td[data-odx-phantom] > * { display: none; }
 @container style(--odx-lhlen: 1) and style(--odx-runmult: 1) { .odx-content span[style*="--odx-flh"], .odx-hf span[style*="--odx-flh"] { --odx-lhv: max(var(--odx-atleast, 0px), calc(var(--odx-flh) * 1em)) !important; } }
 /* The empty paragraph carrying a section break into newspaper columns (editor.js): no room, as in Word. */
 .odx-content > p.odx-collapse { display: none; }
+/* The empty paragraph carrying a continuous section break (editor.js): no room and no spacing of its own; a block of its
+   own, so the space after the paragraph above and the space before the one below don't run into one; the next one's
+   space before less this one's own space after (--odx-sectpull). First in the document or under a table it keeps its line. */
+.odx-content > p.odx-sectnone { display: flow-root; height: 0; min-height: 0; overflow: hidden; padding: 0; border: 0; margin-top: 0 !important; margin-bottom: calc(0px - var(--odx-sectpull, 0px)) !important; }
+.odx-content > p.odx-sectkept { margin-top: 0 !important; }
 /* An empty paragraph after a table placed down from the text with no room beside it (editor.js): a sliver on its line, so
    the line goes under the table, as Word's does (a line with nothing on it fits beside a float in no room). */
 .odx-content > p.odx-fempty::before { content: ''; display: inline-block; width: 1px; height: 0; }

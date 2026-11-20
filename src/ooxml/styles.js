@@ -583,6 +583,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       left: c.col === 0 ? tb.left : tb.insideV,
       right: lastCol ? tb.right : tb.insideV,
     };
+    const tableBottom = edge.bottom; // (the table's own line under this cell, before the cell's or its region's)
     let shading = ts.shading;
     let rPr = {};
     const cellPad = { ...mar };
@@ -635,8 +636,22 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       else if (name === 'tcMar') Object.assign(cellPad, readCellMar(el));
       else Object.assign(edge, readBorders(el));
     }
-    return { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir };
+    return { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ownBottom: edge.bottom !== tableBottom };
   });
+  // A cell's own bottom line (its tcBorders', or its region's in the table style) against the top line of the cell under
+  // it: the wider is the line between them, and the lower row is that much taller (Word's prints: a 2.25pt bottom over a
+  // 0.5pt inside line or a 0.75pt top, the rows 22px apart for 19; one cell's is enough for its whole row).
+  {
+    const wide = (b) => (b && b.val && !['nil', 'none'].includes(b.val) ? b.sz || 0 : 0);
+    for (const r of resolved) {
+      if (!r.ownBottom || r.lastRow || !wide(r.edge.bottom)) continue;
+      const { c } = r;
+      for (const n of resolved) {
+        if (n.c.row !== c.row + c.rowspan || !(n.c.col < c.col + c.colspan && c.col < n.c.col + n.c.colspan)) continue;
+        if (wide(r.edge.bottom) > wide(n.edge.top)) n.edge.top = r.edge.bottom;
+      }
+    }
+  }
   // A line between two cells that only one of them sets is still there for both (Word draws the border between them
   // from either side): each draws half of it, and each row grows by its share, so rows measure as in Word.
   const drawn = (b) => b && b.val && !['nil', 'none'].includes(b.val);
@@ -670,6 +685,11 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     if (rowTop.has(c.row)) cellPad.top = Math.max(cellPad.top ?? 0, rowTop.get(c.row));
     if (rowBottom.has(c.row + c.rowspan - 1)) cellPad.bottom = Math.max(cellPad.bottom ?? 0, rowBottom.get(c.row + c.rowspan - 1));
   }
+  // A row's text starts under the widest line over any of its cells (Word's prints: a 3pt line under one cell lowers the
+  // whole row below it by 3pt, not the one cell under it).
+  const linePx = (b) => { if (!drawn(b)) return 0; const cb = compoundSide(b); return cb ? cb.px : (Math.max(0.25, (b.sz || 0) / 8) * 4) / 3; };
+  const rowLine = new Map();
+  for (const { c, edge } of resolved) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
   const out = [];
   for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
@@ -732,6 +752,8 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     if (shading) css.push(`background-color:${shading}`);
     if (vAlign) css.push(`vertical-align:${vAlign}`);
     if (dir) css.push(`writing-mode:${dir}`);
+    const under = Math.max(0, rowLine.get(c.row) - linePx(edge.top));
+    if (under > 0.01) grow.top += under;
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
     if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
     if (cellPad.right != null || sideGrow.right) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
