@@ -234,7 +234,9 @@ test('decorations: comments, formatting marks, merge fields, joins and hyphenati
   for (const [name, body] of Object.entries(decoDocs)) {
     const session = new DocxSession(docx(body(DN)));
     const plugin = decoPlugins[name](session);
-    const sizes = [1, 4].map((times) => {
+    // (Four and sixteen times the document: at one time, hyphenation opened in 1.5-2.5ms on CI, where a pause alone made
+    // 2.5ms against 27.5ms and failed the check twice.)
+    const sizes = [4, 16].map((times) => {
       const doc = repeated(session.doc, times);
       const open = () => opened(plugin, doc);
       const state = open();
@@ -247,8 +249,8 @@ test('decorations: comments, formatting marks, merge fields, joins and hyphenati
       // (More runs: a millisecond or two each, where one pause would count.)
       const [small, large] = timedPair(sizes[0][step], sizes[1][step], 15);
       report[`${name} ${step}`] = `${small.t.toFixed(1)}ms, ${large.t.toFixed(1)}ms`;
-      assert.ok(decosOf(plugin, large.out).find().length >= 4 * DN, `${name}: decorations made`);
-      if (large.t > 5) assert.ok(large.t / Math.max(small.t, FLOOR) < LIMIT, `${name} ${step}: ${DN} ${small.t.toFixed(1)}ms, ${4 * DN} ${large.t.toFixed(1)}ms (${(large.t / small.t).toFixed(1)}x)`);
+      assert.ok(decosOf(plugin, large.out).find().length >= 16 * DN, `${name}: decorations made`);
+      if (large.t > 5) assert.ok(large.t / Math.max(small.t, FLOOR) < LIMIT, `${name} ${step}: ${4 * DN} ${small.t.toFixed(1)}ms, ${16 * DN} ${large.t.toFixed(1)}ms (${(large.t / small.t).toFixed(1)}x)`);
     }
   }
   t.diagnostic(JSON.stringify(report));
