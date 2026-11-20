@@ -239,7 +239,9 @@ export function labelLine(node, session, l, label, run, style) {
     // (Multiple spacing stretches an Aptos bullet line's extra too: 1.25 lines add 1.25 times as much, Product
     // Management. Not Calibri's at 1.15: sample S047, sample S067 and sample S125 lose lines with it.)
     const mult = aptos && (!rule || rule === 'auto') ? Math.max(1, line / 240) : 1;
-    if (up > 0 && rule !== 'exact') style.push(`--odx-lbl-up:${+(up * mult).toFixed(4)}em`);
+    // (In px, rounded up to the browser's 1/64px: it cuts a length down to that, and a bullet's line came out a
+    // hundredth of a pixel short each time, a table of forty 9pt bullets 0.5px short by its foot against Word's.)
+    if (up > 0 && rule !== 'exact') style.push(`--odx-lbl-up:${Math.ceil(up * mult * (lbl / 2) * (4 / 3) * 64 - 1e-6) / 64}px`);
   }
 }
 

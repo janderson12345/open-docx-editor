@@ -26,7 +26,7 @@ test('a document\'s values can\'t write CSS of their own', () => {
   assert.doesNotMatch(fontStack('A"}body{background:url(x)}').replace(/"[^"]*"/g, '""'), ESCAPES);
   assert.equal(highlightColor(evil), 'transparent');
   // Ordinary values still work.
-  assert.equal(pPrToCss(readPPr(kid(el('<w:pPr><w:jc w:val="center"/></w:pPr>'), 'pPr'))), 'text-align:center');
+  assert.equal(pPrToCss(readPPr(kid(el('<w:pPr><w:jc w:val="center"/></w:pPr>'), 'pPr'))), '--odx-trail:1;text-align:center');
   assert.match(rPrToCss(readRPr(kid(el('<w:rPr><w:color w:val="C00000"/><w:highlight w:val="yellow"/></w:rPr>'), 'rPr')), {}), /color:#C00000;background-color:#ffff00/);
 });
 
