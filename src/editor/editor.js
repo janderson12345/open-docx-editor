@@ -54,6 +54,7 @@ import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.
 import { twipsToPx } from '../ooxml/units.js';
 import { protectPlugin, tabLeaves } from './protect.js';
 import { tableArrow, tableVert } from './tablecaret.js';
+import { keepFitted } from './tablefit.js';
 
 let scopeSeq = 0;
 
@@ -82,7 +83,10 @@ class StyledTableView extends TableView {
       this.table.style.width = '';
       this.table.style.minWidth = '';
       for (const col of this.colgroup.children) col.style.width = '';
-    } else this.table.classList.remove('odx-autofit');
+    } else {
+      this.table.classList.remove('odx-autofit');
+      keepFitted(this.table);
+    }
     // The table's placement, set property by property: the wrapper's style also carries the view's decorations (the
     // page push's margin-top), which a whole new style attribute would wipe out on each update (a click moving the caret
     // updates the view), leaving the table pulled up onto the page before.

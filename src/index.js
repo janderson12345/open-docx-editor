@@ -224,6 +224,7 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       await loadEmbeddedFonts(session.pkg); // laid out in the document's own fonts, as Word does
       const t2 = performance.now();
       if (collab && share) { dropView(); collab.publish(bytes, session.doc); } // (the old view mustn't follow the new body)
+      session.fileName = newName; // (FILENAME fields in headers and footers show it, as Word's do)
       api.load(session);
       name = newName;
       openedPrint = print;

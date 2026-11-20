@@ -177,6 +177,11 @@ export function storyDrawer(session) {
       if (p && sz) p.style.fontSize = `${sz[1] / 2}pt`;
       const font = empty && /<w:rFonts\b[^>]*w:(?:ascii|hAnsi)="([^"]+)"/.exec(mark);
       if (p && font) { p.style.fontFamily = fontStack(font[1]); p.style.setProperty('--odx-lh', lineFactor(font[1])); }
+      // (Or the theme's font, w:asciiTheme, as in the body, runs.js: a footer's empty last paragraph, its mark the theme's
+      // Calibri under a Times style, is Calibri's 17.9px line at 11pt, not Times's 16.9px; the line above it 1pt higher.)
+      const themed = empty && !font && session.theme && /<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)Theme="(major|minor)/.exec(mark);
+      const tf = themed && session.theme[themed[1]];
+      if (p && tf) { p.style.fontFamily = fontStack(tf); p.style.setProperty('--odx-lh', lineFactor(tf)); }
       // With text, as in the body: when every run shares a size or font, the line is sized from it.
       const run = !empty && p && uniformRun(node, (id) => session.charStyle?.(id), session.theme);
       if (run && run.size) p.style.fontSize = `${run.size / 2}pt`;
@@ -209,7 +214,7 @@ export function storyDrawer(session) {
       b.style.borderTop = b.style.paddingTop = '';
     }
     styleTables(doc, el);
-    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, PROPS: props || (props = docProps(session.pkg)), RESOLVE: pageNo?.resolve });
+    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, FILENAME: session.fileName || null, PROPS: props || (props = docProps(session.pkg)), RESOLVE: pageNo?.resolve });
     return el;
   };
 }
