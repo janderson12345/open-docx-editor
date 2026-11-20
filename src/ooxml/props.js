@@ -491,10 +491,13 @@ const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
 // font here too, after the font itself, unless the document's own font table names a stand-in.
 const WORD_ALTS = Object.assign(Object.create(null), { 'tms rmn': 'Times New Roman', 'times-roman': 'Times New Roman', timesnewromanpsmt: 'Times New Roman', 'cg times (w1)': 'Times New Roman', 'new york': 'Times New Roman',
   'helvetica neue': 'Arial', 'calibri (body)': 'Calibri', palatino: 'Palatino Linotype', 'futura md bt': 'Century Gothic', 'futura lt bt': 'Century Gothic',
-  'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria' });
+  'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria',
+  // (Roboto Condensed, not installed: Calibri in Word's print of a sample, its bold heading 146.8px wide as Calibri Bold's
+  // 146.6px, though the file's font table gives Arial as its other name: 187.2px.)
+  'roboto condensed': 'Calibri' });
 // (Futura in Century Gothic: lines of 1.2261 em in Word's prints, not the 1.19 an installed Century Gothic measures.)
 const WORD_ALT_LINE = Object.assign(Object.create(null), { 'futura md bt': 1.2261, 'futura lt bt': 1.2261 });
-const altOf = (name) => ALTS.get(name) || WORD_ALTS[String(name || '').toLowerCase()] || null;
+const altOf = (name) => WORD_ALTS[String(name || '').toLowerCase()] || ALTS.get(name) || null; // (what Word was seen to draw, over the file's own word for it)
 
 function baseStack(name) {
   if (windowsFont(name)) return fontStack(windowsFont(name));

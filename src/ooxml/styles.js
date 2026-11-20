@@ -103,7 +103,12 @@ export function stylesToCss(scope, info, theme) {
     const sel = st.type === 'paragraph'
       ? `${scope} p[data-style="${cssEsc(st.id)}"]` + (st.id === defaultParagraph ? `,${scope} p:not([data-style])` : '')
       : `${scope} span[data-cstyle="${cssEsc(st.id)}"]`;
-    const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(r.rPr, theme)].filter(Boolean).join(';');
+    // Bold and italic are toggles in Word: a character style that sets one to off doesn't switch off what the text
+    // has from its paragraph's or its table's style (a "Table Header" character style with bold off, on the first row
+    // of a table whose style makes that row bold: bold in Word's print). Only a run's own setting turns it off.
+    const rp = st.type === 'character' && (r.rPr.bold === false || r.rPr.italic === false)
+      ? { ...r.rPr, bold: r.rPr.bold === false ? null : r.rPr.bold, italic: r.rPr.italic === false ? null : r.rPr.italic } : r.rPr;
+    const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(rp, theme)].filter(Boolean).join(';');
     if (css) rules.push(`${sel}{${css}}`);
     // A shadow on the style's text (w14:shadow): its lines that much taller, as in Word (texteffects.js shadowRoom); an
     // empty paragraph's line too, and one of nothing but spaces (its mark's line, pararules.js). (A run's own shadow:
