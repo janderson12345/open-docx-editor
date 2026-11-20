@@ -610,6 +610,8 @@ export function pPrToCss(p) {
   if (p.bidi != null) css.push(`direction:${p.bidi ? 'rtl' : 'ltr'}`);
   // (Distributed, w:jc="distribute" / thaiDistribute: its last line spread to both margins as well, as Word does.)
   if (p.align === 'distribute' || p.align === 'thaiDistribute') css.push('text-align-last:justify');
+  // (Centred or set to the right: the spaces that end the paragraph take no part in placing its last line, editor.css.)
+  if (p.align) css.push(`--odx-trail:${p.align === 'center' || p.align === 'right' || p.align === 'end' ? 1 : 0}`);
   if (p.align) css.push(`text-align:${{ both: 'justify', distribute: 'justify', thaiDistribute: 'justify', lowKashida: 'justify', mediumKashida: 'justify', highKashida: 'justify', left: 'start', right: 'end', center: 'center', start: 'start', end: 'end', justify: 'justify' }[p.align] || 'start'}`);
   if (p.before != null) css.push(`margin-top:${twipsToPt(p.before)}pt;--odx-sb:${twipsToPt(p.before)}pt`); // (--odx-sb: where a picture's paragraph-relative offset starts, reader.js)
   if (p.after != null) css.push(`margin-bottom:${twipsToPt(p.after)}pt`);

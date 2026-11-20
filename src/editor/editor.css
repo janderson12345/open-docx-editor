@@ -445,6 +445,9 @@ td[data-odx-phantom] > * { display: none; }
 .odx-page:not(.odx-all-markup) .odx-content p.odx-joined-away, .odx-no-markup .odx-content p.odx-joined-away { display: none; }
 
 /* ==== The ribbon: tabs, groups, buttons, menus, galleries, the find bar and the context menu ==== */
+/* The spaces that end a centred or right-aligned paragraph (textspans.js, --odx-trail from the paragraph's alignment): no
+   width, so the line is centred or set right by its text alone, as Word sets it. */
+@container style(--odx-trail: 1) { .odx-trail { font-size: 0; letter-spacing: 0; } }
 .odx-content .odx-tab { white-space: pre; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* A tab that goes to the next line with the word after it (tabs.js): a line break, then its width there. */
 :where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl { display: inline !important; width: auto !important; }

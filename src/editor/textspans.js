@@ -53,6 +53,15 @@ function blockDecos(node, pos, out) {
       afterBreak = true;
     } else if (!marker(c)) afterBreak = false;
   });
+  // The spaces that end a paragraph, after its last text: marked, so that under a centred or right-aligned paragraph they
+  // take no room (editor.css). Word sets the line as if they weren't there; the browser counts them at a paragraph's end
+  // (a centred "Unit Cost " header 1.6px left of Word's, a right-aligned amount 3.3px, one space's width).
+  let last = null, lastAt = 0, some = false;
+  node.forEach((c, off) => { if (c.isText) { if (last && last.text.trim()) some = true; last = c; lastAt = pos + 1 + off; } else if (!marker(c)) { if (last && last.text.trim()) some = true; last = null; } });
+  if (last) {
+    const m = / +$/.exec(last.text);
+    if (m && (m.index > 0 || some)) out.push(Decoration.inline(lastAt + m.index, lastAt + last.nodeSize, { class: 'odx-trail' }));
+  }
   return out;
 }
 
