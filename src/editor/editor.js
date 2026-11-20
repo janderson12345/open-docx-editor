@@ -150,9 +150,9 @@ function tableCells(table, pos, cache, session) {
     const node = table.nodeAt(rel);
     if (!node || !node.type.spec.tableRole?.includes('cell')) continue; // holes left by ragged rows
     const rect = map.findCell(rel);
-    cells.push({ rel, node, row: rect.top, col: rect.left, rowspan: rect.bottom - rect.top, colspan: rect.right - rect.left, tcPr: node.attrs.tcPr });
+    cells.push({ rel, node, row: rect.top, col: rect.left, rowspan: rect.bottom - rect.top, colspan: rect.right - rect.left, tcPr: node.attrs.tcPr, vmTops: node.attrs.vmTops });
   }
-  const key = table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')}`).join(';');
+  const key = table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')},${(c.vmTops || []).join('.')}`).join(';');
   let res = cache.get(key);
   if (!res) {
     res = tableCellCss(session.styles, table.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme);

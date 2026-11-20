@@ -21,6 +21,7 @@ const tables = tableNodes({
   tableGroup: 'block',
   cellContent: 'block+',
   cellAttributes: {
+    vmTops: { default: null }, // a vertically merged cell: the top line each of its lower parts sets itself (eighths of a point), read only
     tcPr: { // [[localName, xml], ...] minus gridSpan/vMerge; a tracked cell insertion or deletion is shown (editor.css)
       default: [],
       // A pasted cell (a table from another program or a web page): its background and vertical alignment, as cell properties.

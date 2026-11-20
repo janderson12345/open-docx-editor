@@ -693,6 +693,10 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   const linePx = (b) => { if (!drawn(b)) return 0; const cb = compoundSide(b); return cb ? cb.px : (Math.max(0.25, (b.sz || 0) / 8) * 4) / 3; };
   const rowLine = new Map();
   for (const { c, edge } of resolved) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
+  // The lower parts of a vertically merged cell too, each in its own row: the top line it sets itself is in that row's
+  // height though nothing of it is drawn (Word's own layout of a sample's table: two rows under the start of three
+  // merged cells, their own cells with no top line, 19.3px each for the merged parts' 1pt lines; they were 17.9px).
+  for (const { c } of resolved) (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) rowLine.set(c.row + k + 1, Math.max(rowLine.get(c.row + k + 1) ?? 0, (Math.max(0.25, sz / 8) * 4) / 3)); });
   const out = [];
   for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ...more } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
@@ -764,7 +768,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     if (drawn(more.ownTop)) grow.top -= Math.min(Math.max(0, linePx(edge.top) - linePx(more.ownTop)), margin, grow.top);
     // (A cell that draws a top line of its own, its tcBorders' or its region's, starts under that line whatever the
     // cells beside it have: corpus 2, and the samples scored with this on and off.)
-    const under = more.setsTop ? 0 : Math.max(0, rowLine.get(c.row) - linePx(edge.top));
+    const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
     if (under > 0.01) grow.top += under;
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
     if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
