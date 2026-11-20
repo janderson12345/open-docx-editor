@@ -643,11 +643,13 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   // 0.5pt inside line or a 0.75pt top, the rows 22px apart for 19; one cell's is enough for its whole row).
   {
     const wide = (b) => (b && b.val && !['nil', 'none'].includes(b.val) ? b.sz || 0 : 0);
+    const startingAt = new Map(); // row -> the cells that start in it (a large table isn't searched whole for each cell)
+    for (const r of resolved) { if (!startingAt.has(r.c.row)) startingAt.set(r.c.row, []); startingAt.get(r.c.row).push(r); }
     for (const r of resolved) {
       if (!r.ownBottom || r.lastRow || !wide(r.edge.bottom)) continue;
       const { c } = r;
-      for (const n of resolved) {
-        if (n.c.row !== c.row + c.rowspan || !(n.c.col < c.col + c.colspan && c.col < n.c.col + n.c.colspan)) continue;
+      for (const n of startingAt.get(c.row + c.rowspan) || []) {
+        if (!(n.c.col < c.col + c.colspan && c.col < n.c.col + n.c.colspan)) continue;
         if (wide(r.edge.bottom) > wide(n.edge.top)) n.edge.top = r.edge.bottom;
       }
     }
