@@ -87,3 +87,31 @@ test('fonts Word substitutes when missing, and faces named as fonts', async () =
   assert.equal(faceCss('Arial'), '');
   assert.match(fontCss('Arial Bold'), /font-weight:bold$/);
 });
+
+// A cell's own bottom line against the top line of the row under it (Word's prints of generated documents).
+const padTop = (c) => Number(/(?:^|;)padding-top:([\d.]+)px/.exec(c)?.[1]);
+const grid = (tcPrOf, tblBorders = '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>') => {
+  const cells = [];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) cells.push({ row, col, rowspan: 1, colspan: 1, tcPr: tcPrOf(row, col) });
+  return tableCellCss(readStyles(pkg), `<w:tblPr><w:tblBorders>${tblBorders}</w:tblBorders></w:tblPr>`, 3, 3, cells, parseXml).css;
+};
+const bottom18 = [['tcBorders', '<w:tcBorders><w:bottom w:val="single" w:sz="18" w:space="0" w:color="000000"/></w:tcBorders>']];
+
+test('a cell\'s own thick bottom line is the line over the row below it, wider than the table\'s inside line', () => {
+  const c = grid((row) => (row === 0 ? bottom18 : []));
+  assert.equal(padTop(c[3]), 3); // 2.25pt
+  assert.equal(padTop(c[6]), 0.667); // the next row: the table's 0.5pt line
+});
+
+test('one cell\'s thick bottom line lowers the whole row below it', () => {
+  const c = grid((row, col) => (row === 0 && col === 1 ? bottom18 : []));
+  assert.deepEqual([padTop(c[3]), padTop(c[4]), padTop(c[5])], [3, 3, 3]);
+  assert.match(c[4], /box-shadow:inset 0px 3px/); // drawn under that cell only
+  assert.doesNotMatch(c[3], /0px 3px/);
+});
+
+test('the table\'s own inside line gives way to a thinner top line a cell sets itself', () => {
+  const thinTop = [['tcBorders', '<w:tcBorders><w:top w:val="single" w:sz="2" w:space="0" w:color="000000"/></w:tcBorders>']];
+  const c = grid((row) => (row === 1 ? thinTop : []), '<w:insideH w:val="single" w:sz="12" w:space="0" w:color="000000"/>');
+  assert.equal(padTop(c[3]), 0.333);
+});

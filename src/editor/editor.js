@@ -225,6 +225,34 @@ function paragraphPlugin(session) {
         });
       } else if (columnsIn(doc.attrs.sectPr, page)?.unequal) doc.forEach((_, __, i) => sides.set(i, [0, 0, true]));
     }
+    // An empty paragraph that carries a continuous section break takes no room in Word, nor its own spacing (Word's prints
+    // of generated documents: the line under it 18.7px below the text above, whatever its size, spacing or line; a
+    // bookmark or an empty run in it changes nothing, a space or a tab makes it a line). The space after the paragraph
+    // above and the space before the one below are both kept, one under the other; without
+    // doNotUseHTMLParagraphAutoSpacing the space before the one below is less the break paragraph's own space after.
+    // First in the document or right under a table it keeps its line and its space after, and loses its space before.
+    // (Other break types leave the paragraph its line: the next section starts on another page.)
+    const sectNone = new Map(); // top-level index -> px pulled off the space before the next paragraph
+    const sectKept = new Set();
+    {
+      const ends = [];
+      doc.forEach((node, _, i) => { const x = (node.attrs.extra || []).find((e) => e[0] === 'sectPr'); if (x) ends.push([i, x[1]]); });
+      ends.forEach(([i], n) => {
+        const next = n + 1 < ends.length ? ends[n + 1][1] : doc.attrs.sectPr || '';
+        if (!/<w:type\b[^>]*\bw:val="continuous"/.test(next) || collapse.has(i)) return;
+        const para = doc.child(i);
+        if (para.type !== schema.nodes.paragraph || para.textContent) return;
+        let ink = false;
+        para.descendants((c) => { if (!ZERO_WIDTH.has(c.attrs?.kind) && c.attrs?.kind !== 'proofErr') ink = true; return !ink; });
+        if (ink) return;
+        let k = i - 1;
+        while (k >= 0 && doc.child(k).type === schema.nodes.opaque_block) k--;
+        if (k < 0 || doc.child(k).type !== schema.nodes.paragraph) { sectKept.add(i); return; }
+        const after = i + 1 < doc.childCount && doc.child(i + 1).type === schema.nodes.paragraph ? doc.child(i + 1) : null;
+        const plain = session.compat?.has('doNotUseHTMLParagraphAutoSpacing');
+        sectNone.set(i, plain || !after ? 0 : Math.min(twipsToPx(Number(spacing(para, 'after')) || 0), twipsToPx(Number(spacing(after, 'before')) || 0)));
+      });
+    }
     // Contextual spacing across a table's edges, in Word's reading order: the paragraph before the table, then each row's
     // cells left to right, each row closed by its end mark, a paragraph of the default style. A paragraph's neighbour out
     // of its cell is the paragraph before the table, the next or previous cell's, or that mark (Word: the space after a
@@ -345,7 +373,7 @@ function paragraphPlugin(session) {
           // Under that rule the space after a paragraph and the space before the next are both kept, one under the other
           // (Word's prints: 8pt after and 4pt before, the lines 37.3px apart; without the setting the larger, 32px). The
           // margins collapse to the larger, so the one above is added to this paragraph's own.
-          if (prev && prev.node.type.name === 'paragraph' && !auto(node, 'beforeAuto') && !auto(prev.node, 'afterAuto')) {
+          if (prev && prev.node.type.name === 'paragraph' && !auto(node, 'beforeAuto') && !auto(prev.node, 'afterAuto') && !(parent === doc && (sectNone.has(index) || sectNone.has(index - 1)))) {
             const b = spacing(node, 'before'), a = prev.cs && prev.node.attrs.styleId === node.attrs.styleId ? 0 : spacing(prev.node, 'after');
             if (a > 0 && b > 0) style.push(`margin-top:${+twipsToPx(a + b).toFixed(2)}px`);
           }
@@ -419,7 +447,8 @@ function paragraphPlugin(session) {
           if (b + (sz / 2) * (4 / 3) * 1.15 > fUnder) { funder = true; style.push(`--odx-funder:${+b.toFixed(2)}px`); }
           fUnder = null;
         }
-        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse', fempty && 'odx-fempty', funder && 'odx-funder'].filter(Boolean);
+        if (parent === doc && sectNone.has(index)) style.push(`--odx-sectpull:${+sectNone.get(index).toFixed(2)}px`);
+        const cls = [attrs.class, ...changeClasses(node), parent === doc && collapse.has(index) && 'odx-collapse', parent === doc && sectNone.has(index) && 'odx-sectnone', parent === doc && sectKept.has(index) && 'odx-sectkept', fempty && 'odx-fempty', funder && 'odx-funder'].filter(Boolean);
         if (cls.length) attrs.class = cls.join(' ');
         headingRole(node, session, attrs);
         // A paragraph in a frame (frames.js): at its place, the text beside it; one after another in the same frame below it.
