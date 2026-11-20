@@ -402,6 +402,9 @@ function rextraCss(items) {
       css.push(`font-family:var(--odx-font-${t})`, `--odx-lh:var(--odx-lh-${t})`);
     }
     // Complex-script formatting (editor.css: a run marked w:rtl or w:cs takes it instead of the Latin members).
+    // The automatic colour set on the run itself is the run's colour, over its style's (a heading style's teal, a table
+    // style's white first row): black, as Word prints it on a light ground.
+    else if (name === 'color' && /\bw:val="auto"/.test(xml) && !/w:themeColor=/.test(xml)) css.push('color:var(--odx-autotext, #000)');
     else if (name === 'bCs') css.push(`--odx-bcs:${on(xml) ? 'bold' : 'normal'}`);
     else if (name === 'iCs') css.push(`--odx-ics:${on(xml) ? 'italic' : 'normal'}`);
     else if (name === 'szCs' && Number(val(xml))) css.push(`--odx-szcs:${Number(val(xml)) / 2}pt`);

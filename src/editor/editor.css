@@ -689,6 +689,7 @@ body.odx-painting .odx-content { cursor: copy; }
 @media print { .odx-markup { display: none; } .odx-page.odx-has-markup { left: 0; } }
 @media print { .odx-nav, .odx-findbar { display: none !important; } }
 @media print { .odx-cmt { background: none !important; border-bottom: 0 !important; } }
+@media print { .odx-content, .odx-hf, .odx-repeat, .odx-notes { --odx-hair: 0px; } } /* table lines under a pixel wide at their own width on paper (styles.js) */
 @media print { .odx-hfedit-tag { display: none; } .odx-hfedit { outline: 0; } .odx-hf { opacity: 1; } .odx-content.odx-dim { opacity: 1; } }
 @media print { .odx-ruler { display: none; } }
 /* (Edge prints the blinking caret of a focused document: none on paper.) */

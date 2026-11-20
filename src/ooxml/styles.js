@@ -638,7 +638,12 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       if (name === 'textDirection') dir = { btLr: 'sideways-lr', tbRl: 'vertical-rl', tbRlV: 'vertical-rl' }[(/w:val="(\w+)"/.exec(xml) || [])[1]] || null;
       if (name !== 'tcBorders' && name !== 'shd' && name !== 'tcMar') continue;
       const el = parseXml(xml.replace(/^<w:(\w+)/, (m, n) => `<w:${n} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(xml, ['w'])}`)).documentElement;
-      if (name === 'shd') shading = shdFill(el) ?? shading;
+      if (name === 'shd') {
+        // (A cell's own "no fill", w:fill="auto" with no pattern, is no fill: it clears the shade its row or column band
+        // has from the table style. Word's print of a sample: white rows under a banded style; they were drawn banded.)
+        const f = shdFill(el), v = attr(el, 'val'), fa = attr(el, 'fill');
+        shading = f ?? ((!v || v === 'clear' || v === 'nil') && (!fa || fa === 'auto') ? null : shading);
+      }
       else if (name === 'tcMar') Object.assign(cellPad, readCellMar(el));
       else Object.assign(edge, readBorders(el));
     }
@@ -753,7 +758,11 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const share = outer[side] || side === 'top' ? 1 : 0.5;
       const px = (Math.max(pt * 4 / 3, 1) * share).toFixed(3); // drawn at least 1px wide in total
       const [x, y] = DIR[side];
-      shadows.push(`inset ${x * px}px ${y * px}px 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
+      // (On paper a line under a pixel wide is drawn at its own width, Word's half point 0.67px, not the screen's whole
+      // pixel: --odx-hair is 1px on screen and 0px in print, editor.css.)
+      const thin = (pt * 4) / 3 < 1 ? `max(${((pt * 4) / 3 * share).toFixed(3)}px, calc(var(--odx-hair, 1px) * ${share}))` : null;
+      const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
+      shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
       grow[side] = (pt * 4) / 3 * share;
       // A border's space (w:space, points) lies between it and the cell's text in Word (doc 01's 2pt double frame: the
       // nested table 2.7px lower than ours).
