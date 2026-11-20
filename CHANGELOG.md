@@ -3,8 +3,12 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 67%, and documents laid out exactly as Word from 1,157 to 1,609.
+within 1px of Word's went from 47% to 67%, and documents laid out exactly as Word from 1,157 to 1,611.
 
+- **A long run of paragraphs kept with the next no longer takes a page each**: a run of paragraphs each set to keep
+  with the next, longer than a page, breaks where the page ends, as in Word (a document of 120 such paragraphs came
+  out at 113 pages for Word's 14). **A list from a paragraph style takes that style's own indent** over the list
+  level's, as in Word (a numbered heading had started 2in to the right and wrapped).
 - **Section breaks and table lines as Word lays them out** (rules pinned with 265 generated documents printed from
   Word): an empty paragraph that carries a continuous section break takes no room and none of its own spacing, the
   space after the paragraph above and the space before the one below both kept (first in the document or under a

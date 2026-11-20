@@ -1883,6 +1883,17 @@ check(sb.length === 5 && sb[2][1] === 0 && Math.abs(sb[3][0] - sb[1][0] - (sb[1]
 await open('section-break-only.docx');
 const so = await tops();
 check(so.length === 7 && so[2][1] === 0 && so[3][1] > 15 && so[4][1] > 15 && Math.abs(so[5][0] - so[1][0] - 3 * so[1][1]) < 0.5, `a section break paragraph that is all of its section keeps its line (${JSON.stringify(so)})`);
+// A run of paragraphs each kept with the next that is longer than a page breaks where the page ends (why-tests gen2.py
+// keepchain; Word: 10 lines, then the 55 kept paragraphs from the next page's top, 51 on it and 4 with the 6 after).
+await open('keep-chain-long.docx');
+await page.waitForTimeout(600);
+const kc = await page.evaluate(() => [document.querySelectorAll('.odx-sheets > .odx-sheet').length, document.querySelectorAll('.odx-content > p').length]);
+check(kc[0] === 3 && kc[1] === 71, `a keep-with-next run longer than a page takes the pages its lines need (${JSON.stringify(kc)}, want 3 pages)`);
+// A list from the paragraph's style, the style setting a left indent itself: that indent, not the list level's
+// (why-tests gen2.py styleind; Word: the label at the margin, the level's left 2.375in).
+await open('list-style-indent.docx');
+const si = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return [ps[1].getBoundingClientRect().left - ps[0].getBoundingClientRect().left, parseFloat(getComputedStyle(ps[1]).textIndent)]; });
+check(Math.abs(si[0] - 24) < 0.5 && Math.abs(si[1] + 24) < 0.5, `a style's own indent over its list level's (${JSON.stringify(si)}, want 24px in, hanging 24px)`);
 
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px

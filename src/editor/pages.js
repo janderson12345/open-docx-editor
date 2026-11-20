@@ -2674,6 +2674,10 @@ export function createPages(view, session, { sheet, scope }) {
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
         while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        // A run of blocks each kept with the next that reaches back to the page's top is longer than the page: moving
+        // part of it on gains nothing, and Word breaks it where the page ends (generated documents: 55 to 120 paragraphs
+        // each kept with the next, 51 lines a page in Word; each had gone to a page of its own, 113 pages for 14).
+        if (!midSheet && m < k && m > 0 && keepsOn(blocks[m - 1], p)) m = k;
       }
       const moved = blocks[m];
       // With "page break before" or a new section Word keeps the paragraph's space before.

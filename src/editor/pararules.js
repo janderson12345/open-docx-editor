@@ -18,8 +18,25 @@ export function listLabel(node, session, l, label, attrs, style) {
   if (label != null) {
     const lvl = listLevel(session.numbering, l.numId, l.ilvl);
     const ind = lvl ? lvl.pPr : {};
-    const left = node.attrs.view.indLeft ?? ind.indLeft ?? 720;
-    const hang = -(node.attrs.view.indFirst ?? ind.indFirst ?? -360);
+    // A list that comes from the paragraph's style: an indent that style sets itself (it, or a style based on it) is
+    // the paragraph's, over the list level's, each part on its own (Word's prints of generated documents: a level at
+    // 2.375in hanging 0.25in under a style with a 0.25in left indent, the label at the margin and the text 0.25in in;
+    // with a hanging indent of its own, that one). With the list set on the paragraph itself the level's stands.
+    const styleInd = {};
+    if (node.attrs.numId == null && node.attrs.styleId) {
+      const seen = new Set();
+      for (let id = node.attrs.styleId; id && !seen.has(id); ) {
+        seen.add(id);
+        const st = session.styles.styles.get(id);
+        if (!st) break;
+        if (styleInd.indLeft == null && st.pPr.indLeft != null) styleInd.indLeft = st.pPr.indLeft;
+        if (styleInd.indFirst == null && st.pPr.indFirst != null) styleInd.indFirst = st.pPr.indFirst;
+        if (st.pPr.numId != null) break;
+        id = st.basedOn;
+      }
+    }
+    const left = node.attrs.view.indLeft ?? styleInd.indLeft ?? ind.indLeft ?? 720;
+    const hang = -(node.attrs.view.indFirst ?? styleInd.indFirst ?? ind.indFirst ?? -360);
     attrs.class = lvl && lvl.fmt === 'bullet' ? 'odx-li odx-bullet' : 'odx-li';
     // A number formatted as hidden text (w:vanish on its level, or on the paragraph mark it takes its look from) isn't
     // shown, nor the room after it, as in Word.
