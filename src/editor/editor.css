@@ -55,7 +55,7 @@
 .odx-canvas { background: var(--odx-canvas); padding: 24px 16px; overflow: auto; }
 .odx-page { position: relative; margin: 0 auto; color: #000; isolation: isolate; }
 .odx-sheets { position: absolute; inset: 0; pointer-events: none; z-index: -2; } /* below a drawing behind the text (z-index -1, reader.js anchorCss), which had been drawn under the sheet, unseen; the page its own stacking context, so it is above the canvas */
-.odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
+.odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; white-space: pre-wrap; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
 /* Bold text is bold, not bolder than what it sits in (the browser's rule for <strong>): under a font drawn in its bold
    face, "Arial Bold", it was set in Arial Black. */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) strong { font-weight: bold; }
