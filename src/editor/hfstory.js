@@ -191,7 +191,8 @@ export function storyDrawer(session) {
       // Spaces with no size or font of their own keep the paragraph style's, not the text's given to the paragraph
       // above: 28 spaces before 20pt text in an 11pt style are 11pt spaces in Word, 93px wide; at the text's 20pt they
       // were 169px, the line 69px too wide for its header and wrapped to two, the whole body 33px low.
-      if (run && (run.size || run.font)) {
+      // (They size no line, as in Word: 10pt spaces beside 9pt text had made a header line 0.6px taller.)
+      if (run && (run.size || run.font) && node.textContent.trim()) {
         const size = Number(session.styleRunProp(node.attrs.styleId, 'size') || 20);
         const tfn = session.styleRunProp(node.attrs.styleId, 'themeFont');
         const fname = session.styleRunProp(node.attrs.styleId, 'font') || (tfn && session.theme?.[tfn.startsWith('major') ? 'major' : 'minor']) || null;
@@ -202,7 +203,7 @@ export function storyDrawer(session) {
             if (a.style.fontSize || a.dataset.cstyle) sized = true;
             if (a.style.fontFamily || a.dataset.cstyle) fonted = true;
           }
-          if (run.size && !sized && size !== Number(run.size)) b.style.fontSize = `${size / 2}pt`;
+          if (run.size && !sized && size !== Number(run.size)) { b.style.fontSize = `${size / 2}pt`; b.style.lineHeight = '0'; }
           if (run.font && !fonted && fname && fname !== run.font) b.style.fontFamily = fontStack(fname);
         }
       }
