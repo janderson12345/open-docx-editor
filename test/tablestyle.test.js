@@ -115,3 +115,20 @@ test('the table\'s own inside line gives way to a thinner top line a cell sets i
   const c = grid((row) => (row === 1 ? thinTop : []), '<w:insideH w:val="single" w:sz="12" w:space="0" w:color="000000"/>');
   assert.equal(padTop(c[3]), 0.333);
 });
+
+test('a cell that draws its own top line keeps its place beside a cell under a thicker one', () => {
+  const top = (sz) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${sz}" w:space="0" w:color="000000"/></w:tcBorders>`]];
+  const c = grid((row, col) => (row === 1 ? (col === 0 ? top(2) : col === 1 ? top(12) : []) : []));
+  assert.equal(padTop(c[3]), 0.333); // its own 0.25pt line
+  assert.equal(padTop(c[4]), 2);
+  assert.equal(padTop(c[5]), 2); // the table's 0.5pt line: lowered to the row's widest
+});
+
+test('a wider line from the row above takes its room out of the top margin of a cell with a top line of its own', () => {
+  const mar = '<w:tcMar><w:top w:w="80" w:type="dxa"/></w:tcMar>';
+  const cell = (top, bottom) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${top}" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="${bottom}" w:space="0" w:color="000000"/></w:tcBorders>`], ['tcMar', mar]];
+  const c = grid(() => cell(2, 8));
+  assert.equal(padTop(c[3]), 5.667); // 4pt margin and its own 0.25pt line, not the 1pt line's 6.667
+  const none = grid((row) => (row === 0 ? cell(2, 8) : [['tcMar', mar]]), '');
+  assert.equal(padTop(none[3]), 6.667); // no top line of its own: the line from above in full
+});

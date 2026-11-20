@@ -584,6 +584,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       right: lastCol ? tb.right : tb.insideV,
     };
     const tableBottom = edge.bottom; // (the table's own line under this cell, before the cell's or its region's)
+    const tableTop = edge.top;
     let shading = ts.shading;
     let rPr = {};
     const cellPad = { ...mar };
@@ -636,7 +637,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       else if (name === 'tcMar') Object.assign(cellPad, readCellMar(el));
       else Object.assign(edge, readBorders(el));
     }
-    return { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ownBottom: edge.bottom !== tableBottom };
+    return { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ownBottom: edge.bottom !== tableBottom, setsTop: edge.top !== tableTop && !!edge.top?.val && !['nil', 'none'].includes(edge.top.val) };
   });
   // A cell's own bottom line (its tcBorders', or its region's in the table style) against the top line of the cell under
   // it: the wider is the line between them, and the lower row is that much taller (Word's prints: a 2.25pt bottom over a
@@ -650,7 +651,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const { c } = r;
       for (const n of startingAt.get(c.row + c.rowspan) || []) {
         if (!(n.c.col < c.col + c.colspan && c.col < n.c.col + n.c.colspan)) continue;
-        if (wide(r.edge.bottom) > wide(n.edge.top)) n.edge.top = r.edge.bottom;
+        if (wide(r.edge.bottom) > wide(n.edge.top)) { if (!('ownTop' in n)) n.ownTop = n.edge.top; n.edge.top = r.edge.bottom; }
       }
     }
   }
@@ -693,7 +694,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   const rowLine = new Map();
   for (const { c, edge } of resolved) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
   const out = [];
-  for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir } of resolved) {
+  for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ...more } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
     // round border widths up to a whole pixel, which made every row of a
     // hairline table taller than in Word. Shared edges are drawn half by each
@@ -754,7 +755,16 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     if (shading) css.push(`background-color:${shading}`);
     if (vAlign) css.push(`vertical-align:${vAlign}`);
     if (dir) css.push(`writing-mode:${dir}`);
-    const under = Math.max(0, rowLine.get(c.row) - linePx(edge.top));
+    // (The room such a line takes over the cell's own comes out of the cell's top margin first: Word's prints of 30-row
+    // tables with 4pt top margins, a 1pt bottom line over a 0.25pt top one, the rows no further apart for it; with no top
+    // margin, a 2.25pt line over a 0.75pt one, 3px a row.)
+    const margin = Math.max(0, cellPad.top ?? 0);
+    // (Only over a top line the cell draws itself: with none of its own the line from above counts in full, margin or
+    // not, as it did.)
+    if (drawn(more.ownTop)) grow.top -= Math.min(Math.max(0, linePx(edge.top) - linePx(more.ownTop)), margin, grow.top);
+    // (A cell that draws a top line of its own, its tcBorders' or its region's, starts under that line whatever the
+    // cells beside it have: corpus 2, and the samples scored with this on and off.)
+    const under = more.setsTop ? 0 : Math.max(0, rowLine.get(c.row) - linePx(edge.top));
     if (under > 0.01) grow.top += under;
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
     if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);

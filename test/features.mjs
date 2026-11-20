@@ -1873,6 +1873,16 @@ check(cellH.length === 2 && Math.abs(cellH[0] - cellH[1]) < 0.3 && cellH[0] < 17
 await open('columns-empty-section.docx');
 const colGap = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; const t = (i) => ps[i].getBoundingClientRect().top; return ps.length >= 4 ? [+(t(3) - t(1)).toFixed(2), +(t(1) - t(0)).toFixed(2)] : null; });
 check(colGap && Math.abs(colGap[0] - 2 * colGap[1]) < 1, `a lone empty paragraph in a columns section keeps its line (${JSON.stringify(colGap)})`);
+// An empty paragraph carrying a continuous section break takes no room (why-tests gen2.py; Word: the line under it
+// 28pt below the line above, an 8pt space after that one and a 6pt space before this one both kept); one that is all
+// of its section keeps its line (three in a row: the first none, the next two a line each).
+const tops = () => page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => { const r = p.getBoundingClientRect(); return [+r.top.toFixed(2), +r.height.toFixed(2), +parseFloat(getComputedStyle(p).marginTop).toFixed(2)]; }));
+await open('section-break-empty.docx');
+const sb = await tops();
+check(sb.length === 5 && sb[2][1] === 0 && Math.abs(sb[3][0] - sb[1][0] - (sb[1][1] + 10.67 + 8)) < 0.5, `an empty continuous section break paragraph takes no room, the spaces around it kept (${JSON.stringify(sb)})`);
+await open('section-break-only.docx');
+const so = await tops();
+check(so.length === 7 && so[2][1] === 0 && so[3][1] > 15 && so[4][1] > 15 && Math.abs(so[5][0] - so[1][0] - 3 * so[1][1]) < 0.5, `a section break paragraph that is all of its section keeps its line (${JSON.stringify(so)})`);
 
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px

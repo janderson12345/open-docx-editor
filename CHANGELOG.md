@@ -3,7 +3,15 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 66%, and documents laid out exactly as Word from 1,157 to 1,597.
+within 1px of Word's went from 47% to 67%, and documents laid out exactly as Word from 1,157 to 1,609.
+
+- **Section breaks and table lines as Word lays them out** (rules pinned with 265 generated documents printed from
+  Word): an empty paragraph that carries a continuous section break takes no room and none of its own spacing, the
+  space after the paragraph above and the space before the one below both kept (first in the document or under a
+  table it keeps its line; so does one that is all there is of its section); a cell's own bottom line, wider than the
+  top line of the row under it, is the line between the two rows and lowers that row, its room taken from a cell's
+  top margin where the cell draws a top line of its own; a cell with no top line of its own starts under the widest
+  line over its row; an empty paragraph taller than an exact-height row no longer stretches the row.
 
 - **Hardening from the release review**: a document, pasted text or co-editor naming a font "constructor" or
   "__proto__" no longer stops the document opening or breaks the editor; a quoted ">" in a piece of XML kept from a

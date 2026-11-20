@@ -350,7 +350,7 @@ td[data-odx-phantom] > * { display: none; }
    is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */
 .odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { max-height: calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px)); overflow-y: visible; }
 /* (An empty paragraph's floor too: an 11pt one in a 12pt row made the row 0.9px taller than Word's.) */
-.odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { min-height: min(var(--odx-floor, 1.15em), calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px))); }
+.odx-content tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))), .odx-hf tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))), .odx-repeat tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: min(var(--odx-floor, 1.15em), calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px))); }
 /* The last paragraph's space after is past the row's edge in an exact row: Word clips it, the browser would grow the row. */
 .odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; }
 /* The row's own edge clips (Word shows text into the cell's bottom margin, not past the row). */

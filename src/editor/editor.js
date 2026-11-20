@@ -248,6 +248,9 @@ function paragraphPlugin(session) {
         let k = i - 1;
         while (k >= 0 && doc.child(k).type === schema.nodes.opaque_block) k--;
         if (k < 0 || doc.child(k).type !== schema.nodes.paragraph) { sectKept.add(i); return; }
+        // (All there is of its section, the paragraph above ending the one before: it keeps its line, as a section of
+        // columns' does. Word's prints: three such in a row, the first no room, the next two a line each.)
+        if (n && ends[n - 1][0] === k) return;
         const after = i + 1 < doc.childCount && doc.child(i + 1).type === schema.nodes.paragraph ? doc.child(i + 1) : null;
         const plain = session.compat?.has('doNotUseHTMLParagraphAutoSpacing');
         sectNone.set(i, plain || !after ? 0 : Math.min(twipsToPx(Number(spacing(para, 'after')) || 0), twipsToPx(Number(spacing(after, 'before')) || 0)));
