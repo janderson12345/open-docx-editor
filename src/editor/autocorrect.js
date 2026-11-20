@@ -4,7 +4,7 @@
 // correction is its own undo step after the character that made it, so Ctrl+Z gives back exactly what was typed, as in
 // Word. (Not when co-editing: the shared undo there takes the character and its correction together.) Off with
 // features: { autocorrect: false }.
-import { Plugin } from 'prosemirror-state';
+import { Plugin, TextSelection } from 'prosemirror-state';
 import { closeHistory } from 'prosemirror-history';
 import { announce } from './live.js';
 
@@ -87,8 +87,18 @@ export const autocorrectPlugin = new Plugin({
       const again = correction($at.parent.textBetween(0, $at.parentOffset, null, '￼'));
       if (!again) return true;
       const start = $at.start();
+      // (The caret as far from the paragraph's end as before: with Track Changes on, the corrected letters are kept as a
+      // deletion beside the new ones and the caret was left after the new ones, "Typed bolded" typed as "Tboldedyped".)
+      const fromEnd = $at.end() - $at.pos;
       const tr = closeHistory(view.state.tr).insertText(again.text, start + again.from, start + again.to);
       view.dispatch(tr.setMeta('odx-autocorrect', true));
+      const $now = view.state.selection.$from;
+      const caret = $now.end() - fromEnd;
+      if (view.state.selection.empty && caret !== $now.pos && caret >= $now.start()) {
+        const move = view.state.tr.setSelection(TextSelection.create(view.state.doc, caret));
+        if (view.state.storedMarks) move.setStoredMarks(view.state.storedMarks);
+        view.dispatch(move.setMeta('addToHistory', false));
+      }
       // A changed word or a symbol is said to screen-reader users (curly quotes and dashes aren't: they'd be noise).
       if (/\p{L}{2}|[©®™…→←⇒⇐½¼¾]/u.test(again.text)) announce(`AutoCorrect: ${again.text}`);
       return true;

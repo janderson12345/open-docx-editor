@@ -5,6 +5,9 @@
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 67%, and documents laid out exactly as Word from 1,157 to 1,609.
 
+- **AutoCorrect with Track Changes on keeps the caret where you type**: capitalising a sentence's first word left the
+  caret after the new capital, so the next words went inside the word ("Typed bolded" came out "Tboldedyped").
+
 - **Section breaks and table lines as Word lays them out** (rules pinned with 265 generated documents printed from
   Word): an empty paragraph that carries a continuous section break takes no room and none of its own spacing, the
   space after the paragraph above and the space before the one below both kept (first in the document or under a
