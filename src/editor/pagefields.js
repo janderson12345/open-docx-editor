@@ -94,7 +94,9 @@ export function fillFields(root, values) {
     if (!src.includes('data-odx-fld')) continue;
     let svg;
     try { svg = decodeURIComponent(src.slice(SVG.length)); } catch { continue; }
-    const made = svg.replace(/(<tspan [^>]*data-odx-fld="((?:PAGE|NUMPAGES|SECTIONPAGES)(?: [A-Za-z]{1,12})?)"[^>]*>)[^<]*(<\/tspan>)/g, (all, open, code, close) => {
+    // (Bounded runs: the drawing is one of ours, shapes.js, but a pattern with open runs either side of a fixed word
+    // takes time that grows with the square of a long tag made to be slow.)
+    const made = svg.replace(/(<tspan [^>]{0,2000}data-odx-fld="((?:PAGE|NUMPAGES|SECTIONPAGES)(?: [A-Za-z]{1,12})?)"[^>]{0,200}>)[^<]{0,200}(<\/tspan>)/g, (all, open, code, close) => {
       const [name, fmt] = code.split(' ');
       const v = valueOf(` ${name}${fmt ? ` \\* ${fmt}` : ''} `);
       return v == null ? all : open + String(v).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + close;
