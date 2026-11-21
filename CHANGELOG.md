@@ -5,6 +5,34 @@
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 69%, and documents laid out exactly as Word from 1,157 to 1,646.
 
+- **A page's last line is fitted exactly, as Word fits it** (pinned with 189 generated documents printed from Word,
+  all now breaking where Word's do; 143 before): Word keeps a line that ends on the bottom margin and moves one that
+  passes it by a twip, whatever the line spacing. The browser lays lines and spacing out in 64ths of a pixel, a third
+  of a pixel off over a page either way; the page fit now takes that rounding back. Paragraph spacing and cell
+  margins are written to the nearest 64th (they were cut short: a page of table rows came out 1.3px short of Word's;
+  96 generated documents now end their page within 0.5px of Word's).
+- **Table styles place and repeat their tables** (60 and 12 generated documents): a table with no alignment or indent
+  of its own takes its style's, one wider than its column set right overhangs at the left, and a style's header
+  rows repeat on each page. **A table starts half its left line's width in** from its indent (15 documents).
+- **Exact-height rows** (60 generated documents): the last paragraph's space after counts when a cell centres or
+  bottom-aligns its text, while text and spacing fit the row; a cell holding more than its row starts at the top and
+  no longer makes the row taller. **A row split across pages** keeps its cell's last paragraph's space after, and a
+  centred cell's paragraph spacing counts in its part of the row.
+- **List numbers** (pinned with 46 generated documents): a number wider than its room pushes its text to the next
+  tab stop; a level that ends its number with a space; a restarted list restarts at its first paragraph only;
+  lists sharing a definition share the count; a paragraph holding only a page break is counted and shows no number;
+  a number with no font of its own takes its paragraph mark's font, then its style's.
+- **Tabs**: a stop between a paragraph's right indent and the margin is a stop (a contents entry's page number at
+  the margin); in a centred or right-aligned paragraph tabs go to their stops and the line is then aligned as a
+  whole; a boxed paragraph's line ends inside its side line. **A raised or lowered list label**, and a symbol bullet
+  with no plain character, drawn in its own font.
+- **Text boxes and drawn shapes**: automatic paragraph spacing is 14pt and none above a box's first paragraph; a
+  shape's picture is a whole number of pixels, so its text is no longer drawn 0.2% small; italic text measured at
+  its own width; justified lines.
+- **Links take their look from their character style** (the editor's own blue only for links made in the editor);
+  contents entries are drawn plain, as Word prints them; an underline is in its run's own colour.
+- **Long documents split paragraphs across pages in print** (they had moved whole, leaving gaps); a paragraph
+  holding only a page break stays at its page's foot; the Normal style's font goes over a table style's.
 - **List labels in their own font size their line as Word does** (one rule, pinned with 368 generated lists printed
   from Word, each within 0.1px): a bullet or number in a font of its own makes its line taller only by what the
   label's top reaches above the text's, above the first line, whatever the line spacing: a Symbol bullet over Calibri,
