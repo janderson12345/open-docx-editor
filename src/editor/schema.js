@@ -251,7 +251,7 @@ export const schema = new Schema({
         const bw = w + 2 * pad, bh = h + 2 * pad;
         const whole = w > 0 && h > 0 && typeof n.attrs.src === 'string' && n.attrs.src.startsWith('data:image/svg+xml') && n.attrs.src.slice(0, 600).includes('font-kerning');
         const cw = Math.ceil(bw - 0.005), ch = Math.ceil(bh - 0.005);
-        const fold = whole && !/margin-(?:right|bottom)\s*:/.test(place);
+        const fold = whole && !/margin-(?:right|bottom)\s*:|position:\s*absolute/.test(place); // (a placed shape takes no room)
         // (From the size the browser gave the box before, cut to its 64ths of a pixel: the line is then as tall as it was.)
         const grid = (v) => Math.floor(v * 64) / 64;
         const room = (css, re, name, add) => {

@@ -3,7 +3,7 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 69%, and documents laid out exactly as Word from 1,157 to 1,646.
+within 1px of Word's went from 47% to 74%, and documents laid out exactly as Word from 1,157 to 1,757.
 
 - **A page's last line is fitted exactly, as Word fits it** (pinned with 189 generated documents printed from Word,
   all now breaking where Word's do; 143 before): Word keeps a line that ends on the bottom margin and moves one that
@@ -11,6 +11,11 @@ within 1px of Word's went from 47% to 69%, and documents laid out exactly as Wor
   of a pixel off over a page either way; the page fit now takes that rounding back. Paragraph spacing and cell
   margins are written to the nearest 64th (they were cut short: a page of table rows came out 1.3px short of Word's;
   96 generated documents now end their page within 0.5px of Word's).
+- **A line holding a check box set in an East Asian font is as tall as Word's** (70 generated documents): Word's
+  check box control writes its box in MS Gothic, and Word makes that line 332/256 of the text's size whatever the
+  font beside it; a form of 25 such lines had ended its page a pixel low.
+- **Hardening**: the document's default paragraph style id is escaped where table styles write it into a selector (a
+  quote in it could have closed the selector and started a rule of its own).
 - **Table styles place and repeat their tables** (60 and 12 generated documents): a table with no alignment or indent
   of its own takes its style's, one wider than its column set right overhangs at the left, and a style's header
   rows repeat on each page. **A table starts half its left line's width in** from its indent (15 documents).
