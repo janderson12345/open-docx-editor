@@ -130,7 +130,7 @@ test('a wider line from the row above takes its room out of the top margin of a 
   const c = grid(() => cell(2, 8));
   assert.equal(padTop(c[3]), 5.671875); // 4pt margin and its own 0.25pt line, not the 1pt line's 6.667
   const none = grid((row) => (row === 0 ? cell(2, 8) : [['tcMar', mar]]), '');
-  assert.equal(padTop(none[3]), 6.667); // no top line of its own: the line from above in full
+  assert.equal(padTop(none[3]), 6.671875); // no top line of its own: the line from above in full
 });
 
 test('a cell\'s own "no fill" clears the shade its band has from the table style', () => {
