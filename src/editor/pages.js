@@ -819,7 +819,7 @@ export function createPages(view, session, { sheet, scope }) {
     let keeps = false;
     let newBottom = -Infinity;
     // The lines of a run of paragraphs in one cell from `extra0` on: which move to the next page, as a paragraph's.
-    function runLines(lines, extra0, padTop, padBottom, line, seq0, out) {
+    function runLines(lines, extra0, padTop, padBottom, line, seq0, out, after = 0) {
       let extra = extra0;
       for (let n = 0; n < lines.length; n++) {
         let top = lines[n].top + rowShift + extra;
@@ -849,7 +849,8 @@ export function createPages(view, session, { sheet, scope }) {
         else out.kept = true;
         extra += delta;
       }
-      if (lines.length) out.end = Math.max(out.end, lines[lines.length - 1].bottom + rowShift + extra + padBottom);
+      // (The cell ends below its last paragraph's space after: margins don't pass through a cell's edge.)
+      if (lines.length) out.end = Math.max(out.end, lines[lines.length - 1].bottom + rowShift + extra + after + padBottom);
       return extra;
     }
     // One cell from `extra0` on (`undoOut`: the natural offset the cells round it give a place in it). Its paragraphs line
@@ -866,8 +867,8 @@ export function createPages(view, session, { sheet, scope }) {
       let extra = extra0;
       let seq = seq0;
       let lines = [];
-      const flush = () => {
-        const e = runLines(lines, extra, padTop, padBottom, line, seq, out);
+      const flush = (after = 0) => {
+        const e = runLines(lines, extra, padTop, padBottom, line, seq, out, after);
         if (e === false) return false;
         extra = e;
         seq += lines.length;
@@ -906,7 +907,8 @@ export function createPages(view, session, { sheet, scope }) {
           seq += 1;
         }
       }
-      if (!flush()) return false;
+      const lastEl = td.lastElementChild;
+      if (!flush(lastEl && lastEl.tagName === 'P' ? Math.max(0, parseFloat(getComputedStyle(lastEl).marginBottom) || 0) : 0)) return false;
       return extra;
     }
     // A cell centred or set at the bottom (as its document has it: a split row's cells are top-aligned by a class, below):
@@ -1438,7 +1440,16 @@ export function createPages(view, session, { sheet, scope }) {
           at = widowCut(at, lines.length, blockFirstOnPage, pageStart);
           if (at < 0) return null;
         }
-      } else if (fitBottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
+      } else if (fitBottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) {
+        // A paragraph holding nothing but a page break stays at its page's foot when its line fits there without the
+        // paragraph's own space before, which Word doesn't count for it: what follows starts the next page (breakAfter),
+        // where taking the paragraph over left a page blank. Word's PDFs of 124 generated documents: 45 lines of a
+        // 46-line page, then the break's paragraph with 0 to 35pt before, two pages each; with that much after the
+        // line above it instead, or 46 lines, three.
+        const own = lines.length === 1 && !b.node.textContent && hasPageBreak(b.node) ? Math.min(spaceBefore(b.node), parseFloat(getComputedStyle(b.el).marginTop) || 0) : 0;
+        if (own > 0 && fitBottom - own <= room(n) + slack) continue;
+        return null;
+      }
       // (A first line that only holds a page break stays at the bottom of its page, as in Word: the text after it starts the next.)
       if (at < 0) continue;
       const lineTop = lines[at].top + shift + extra;
@@ -1815,7 +1826,9 @@ export function createPages(view, session, { sheet, scope }) {
                 const last = td.lastElementChild;
                 if (!last) continue;
                 const spacers = undoIn(td, Infinity); // (in a table in the cell, a row's tallest cell's)
-                bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
+                // (Its last paragraph's space after is in the cell too: margins don't pass through a cell's edge.)
+                const after = Math.max(0, parseFloat(getComputedStyle(last).marginBottom) || 0);
+                bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + after + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
               }
               if (!(bottom > rr.top)) bottom = rr.bottom;
             }

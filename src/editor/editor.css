@@ -358,11 +358,16 @@ td[data-odx-phantom] > * { display: none; }
 .odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }
 /* An exact row height clips what doesn't fit, as in Word (a two-line placeholder in a one-line header row): each paragraph
    is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */
-.odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { max-height: calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px)); overflow-y: visible; }
+.odx-content tr[data-exact] > td > p, .odx-hf tr[data-exact] > td > p, .odx-repeat tr[data-exact] > td > p { max-height: calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px) - var(--odx-sb, 0px)); min-height: 0; box-sizing: border-box; overflow-y: visible; }
 /* (An empty paragraph's floor too: an 11pt one in a 12pt row made the row 0.9px taller than Word's.) */
 .odx-content tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))), .odx-hf tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))), .odx-repeat tr[data-exact] > td > p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: min(var(--odx-floor, 1.15em), calc(var(--odx-trh) - var(--odx-pt, 0px) - var(--odx-pb, 0px))); }
-/* The last paragraph's space after is past the row's edge in an exact row: Word clips it, the browser would grow the row. */
-.odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; }
+/* The last paragraph's space after in an exact row: part of what Word centres or sets at the bottom of the cell while
+   it all fits the row; when it doesn't fit, the text starts at the row's top and the space is clipped (Word's prints of
+   60 generated documents: one and two lines, centred and at the bottom, 0 to 6pt before and after, in rows of 250 to
+   820 twips). As a margin it would make the row taller, so it's the paragraph's own padding (--odx-sa, props.js), the
+   paragraph no taller than the row's room under its space before (above): one that fits is placed with its space, one
+   that doesn't fills the row from its top. */
+.odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; padding-bottom: var(--odx-sa, 0px); }
 /* The row's own edge clips (Word shows text into the cell's bottom margin, not past the row). */
 .odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { overflow: clip; }
 /* (A bottom border doesn't lift an exact row's centred text in Word, as a top one lowers it: sample S108's "PLAN RV:" row,
@@ -370,7 +375,9 @@ td[data-odx-phantom] > * { display: none; }
 .odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { padding-bottom: 0 !important; }
 /* An exact height is the whole row's, its borders and cell margins in it (a minimum leaves them out, above). */
 .odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { height: calc(var(--odx-trh) + var(--odx-trh-add, 0px)); }
-.odx-content table[style*="--odx-lastadd"] > tbody > tr[data-exact]:last-child > td { height: calc(var(--odx-trh) + var(--odx-trh-add, 0px) + var(--odx-lastadd)); }
+/* (The room the table's last line adds under its last row is no part of the row's own: text centred or set at the bottom
+   of that row sits as in the rows above, the 60 documents' last rows.) */
+.odx-content table[style*="--odx-lastadd"] > tbody > tr[data-exact]:last-child > td { height: calc(var(--odx-trh) + var(--odx-trh-add, 0px) + var(--odx-lastadd)); padding-bottom: var(--odx-lastadd) !important; }
 .odx-txbxedit .odx-hf { position: static; opacity: 1; }
 /* Superscript and subscript text doesn't make its line taller in Word (sample S062® on every line stays 18.7px apart). */
 :where(.odx-content, .odx-hf) sup, :where(.odx-content, .odx-hf) sub { line-height: 0; --odx-lhv: 0; font-size: 65%; font-size: round(down, calc(2em / 3 + 0.01pt), 0.5pt); } /* Word's size for raised and lowered text: two thirds, down to the half point (6.5pt from 10pt, 7pt from 11pt, 8pt from 12pt) */

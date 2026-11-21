@@ -293,7 +293,7 @@ function paragraphPlugin(session) {
           edge(c.first, 'prev', left);
           edge(c.last, 'next', i < cells.length - 1 ? (cells[i + 1].first ? sid(cells[i + 1].first) : null) : mark);
         });
-        if (!r && before?.cs && cells[0]?.first && sid(cells[0].first) === sid(before.node)) before.style.push('margin-bottom:0');
+        if (!r && before?.cs && cells[0]?.first && sid(cells[0].first) === sid(before.node)) before.style.push('margin-bottom:0', '--odx-sa:0px');
         r++;
       });
     };
@@ -388,7 +388,7 @@ function paragraphPlugin(session) {
         const plainAuto = session.compat?.has('doNotUseHTMLParagraphAutoSpacing');
         if (plainAuto) {
           if (auto(node, 'beforeAuto')) style.push(`margin-top:${prev && auto(prev.node, 'afterAuto') ? 10 : 5}pt`);
-          if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt');
+          if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt', '--odx-sa:5pt');
           // Under that rule the space after a paragraph and the space before the next are both kept, one under the other
           // (Word's prints: 8pt after and 4pt before, the lines 37.3px apart; without the setting the larger, 32px). The
           // margins collapse to the larger, so the one above is added to this paragraph's own.
@@ -400,7 +400,7 @@ function paragraphPlugin(session) {
           // (A paragraph's own space, w:after="150", over a style with auto spacing that it doesn't turn off: still the auto
           // 14pt, as in Word's PDFs, the auto flag being kept apart from the number.)
           if (node.attrs.view.before != null && node.attrs.view.beforeAuto == null && auto(node, 'beforeAuto')) style.push('margin-top:14pt');
-          if (node.attrs.view.after != null && node.attrs.view.afterAuto == null && auto(node, 'afterAuto')) style.push('margin-bottom:14pt');
+          if (node.attrs.view.after != null && node.attrs.view.afterAuto == null && auto(node, 'afterAuto')) style.push('margin-bottom:14pt', '--odx-sa:14pt');
           if (rel === 0 && auto(node, 'beforeAuto')) style.push('margin-top:0');
           // (One list: one numId, or two over one abstract list, as Word's PDFs have it. Each side on its own: an item's auto space after goes under the next item of its list even when that one has
           // none of its own, and the next's auto space before goes too, under an item with a plain 6pt after, which stays.)
@@ -408,7 +408,7 @@ function paragraphPlugin(session) {
             // (In table cells too, as in Word: samples 1477, 1576, 1652 and 2311. Samples 1434 and 2665, whose cells
             // hold about 65 lines a page where Word's hold 50 either way, then break their pages elsewhere.)
             if (auto(node, 'beforeAuto')) style.push('margin-top:0');
-            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0');
+            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0', '--odx-sa:0px');
           }
         }
         const bdr = borderKey(node.attrs);
@@ -428,13 +428,13 @@ function paragraphPlugin(session) {
           // this one (sample S072: an item turning it off for itself still loses its space before under an empty one that has
           // it), but one with text doesn't (doc 14: "(1) Follow all..." keeps its 6pt under "...I recognize that I must:").
           if (cs || (prev.cs && !prev.node.textContent)) style.push('margin-top:0');
-          if (prev.cs) prev.style.push('margin-bottom:0');
+          if (prev.cs) prev.style.push('margin-bottom:0', '--odx-sa:0px');
         }
         if (cs) {
           const e = edges.get(node);
           const left = prev ? null : e?.prev ?? edgePrev;
           if (left != null && left === sid(node)) style.push('margin-top:0');
-          if (e?.next != null && e.next === sid(node)) style.push('margin-bottom:0');
+          if (e?.next != null && e.next === sid(node)) style.push('margin-bottom:0', '--odx-sa:0px');
         }
         edgePrev = null;
         // Holding a drawing placed from its paragraph's top (reader.js fromParagraphTop): how far above the text that top is,

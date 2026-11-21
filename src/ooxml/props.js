@@ -411,6 +411,17 @@ export function readPPr(pPr) {
 
 export const twipsToPt = (t) => t / 20;
 /**
+ * Space before or after a paragraph (twips) in points, as the browser will keep it. It holds lengths in 64ths of a pixel
+ * and cuts them down to one, never rounds: 2pt of space is 2.656px, not 2.667, and a page of table rows each with space
+ * before and after loses a hundredth of a pixel twice a row, over a pixel against Word by the foot of the page. So a
+ * length off that grid is written as the nearest step (and a little over, so the cut lands on it).
+ */
+export function spacePt(twips) {
+  const steps = (twips / 15) * 64;
+  if (!(twips > 0) || Math.abs(steps - Math.round(steps)) < 1e-6) return twipsToPt(twips);
+  return +((Math.round(steps) / 64 + 1 / 256) * 0.75).toFixed(5);
+}
+/**
  * Character scale (w:w, percent): Word widens each character's advance. CSS can't stretch glyphs and still wrap, so
  * the extra goes between the characters (an average advance of 0.55em), which keeps the lines' widths and breaks.
  */
@@ -618,8 +629,8 @@ export function pPrToCss(p) {
   // (Centred or set to the right: the spaces that end the paragraph take no part in placing its last line, editor.css.)
   if (p.align) css.push(`--odx-trail:${p.align === 'center' || p.align === 'right' || p.align === 'end' ? 1 : 0}`);
   if (p.align) css.push(`text-align:${{ both: 'justify', distribute: 'justify', thaiDistribute: 'justify', lowKashida: 'justify', mediumKashida: 'justify', highKashida: 'justify', left: 'start', right: 'end', center: 'center', start: 'start', end: 'end', justify: 'justify' }[p.align] || 'start'}`);
-  if (p.before != null) css.push(`margin-top:${twipsToPt(p.before)}pt;--odx-sb:${twipsToPt(p.before)}pt`); // (--odx-sb: where a picture's paragraph-relative offset starts, reader.js)
-  if (p.after != null) css.push(`margin-bottom:${twipsToPt(p.after)}pt`);
+  if (p.before != null) css.push(`margin-top:${spacePt(p.before)}pt;--odx-sb:${twipsToPt(p.before)}pt`); // (--odx-sb: where a picture's paragraph-relative offset starts, reader.js)
+  if (p.after != null) css.push(`margin-bottom:${spacePt(p.after)}pt;--odx-sa:${spacePt(p.after)}pt`); // (--odx-sa: in a row of an exact height, the room below the last paragraph, editor.css)
   if (p.line != null) {
     // auto: a multiple of the font's single line; exact: fixed; atLeast: the larger of the two.
     if (!p.lineRule || p.lineRule === 'auto') {
