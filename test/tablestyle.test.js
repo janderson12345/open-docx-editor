@@ -154,3 +154,17 @@ test('a line under a pixel wide is drawn at its own width on paper', () => {
   const c = grid(() => []);
   assert.match(c[3], /box-shadow:inset 0px calc\(1 \* max\(0\.667px, calc\(var\(--odx-hair, 1px\) \* 1\)\)\)/);
 });
+
+// The default paragraph style's id comes from the document and goes into the table styles' selectors inside quotes:
+// a quote in it is escaped there, so nothing after it can close the selector and start a rule of its own.
+test('a quote in the default paragraph style\'s id stays inside its selector', () => {
+  const id = 'N&quot;],x{background:red}[y=&quot;';
+  const xml = `<w:styles ${W}><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>`
+    + `<w:style w:type="paragraph" w:default="1" w:styleId="${id}"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr></w:style>`
+    + `<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/></w:style>`
+    + `<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="20"/></w:rPr></w:style></w:styles>`;
+  const info = readStyles({ partByType: () => 'styles.xml', xml: () => new DOMParser().parseFromString(xml, 'text/xml') });
+  const css = tableStylesCss('.d', info, {});
+  assert.ok(css.includes('data-style="N\\"],x{background:red}[y=\\""]'), 'the id is there, its quotes escaped');
+  assert.ok(!/data-style="N"\]/.test(css), 'and never closes its attribute selector early');
+});

@@ -440,7 +440,7 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
     const normalRun = def ? resolveStyle(info.styles, def).rPr : {};
     const rNormal = normalRun.font != null || normalRun.themeFont != null ? rPrToCss({ ...t.rPr, size, font: null, themeFont: null }, theme) : r;
     if (r) rules.push(`${sel('td')}{${r}}`);
-    if (rNormal) rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${rNormal}}`);
+    if (rNormal) rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${rNormal}}`);
     if (old) {
       const based = [...info.styles.values()].filter((ps) => ps.id !== def && fromNormal(ps.id)).map((ps) => sel(`td > p[data-style="${cssEsc(ps.id)}"]`));
       if (based.length) rules.push(`${based.join(',')}{${sizeCss(tSize / 2)}}`);
@@ -453,7 +453,7 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
     for (const k of ['before', 'after']) if (beats(k)) tp[k] = t.pPr[k];
     if (beats('line')) { tp.line = t.pPr.line; tp.lineRule = t.pPr.lineRule; }
     const p = pPrToCss(tp);
-    if (p) rules.push(`${sel('td > p:not([data-style]),')}${sel(`td > p[data-style="${def}"]`)}{${p}}`);
+    if (p) rules.push(`${sel('td > p:not([data-style]),')}${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${p}}`);
     // Other paragraph styles take the table style's spacing too, for each setting their own chain leaves to the defaults.
     const keys = ['before', 'after', 'line', 'lineRule'];
     for (const ps of info.styles.values()) {
@@ -470,7 +470,7 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
   // style sets a size, that is the cell's as anywhere.)
   if (dflt && normalSize == null) {
     const sel = (x) => `${scope} table:not([data-tstyle]) ${x}`;
-    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${sizeCss(dflt / 2)}}`);
+    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${sizeCss(dflt / 2)}}`);
   }
   return rules.join('\n');
 }
