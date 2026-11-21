@@ -274,6 +274,9 @@ function wideLabels(view, decos) {
       if (size && (inside || label.length * size * 1.2 > gap / 15)) {
         labelCtx = labelCtx || document.createElement('canvas').getContext('2d');
         labelCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`;
+        // (Without kerning unless the number is drawn with it: a capital and its full stop, 12.9px wide on the page and
+        // in Word, measured 11.6px kerned, inside its 12px of room, and its text stayed against it, 11px left of Word's.)
+        labelCtx.fontKerning = cs.fontKerning === 'none' ? 'none' : 'normal';
         const width = labelCtx.measureText(label).width + label.length * (parseFloat(cs.letterSpacing) || 0);
         // (Wider by anything at all: a sample's heading number 24.09px wide in 24px of room has its text at the next stop.)
         const before = inside ? own.find((t) => t > start + width * 15 + 1 && t < start + gap) : undefined;

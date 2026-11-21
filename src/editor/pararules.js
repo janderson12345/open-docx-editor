@@ -67,7 +67,14 @@ export function listLabel(node, session, l, label, attrs, style) {
     // (A space after the label, w:suff="space": the label and a space, the text right after, as nothing's.)
     const spaced = !hidden && lvl && lvl.suff === 'space';
     if (spaced && label != null) attrs['data-label'] = `${label} `;
-    const gap = hidden || spaced || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
+    // (After a right-aligned number, which ends at its place: at the paragraph's first stop of its own past that
+    // place, where it comes before the indent. Word's prints of 18 generated lists, roman numbers i to xviii right-
+    // and left-aligned with 180, 270 and 720 twips of hanging indent: a right-aligned number ends at its place
+    // whatever its width, its text at the indent, or at a stop half way to it. A left-aligned one's text goes by
+    // where the number ends: lhfix.js wideLabels.)
+    const endsAtStart = !!lvl && (lvl.jc === 'right' || lvl.jc === 'end');
+    const ownFirst = endsAtStart && hang > 0 && own.length ? Math.min(...own) : null;
+    const gap = hidden || spaced || (lvl && lvl.suff === 'nothing') ? 0 : ownFirst != null && ownFirst < start + hang ? ownFirst - start : viaIndent;
     style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
     // A label wider than that room: the text goes on from the next tab stop after the label's end, the paragraph's own
     // or, past its last, a default one (lhfix.js wideLabels measures the label and sets the room; where the label
