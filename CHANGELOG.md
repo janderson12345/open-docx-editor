@@ -33,7 +33,8 @@ within 1px of Word's went from 47% to 74%, and documents laid out exactly as Wor
   quote in it could have closed the selector and started a rule of its own).
 - **Table styles place and repeat their tables** (60 and 12 generated documents): a table with no alignment or indent
   of its own takes its style's, one wider than its column set right overhangs at the left, and a style's header
-  rows repeat on each page. **A table starts half its left line's width in** from its indent (15 documents).
+  rows repeat on each page. **A table starts half its left line's width in** from its indent, the line being its first row's first cell's, the
+  cell's own where it sets one (93 documents).
 - **Exact-height rows** (60 generated documents): the last paragraph's space after counts when a cell centres or
   bottom-aligns its text, while text and spacing fit the row; a cell holding more than its row starts at the top and
   no longer makes the row taller. **A row split across pages** keeps its cell's last paragraph's space after, and a

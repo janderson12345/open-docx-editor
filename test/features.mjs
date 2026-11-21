@@ -2026,6 +2026,13 @@ await open('underline-from-font.docx');
 const uff = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; const u = ps[3].querySelector('u') || ps[3].querySelector('.odx-t'); const cs = getComputedStyle(u); return [ps.length, cs.textUnderlinePosition, cs.textDecorationThickness, cs.textDecorationLine]; });
 check(uff[0] === 7 && uff[1] === 'from-font' && uff[2] === 'from-font' && /underline/.test(uff[3]), `an underline placed and sized from its font (${JSON.stringify(uff)})`);
 
+// A table is set in by half the left line of its first row's first cell, the cell's own line over the table's (why-tests
+// gen2.py cellx2; Word: the table's lines 0.5pt, the first row's first cell with a 3pt left line of its own: its text
+// 105.15px in, 2px further than the table's own line would put it).
+await open('table-first-cell-line.docx');
+const tfc = await cellStarts();
+check(Math.abs(tfc[0] - 105.15) < 0.4, `a table set in by half its first cell's own left line (${JSON.stringify(tfc)}, want 105.15px)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).
