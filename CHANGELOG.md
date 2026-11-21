@@ -3,7 +3,7 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 74%, and documents laid out exactly as Word from 1,157 to 1,757.
+within 1px of Word's went from 47% to 75%, and documents laid out exactly as Word from 1,157 to 1,808.
 
 - **Word squeezes a justified line by a rule of its own, now the editor's** (66 generated justified documents, 4,516
   words that stuck out of a line): Word takes the word on when narrowing the line's spaces for it costs each space no
