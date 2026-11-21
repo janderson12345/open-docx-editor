@@ -140,7 +140,10 @@ function placeStoryShapes(el) {
     // (Its top in its containing block, which may be its paragraph: from where it is now, at the story's zoom.)
     st.top = '0px';
     const er = el.getBoundingClientRect();
-    const scale = el.offsetHeight ? er.height / el.offsetHeight : 1;
+    // (The zoom from the page the story is set in, where there is one: a one-line header's own height, 15.33px read
+    // as a whole 15, gave a zoom of 1.02 and its shapes a place a pixel low.)
+    const box = el.offsetParent;
+    const scale = box && box.offsetHeight > 100 ? box.getBoundingClientRect().height / box.offsetHeight : el.offsetHeight ? er.height / el.offsetHeight : 1;
     const now = img.getBoundingClientRect().top;
     // (The story's top on its page to the fraction, where the box it is set in gives the same within a pixel:
     // offsetTop is a whole number of pixels, and a footer starts where its lines' heights put it, up to half a pixel

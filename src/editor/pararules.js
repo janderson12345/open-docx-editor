@@ -228,7 +228,13 @@ export function labelLine(node, session, l, label, run, style) {
   // (And a size the level sets that is larger than its style's, whatever its runs set: Word draws the number at the
   // level's size. Its prints of 24 generated lists: a 12pt and a 14pt "Item 1." from their level over unsized text in
   // an 11pt document, and over 12pt runs; the line was as tall as Word's already, the number drawn at the text's size.)
-  const larger = !!lvlSize && !run.size && lvlSize > styleSize;
+  // (Not for a paragraph with no text whose number has a font of its own: there the room for that font's number is
+  // added already, below, and the size taken as well made the line taller than Word's: a sample's empty "a." in
+  // 12pt Times New Roman stood 1.5px over the lines after it. Word's prints of 16 generated documents, empty numbered
+  // paragraphs under a 9, 12 or 14pt level: with a font of its own within 1px so; in the paragraph's font the 12pt
+  // ones are 1.4px off with the size taken and 5.9px without, the 14pt ones 3.8px and 16px: Word's line grows above
+  // the number only, which is still to be matched.)
+  const larger = !!lvlSize && !run.size && lvlSize > styleSize && (!lvlFont || /\S/.test(node.textContent));
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller || larger)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   // The label's own letter-spacing, its level's (w:spacing in the level's rPr; the same 24 lists, condensed by 0.3 and
   // 1.1pt and expanded by 1pt, each number's last character within 0.2px of Word's): a converted document's numbers,
@@ -267,7 +273,11 @@ export function labelLine(node, session, l, label, run, style) {
       // its text and given 1.25px of room above its line that Word doesn't add.)
       let firstSize = 0;
       if (!run.size) node.descendants((c) => { if (!firstSize && c.isText && c.text.trim()) firstSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || -1; return !firstSize; });
-      const txt = Number(run.size) || (firstSize > 0 ? firstSize : 0) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
+      // (Where it is larger than the style's, that is: under smaller text the line is the style's size already, an
+      // unsized space or the mark its own, and room added for the number made it taller than Word's. Cells of numbered
+      // 10pt text with one unsized space in an 11pt style stood 0.7px low with it.)
+      const styleSize = Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || 0;
+      const txt = Number(run.size) || (firstSize > styleSize ? firstSize : 0) || styleSize || lbl;
       // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
       // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
       // label never makes its line taller below).

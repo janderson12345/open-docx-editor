@@ -13,6 +13,15 @@ within 1px of Word's went from 47% to 74%, and documents laid out exactly as Wor
   rule). Lines whose runs carry letter-spacing of their
   own (every run of a document converted from a PDF does) are squeezed as any other: they were left alone, and none
   of 27 such documents broke as Word's.
+- **Justified paragraphs that hold a tab are squeezed too** (18 generated documents, 1,046 lines): a label and a tab
+  before a paragraph's text, a tab that opens it, or one to a stop after its first words left the whole paragraph
+  unsqueezed, and 246 of the lines broke as Word's; 1,039 do now. Word justifies, and squeezes, a line after its last
+  tab.
+- **A continuous section's first page is the page its text starts** (18 generated documents): a section set to have a
+  different first page that starts part way down a page shows the ordinary header on the next page, as before; one
+  whose text starts a page (a page break before it, or its opening headings carried over with their text) has that
+  page as its first, with the first-page header and footer. A document's second page stood 27px low under the wrong
+  header and ran a page over.
 - **A list level's first number counts the deeper levels before it** (14 generated lists): a paragraph of a deeper
   level before any of an upper one uses that level's first number, so the upper level's own first paragraph is its
   second: after "1.1", the first top-level paragraph is "II".

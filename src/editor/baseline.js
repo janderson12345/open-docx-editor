@@ -166,7 +166,10 @@ export function shiftFor(el, host, anchored = false) {
   // its runs' own, as tall as their sizes make them, the paragraph's size in none of them. A list paragraph of 12pt
   // runs and one 10pt character in an 11pt style, measured as an 11pt line holding a 12pt run, printed its four lines
   // 1px low. Runs that need Word's boxes are sized and shifted together: mixlines.js, mixedShift above.)
-  if (!own && rcs.fontSize !== pcs.fontSize && el.dataset.odxMix !== '1') {
+  // (Larger than the paragraph's size, that is: smaller runs share their line with what is left in the paragraph's
+  // own size, an unsized space or its mark, and Word's line is that size's. Cells of 10pt runs and one unsized space in
+  // an 11pt style, measured as 10pt lines, printed 0.7px lower, 1.3px under Word's.)
+  if (!own && rcs.fontSize !== pcs.fontSize && parseFloat(rcs.fontSize) > parseFloat(pcs.fontSize) && el.dataset.odxMix !== '1') {
     let none = true;
     for (const s of el.querySelectorAll('.odx-t')) { if (s.textContent.trim() && getComputedStyle(s).fontSize === pcs.fontSize) { none = false; break; } }
     if (none) pcs = rcs;

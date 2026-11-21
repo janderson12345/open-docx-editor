@@ -2111,6 +2111,21 @@ await open('underline-own-colour.docx');
 const uoc = await page.evaluate(() => { const e = document.querySelector('.odx-content [style*="text-decoration-color"]'); const cs = e && getComputedStyle(e); return cs ? [cs.textDecorationLine, cs.textDecorationColor, cs.color] : null; });
 check(uoc && /underline/.test(uoc[0]) && uoc[1] === 'rgb(255, 0, 0)' && uoc[2] === 'rgb(0, 0, 0)', `an underline in its own colour (${JSON.stringify(uoc)})`);
 
+// Justified paragraphs that hold a tab are squeezed after it, as Word squeezes them (why-tests gen2.py justtab; Word's
+// lines of this document, "(a)" and a tab to the hanging indent before each paragraph's text, break where these do).
+await open('justified-after-tab.docx');
+await page.waitForTimeout(300);
+const jat = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return [ps.length, ps.filter((p) => p.querySelector('.odx-tab') && p.querySelector('[style*="word-spacing:-"], [style*="word-spacing: -"]')).length]; });
+check(jat[0] === 12 && jat[1] >= 8, `justified lines after a tab squeezed (${JSON.stringify(jat)}, want 8 or more of the 12 paragraphs with a squeezed line)`);
+
+// A continuous section whose text starts a page (its first paragraph set to break before) has that page as its first:
+// the first-page header there, the ordinary one after (gen2.py ctitle; Word: "FIRST" on page 2, the first section's
+// three-line header on pages 1, 3 and 4).
+await open('continuous-section-first-page.docx');
+await page.waitForTimeout(300);
+const csf = await page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((sh) => (sh.querySelector('.odx-hf.odx-header')?.textContent || '').slice(0, 5)));
+check(csf.length === 4 && csf[0] === 'HDRAH' && csf[1] === 'FIRST' && csf[2] === 'HDRAH' && csf[3] === 'HDRAH', `a continuous section's first-page header on the page its text starts (${JSON.stringify(csf)})`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

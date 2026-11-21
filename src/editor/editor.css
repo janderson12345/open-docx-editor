@@ -658,7 +658,9 @@ body.odx-painting .odx-content { cursor: copy; }
 :where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-line: underline; clip-path: inset(-0.5em 0); }
 :where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl)::after { content: "\0000a0"; white-space: pre; letter-spacing: 3000px; }
 :where(.odx-content, .odx-hf) :is(u[style*="double"], [style*="text-decoration-style:double"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-style: double; }
-:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-trail { font-size: 0; letter-spacing: 0; }
+/* (And no line height of their own: a span of no size with its text's line height sits half of it under the
+   baseline, and made its line 5px taller: a bold underlined heading ending in a space.) */
+:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-trail { font-size: 0; letter-spacing: 0; line-height: 0; }
 /* Tab leaders made of characters, cut to the tab's width (a clip, not overflow: the line's baseline stays). */
 .odx-tab[data-leader] { clip-path: inset(-0.5em 0); }
 .odx-tab[data-leader]::after { white-space: pre; letter-spacing: 0; }

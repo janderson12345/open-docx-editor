@@ -2669,8 +2669,17 @@ export function createPages(view, session, { sheet, scope }) {
       let sect = null;
       if (k > 0) for (let j = b.i - 1; j >= blocks[k - 1].i && !sect; j--) sect = sectEnds.get(j) || null;
       if (sect) {
-        const from = sect.page ? (top <= contentTop(p) + 1 ? p : p + 1) : p + 1;
-        setMargins(from, sect.next, sect.page);
+        // (A continuous section whose text starts a page all the same, a page break before it: that page is the
+        // section's own from its top, its first page, with the first-page header and footer where it has them. Word's
+        // prints of 18 generated documents: a section with a different first page starting part way down page 1
+        // shows the ordinary header on page 2, whatever its margins, columns or the sections before it; with its first
+        // paragraph set to break before, or a page break last before the section's end mark, page 2 has the
+        // first-page header. A sample's page 2 stood 27px low under the ordinary header, and ran a page over.)
+        // (At a page's top already, or about to be taken to the next page's by the break, below.)
+        const atTop = top <= contentTop(p) + 1;
+        const broken = !atTop && k > 0 && ((breakPending && breakKind !== 'column') || breakBefore(b.node));
+        const from = atTop ? p : p + 1;
+        setMargins(from, sect.next, sect.page || ((atTop || broken) && from > 0));
         while (sections.length > 1 && sections[sections.length - 1][0] >= from) sections.pop();
         sections.push([from, sect.index]);
       }
@@ -2850,6 +2859,15 @@ export function createPages(view, session, { sheet, scope }) {
           cut = !midSheet && lineSplits && !cols ? keepCut(blocks[m - 1]) : null;
           if (cut) break;
           m--;
+        }
+        // (A continuous section whose first block goes on to the next page, by itself or with the blocks it is kept
+        // with: the section's text starts that page, which is its first, as above. A sample's section opening with
+        // two headings kept with their text, no room for them under the section before.)
+        if (!cut && m > 0) {
+          let s0 = null;
+          for (let j = blocks[m].i - 1; j >= blocks[m - 1].i && !s0; j--) s0 = sectEnds.get(j) || null;
+          const e = s0 && !s0.page ? margins.find((x) => x[1] === s0.next) : null;
+          if (e && e[0] === target) e[2] = true;
         }
         if (cut) {
           const prev = blocks[m - 1];

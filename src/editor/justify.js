@@ -8,6 +8,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { schema } from './schema.js';
 import { ZERO_WIDTH } from '../ooxml/reader.js';
 import { splitOf } from './wrapboth.js';
+import { mergeTabs } from '../ooxml/props.js';
 
 const MAX_SQUEEZE = 0.25; // share of a space's width
 const MAX_SQUEEZE_EM = 0.07; // and of the font size (Verdana's wide spaces squeeze less than a quarter)
@@ -75,9 +76,21 @@ const fontOf = (cs) => `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fon
  * (PM positions of the line's start and the end of the word it pulls in, squeeze in px per space), or null
  * when the paragraph holds anything but plain text, or isn't laid out.
  */
-function squeezedLines(view, node, pos, el, split) {
+function squeezedLines(view, node, pos, el, split, session) {
   const segs = []; // [text, pm start, font, space width]
   let plain = true;
+  // A tab: the text after it is set from where the tab ends, and its line's spaces are counted from there (Word
+  // justifies a line after its last tab only). Word's prints of 18 generated documents, justified paragraphs with a
+  // label and a tab to their hanging indent, a tab that opens them, or one to a stop after their first words: Word
+  // squeezes their lines as a plain paragraph's, the line with the tab too; left alone, 246 of their 1,046 lines broke
+  // as Word's. (Left stops only: after a centre, right or decimal stop the text's place depends on its own width.)
+  let tabsOk = null;
+  const leftStops = () => {
+    if (tabsOk == null) {
+      try { tabsOk = mergeTabs(session?.styleProp(node.attrs.styleId, 'tabs'), node.attrs.view?.tabs).every((t) => !t.val || t.val === 'left' || t.val === 'start' || t.val === 'num' || t.val === 'bar'); } catch { tabsOk = false; }
+    }
+    return tabsOk;
+  };
   node.descendants((child, off) => {
     if (!plain) return false;
     // Markers that take no room (bookmarks, comment anchors and references) don't stop it.
@@ -93,6 +106,7 @@ function squeezedLines(view, node, pos, el, split) {
     }
     // A line break (w:br, w:cr) ends a line where it is; the lines either side are fitted on their own.
     if (child.type === schema.nodes.hard_break) { segs.push({ brk: true, start: pos + 1 + off }); return false; }
+    if (child.type === schema.nodes.tab && !split && leftStops()) { segs.push({ tab: true, start: pos + 1 + off }); return false; }
     if (!child.isText || /[\t\xad]/.test(child.text)) { plain = false; return false; }
     const at = view.domAtPos(pos + 1 + off + 1);
     const host = at.node.nodeType === 3 ? at.node.parentElement : at.node;
@@ -128,9 +142,9 @@ function squeezedLines(view, node, pos, el, split) {
   let pendingSpace = 0;
   let pendingEm = 0;
   for (const s of segs) {
-    if (s.brk) {
+    if (s.brk || s.tab) {
       if (cur) { words.push(cur); cur = null; }
-      words.push({ brk: true, from: s.start, to: s.start + 1 });
+      words.push({ brk: !!s.brk, tab: !!s.tab, from: s.start, to: s.start + 1, space: pendingSpace });
       pendingSpace = 0;
       pendingEm = 0;
       continue;
@@ -175,9 +189,21 @@ function squeezedLines(view, node, pos, el, split) {
     let spaces = 0;
     let spaceW = 0;
     let spaceEm = 0;
+    let lineX = right - avail; // where the line's text starts, or the text after its last tab
     for (let k = 0; k < words.length; k++) {
       const wd = words[k];
-      if (wd.brk) { width = 0; lineFrom = wd.to; avail = right - left; continue; }
+      if (wd.brk) { width = 0; lineFrom = wd.to; lineX = left; avail = right - left; continue; }
+      if (wd.tab) {
+        // (Where the text after it starts: after the words before it on its line, as wide as they are unstretched,
+        // and the tab's own width, tabs.js. Not read from where it is drawn: a justified line's space before the tab
+        // is stretched there. One taken to the next line with the word after it isn't followed.)
+        const dom = view.nodeDOM(wd.from);
+        const tw = dom && dom.nodeType === 1 && !dom.classList.contains('odx-tabnl') ? dom.getBoundingClientRect().width : NaN;
+        const x = lineX + width + (width ? wd.space : 0) + tw;
+        if (!(tw >= 0) || !(x < right)) return;
+        width = 0; lineFrom = wd.to; lineX = x; avail = right - x; spaces = 0; spaceW = 0; spaceEm = 0;
+        continue;
+      }
       if (k === 0 || width === 0) { width = wd.w; spaces = 0; spaceW = 0; spaceEm = 0; continue; }
       const add = wd.space + wd.w;
       const gap = wd.space > 0 ? 1 : 0;
@@ -195,16 +221,18 @@ function squeezedLines(view, node, pos, el, split) {
         // A little extra: canvas and layout widths differ slightly, and justification spreads it back out
         // (never so much that the word after it could fit too). Not on a paragraph's last line, or one ending in a
         // line break: nothing spreads those, so only half a pixel in all (Word squeezes those by just what fits).
-        const after = words[k + 1]?.brk ? null : words[k + 1];
+        const after = words[k + 1]?.brk || words[k + 1]?.tab ? null : words[k + 1];
         const slack = after ? Math.min(0.3, (after.space + after.w) / 2 / n) : Math.min(0.3, 0.5 / n);
         out.push({ from: lineFrom, to: wd.to, squeeze: over / n + slack });
         width = 0; // the next word starts a new line
         lineFrom = wd.to;
+        lineX = left;
         avail = right - left;
         continue;
       }
       // Break before this word.
       lineFrom = wd.from;
+      lineX = left;
       avail = right - left;
       width = wd.w;
       spaces = 0;
@@ -227,7 +255,7 @@ export function applySqueeze(view, session) {
     // (Lines split beside a shape: wrapboth.js spreads those, and these only the lines above and below them.)
     const split = el.querySelector('.odx-wb') ? splitOf(view.state, pos, pos + node.nodeSize) : null;
     if (split === false) return false;
-    const lines = squeezedLines(view, node, pos, el, split);
+    const lines = squeezedLines(view, node, pos, el, split, session);
     for (const l of lines || []) decos.push(Decoration.inline(l.from, l.to, { style: `word-spacing:${(-l.squeeze).toFixed(2)}px` }, { key: `sq:${l.squeeze.toFixed(2)}` }));
     return false;
   });
