@@ -262,7 +262,12 @@ export function labelLine(node, session, l, label, run, style) {
     // (Lines sized from their runs: an exact line stays as set. A text font's label under "at least" isn't measured.)
     if (la && ta && (symbol || dings ? rule !== 'exact' : !rule || rule === 'auto')) {
       const lbl = Number(lblSize) || Number(run.size) || 20;
-      const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
+      // (The text's size: its runs' one size, else its first text's own, where they set theirs one by one, else the
+      // style's. A 12pt "(a)" before 12pt runs in an 11pt style, one run among them unsized, was counted as larger than
+      // its text and given 1.25px of room above its line that Word doesn't add.)
+      let firstSize = 0;
+      if (!run.size) node.descendants((c) => { if (!firstSize && c.isText && c.text.trim()) firstSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || -1; return !firstSize; });
+      const txt = Number(run.size) || (firstSize > 0 ? firstSize : 0) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
       // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
       // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
       // label never makes its line taller below).

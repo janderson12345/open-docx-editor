@@ -162,6 +162,15 @@ export function shiftFor(el, host, anchored = false) {
   // open with a bold word printed 0.7px low.)
   const own = el.classList.contains('odx-markers') && !/^(SPAN|STRONG|EM|U|S|B|I|SUB|SUP|A)$/.test(el.firstElementChild?.tagName || 'SPAN');
   let pcs = own ? rcs : getComputedStyle(el);
+  // (And where its runs are all one size that isn't the paragraph's, one run among them leaving its size unset: the
+  // line is the runs' own, as tall as their size makes it. A list paragraph of 12pt runs in an 11pt style, measured as
+  // an 11pt line holding a 12pt run, printed its four lines 1px low. Runs of several sizes are sized and shifted
+  // together: mixlines.js, mixedShift above.)
+  if (!own && rcs.fontSize !== pcs.fontSize && el.dataset.odxMix !== '1') {
+    let one = true;
+    for (const s of el.querySelectorAll('.odx-t')) { if (s.textContent.trim() && getComputedStyle(s).fontSize !== rcs.fontSize) { one = false; break; } }
+    if (one) pcs = rcs;
+  }
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
   const known = knownFamily;
   let family = known(rcs);

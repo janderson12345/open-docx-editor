@@ -85,6 +85,22 @@ export function fillFields(root, values) {
     t.textContent = String(v);
     f.replaceChildren(t);
   });
+  // A page number inside a text box of the story (a drawing, its text part of the picture: shapes.js marks the
+  // field's result there): the picture drawn again with this page's number. (A converted document's footer, its
+  // number in a text box, showed the number it was saved with on every page.)
+  const SVG = 'data:image/svg+xml;charset=utf-8,';
+  for (const img of root.querySelectorAll('img[src^="data:image/svg+xml;charset=utf-8,"]')) {
+    const src = img.getAttribute('src');
+    if (!src.includes('data-odx-fld')) continue;
+    let svg;
+    try { svg = decodeURIComponent(src.slice(SVG.length)); } catch { continue; }
+    const made = svg.replace(/(<tspan [^>]*data-odx-fld="((?:PAGE|NUMPAGES|SECTIONPAGES)(?: [A-Za-z]{1,12})?)"[^>]*>)[^<]*(<\/tspan>)/g, (all, open, code, close) => {
+      const [name, fmt] = code.split(' ');
+      const v = valueOf(` ${name}${fmt ? ` \\* ${fmt}` : ''} `);
+      return v == null ? all : open + String(v).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + close;
+    });
+    if (made !== svg) img.setAttribute('src', SVG + encodeURIComponent(made));
+  }
   let instr = '';
   let mode = null; // 'instr' | 'result'
   let value = null;

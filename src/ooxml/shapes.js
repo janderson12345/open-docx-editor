@@ -342,6 +342,10 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const newLine = () => lines.push({ pieces: [], x: left });
     let maxSize = 0;
     let lineF = lineFactor(st.font);
+    // A field in the box's text (w:fldChar): its code as it is read, and, once its result starts, the page-number
+    // field it is (PAGE, NUMPAGES, SECTIONPAGES, with a number format switch or none), which marks the result's
+    // text in the drawing so a header or footer can show each page's own number (pagefields.js).
+    let fieldCode = null, fieldMark = '';
     for (const run of [...p.getElementsByTagName('*')].filter((n) => n.localName === 'r')) {
       const rPr = child(run, 'rPr');
       // Its character style (w:rStyle) between the paragraph style and its own formatting.
@@ -361,7 +365,18 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
       // (An outline or shadow alone keeps the run's own colour: Word draws the letters in w:color.)
       const own = `fill="#${c && c !== 'auto' ? c : ctx.textColor || '000000'}"`;
       const paint = fx?.paint ? (/\bfill=/.test(fx.paint) ? fx.paint : `${own} ${fx.paint}`) : own;
-      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}>`;
+      for (const n of els(run)) {
+        if (n.localName === 'fldChar') {
+          const t = wa(n, 'fldCharType');
+          if (t === 'begin') { fieldCode = ''; fieldMark = ''; }
+          else if (t === 'separate' && fieldCode != null) {
+            const m = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)(?:\s+\\\*\s*([A-Za-z]{1,12}))?/.exec(fieldCode);
+            fieldMark = m ? ` data-odx-fld="${m[1]}${m[2] ? ` ${m[2]}` : ''}"` : '';
+            fieldCode = null;
+          } else if (t === 'end') { fieldCode = null; fieldMark = ''; }
+        } else if (n.localName === 'instrText' && fieldCode != null && fieldCode.length < 200) fieldCode += n.textContent;
+      }
+      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}${fieldMark}>`;
       if (fx?.defs) out.push(`<defs>${fx.defs}</defs>`);
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
