@@ -13,6 +13,15 @@ within 1px of Word's went from 47% to 75%, and documents laid out exactly as Wor
   rule). Lines whose runs carry letter-spacing of their
   own (every run of a document converted from a PDF does) are squeezed as any other: they were left alone, and none
   of 27 such documents broke as Word's.
+- **A table row of exact height never breaks across pages** (24 generated tables): Word moves such a row whole to
+  the next page, its text cut to the row or not; automatic rows break line by line. Printing broke one whose text was
+  taller than the row: the row could not grow across the page's foot, the rows after it ran off the page over the
+  footer, and every page after came out shifted (an 82-page document: 9% of its words in Word's place, 97% now).
+- **A right-aligned list number ends at its place whatever its width** (18 generated lists): roman numbers wider than
+  their hanging indent pushed their text on and ended past their place; their text starts at the indent, or at a tab
+  stop of the paragraph's own before it. And a list number's width is measured as it is drawn, without kerning: a
+  capital and its full stop measured a pixel narrow and kept their text against them where Word sends it to the next
+  stop (two generated lists of 26 letters).
 - **Justified paragraphs that hold a tab are squeezed too** (18 generated documents, 1,046 lines): a label and a tab
   before a paragraph's text, a tab that opens it, or one to a stop after its first words left the whole paragraph
   unsqueezed, and 246 of the lines broke as Word's; 1,039 do now. Word justifies, and squeezes, a line after its last

@@ -2126,6 +2126,27 @@ await page.waitForTimeout(300);
 const csf = await page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((sh) => (sh.querySelector('.odx-hf.odx-header')?.textContent || '').slice(0, 5)));
 check(csf.length === 4 && csf[0] === 'HDRAH' && csf[1] === 'FIRST' && csf[2] === 'HDRAH' && csf[3] === 'HDRAH', `a continuous section's first-page header on the page its text starts (${JSON.stringify(csf)})`);
 
+// A table row of exact height never breaks across pages, its text cut to the row or not: it moves whole (why-tests
+// gen2.py exrow; Word: 0.5in rows of three lines, the fourth reaching the page's foot: three rows on the first page,
+// three on the second, none over the bottom margin).
+await open('exact-row-whole.docx');
+await page.waitForTimeout(300);
+const erw = await page.evaluate(() => { const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect()); return [...document.querySelectorAll('.odx-content table tr')].map((tr) => { const ps = [...tr.cells[0].querySelectorAll('p')]; const r = document.createRange(); r.selectNodeContents(ps[0]); const a = r.getBoundingClientRect(); r.selectNodeContents(ps[ps.length - 1]); const b = r.getBoundingClientRect(); const p = sheets.findIndex((s) => a.top >= s.top - 0.5 && a.top < s.bottom); return [p, sheets.findIndex((s) => b.bottom > s.top && b.bottom <= s.bottom + 0.5), Math.round(sheets[p].bottom - b.bottom)]; }); });
+check(erw.length === 6 && erw.map((r) => r[0]).join('') === '000111' && erw.every((r) => r[0] === r[1] && r[2] >= 90), `rows of exact height moved whole to the next page (${JSON.stringify(erw)}, want three rows a page, each row's text on one page and clear of the bottom margin)`);
+
+// A right-aligned list number ends at its place whatever its width, and its text starts at the paragraph's own tab
+// stop before the indent (gen2.py lblright; Word: "i." to "xviii." ending at 180px, their text at 186.1px).
+await open('list-number-right-aligned.docx');
+const lra = [await textSpans(1), await textSpans(8), await textSpans(9)].map((t) => t[0][0]);
+check(lra.every((x) => Math.abs(x - 186) < 1.5), `text after right-aligned list numbers, narrow and wide, at one place (${JSON.stringify(lra)}, want 186px)`);
+
+// A list letter's width is taken as it is drawn, without kerning, when its text is sent to the next tab stop
+// (gen2.py lblkern; Word: "I." before the stop at 12px has its text at 108px, "P.", 12.9px wide, at the next, 120px;
+// kerned, the "P." measured 11.6px and kept its text against it).
+await open('list-letter-next-stop.docx');
+const lns2 = [await textSpans(9), await textSpans(16)].map((t) => t[0][0]);
+check(Math.abs(lns2[0] - 108) < 1.5 && Math.abs(lns2[1] - 120) < 1.5, `text after a list letter at the first stop past its unkerned width (${JSON.stringify(lns2)}, want 108 and 120px)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).
