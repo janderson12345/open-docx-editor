@@ -189,6 +189,12 @@
 /* Under a character style (Hyperlink, which Word gives every link it makes) the link has that style's look and what
    its runs set over it (an automatic colour: black), as in Word, where a link has no look of its own. */
 .odx-content span[data-cstyle] a.odx-link { color: inherit; text-decoration: none; }
+/* (The style's line under text of another colour, a run's own or the automatic black, is in that colour, as Word draws
+   it: drawn again by the run's own element, over the style's.) */
+.odx-content span[data-cstyle] > span[style*="color:"] { text-decoration-line: inherit; }
+/* (A link whose runs are underlined by hand and carry no character style: as its runs, in Word's print black with its
+   line, not the editor's blue.) */
+.odx-content u a.odx-link { color: inherit; text-decoration: none; }
 /* A contents entry (a link to a _Toc bookmark) is drawn as its paragraph, without the Hyperlink style's colour and
    line under it, as Word draws a table of contents (a sample's five contents pages, black in Word's print). */
 .odx-content a.odx-link[href^="#_Toc"] { color: inherit; text-decoration: none; }
