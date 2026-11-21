@@ -100,7 +100,7 @@ const bottom18 = [['tcBorders', '<w:tcBorders><w:bottom w:val="single" w:sz="18"
 test('a cell\'s own thick bottom line is the line over the row below it, wider than the table\'s inside line', () => {
   const c = grid((row) => (row === 0 ? bottom18 : []));
   assert.equal(padTop(c[3]), 3); // 2.25pt
-  assert.equal(padTop(c[6]), 0.667); // the next row: the table's 0.5pt line
+  assert.equal(padTop(c[6]), 0.671875); // the next row: the table's 0.5pt line (0.667px, as the nearest 64th of a pixel)
 });
 
 test('one cell\'s thick bottom line lowers the whole row below it', () => {
@@ -113,13 +113,13 @@ test('one cell\'s thick bottom line lowers the whole row below it', () => {
 test('the table\'s own inside line gives way to a thinner top line a cell sets itself', () => {
   const thinTop = [['tcBorders', '<w:tcBorders><w:top w:val="single" w:sz="2" w:space="0" w:color="000000"/></w:tcBorders>']];
   const c = grid((row) => (row === 1 ? thinTop : []), '<w:insideH w:val="single" w:sz="12" w:space="0" w:color="000000"/>');
-  assert.equal(padTop(c[3]), 0.333);
+  assert.equal(padTop(c[3]), 0.328125);
 });
 
 test('a cell that draws its own top line keeps its place beside a cell under a thicker one', () => {
   const top = (sz) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${sz}" w:space="0" w:color="000000"/></w:tcBorders>`]];
   const c = grid((row, col) => (row === 1 ? (col === 0 ? top(2) : col === 1 ? top(12) : []) : []));
-  assert.equal(padTop(c[3]), 0.333); // its own 0.25pt line
+  assert.equal(padTop(c[3]), 0.328125); // its own 0.25pt line
   assert.equal(padTop(c[4]), 2);
   assert.equal(padTop(c[5]), 2); // the table's 0.5pt line: lowered to the row's widest
 });
@@ -128,7 +128,7 @@ test('a wider line from the row above takes its room out of the top margin of a 
   const mar = '<w:tcMar><w:top w:w="80" w:type="dxa"/></w:tcMar>';
   const cell = (top, bottom) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${top}" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="${bottom}" w:space="0" w:color="000000"/></w:tcBorders>`], ['tcMar', mar]];
   const c = grid(() => cell(2, 8));
-  assert.equal(padTop(c[3]), 5.667); // 4pt margin and its own 0.25pt line, not the 1pt line's 6.667
+  assert.equal(padTop(c[3]), 5.671875); // 4pt margin and its own 0.25pt line, not the 1pt line's 6.667
   const none = grid((row) => (row === 0 ? cell(2, 8) : [['tcMar', mar]]), '');
   assert.equal(padTop(none[3]), 6.667); // no top line of its own: the line from above in full
 });
@@ -147,7 +147,7 @@ test('the top line a merged cell\'s lower part sets counts in that part\'s row',
     { row: 1, col: 1, rowspan: 1, colspan: 1, tcPr: [['tcBorders', '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>']] },
   ];
   const css = tableCellCss(readStyles(pkg), '<w:tblPr></w:tblPr>', 2, 2, cells, parseXml).css;
-  assert.equal(padTop(css[2]), 1.333); // a 1pt line's room, though the cell itself draws none
+  assert.equal(padTop(css[2]), 1.328125); // a 1pt line's room, though the cell itself draws none
 });
 
 test('a line under a pixel wide is drawn at its own width on paper', () => {
