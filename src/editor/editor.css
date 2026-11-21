@@ -186,6 +186,13 @@
 .odx-content img.ProseMirror-selectednode { outline: 2px solid var(--odx-accent); }
 .odx-content img.ProseMirror-selectednode.odx-sized { outline: none; } /* (the handles' box drawn instead: the drawing's own box, not its picture with the room round it; none for a line, as in Word) */
 .odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
+/* Under a character style (Hyperlink, which Word gives every link it makes) the link has that style's look and what
+   its runs set over it (an automatic colour: black), as in Word, where a link has no look of its own. */
+.odx-content span[data-cstyle] a.odx-link { color: inherit; text-decoration: none; }
+/* A contents entry (a link to a _Toc bookmark) is drawn as its paragraph, without the Hyperlink style's colour and
+   line under it, as Word draws a table of contents (a sample's five contents pages, black in Word's print). */
+.odx-content a.odx-link[href^="#_Toc"] { color: inherit; text-decoration: none; }
+.odx-content span[data-cstyle]:has(a.odx-link[href^="#_Toc"]) { color: inherit !important; text-decoration: none !important; }
 .odx-all-markup .odx-content ins.odx-ins { color: #b5179e; text-decoration: underline; }
 .odx-content ins.odx-ins { text-decoration: none; }
 .odx-content del.odx-del, .odx-hf del.odx-del { color: #b5179e; text-decoration: line-through; }
