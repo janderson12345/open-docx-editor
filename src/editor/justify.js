@@ -1,6 +1,6 @@
 // Word 2013+ (compatibility mode 15) squeezes the spaces of a justified line to fit one more word, when
-// that narrows each space by at most a quarter (and 0.07em) and the word wouldn't stick out too far past the margin
-// (see MAX_OUT; a short word such as "or" is usually left for the next line). Measured from the TJ spacing in Word's own PDFs.
+// that narrows each space by at most a quarter (and 0.07em) and by no more than half of what each would be widened
+// by with the word left for the next line (see squeezeFits). Measured from Word's own PDFs.
 // Browsers only stretch, so for each line Word would squeeze we narrow that line's spaces with an inline
 // decoration; the browser then fits the extra word, and justification spreads what is left.
 import { Plugin, PluginKey } from 'prosemirror-state';
@@ -11,25 +11,30 @@ import { splitOf } from './wrapboth.js';
 
 const MAX_SQUEEZE = 0.25; // share of a space's width
 const MAX_SQUEEZE_EM = 0.07; // and of the font size (Verdana's wide spaces squeeze less than a quarter)
-// How far the word may stick out past the margin depends on how much the spaces shrink to take it: its share past the
-// margin plus SHARE_WEIGHT times the spaces' share of shrinking stays under MAX_OUT. Fitted to Word's own line breaks
-// in 17 justified documents (1180 lines, every one outside tables right; Word lists table cells apart): a word 43% out
-// goes in when the spaces barely shrink, one 39% out stays out when they'd shrink by a fifth.
-const MAX_OUT = 0.4512;
-const SHARE_WEIGHT = 0.3;
-
+const SHRINK_WEIGHT = 2; // a space narrowed counts as one widened by twice as much
 /**
  * Whether Word squeezes a word of width `w` on to a line it sticks out of by `over` px, its `n` spaces (`spaceW` px
  * wide in all, of fonts `em` px in all) narrowed to take it. Also for each side of a line split beside a shape
  * (wrapboth.js, `side`; wrap-word2 wj-both: the words after the shape squeezed as a line's are): there by the spaces'
  * limits alone, however far the word sticks out (wrap-word3, Word's print of six documents with a rectangle beside
  * each paragraph: of 128 sides it squeezed, the most by 24.9% of their spaces' width, of those it left a word off the
- * least by 25.4%; "a" squeezed on to a side it stuck out of by 44% of its width, past MAX_OUT).
+ * least by 25.4%; "a" squeezed on to a side it stuck out of by 44% of its width).
+ *
+ * On a whole line Word weighs the two ways of ending it: the word taken on, each of the `n` spaces narrowed by
+ * over / n, or left for the next line, each of the `gaps` spaces before it widened by what the line is then short of
+ * (`space` px of space before the word, plus the word, less `over`). It takes the word on when the narrowing is no
+ * more than half that widening. Word's prints of 66 generated justified documents, full lines and lines of three to
+ * eight words, 4,516 words that stuck out of a line: every one in plain text is as the rule says, the nearest either
+ * side at 2.005 and 1.993 times; in all, seven differ, three on the quarter's limit and four in text whose runs carry
+ * letter-spacing, within 3% of the rule. (Before: the word's share past the margin against a fitted limit, 31 of them
+ * wrong, 13 in the narrow lines.)
  */
-export function squeezeFits(over, n, spaceW, em, w, side = false) {
+export function squeezeFits(over, n, spaceW, em, w, side = false, space = spaceW / n, gaps = n - 1) {
   if (!n) return false;
   const per = Math.min(MAX_SQUEEZE * spaceW, MAX_SQUEEZE_EM * em) / n; // the most each space may lose
-  return over / n <= per && (side || over / w + SHARE_WEIGHT * over / spaceW <= MAX_OUT);
+  if (over / n > per) return false;
+  if (side || gaps < 1) return true; // (a line of one word can't be widened: the squeeze, when the spaces allow it)
+  return (space + w - over) / gaps >= SHRINK_WEIGHT * over / n;
 }
 
 const key = new PluginKey('odx-justify');
@@ -149,6 +154,7 @@ function squeezedLines(view, node, pos, el, split) {
       if (!cur) { cur = { w: 0, from: s.start + i, to: 0, space: pendingSpace, em: pendingEm }; pendingSpace = 0; pendingEm = 0; }
       cur.w += w;
       cur.to = s.start + j;
+      cur.ls = parseFloat(s.ls) || 0; // (its last character's)
       i = j;
       // A line can also break after a hyphen.
       if (s.text[j - 1] === '-' && j < s.text.length && s.text[j] !== ' ') { words.push(cur); cur = null; }
@@ -178,9 +184,14 @@ function squeezedLines(view, node, pos, el, split) {
       if (width + add <= avail + 0.01) { width += add; spaces += gap; spaceW += wd.space; spaceEm += gap * wd.em; continue; }
       const over = width + add - avail;
       const n = spaces + gap;
-      // Measurement hook (fitting MAX_OUT against Word's own line breaks); off unless a test sets it.
-      if (typeof window !== 'undefined' && window.__sqdbg) window.__sqdbg.push({ word: view.state.doc.textBetween(wd.from, wd.to), before: view.state.doc.textBetween(Math.max(lineFrom, wd.from - 40), wd.from), over, n, spaceW: spaceW + wd.space, w: wd.w, em: wd.em });
-      if (squeezeFits(over, n, spaceW + wd.space, spaceEm + gap * wd.em, wd.w)) {
+      // Measurement hook (the rule against Word's own line breaks); off unless a test sets it.
+      // (`at`, `chars`: the letters of the document before the line and on it before the word, which tell a print's
+      // lines apart; `width`, `avail`: the line without the word and its room.)
+      if (typeof window !== 'undefined' && window.__sqdbg) {
+        const letters = (a, b) => view.state.doc.textBetween(a, b, '', '').replace(/\s/g, '').length;
+        window.__sqdbg.push({ word: view.state.doc.textBetween(wd.from, wd.to), before: view.state.doc.textBetween(Math.max(lineFrom, wd.from - 40), wd.from), over, n, spaceW: spaceW + wd.space, w: wd.w, em: wd.em, at: letters(0, lineFrom), chars: letters(lineFrom, wd.from), width, avail, space: wd.space, lsWord: wd.ls, lsPrev: words[k - 1]?.ls ?? 0 });
+      }
+      if (squeezeFits(over, n, spaceW + wd.space, spaceEm + gap * wd.em, wd.w, false, wd.space, spaces)) {
         // A little extra: canvas and layout widths differ slightly, and justification spreads it back out
         // (never so much that the word after it could fit too). Not on a paragraph's last line, or one ending in a
         // line break: nothing spreads those, so only half a pixel in all (Word squeezes those by just what fits).

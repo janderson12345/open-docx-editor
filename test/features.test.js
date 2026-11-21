@@ -163,6 +163,18 @@ test('Chinese and Hebrew list numbers, and leading zeros kept under legal number
   assert.equal(next(id, 1), '01.01');
 });
 
+test("a list level's first number after paragraphs of a deeper level is its second", () => {
+  // (why-tests gen2.py numimp, Word's prints of 14 lists: upper roman over decimal over letters.)
+  const numbering = { nums: new Map([['8', { abstractId: 'a', overrides: {} }]]), abstract: new Map([['a', [{ start: 1, fmt: 'upperRoman', text: '%1' }, { start: 1, fmt: 'decimal', text: '%1.%2' }, { start: 1, fmt: 'lowerLetter', text: '%1.%2.%3' }]]]) };
+  const seq = (levels) => { const next = listCounter(numbering); return levels.map((l) => next('8', l)); };
+  assert.deepEqual(seq([0, 1, 0]), ['I', 'I.1', 'II']);
+  assert.deepEqual(seq([1, 0, 1, 0]), ['I.1', 'II', 'II.1', 'III']);
+  assert.deepEqual(seq([1, 1, 0, 0]), ['I.1', 'I.2', 'II', 'III']);
+  assert.deepEqual(seq([2, 0, 1, 2]), ['I.1.a', 'II', 'II.1', 'II.1.a']);
+  assert.deepEqual(seq([2, 1, 0, 0]), ['I.1.a', 'I.2', 'II', 'III']);
+  assert.deepEqual(seq([0, 2, 1, 1, 0]), ['I', 'I.1.a', 'I.2', 'I.3', 'II']);
+});
+
 test('a list number formatted as hidden text is not shown, nor the room after it', async () => {
   const { listLabel } = await import('../src/editor/pararules.js');
   const { schema } = await import('../src/editor/schema.js');

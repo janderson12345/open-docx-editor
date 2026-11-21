@@ -276,7 +276,10 @@ export function baselineCss(scope) {
   // One holding anchored pictures is moved down by padding instead (position:relative would make it their containing
   // block), and they are moved back up: sample S062's footer "Page 3 of 9" beside its page art, 1.3px high.
   rules.push(`.odx-hf p[style*="--odx-bla"]{padding-top:var(--odx-bla);margin-bottom:calc(-1 * var(--odx-bla))}`);
-  rules.push(`.odx-hf p[style*="--odx-bla"] [style*="position: absolute"]{translate:0 calc(-1 * var(--odx-bla))}`);
+  // (Not one set on the page from its top or its margins, hfstory.js placeStoryShapes: its place is the page's, which
+  // the padding doesn't move. Word's prints of six generated footers, a text box 9.5in down the page beside the
+  // footer's line: its text 1.7px high with this taken off it too.)
+  rules.push(`.odx-hf p[style*="--odx-bla"] [style*="position: absolute"]:not([style*="--odx-arel"], [style*="--odx-lrel"]){translate:0 calc(-1 * var(--odx-bla))}`);
   return `@media print{${rules.join('')}}`;
 }
 

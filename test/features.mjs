@@ -2033,6 +2033,70 @@ await open('table-first-cell-line.docx');
 const tfc = await cellStarts();
 check(Math.abs(tfc[0] - 105.15) < 0.4, `a table set in by half its first cell's own left line (${JSON.stringify(tfc)}, want 105.15px)`);
 
+// Tab stops are measured from the section's own margin, not the last section's (why-tests gen2.py secttab; Word: a
+// first section with 1in margins before a last one with half-inch ones: its centre stop's text at 367-401px, its right
+// stop's ending at 672px).
+await open('tabs-section-margin.docx');
+const tsm = await textSpans(0);
+check(tsm.length === 3 && Math.abs(tsm[1][0] - 367) < 2 && Math.abs(tsm[2][1] - 672) < 2, `tab stops from the section's own margin (${JSON.stringify(tsm)}, want the middle text from 367px, the right one's end at 672)`);
+
+// A list number takes its level's letter-spacing, and the level's size where larger than its style's (gen2.py lblsp;
+// Word: "Item 1." condensed by 1.1pt at the level's 14pt over unsized text in an 11pt document).
+await open('list-number-spacing.docx');
+const lns = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector('.odx-content p.odx-li'), '::before'); return [parseFloat(cs.letterSpacing), parseFloat(cs.fontSize)]; });
+check(Math.abs(lns[0] + 1.467) < 0.05 && Math.abs(lns[1] - 18.67) < 0.1, `a list number in its level's letter-spacing and larger size (${JSON.stringify(lns)}, want -1.47px and 18.67px)`);
+
+// The text after a list number starts at the paragraph's own tab stop when one lies between the number's end and the
+// hanging indent (gen2.py lbltab2; Word: "1." at 100 twips, the indent at 1540, a stop at 819: the text at 150.6px,
+// not the indent's 198.8).
+await open('list-own-stop-before-indent.docx');
+const los = await textSpans(1);
+check(los.length >= 1 && Math.abs(los[0][0] - 151) < 2, `text after a list number at the paragraph's own stop before its indent (${JSON.stringify(los[0])}, want 151px)`);
+
+// No line break at punctuation inside unspaced text where Word has none (gen2.py brkpn; Word: a token of letters round
+// "](", ".(", "?", an ellipsis and eleven more moves whole to the next line; the browser broke it at four of them).
+await open('no-break-at-brackets.docx');
+const nbb = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => {
+  const text = p.textContent;
+  const at = [text.indexOf('abcd'), text.indexOf('wxyz')];
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  const tops = [];
+  for (let t = w.nextNode(), from = 0; t; from += t.data.length, t = w.nextNode()) {
+    at.forEach((k, n) => { if (k >= from && k < from + t.data.length) { const r = document.createRange(); r.setStart(t, k - from); r.setEnd(t, k - from + 1); tops[n] = r.getBoundingClientRect().top; } });
+  }
+  return Math.abs(tops[0] - tops[1]) < 2;
+}));
+check(nbb.length === 15 && nbb.every(Boolean), `no line break at punctuation inside unspaced text (${JSON.stringify(nbb)})`);
+
+// A link the document came with, its runs in no Hyperlink style, is drawn as its runs: Word gives a link no colour or
+// line of its own (gen2.py lnk; Word: black, no line under it).
+await open('link-unstyled.docx');
+const lus = await page.evaluate(() => { const a = document.querySelector('.odx-content a.odx-link'); const cs = a && getComputedStyle(a); return cs ? [cs.color, cs.textDecorationLine] : null; });
+check(lus && lus[0] === 'rgb(0, 0, 0)' && lus[1] === 'none', `a link without a Hyperlink style drawn as its runs (${JSON.stringify(lus)})`);
+
+// A text box in a footer, set 1in from the page's left edge and 9.5in down it, holding a page number: at that place
+// whatever the page's margin (2in here), each page showing its own number (gen2.py hfbox; Word: its text from 105.6px
+// on both pages, "1" and "2").
+await open('footer-textbox-page-number.docx');
+await page.waitForTimeout(300);
+const ftb = await page.evaluate(() => [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((sh) => {
+  const img = sh.querySelector('.odx-footer img');
+  if (!img) return null;
+  const s = sh.getBoundingClientRect(), r = img.getBoundingClientRect();
+  let svg = '';
+  try { svg = decodeURIComponent(img.getAttribute('src').split(',').slice(1).join(',')); } catch { /* not one of ours */ }
+  const m = /data-odx-fld="PAGE"[^>]*>([^<]*)</.exec(svg);
+  return [m && m[1], +(r.left - s.left).toFixed(1), +(r.top - s.top).toFixed(1)];
+}));
+check(ftb.length === 2 && ftb.every((f) => f && Math.abs(f[1] - 96) < 1 && Math.abs(f[2] - 912) < 1) && ftb[0][0] === '1' && ftb[1][0] === '2', `a footer's text box set from the page's edge, each page's number in it (${JSON.stringify(ftb)}, want 96px across, 912 down, "1" and "2")`);
+
+// Justified text whose runs carry letter-spacing of their own is squeezed as any other (gen2.py justsp; Word's lines
+// of this document, 71 of them, break where these do).
+await open('justified-letter-spacing.docx');
+await page.waitForTimeout(300);
+const jls = await page.evaluate(() => [document.querySelectorAll('.odx-content [style*="word-spacing:-"], .odx-content [style*="word-spacing: -"]').length, document.querySelectorAll('.odx-content [style*="letter-spacing"]').length]);
+check(jls[0] >= 5 && jls[1] >= 50, `justified lines of letter-spaced runs squeezed (${JSON.stringify(jls)}, want 5 or more squeezed pieces)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

@@ -142,7 +142,13 @@ function placeStoryShapes(el) {
     const er = el.getBoundingClientRect();
     const scale = el.offsetHeight ? er.height / el.offsetHeight : 1;
     const now = img.getBoundingClientRect().top;
-    st.top = `${((er.top + (y - geo.top) * scale - now) / (scale || 1)).toFixed(2)}px`;
+    // (The story's top on its page to the fraction, where the box it is set in gives the same within a pixel:
+    // offsetTop is a whole number of pixels, and a footer starts where its lines' heights put it, up to half a pixel
+    // off.)
+    const host = el.offsetParent;
+    const exact = host ? (er.top - host.getBoundingClientRect().top) / (scale || 1) - host.clientTop : NaN;
+    const top = Math.abs(exact - geo.top) < 1 ? exact : geo.top;
+    st.top = `${((er.top + (y - top) * scale - now) / (scale || 1)).toFixed(2)}px`;
   });
 }
 

@@ -5,6 +5,39 @@
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 74%, and documents laid out exactly as Word from 1,157 to 1,757.
 
+- **Word squeezes a justified line by a rule of its own, now the editor's** (66 generated justified documents, 4,516
+  words that stuck out of a line): Word takes the word on when narrowing the line's spaces for it costs each space no
+  more than half of what leaving it out would widen each by, and never by more than a quarter of a space. Every plain
+  line of the set breaks as Word's, full lines and lines of three to eight words; the fitted limit this replaces got
+  31 of the 4,516 wrong, the rule seven (three on the quarter's limit, four in letter-spaced text within 3% of the
+  rule). Lines whose runs carry letter-spacing of their
+  own (every run of a document converted from a PDF does) are squeezed as any other: they were left alone, and none
+  of 27 such documents broke as Word's.
+- **A list level's first number counts the deeper levels before it** (14 generated lists): a paragraph of a deeper
+  level before any of an upper one uses that level's first number, so the upper level's own first paragraph is its
+  second: after "1.1", the first top-level paragraph is "II".
+- **A list number has its level's letter-spacing and size, and its text starts at the paragraph's own stop** (36
+  generated lists): the number is condensed or expanded as its level says and drawn at the level's size where that
+  is larger than its style's; the text after it starts at a tab stop of the paragraph's own when one lies between
+  the number's end and the hanging indent.
+- **Tab stops are measured from their own section's margin** (15 generated pages): in a document whose sections have
+  different side margins, stops were set from the last section's, every tabbed line of the earlier sections off by
+  the difference.
+- **No line break at punctuation inside unspaced text** (31 generated paragraphs): Word breaks a line at its spaces
+  and after hyphens and dashes; the browser also broke between a closing bracket and an opening one, after a full
+  stop before a bracket, and after a question mark or an ellipsis before a letter ("(a)(1)(i)" split at a line's
+  end).
+- **A header's or footer's text box is set from the page's edge and shows each page's own number** (six generated
+  footers): a shape placed from the page's edge stood in from the margin instead, and up to 1.7px high; a page
+  number inside a text box showed the number it was saved with on every page.
+- **A link without the Hyperlink style is drawn as its text** (eight generated documents): Word gives a link no
+  colour or line of its own, only the Hyperlink style it puts on the links it makes; a contents page of unstyled
+  links was blue and underlined. A link made in the editor keeps its blue until it is saved.
+- **A paragraph none of whose text is in its own size sits on Word's baseline** (16 generated documents, 176 lines
+  within 0.7px): its lines are measured as its runs',
+  not as a line of the paragraph's size holding larger text (a 12pt list paragraph in an 11pt style printed a pixel
+  low). And a paragraph pushed to a page's top in one layout pass and back in a later one keeps its own space before
+  (it lost it, standing 13px high).
 - **A page's last line is fitted exactly, as Word fits it** (pinned with 189 generated documents printed from Word,
   all now breaking where Word's do; 143 before): Word keeps a line that ends on the bottom margin and moves one that
   passes it by a twip, whatever the line spacing. The browser lays lines and spacing out in 64ths of a pixel, a third

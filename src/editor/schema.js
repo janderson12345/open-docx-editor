@@ -391,7 +391,8 @@ export const schema = new Schema({
       attrs: { href: { default: null }, rId: { default: null }, anchor: { default: null }, extra: { default: null } },
       inclusive: false,
       parseDOM: [{ tag: 'a[href]', getAttrs: (d) => { const h = d.getAttribute('href') || ''; return safeHref(h) ? { href: h.trim() } : h.startsWith('#') && h.length > 1 ? { anchor: h.slice(1) } : false; } }], // (pasted: web, mail and phone links, and links within the document)
-      toDOM: (m) => ['a', { href: safeHref(m.attrs.href) || (m.attrs.anchor ? '#' + m.attrs.anchor : '#'), title: m.attrs.href || '', class: 'odx-link' }, 0],
+      // (odx-link-doc: a link the document came with, or one to a place in it. Drawn as its runs, editor.css.)
+      toDOM: (m) => ['a', { href: safeHref(m.attrs.href) || (m.attrs.anchor ? '#' + m.attrs.anchor : '#'), title: m.attrs.href || '', class: m.attrs.rId || m.attrs.anchor ? 'odx-link odx-link-doc' : 'odx-link' }, 0],
     },
     ins: {
       attrs: { id: { default: null }, author: { default: null }, date: { default: null }, dateUtc: { default: null }, move: { default: false } },
