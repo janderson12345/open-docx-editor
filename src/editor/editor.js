@@ -117,11 +117,13 @@ function lastExactBorder(node) {
   if (!last || !/<w:trHeight\b[^>]*w:hRule="exact"/.test(last.attrs.trPr || '')) return 0;
   const side = (xml) => { const m = /<w:bottom\b[^>]*\/>/.exec(xml || ''); if (!m) return null; const v = /w:val="([^"]+)"/.exec(m[0])?.[1]; return v === 'nil' || v === 'none' ? 0 : Number(/w:sz="(\d+)"/.exec(m[0])?.[1] || 4) / 8 * (4 / 3) * (v === 'double' ? 3 : 1); };
   const tbl = side((/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/.exec(node.attrs.tblPr || '') || [])[0]);
+  // (With no borders of its own, its style's: carried in its placement, styles.js --odx-tsb.)
+  const fromStyle = Number(/(?:^|;)--odx-tsb:([\d.]+)px/.exec(node.attrs.deco?.style || '')?.[1] || 0);
   let most = 0;
   last.forEach((cell) => {
     const own = (cell.attrs.tcPr || []).find((x) => x[0] === 'tcBorders');
     const w = own ? side(own[1]) : null;
-    most = Math.max(most, w ?? tbl ?? 0);
+    most = Math.max(most, w ?? tbl ?? fromStyle);
   });
   return Math.round(most * 100) / 100;
 }

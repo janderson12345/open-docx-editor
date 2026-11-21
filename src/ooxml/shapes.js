@@ -417,7 +417,11 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const heightOf = (o) => (line && rule === 'exact' ? line / TWIPS_PER_PX : line && rule === 'atLeast' ? Math.max(line / TWIPS_PER_PX, o) : o * (line ? line / 240 : 1));
     // The space between paragraphs is the larger of the one's after and the next's before, as Word sets a text box's
     // (none between two of the same style that say so, w:contextualSpacing).
-    const before = (Number(sp('before')) || 0) / TWIPS_PER_PX;
+    // (Automatic spacing, w:beforeAutospacing on the paragraph or its style, the Normal (Web) style's: 14pt whatever number
+    // comes with it, and none before a box's first paragraph. Word's prints of 12 generated documents: automatic, a
+    // plain 14pt and 5pt and none, on the box's first paragraph and after a plain one.)
+    const autoOf = (k) => { const v = wa(spacing, `${k}Autospacing`); return v != null ? /^(1|true|on)$/.test(v) : !!st.pPr[`${k}Auto`]; };
+    const before = autoOf('before') ? (prevStyle === null ? 0 : 280 / TWIPS_PER_PX) : (Number(sp('before')) || 0) / TWIPS_PER_PX;
     const ctx2 = wa(child(pPr, 'contextualSpacing'), 'val');
     const contextual = child(pPr, 'contextualSpacing') ? !/^(0|false|off)$/.test(ctx2 || '') : !!st.pPr.contextualSpacing;
     if (contextual && prevStyle === (sid || '')) { y -= prevAfter; }
@@ -466,7 +470,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
         }
       }
     }
-    const after = (Number(sp('after')) || 0) / TWIPS_PER_PX;
+    const after = autoOf('after') ? 280 / TWIPS_PER_PX : (Number(sp('after')) || 0) / TWIPS_PER_PX;
     y += after;
     prevAfter = after;
     prevStyle = sid || '';
@@ -801,7 +805,10 @@ export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   if (root.localName === 'wsp' && c.grown) { height = Math.round((height + c.grown) * 100) / 100; ctx.grownTo = height; }
   // (And WordArt's box as wide as its text or the column, ctx.colW: its new width, ctx.widenedTo.)
   if (root.localName === 'wsp' && c.widened) { width = c.widened; ctx.widenedTo = width; }
-  const W = width + 2 * pad, H = height + 2 * pad;
+  // (A whole number of pixels, the part of one added left empty at the right and the foot: the browser takes a drawing's
+  // size down to whole pixels and fits what it holds into that, so one 278.64px tall was drawn 0.23% smaller, its text
+  // with it; a text box's twelfth line was a pixel above Word's. schema.js gives its picture the same box.)
+  const W = Math.ceil(width + 2 * pad - 0.005), H = Math.ceil(height + 2 * pad - 0.005);
   // (No ligatures or kerning, as Word sets text and the body has it: a text box's "ti" came out as one glyph.)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${-pad} ${-pad} ${W} ${H}" overflow="visible" style="font-variant-ligatures:none;font-kerning:none">${inner}</svg>`;
 }

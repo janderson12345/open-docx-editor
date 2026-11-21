@@ -243,7 +243,15 @@ export const schema = new Schema({
         const place = typeof n.attrs.place === 'string' && !/url\s*\(|image\s*\(|image-set|@|\\|expression|javascript|[<>"]/i.test(n.attrs.place) ? n.attrs.place : '';
         const src = typeof shown === 'string' && /^(data:|blob:|https?:|$)/i.test(shown) ? shown : '';
         const w = Number(n.attrs.width) || 0;
-        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [w || h ? `width:${w + 2 * pad}px;height:${h + 2 * pad}px` : '', place].filter(Boolean).join(';') }];
+        // (A drawn shape, shapes.js shapesSvg, in a box of whole pixels as its drawing is: the part of a pixel added is
+        // taken back off by its margins, so it takes the same room; where its place sets those margins itself the box
+        // is that part of a pixel larger.)
+        const bw = w + 2 * pad, bh = h + 2 * pad;
+        const whole = w > 0 && h > 0 && typeof n.attrs.src === 'string' && n.attrs.src.startsWith('data:image/svg+xml') && n.attrs.src.slice(0, 600).includes('font-kerning');
+        const cw = Math.ceil(bw - 0.005), ch = Math.ceil(bh - 0.005);
+        const back = whole && !/margin-(?:right|bottom)\s*:/.test(place) ? `;margin-right:${+(bw - cw).toFixed(2)}px;margin-bottom:${+(bh - ch).toFixed(2)}px` : '';
+        const size = whole ? `width:${cw}px;height:${ch}px${back}` : w || h ? `width:${bw}px;height:${bh}px` : '';
+        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [size, place].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).

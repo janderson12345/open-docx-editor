@@ -568,6 +568,10 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
   else if (left) css.push(`margin-left:${+left.toFixed(2)}px`);
   // A right-to-left table (w:bidiVisual): its first column at the right, its indent from the right margin. (Its cells'
   // paragraphs keep their own direction: editor.css and styles.js give every paragraph one.)
+  // (Its style's bottom line, px: the room under a last row of an exact height, when the table sets no borders of its
+  // own. editor.js lastExactBorder.)
+  const sb = ts.borders?.bottom;
+  if (sb && sb.val && sb.val !== 'nil' && sb.val !== 'none') css.push(`--odx-tsb:${+((sb.sz / 8) * (4 / 3) * (sb.val === 'double' ? 3 : 1)).toFixed(2)}px`);
   if (onOff(kid(el, 'bidiVisual'))) return css.join(';').replace(/margin-left:/g, 'margin-inline-start:').replace(/margin-right:/g, 'margin-inline-end:') + ';direction:rtl';
   return css.join(';');
 }
