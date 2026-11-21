@@ -186,6 +186,9 @@ export function layoutTabsIn(root, session, nodeOf) {
       aligned = !!stop && ['right', 'end', 'decimal', 'center'].includes(stop.val);
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
       if (nl) { s.classList.add('odx-tabnl'); s.style.setProperty('--odx-tabnl', `${nl.toFixed(2)}px`); } else s.classList.remove('odx-tabnl');
+      // (Where it ends, from the paragraph's own left edge: the stop it goes to, for the squeeze of the text after
+      // it, justify.js. Its width alone changes with the words before it, which a justified line stretches.)
+      if (!rtl && (!stop || stop.val === 'left' || stop.val === 'start' || stop.val === 'num')) s.dataset.odxTabend = (x + Math.max(0, w) - startMargin).toFixed(2); else delete s.dataset.odxTabend;
     }
     if (setAside != null) p.style.textAlign = setAside;
     if (over > 0.5 && overTab) {

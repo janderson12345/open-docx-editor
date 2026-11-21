@@ -194,13 +194,15 @@ function squeezedLines(view, node, pos, el, split, session) {
       const wd = words[k];
       if (wd.brk) { width = 0; lineFrom = wd.to; lineX = left; avail = right - left; continue; }
       if (wd.tab) {
-        // (Where the text after it starts: after the words before it on its line, as wide as they are unstretched,
-        // and the tab's own width, tabs.js. Not read from where it is drawn: a justified line's space before the tab
-        // is stretched there. One taken to the next line with the word after it isn't followed.)
+        // (Where the text after it starts: at the stop the tab goes to, which tabs.js leaves on it, from the
+        // paragraph's left edge. Not where it is drawn, nor its width: a justified line's spaces before the tab are
+        // stretched there, and by another amount once the line is squeezed, the squeeze then taken off and put back
+        // pass after pass: two samples never finished laying out. One taken to the next line with the word after it
+        // isn't followed, nor one whose stop the words before it have passed.)
         const dom = view.nodeDOM(wd.from);
-        const tw = dom && dom.nodeType === 1 && !dom.classList.contains('odx-tabnl') ? dom.getBoundingClientRect().width : NaN;
-        const x = lineX + width + (width ? wd.space : 0) + tw;
-        if (!(tw >= 0) || !(x < right)) return;
+        const end = dom && dom.nodeType === 1 && !dom.classList.contains('odx-tabnl') ? parseFloat(dom.dataset.odxTabend) : NaN;
+        const x = box.left + end;
+        if (!Number.isFinite(end) || !(x < right) || x < lineX + width - 0.5) return;
         width = 0; lineFrom = wd.to; lineX = x; avail = right - x; spaces = 0; spaceW = 0; spaceEm = 0;
         continue;
       }
