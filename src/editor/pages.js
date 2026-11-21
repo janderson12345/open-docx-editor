@@ -934,7 +934,10 @@ export function createPages(view, session, { sheet, scope }) {
         const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
         const padBottom = parseFloat(cs.paddingBottom) || 0;
         const first = kids[0].getBoundingClientRect(), last = kids[kids.length - 1].getBoundingClientRect();
-        const content = last.bottom - first.top - undoIn(td, last.bottom);
+        // (With its first paragraph's space before and its last's space after, which Word centres with the text: a sample's
+        // one-line label beside six lines kept on the page, 2pt before and after, was 2.4px low without them.)
+        const space = Math.max(0, parseFloat(getComputedStyle(kids[0]).marginTop) || 0) + Math.max(0, parseFloat(getComputedStyle(kids[kids.length - 1]).marginBottom) || 0);
+        const content = last.bottom - first.top - undoIn(td, last.bottom) + space;
         const tdTop = td.getBoundingClientRect().top;
         off = /^(top|baseline)$/.test(cs.verticalAlign) ? 0 : Math.max(0, first.top - tdTop - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.paddingTop) || 0));
         tops.push(td);
