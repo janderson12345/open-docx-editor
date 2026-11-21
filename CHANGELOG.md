@@ -36,7 +36,8 @@ within 1px of Word's went from 47% to 74%, and documents laid out exactly as Wor
   is unbroken; and underlined spaces at a paragraph's end had a line where Word draws none.
 - **A link without the Hyperlink style is drawn as its text** (eight generated documents): Word gives a link no
   colour or line of its own, only the Hyperlink style it puts on the links it makes; a contents page of unstyled
-  links was blue and underlined. A link made in the editor keeps its blue until it is saved.
+  links was blue and underlined. A link made in the editor is now given the Hyperlink style, as Word gives the
+  links it makes (it was saved without it, and opened in Word as plain text).
 - **A paragraph none of whose text is in its own size sits on Word's baseline** (16 generated documents, 176 lines
   within 0.7px): its lines are measured as its runs',
   not as a line of the paragraph's size holding larger text (a 12pt list paragraph in an 11pt style printed a pixel

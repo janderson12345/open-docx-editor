@@ -1132,11 +1132,12 @@ function noteRefs(doc) {
 function builtInName(id) {
   const m = /^(Heading|TOC)([1-9])$/.exec(id);
   if (m) return `${m[1].toLowerCase()} ${m[2]}`;
-  return { TableGrid: 'table grid', Title: 'title', Subtitle: 'subtitle', TOCHeading: 'toc heading', Quote: 'quote', IntenseQuote: 'intense quote', ListParagraph: 'list paragraph', NoSpacing: 'no spacing', Caption: 'caption' }[id] || null;
+  return { Hyperlink: 'hyperlink', TableGrid: 'table grid', Title: 'title', Subtitle: 'subtitle', TOCHeading: 'toc heading', Quote: 'quote', IntenseQuote: 'intense quote', ListParagraph: 'list paragraph', NoSpacing: 'no spacing', Caption: 'caption' }[id] || null;
 }
 
 // Built-in styles as Word's own template defines them (Word adds them to a document as it first uses them).
 const BUILT_IN = {
+  Hyperlink: '<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1" w:themeColor="hyperlink"/><w:u w:val="single"/></w:rPr></w:style>',
   TableGrid: '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr></w:style>',
   TOCHeading: '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`TOC${i + 1}`, `<w:style w:type="paragraph" w:styleId="TOC${i + 1}"><w:name w:val="toc ${i + 1}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/>${i ? `<w:ind w:left="${i * 220}"/>` : ''}</w:pPr></w:style>`])),

@@ -212,8 +212,8 @@
 /* A link the document came with has the look of its runs and no other: Word gives a link no colour or line of its own,
    only the Hyperlink style it puts on the links it makes (Word's prints of eight generated documents, a link to a
    bookmark and one to a web address with no style: plain runs black with no line, blue runs blue with none, underlined
-   runs with theirs; a document converted from a PDF, its contents pages 314 such links, printed black). The editor's
-   blue stays for a link made here, until it is saved. */
+   runs with theirs; a document converted from a PDF, its contents pages 314 such links, printed black). A link made
+   here is given the Hyperlink style (commands.js setLink); the editor's blue is left for one pasted without it. */
 .odx-content a.odx-link.odx-link-doc { color: inherit; text-decoration: none; }
 /* A contents entry (a link to a _Toc bookmark) is drawn as its paragraph, without the Hyperlink style's colour and
    line under it, as Word draws a table of contents (a sample's five contents pages, black in Word's print). */

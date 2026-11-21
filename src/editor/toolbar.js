@@ -349,7 +349,12 @@ export function createToolbar(container, getView, { onOpen, onNew, onSave, onReo
     if (e.key !== 'Enter' && e.key !== 'Escape') return;
     e.preventDefault();
     const v = getView();
-    if (e.key === 'Enter') cmd.setLink(linkBox.value.trim() || null)(v.state, v.dispatch);
+    if (e.key === 'Enter') {
+      // (With the document's Hyperlink style, added to it as Word adds it at its first link.)
+      const session = v.odx?.session;
+      if (session?.addBuiltInStyles(['Hyperlink'])) v.odx.restyle?.();
+      cmd.setLink(linkBox.value.trim() || null, session ? session.builtInId('Hyperlink') : null)(v.state, v.dispatch);
+    }
     linkBox.hidden = true;
     v.focus();
   } });
