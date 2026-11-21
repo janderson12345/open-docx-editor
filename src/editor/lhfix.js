@@ -206,11 +206,82 @@ export function applyLineFix(view) {
     return false;
   });
   box.remove();
+  overfullCells(view, decos);
+  wideLabels(view, decos);
   const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));
   return true;
+}
+
+/**
+ * Cells of exact-height rows holding more than the row has room for, over several paragraphs: marked (odx-exover), so
+ * the row keeps its height and the text starts at the cell's top, cut at the row's foot, as in Word. (One paragraph is
+ * held to the row's room by its own max-height, editor.css; a browser's cell is as tall as all it holds, and the row
+ * with it: a sample's 78px row holding five lines and an empty paragraph came out 13px taller, its other cells' centred
+ * text 6.5px lower.) Measured from the paragraphs' own boxes, which the mark doesn't move.
+ */
+function overfullCells(view, decos) {
+  for (const tr of view.dom.querySelectorAll('tr[data-exact]')) {
+    const h = parseFloat(tr.style.getPropertyValue('--odx-trh'));
+    if (!(h > 0)) continue;
+    for (const td of tr.cells) {
+      if (td.childElementCount < 2 || td.rowSpan > 1) continue; // (a cell merged down several rows has their height, not this one's)
+      const first = td.firstElementChild.getBoundingClientRect(), end = td.lastElementChild.getBoundingClientRect();
+      if (!first.height && !end.height) continue; // not laid out
+      const cs = getComputedStyle(td);
+      const room = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      const held = end.bottom - first.top + Math.max(0, parseFloat(getComputedStyle(td.firstElementChild).marginTop) || 0);
+      if (held <= room + 0.5) continue;
+      let pos;
+      try { pos = view.posAtDOM(td, 0) - 1; } catch { continue; }
+      const cell = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+      if (cell && /^table_(cell|header)$/.test(cell.type.name)) decos.push(Decoration.node(pos, pos + cell.nodeSize, { class: 'odx-exover' }, { key: 'exover' }));
+    }
+  }
+}
+
+let labelMemo = new WeakMap(); // paragraph node -> the room its wide label needs (px), 0 for none
+let labelFonts = -1;
+let labelCtx = null;
+/**
+ * List labels wider than the room before their text (pararules.js data-ltab): the text starts at the next tab stop after
+ * the label's end, as in Word, where it had followed the label with nothing between ("Appendix A." and its title). The
+ * label's width from its own font, measured apart from the page (the label's box is as wide as the room it's given).
+ */
+function wideLabels(view, decos) {
+  if (labelFonts !== fontLoads) { labelMemo = new WeakMap(); labelFonts = fontLoads; }
+  for (const el of view.dom.querySelectorAll('p.odx-li[data-ltab]')) {
+    let pos;
+    try { pos = view.posAtDOM(el, 0) - 1; } catch { continue; }
+    const node = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+    if (!node || node.type !== schema.nodes.paragraph) continue;
+    let room = labelMemo.get(node);
+    if (room == null) {
+      room = 0;
+      const [start, gap, dts, ...own] = el.dataset.ltab.split(',').map(Number);
+      const label = el.dataset.label || '';
+      const cs = label ? getComputedStyle(el, '::before') : null;
+      const size = cs ? parseFloat(cs.fontSize) || 0 : 0;
+      // (No wider than its letters could be: most labels, without measuring.)
+      if (size && label.length * size * 1.2 > gap / 15) {
+        labelCtx = labelCtx || document.createElement('canvas').getContext('2d');
+        labelCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`;
+        const width = labelCtx.measureText(label).width + label.length * (parseFloat(cs.letterSpacing) || 0);
+        // (Wider by anything at all: a sample's heading number 24.09px wide in 24px of room has its text at the next stop.)
+        if (width > gap / 15 + 0.03) {
+          const end = start + width * 15;
+          const mine = own.find((t) => t > end + 1);
+          const pitch = dts > 0 ? dts : 720;
+          const stop = mine ?? (Math.floor((Math.max(end, own.length ? own[own.length - 1] : 0) + 1) / pitch) + 1) * pitch;
+          room = Math.round(((stop - start) / 15) * 100) / 100;
+        }
+      }
+      labelMemo.set(node, room);
+    }
+    if (room > 0) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-hangw:${room}px` }, { key: `lw:${room}` }));
+  }
 }
 
 /** A paragraph's first text's elements below it (where its line height is probed), or []. */

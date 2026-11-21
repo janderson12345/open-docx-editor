@@ -237,7 +237,10 @@ const clip = await page.evaluate(async () => {
 check(clip.length === 8, `all eight shapes drawn, the straight lines too (${clip.length})`);
 check(clip.every((q) => q.inked > 0), 'each has something drawn');
 check(clip.every((q) => q.edge === 0), `none cut off at its picture's edge (${clip.map((q) => `${q.w}x${q.h}:${q.edge}`).join(' ')})`);
-check(clip.filter((q) => /position:\s*absolute|float:/.test(q.style)).length === 6 && clip.filter((q) => /--odx-fx:/.test(q.style)).length === 2, 'six floating, two in line with the text');
+// (In line: not placed or floated. A floated shape carries the room properties too now, --odx-fx: its whole-pixel box's
+// added part of a pixel, taken back.)
+const floating = (q) => /position:\s*absolute|float:/.test(q.style);
+check(clip.filter(floating).length === 6 && clip.filter((q) => !floating(q) && /--odx-fx:/.test(q.style)).length === 2, 'six floating, two in line with the text');
 // The line in front of the text with large arrowheads, 14px of room above it (wp:effectExtent): at its offset all the same.
 const atOffset = await page.evaluate(() => {
   let a = null;

@@ -273,11 +273,13 @@ function measures() {
 }
 
 /** Width of `text` in px: measured in a browser, else estimated at half an em per character. */
-function textWidth(text, sizePx, bold, font) {
+function textWidth(text, sizePx, bold, font, italic = false) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
   if (!canvas) return text.length * sizePx * 0.5;
   canvas.fontKerning = 'none';
-  canvas.font = `${bold ? 'bold ' : ''}${sizePx}px ${fontStack(font)}`;
+  // (In its italic face where it is italic: Times New Roman's italic letters are narrower than its upright ones, and a
+  // text box of italic text, measured upright, broke each line a word or two early.)
+  canvas.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx}px ${fontStack(font)}`;
   // (A stand-in not loaded yet is asked for, and noted: this drawing measures in what the page has.)
   try {
     if (document.fonts && text.trim() && !document.fonts.check(canvas.font, text)) {
@@ -367,7 +369,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           const stop = tabs.find((v) => v > line.x - l + 0.5);
           const to = l + (stop ?? (Math.floor((line.x - l) / 48) + 1) * 48);
           if (wrap && to >= right && line.pieces.length) newLine();
-          else line.x = to;
+          else { line.x = to; line.tabbed = true; }
         } else if (n.localName === 'br' || n.localName === 'cr') {
           newLine();
         } else if (n.localName === 't' && n.textContent) {
@@ -380,13 +382,13 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           // had kept its lower case.)
           const text = on('caps', 'caps') ? n.textContent.toUpperCase() : n.textContent;
           for (const word of text.match(/\S*\s*/g).filter(Boolean)) {
-            if (!fit || textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
+            if (!fit || textWidth(word.trimEnd(), sizePx, bold, font, italic) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
             let part = '', partW = 0;
             for (const ch of word) {
               // (The piece measured whole while short, so kerning counts; then by adding each letter, so a long word
               // costs its length, not its square.)
-              let w = part.length < 64 ? textWidth(part + ch, sizePx, bold, font) : partW + textWidth(ch, sizePx, bold, font);
-              if (part && /\S/.test(ch) && w + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; w = textWidth(ch, sizePx, bold, font); }
+              let w = part.length < 64 ? textWidth(part + ch, sizePx, bold, font, italic) : partW + textWidth(ch, sizePx, bold, font, italic);
+              if (part && /\S/.test(ch) && w + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; w = textWidth(ch, sizePx, bold, font, italic); }
               part += ch;
               partW = w;
             }
@@ -394,9 +396,9 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           }
           for (const word of words) {
             let cur = lines[lines.length - 1];
-            const width = textWidth(word, sizePx, bold, font) + word.length * letter;
-            const inked = textWidth(word.trimEnd(), sizePx, bold, font) + word.trimEnd().length * letter;
-            if (wrap && cur.x + inked > right + 0.5 && cur.pieces.length) { newLine(); cur = lines[lines.length - 1]; }
+            const width = textWidth(word, sizePx, bold, font, italic) + word.length * letter;
+            const inked = textWidth(word.trimEnd(), sizePx, bold, font, italic) + word.trimEnd().length * letter;
+            if (wrap && cur.x + inked > right + 0.5 && cur.pieces.length) { cur.wrapped = true; newLine(); cur = lines[lines.length - 1]; }
             const last = cur.pieces[cur.pieces.length - 1];
             cur.one = Math.max(cur.one || 0, sizePx * lineFactor(font)); // (each line as tall as its own text: Word's)
             if (last && last.open === open && last.end === cur.x) last.text += word;
@@ -415,7 +417,11 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const heightOf = (o) => (line && rule === 'exact' ? line / TWIPS_PER_PX : line && rule === 'atLeast' ? Math.max(line / TWIPS_PER_PX, o) : o * (line ? line / 240 : 1));
     // The space between paragraphs is the larger of the one's after and the next's before, as Word sets a text box's
     // (none between two of the same style that say so, w:contextualSpacing).
-    const before = (Number(sp('before')) || 0) / TWIPS_PER_PX;
+    // (Automatic spacing, w:beforeAutospacing on the paragraph or its style, the Normal (Web) style's: 14pt whatever number
+    // comes with it, and none before a box's first paragraph. Word's prints of 12 generated documents: automatic, a
+    // plain 14pt and 5pt and none, on the box's first paragraph and after a plain one.)
+    const autoOf = (k) => { const v = wa(spacing, `${k}Autospacing`); return v != null ? /^(1|true|on)$/.test(v) : !!st.pPr[`${k}Auto`]; };
+    const before = autoOf('before') ? (prevStyle === null ? 0 : 280 / TWIPS_PER_PX) : (Number(sp('before')) || 0) / TWIPS_PER_PX;
     const ctx2 = wa(child(pPr, 'contextualSpacing'), 'val');
     const contextual = child(pPr, 'contextualSpacing') ? !/^(0|false|off)$/.test(ctx2 || '') : !!st.pPr.contextualSpacing;
     if (contextual && prevStyle === (sid || '')) { y -= prevAfter; }
@@ -436,8 +442,17 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
       const ink = ln.pieces[ln.pieces.length - 1].ink;
       const edge = shrink ? Math.min(right, start + widest) : right;
       const shift = align === 'center' ? (edge - ink) / 2 - (ln.pieces[0].x - start) / 2 : align === 'right' || align === 'end' ? edge - ink : 0;
-      for (const pc of ln.pieces) {
-        const text = `<text x="${(pc.x + shift).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
+      // A justified paragraph's lines that the next word ended (not its last, nor one a line break ends, nor one with a
+      // tab): the room left to the right edge shared among the line's spaces, as Word sets them (a sample's text box
+      // of justified text, its lines all ending on the box's inner edge in Word's print).
+      const spacesIn = (pc, last) => ((last ? pc.text.trimEnd() : pc.text).match(/ /g) || []).length;
+      const gaps = (align === 'both' || align === 'distribute') && ln.wrapped && !ln.tabbed && wrap ? ln.pieces.reduce((n, pc, i) => n + spacesIn(pc, i === ln.pieces.length - 1), 0) : 0;
+      const each = gaps && right - ink > 0.05 ? (right - ink) / gaps : 0;
+      let before = 0; // the line's spaces before this piece
+      for (const [i, pc] of ln.pieces.entries()) {
+        const widen = each ? ` style="word-spacing:${each.toFixed(3)}px"` : '';
+        const text = `<text x="${(pc.x + shift + before * each).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''}${widen} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
+        before += spacesIn(pc, i === ln.pieces.length - 1);
         out.push(text);
         // A reflection (w14:reflection): the text mirrored about its baseline (where Word starts it), that far
         // below it, fading from its start opacity to its end one over its end position's share of the text's height,
@@ -455,7 +470,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
         }
       }
     }
-    const after = (Number(sp('after')) || 0) / TWIPS_PER_PX;
+    const after = autoOf('after') ? 280 / TWIPS_PER_PX : (Number(sp('after')) || 0) / TWIPS_PER_PX;
     y += after;
     prevAfter = after;
     prevStyle = sid || '';
@@ -790,7 +805,10 @@ export function shapesSvg(drawing, ctx, width, height, pad = 0) {
   if (root.localName === 'wsp' && c.grown) { height = Math.round((height + c.grown) * 100) / 100; ctx.grownTo = height; }
   // (And WordArt's box as wide as its text or the column, ctx.colW: its new width, ctx.widenedTo.)
   if (root.localName === 'wsp' && c.widened) { width = c.widened; ctx.widenedTo = width; }
-  const W = width + 2 * pad, H = height + 2 * pad;
+  // (A whole number of pixels, the part of one added left empty at the right and the foot: the browser takes a drawing's
+  // size down to whole pixels and fits what it holds into that, so one 278.64px tall was drawn 0.23% smaller, its text
+  // with it; a text box's twelfth line was a pixel above Word's. schema.js gives its picture the same box.)
+  const W = Math.ceil(width + 2 * pad - 0.005), H = Math.ceil(height + 2 * pad - 0.005);
   // (No ligatures or kerning, as Word sets text and the body has it: a text box's "ti" came out as one glyph.)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${-pad} ${-pad} ${W} ${H}" overflow="visible" style="font-variant-ligatures:none;font-kerning:none">${inner}</svg>`;
 }

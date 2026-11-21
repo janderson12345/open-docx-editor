@@ -117,11 +117,13 @@ function lastExactBorder(node) {
   if (!last || !/<w:trHeight\b[^>]*w:hRule="exact"/.test(last.attrs.trPr || '')) return 0;
   const side = (xml) => { const m = /<w:bottom\b[^>]*\/>/.exec(xml || ''); if (!m) return null; const v = /w:val="([^"]+)"/.exec(m[0])?.[1]; return v === 'nil' || v === 'none' ? 0 : Number(/w:sz="(\d+)"/.exec(m[0])?.[1] || 4) / 8 * (4 / 3) * (v === 'double' ? 3 : 1); };
   const tbl = side((/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/.exec(node.attrs.tblPr || '') || [])[0]);
+  // (With no borders of its own, its style's: carried in its placement, styles.js --odx-tsb.)
+  const fromStyle = Number(/(?:^|;)--odx-tsb:([\d.]+)px/.exec(node.attrs.deco?.style || '')?.[1] || 0);
   let most = 0;
   last.forEach((cell) => {
     const own = (cell.attrs.tcPr || []).find((x) => x[0] === 'tcBorders');
     const w = own ? side(own[1]) : null;
-    most = Math.max(most, w ?? tbl ?? 0);
+    most = Math.max(most, w ?? tbl ?? fromStyle);
   });
   return Math.round(most * 100) / 100;
 }
@@ -293,7 +295,7 @@ function paragraphPlugin(session) {
           edge(c.first, 'prev', left);
           edge(c.last, 'next', i < cells.length - 1 ? (cells[i + 1].first ? sid(cells[i + 1].first) : null) : mark);
         });
-        if (!r && before?.cs && cells[0]?.first && sid(cells[0].first) === sid(before.node)) before.style.push('margin-bottom:0');
+        if (!r && before?.cs && cells[0]?.first && sid(cells[0].first) === sid(before.node)) before.style.push('margin-bottom:0', '--odx-sa:0px');
         r++;
       });
     };
@@ -332,7 +334,14 @@ function paragraphPlugin(session) {
             // In a section of newspaper columns among others (or with its own side margins), as narrow as its column, as
             // the paragraphs are: an autofit table fits itself to the column, as in Word.
             const sd = parent === doc && sides.get(index);
-            if (sd && !/(?:^|;)float:/.test(place || '')) style = [style, `margin-inline-start:${sd[0]}px`, `margin-inline-end:calc(${sd[1]}px${sd[2] ? ' + var(--odx-coln, 0px)' : ''})`].filter(Boolean).join(';');
+            // (With the table's own place: its indent, and in a document of Word 2010's mode or before its cell margin's
+            // width out into the page margin, were lost here, a table 7.2px right of Word's in a section narrower than
+            // the document's widest.)
+            if (sd && !/(?:^|;)float:/.test(place || '')) {
+              const length = (m) => (m && /^-?[\d.]+(?:px|pt)$/.test(m[1].trim()) ? m[1].trim() : null);
+              const ml = length(/(?:^|;)margin-left:([^;]+)/.exec(place || '')), mr = length(/(?:^|;)margin-right:([^;]+)/.exec(place || ''));
+              style = [style, `margin-inline-start:${ml ? `calc(${sd[0]}px + ${ml})` : `${sd[0]}px`}`, `margin-inline-end:calc(${sd[1]}px${mr ? ` + ${mr}` : ''}${sd[2] ? ' + var(--odx-coln, 0px)' : ''})`].filter(Boolean).join(';');
+            }
             decos.push({ cell: true, pos, node, deco: style ? { style } : null });
             tableCells(node, pos, tableCache, session).forEach((c) => decos.push(c));
           }
@@ -381,7 +390,7 @@ function paragraphPlugin(session) {
         const plainAuto = session.compat?.has('doNotUseHTMLParagraphAutoSpacing');
         if (plainAuto) {
           if (auto(node, 'beforeAuto')) style.push(`margin-top:${prev && auto(prev.node, 'afterAuto') ? 10 : 5}pt`);
-          if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt');
+          if (auto(node, 'afterAuto')) style.push('margin-bottom:5pt', '--odx-sa:5pt');
           // Under that rule the space after a paragraph and the space before the next are both kept, one under the other
           // (Word's prints: 8pt after and 4pt before, the lines 37.3px apart; without the setting the larger, 32px). The
           // margins collapse to the larger, so the one above is added to this paragraph's own.
@@ -393,7 +402,7 @@ function paragraphPlugin(session) {
           // (A paragraph's own space, w:after="150", over a style with auto spacing that it doesn't turn off: still the auto
           // 14pt, as in Word's PDFs, the auto flag being kept apart from the number.)
           if (node.attrs.view.before != null && node.attrs.view.beforeAuto == null && auto(node, 'beforeAuto')) style.push('margin-top:14pt');
-          if (node.attrs.view.after != null && node.attrs.view.afterAuto == null && auto(node, 'afterAuto')) style.push('margin-bottom:14pt');
+          if (node.attrs.view.after != null && node.attrs.view.afterAuto == null && auto(node, 'afterAuto')) style.push('margin-bottom:14pt', '--odx-sa:14pt');
           if (rel === 0 && auto(node, 'beforeAuto')) style.push('margin-top:0');
           // (One list: one numId, or two over one abstract list, as Word's PDFs have it. Each side on its own: an item's auto space after goes under the next item of its list even when that one has
           // none of its own, and the next's auto space before goes too, under an item with a plain 6pt after, which stays.)
@@ -401,7 +410,7 @@ function paragraphPlugin(session) {
             // (In table cells too, as in Word: samples 1477, 1576, 1652 and 2311. Samples 1434 and 2665, whose cells
             // hold about 65 lines a page where Word's hold 50 either way, then break their pages elsewhere.)
             if (auto(node, 'beforeAuto')) style.push('margin-top:0');
-            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0');
+            if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0', '--odx-sa:0px');
           }
         }
         const bdr = borderKey(node.attrs);
@@ -421,13 +430,13 @@ function paragraphPlugin(session) {
           // this one (sample S072: an item turning it off for itself still loses its space before under an empty one that has
           // it), but one with text doesn't (doc 14: "(1) Follow all..." keeps its 6pt under "...I recognize that I must:").
           if (cs || (prev.cs && !prev.node.textContent)) style.push('margin-top:0');
-          if (prev.cs) prev.style.push('margin-bottom:0');
+          if (prev.cs) prev.style.push('margin-bottom:0', '--odx-sa:0px');
         }
         if (cs) {
           const e = edges.get(node);
           const left = prev ? null : e?.prev ?? edgePrev;
           if (left != null && left === sid(node)) style.push('margin-top:0');
-          if (e?.next != null && e.next === sid(node)) style.push('margin-bottom:0');
+          if (e?.next != null && e.next === sid(node)) style.push('margin-bottom:0', '--odx-sa:0px');
         }
         edgePrev = null;
         // Holding a drawing placed from its paragraph's top (reader.js fromParagraphTop): how far above the text that top is,

@@ -16,6 +16,13 @@
 import { knownFamily, raiseOf, wordAscent } from './baseline.js';
 import { lineFactor } from '../ooxml/props.js';
 
+// The East Asian fonts a check box or another symbol is set in beside Latin text (Word's check box control writes
+// U+2610 in MS Gothic): Word's line for one is 332/256 of its size whatever the Latin font beside it, in Arial, Times
+// New Roman and Calibri at 10 to 12pt (its PDFs of 70 generated documents: 17.292px at 10pt, 19.023px at 11pt,
+// 20.750px at 12pt): the font's ascent and descent, 220 and 36 of 256, each 1.3 times and cut to a whole unit, the
+// added part half above and half below. [ascent, line] per em.
+const EAST = Object.assign(Object.create(null), { 'ms gothic': [258 / 256, 332 / 256], 'ms pgothic': [258 / 256, 332 / 256], 'ms ui gothic': [258 / 256, 332 / 256], 'ms mincho': [258 / 256, 332 / 256], 'ms pmincho': [258 / 256, 332 / 256] });
+const eastFamily = (cs) => { const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase(); return EAST[f] ? f : ''; };
 const tops = new Map(); // font, line height -> the browser's top of a span's box above its baseline (px)
 let probe = null;
 
@@ -110,7 +117,7 @@ export function mixedLines(el, host) {
     if (blank && span.classList.contains('odx-tab')) continue; // (a tab in the body: no box of its own, line-height 0)
     if (!span.classList.contains('odx-t') || span.childNodes.length !== 1) return null;
     const cs = getComputedStyle(span);
-    const family = knownFamily(cs);
+    const family = eastFamily(cs) || knownFamily(cs);
     if (!family && !blank) return null;
     const fs = parseFloat(cs.fontSize);
     const raise = raiseOf(span, el);
@@ -122,10 +129,10 @@ export function mixedLines(el, host) {
       if (!(lb > 0)) return null;
       g = { cs, fs, raise, blank, chars: 0, lb };
       if (!blank) {
-        const a = wordAscent(family);
-        const f = lineFactor(family);
+        const a = EAST[family] ? EAST[family][0] : wordAscent(family);
+        const f = EAST[family] ? EAST[family][1] : lineFactor(family);
         if (!(f > a)) return null;
-        Object.assign(g, { T: a * fs + raise, B: (f - a) * fs - raise, L: f * fs });
+        Object.assign(g, { T: a * fs + raise, B: (f - a) * fs - raise, L: f * fs, east: !!EAST[family] });
       }
       g.word = `${family}|${cs.fontSize}|${raise}`;
       groups.set(key, g);
@@ -147,7 +154,9 @@ export function mixedLines(el, host) {
     bt = Math.max(bt, top + g.raise);
     bb = Math.max(bb, g.lb - top - g.raise);
   }
-  if (Math.abs(bt + bb - word) <= 0.05) return null;
+  // (A line holding an East Asian symbol to a 64th of a pixel: a form of 25 check-box lines at 0.02 to 0.05px each
+  // ended its page a pixel low, with nothing else in it off.)
+  if (Math.abs(bt + bb - word) <= (gs.some((g) => g.east) ? 0.008 : 0.05)) return null;
   // Under "multiple" spacing the extra goes below the line's lowest foot, from its tallest font: each run's box reaches
   // its own extra below the paragraph's main text's foot (the runs most of its text is in), which the runs' own lines
   // nearly always share, so a line's foot comes out as Word's.

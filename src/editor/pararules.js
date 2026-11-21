@@ -42,7 +42,11 @@ export function listLabel(node, session, l, label, attrs, style) {
     // A number formatted as hidden text (w:vanish on its level, or on the paragraph mark it takes its look from) isn't
     // shown, nor the room after it, as in Word.
     const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr');
-    const hidden = !!lvl?.hidden || (!!mark && /<w:vanish(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(mark[1]));
+    // (Nor a paragraph holding only a page break: Word counts it and shows no number for it, an "Appendix B." that had
+    // stood alone at the foot of the page before the break. Its prints of generated documents.)
+    let breakOnly = node.childCount > 0;
+    node.forEach((c) => { if (!(c.type.name === 'hard_break' && c.attrs.type === 'page')) breakOnly = false; });
+    const hidden = breakOnly || !!lvl?.hidden || (!!mark && /<w:vanish(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(mark[1]));
     attrs['data-label'] = hidden ? '' : label;
     // A picture bullet (w:lvlPicBulletId): the picture in the label's place (editor.css odx-picbullet).
     // (Its picture is in the document's stylesheet once, docx.js picBulletCss, not in every item's style.)
@@ -60,8 +64,17 @@ export function listLabel(node, session, l, label, attrs, style) {
     // (Word 2003's rule, w:doNotUseIndentAsNumberingTabStop: the hanging indent is the label's stop only when it comes
     // before the next tab stop; past it, the text after the label goes to that stop.)
     const viaIndent = hang > 0 ? (session.compat?.has('doNotUseIndentAsNumberingTabStop') ? Math.min(hang, next) : hang) : next;
-    const gap = hidden || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
+    // (A space after the label, w:suff="space": the label and a space, the text right after, as nothing's.)
+    const spaced = !hidden && lvl && lvl.suff === 'space';
+    if (spaced && label != null) attrs['data-label'] = `${label} `;
+    const gap = hidden || spaced || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
     style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
+    // A label wider than that room: the text goes on from the next tab stop after the label's end, the paragraph's own
+    // or, past its last, a default one (lhfix.js wideLabels measures the label and sets the room; where the label
+    // starts, the room, the default stops' pitch and the paragraph's stops, twips). Word's prints of 20 generated
+    // documents: a label of 83px with hanging indents of 0 to 720 twips, left-aligned and centred, with a stop of the
+    // paragraph's own and none.
+    if (gap > 0 && !(lvl && (lvl.jc === 'right' || lvl.jc === 'end' || lvl.jc === 'center'))) attrs['data-ltab'] = [start, gap, dts, ...own.sort((x, y) => x - y)].join(',');
     // A right-aligned number ends at its position, not starts there (roman "i." / "ii." levels): drawn in its box
     // that much to the left, the text still at the indent.
     if (lvl && (lvl.jc === 'right' || lvl.jc === 'end')) attrs.class += ' odx-lbl-right';
@@ -175,12 +188,28 @@ export function labelFormat(node, session, l, label, style) {
 
 const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
 const WINGDINGS_ASCENT = 0.8994; // Wingdings', 1842 of 2048
+// (Fonts labels are set in whose ascent the text's table, baseline.js, doesn't hold: looked up by name, no prototype.)
+const LABEL_ASCENT = Object.assign(Object.create(null), { 'arial black': 1.1006 });
 
 /** A list label's own size and font, and the room a label reaching above the text adds to its line. */
 export function labelLine(node, session, l, label, run, style) {
   // A Symbol bullet is taller than the text (ascent 1.005em), and Word's line takes the tallest
   // ascent and descent on it, so the bullet's line comes out ~4% taller.
   const lvlFont = label != null && listLevel(session.numbering, l.numId, l.ilvl)?.font;
+  // With no font of its level's: the paragraph mark's (w:rFonts in the paragraph's own rPr, by name or the theme's),
+  // else the paragraph style's, not the font its text's runs are set in. (Word's prints of 12 generated documents: the
+  // level, the mark and the runs each with a font of their own or none; a sample's one heading number in Calibri, its
+  // mark's font, among 35 in the style's Arial.)
+  if (label != null && !lvlFont) {
+    const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
+    const fonts = /<w:rFonts\b[^>]*>/.exec(mark)?.[0] || '';
+    const named = /\bw:ascii="([^"]+)"/.exec(fonts)?.[1];
+    const themed = /\bw:asciiTheme="([^"]+)"/.exec(fonts)?.[1];
+    const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
+    const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
+    const own = named || ofTheme(themed) || (run.font ? session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont) : null);
+    if (own) style.push(`--odx-lfont:${fontStack(own)}`);
+  }
   // The label is in the level's own size, else the paragraph mark's, else the style's (12pt bullets over 10pt code
   // lines make Word's bullet lines taller).
   const lblSize = label != null && (listLevel(session.numbering, l.numId, l.ilvl)?.size || markSize(node) || session.styleRunProp(node.attrs.styleId, 'size') || 20);
@@ -197,7 +226,9 @@ export function labelLine(node, session, l, label, run, style) {
   const symbol = /^symbol/i.test(lvlFont || '');
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
-  if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
+  // (A symbol font's bullet the editor has no plain character for, still its private-use code, is drawn in that font
+  // too: a Wingdings 3 arrow had come out as the text font's empty box.)
+  if (lvlFont && (!/^(symbol|wingdings)/i.test(lvlFont) || /[-]/.test(String(label || '')))) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
   // A label in a font of its own (a Symbol bullet, a bullet or number set in Segoe UI over Calibri text): Word's line is
   // taller by what the label's top reaches above the text's, its font's ascent with its external leading (baseline.js
   // wordAscent) at the label's size; the label's descent never counts, and line spacing doesn't multiply it. Word's
@@ -209,11 +240,13 @@ export function labelLine(node, session, l, label, run, style) {
   // Courier New "o" nothing until it is larger than the text. The room goes above the first line's text (editor.css
   // odx-first), so wrapped lines keep the text's own height. A Wingdings bullet (ascent 0.899em) is under every text
   // font's at the text's size and adds nothing; 14pt over 12pt Calibri it adds 1.55px (a sample's Word PDF: 21.1px lines).
+  const raise = label != null ? ((listLevel(session.numbering, l.numId, l.ilvl)?.position || 0) / 2) * (4 / 3) : 0;
+  if (raise) style.push(`--odx-lraise:${+raise.toFixed(2)}px`);
   if (lvlFont) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
     const dings = /^wingdings$/i.test(lvlFont);
-    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase());
+    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase()) || LABEL_ASCENT[String(lvlFont).toLowerCase()];
     // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
     const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
@@ -221,7 +254,10 @@ export function labelLine(node, session, l, label, run, style) {
     if (la && ta && (symbol || dings ? rule !== 'exact' : !rule || rule === 'auto')) {
       const lbl = Number(lblSize) || Number(run.size) || 20;
       const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
-      const up = (la * lbl - ta * txt) / 2 * (4 / 3);
+      // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
+      // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
+      // label never makes its line taller below).
+      const up = (la * lbl - ta * txt) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
       if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
     }

@@ -179,6 +179,7 @@ export const schema = new Schema({
           if (d.style) a.style = (a.style ? a.style + ';' : '') + d.style;
           if (d.role) { a.role = d.role; a['aria-level'] = d['aria-level']; } // (a heading, editor.js)
           for (const k of ['data-frame', 'data-fy', 'data-fyalign']) if (d[k] != null) a[k] = d[k]; // (a frame, frames.js)
+          if (typeof d['data-ltab'] === 'string' && /^[0-9.,-]+$/.test(d['data-ltab'])) a['data-ltab'] = d['data-ltab']; // (a list label's stops, pararules.js)
         }
         if (node.attrs.sdt) a['data-field'] = (/<w:tag w:val="([^"]*)"/.exec(node.attrs.sdt.open) || [])[1] || '';
         return ['p', a, 0];
@@ -243,7 +244,24 @@ export const schema = new Schema({
         const place = typeof n.attrs.place === 'string' && !/url\s*\(|image\s*\(|image-set|@|\\|expression|javascript|[<>"]/i.test(n.attrs.place) ? n.attrs.place : '';
         const src = typeof shown === 'string' && /^(data:|blob:|https?:|$)/i.test(shown) ? shown : '';
         const w = Number(n.attrs.width) || 0;
-        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [w || h ? `width:${w + 2 * pad}px;height:${h + 2 * pad}px` : '', place].filter(Boolean).join(';') }];
+        // (A drawn shape, shapes.js shapesSvg, in a box of whole pixels as its drawing is: the part of a pixel added is
+        // taken back off its room below and on the right, --odx-fx and --odx-fxr, which editor.css makes its margins
+        // with the rest of its line's spacing; as margins of its own they replaced that spacing, and an outlined
+        // shape's line came out 1.1px taller. Where its place sets those margins itself the box is that part larger.)
+        const bw = w + 2 * pad, bh = h + 2 * pad;
+        const whole = w > 0 && h > 0 && typeof n.attrs.src === 'string' && n.attrs.src.startsWith('data:image/svg+xml') && n.attrs.src.slice(0, 600).includes('font-kerning');
+        const cw = Math.ceil(bw - 0.005), ch = Math.ceil(bh - 0.005);
+        const fold = whole && !/margin-(?:right|bottom)\s*:|position:\s*absolute/.test(place); // (a placed shape takes no room)
+        // (From the size the browser gave the box before, cut to its 64ths of a pixel: the line is then as tall as it was.)
+        const grid = (v) => Math.floor(v * 64) / 64;
+        const room = (css, re, name, add) => {
+          const m = re.exec(css);
+          const v = +((m ? Number(m[2]) : 0) + add).toFixed(6);
+          return m ? css.replace(re, `$1${name}:${v}px`) : [css, `${name}:${v}px`].filter(Boolean).join(';');
+        };
+        const placed = fold ? room(room(place, /(^|;)\s*--odx-fx:\s*(-?[\d.]+)px/, '--odx-fx', grid(bh) - ch), /(^|;)\s*--odx-fxr:\s*(-?[\d.]+)px/, '--odx-fxr', grid(bw) - cw) : place;
+        const size = whole ? `width:${cw}px;height:${ch}px` : w || h ? `width:${bw}px;height:${bh}px` : '';
+        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [size, placed].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).

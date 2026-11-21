@@ -157,6 +157,8 @@ export function readNumbering(pkg) {
     pPr: readPPr(kid(l, 'pPr')),
     font: attr(kid(kid(l, 'rPr'), 'rFonts'), 'ascii') || null,
     size: Number(attr(kid(kid(l, 'rPr'), 'sz'), 'val')) || null, // half-points
+    // (How far the label is raised, w:position, in half-points, lowered when negative; within a quarter of an inch.)
+    position: Math.max(-36, Math.min(36, Number(attr(kid(kid(l, 'rPr'), 'position'), 'val')) || 0)),
     // The label's own bold, italic, colour and underline (null where the level doesn't set them).
     bold: onOff(kid(kid(l, 'rPr'), 'b')),
     italic: onOff(kid(kid(l, 'rPr'), 'i')),
@@ -295,6 +297,7 @@ const roman = (n) => {
  */
 export function listCounter(numbering) {
   const counters = new Map(); // abstractId -> number[]
+  const started = new Set(); // lists (numId) that have had their first paragraph
   return (numId, ilvl) => {
     const n = numbering.nums.get(String(numId));
     if (!n) return null;
@@ -305,7 +308,15 @@ export function listCounter(numbering) {
     let c = counters.get(n.abstractId);
     if (!c) counters.set(n.abstractId, (c = []));
     const startOf = (i) => n.overrides[i] ?? levels[i]?.start ?? 1;
-    c[ilvl] = c[ilvl] == null ? startOf(ilvl) : c[ilvl] + 1;
+    // (A list that starts over, w:startOverride on its level, does at its first paragraph, though another list of the
+    // same definition has counted before it; the count then goes on from there in both. Word's prints of generated
+    // documents: A B, the second list set to start at 5: E F, the first again: G H.)
+    // (At the list's first paragraph only, whatever its level: a sample's headings, one list set to start every level
+    // at 1 and first used for a level-1 heading, go on 2.7, 2.8 where that list's first level-2 heading follows
+    // another list's 2.7.)
+    const over = n.overrides[ilvl] != null && !started.has(String(numId));
+    started.add(String(numId));
+    c[ilvl] = c[ilvl] == null || over ? startOf(ilvl) : c[ilvl] + 1;
     c.length = ilvl + 1; // deeper levels restart
     return lvl.text.replace(/%(\d)/g, (_, d) => {
       const i = Number(d) - 1;
@@ -329,6 +340,15 @@ function readTableStyle(s) {
     pPr: readPPr(kid(el, 'pPr')),
   });
   const t = part(s);
+  // Where it places its tables: its alignment (w:jc in its tblPr, and in its trPr, which Word takes first) and indent.
+  const tp = kid(s, 'tblPr'), ind = kid(tp, 'tblInd');
+  t.place = {};
+  if (attr(kid(tp, 'jc'), 'val')) t.place.jc = attr(kid(tp, 'jc'), 'val');
+  if (attr(kid(kid(s, 'trPr'), 'jc'), 'val')) t.place.rowJc = attr(kid(kid(s, 'trPr'), 'jc'), 'val');
+  // (Its rows header rows, w:tblHeader in its trPr: a row of such a table that says nothing of its own is one.)
+  const th = kid(kid(s, 'trPr'), 'tblHeader');
+  if (th) t.place.header = !/^(0|false|off)$/.test(attr(th, 'val') || '');
+  if (ind && attr(ind, 'type') !== 'pct' && Number.isFinite(Number(attr(ind, 'w')))) t.place.ind = Number(attr(ind, 'w'));
   // It formats its text or paragraphs at all: a colour, a language, a spacing, or in a part of the table (a bold first
   // row); cell and table settings alone don't count (tableStylesCss: Word's older rule for a cell's font size).
   const any = (el) => kids(kid(el, 'rPr')).length + kids(kid(el, 'pPr')).length > 0;
@@ -360,10 +380,17 @@ export function resolveTableStyle(styles, id, seen = new Set()) {
     pPr: { ...a.pPr, ...b.pPr },
   });
   const out = merge(base, st.table);
+  out.place = { ...base.place, ...st.table.place };
   out.formats = !!(st.table.formats || (base.formats && !styles.get(st.basedOn)?.isDefault)); // (not the default table style's)
   out.cond = { ...base.cond };
   for (const [k, v] of Object.entries(st.table.cond)) out.cond[k] = base.cond[k] ? merge(base.cond[k], v) : v;
   return out;
+}
+
+/** Whether a table's style makes its rows header rows (w:tblHeader in the style's trPr), from the table's w:tblPr XML. */
+export function styleHeaderRows(info, tblPrXml) {
+  const id = /<w:tblStyle\b[^>]*\bw:val="([^"]+)"/.exec(tblPrXml || '')?.[1] || info.defaultTable;
+  return !!(id && resolveTableStyle(info.styles, id)?.place?.header);
 }
 
 /**
@@ -406,7 +433,14 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
     // (With no size in Normal the document defaults' is set here too: a table nested in another style's cell.)
     const size = normalSize == null ? t.rPr.size ?? dflt : old ? tSize : null;
     const r = rPrToCss({ ...t.rPr, size }, theme);
-    if (r) rules.push(`${sel('td')},${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${r}}`);
+    // (Nor the font, where the Normal style names one itself: its paragraphs keep it under a table style of another
+    // font. Word's prints of 144 generated documents: defaults Calibri, a table style in Times New Roman, Normal in
+    // Arial or with no font of its own: Arial in the cells, Times New Roman only where Normal names none; with the
+    // compatibility setting for table styles' sizes on and off.)
+    const normalRun = def ? resolveStyle(info.styles, def).rPr : {};
+    const rNormal = normalRun.font != null || normalRun.themeFont != null ? rPrToCss({ ...t.rPr, size, font: null, themeFont: null }, theme) : r;
+    if (r) rules.push(`${sel('td')}{${r}}`);
+    if (rNormal) rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${rNormal}}`);
     if (old) {
       const based = [...info.styles.values()].filter((ps) => ps.id !== def && fromNormal(ps.id)).map((ps) => sel(`td > p[data-style="${cssEsc(ps.id)}"]`));
       if (based.length) rules.push(`${based.join(',')}{${sizeCss(tSize / 2)}}`);
@@ -419,7 +453,7 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
     for (const k of ['before', 'after']) if (beats(k)) tp[k] = t.pPr[k];
     if (beats('line')) { tp.line = t.pPr.line; tp.lineRule = t.pPr.lineRule; }
     const p = pPrToCss(tp);
-    if (p) rules.push(`${sel('td > p:not([data-style]),')}${sel(`td > p[data-style="${def}"]`)}{${p}}`);
+    if (p) rules.push(`${sel('td > p:not([data-style]),')}${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${p}}`);
     // Other paragraph styles take the table style's spacing too, for each setting their own chain leaves to the defaults.
     const keys = ['before', 'after', 'line', 'lineRule'];
     for (const ps of info.styles.values()) {
@@ -436,7 +470,7 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
   // style sets a size, that is the cell's as anywhere.)
   if (dflt && normalSize == null) {
     const sel = (x) => `${scope} table:not([data-tstyle]) ${x}`;
-    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${def}"]`)}{${sizeCss(dflt / 2)}}`);
+    rules.push(`${sel('td > p:not([data-style])')},${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${sizeCss(dflt / 2)}}`);
   }
   return rules.join('\n');
 }
@@ -476,10 +510,14 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
   const styleId = attr(kid(el, 'tblStyle'), 'val') || info.defaultTable;
   const ts = (styleId && resolveTableStyle(info.styles, styleId)) || { cellMar: {} };
   const mar = { ...ts.cellMar, ...readCellMar(kid(el, 'tblCellMar')) };
+  // (Its own alignment and indent, or with none of its own its style's: the style's rows' alignment before the style's
+  // table's. Word's prints of 64 generated documents: a style centring or right-aligning its tables or its rows, a
+  // table of that style setting its own alignment or none, narrower and wider than the column; a style's indent.)
+  const place = ts.place || {};
   const ind = kid(el, 'tblInd');
-  const indPx = ind && attr(ind, 'type') !== 'pct' ? twipsToPx(attr(ind, 'w') || 0) : 0;
+  const indPx = ind ? (attr(ind, 'type') !== 'pct' ? twipsToPx(attr(ind, 'w') || 0) : 0) : twipsToPx(Math.max(-31680, Math.min(31680, place.ind || 0)));
   const left = indPx - (compatMode < 15 ? mar.left ?? 7.2 : 0);
-  const jc = attr(kid(el, 'jc'), 'val');
+  const jc = attr(kid(el, 'jc'), 'val') || place.rowJc || place.jc;
   const css = [];
   const fp = kid(el, 'tblpPr');
   if (fp) {
@@ -533,10 +571,23 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
   const wPx = tw && attr(tw, 'type') === 'dxa' ? twipsToPx(attr(tw, 'w') || 0) : 0;
   if (jc === 'center' && wPx) css.push('width:fit-content', `margin-left:calc((100% - ${+wPx.toFixed(2)}px) / 2)`, 'margin-right:0');
   else if (jc === 'center') css.push('width:fit-content', 'margin-left:auto', 'margin-right:auto');
+  // (At the right and wider than the column: its right edge on the margin, all of the overhang at the left.)
+  else if ((jc === 'right' || jc === 'end') && wPx) css.push('width:fit-content', `margin-left:calc(100% - ${+wPx.toFixed(2)}px)`, 'margin-right:0');
   else if (jc === 'right' || jc === 'end') css.push('width:fit-content', 'margin-left:auto');
-  else if (left) css.push(`margin-left:${+left.toFixed(2)}px`);
+  else {
+    // (At the left margin a table starts half its left line's width in from where its indent puts it, all of it moved
+    // by that: Word's prints of 15 generated documents, outer lines of a quarter point to 6pt, the lines between the
+    // cells as wide or not: each cell's text half the outer line's width further right, whatever the inside lines'.)
+    const own = readBorders(kid(el, 'tblBorders')).left, lb = own || ts.borders?.left;
+    const half = lb && lb.val && lb.val !== 'nil' && lb.val !== 'none' ? ((lb.sz / 8) * (4 / 3)) / 2 : 0;
+    if (left || half) css.push(`margin-left:${+(left + half).toFixed(2)}px`);
+  }
   // A right-to-left table (w:bidiVisual): its first column at the right, its indent from the right margin. (Its cells'
   // paragraphs keep their own direction: editor.css and styles.js give every paragraph one.)
+  // (Its style's bottom line, px: the room under a last row of an exact height, when the table sets no borders of its
+  // own. editor.js lastExactBorder.)
+  const sb = ts.borders?.bottom;
+  if (sb && sb.val && sb.val !== 'nil' && sb.val !== 'none') css.push(`--odx-tsb:${+((sb.sz / 8) * (4 / 3) * (sb.val === 'double' ? 3 : 1)).toFixed(2)}px`);
   if (onOff(kid(el, 'bidiVisual'))) return css.join(';').replace(/margin-left:/g, 'margin-inline-start:').replace(/margin-right:/g, 'margin-inline-end:') + ';direction:rtl';
   return css.join(';');
 }
@@ -787,8 +838,11 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
     if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
     if (cellPad.right != null || sideGrow.right) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
-    css.push(`--odx-pt:${r3(pad('top'))}px;padding-top:${r3(pad('top'))}px`); // pagination adds to --odx-pt
-    css.push(`--odx-pb:${r3(pad('bottom'))}px;padding-bottom:${r3(pad('bottom'))}px`);
+    // (Top and bottom to the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts them down to one, and
+    // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
+    const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);
+    css.push(`--odx-pt:${step(pad('top'))}px;padding-top:${step(pad('top'))}px`); // pagination adds to --odx-pt
+    css.push(`--odx-pb:${step(pad('bottom'))}px;padding-bottom:${step(pad('bottom'))}px`);
     const r = rPrToCss(rPr, theme);
     if (r) css.push(r);
     out.push(css.join(';'));

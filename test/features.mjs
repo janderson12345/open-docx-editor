@@ -855,7 +855,9 @@ const pdf100 = await page.evaluate(async () => (await window.odx.exportPdf()).le
 await page.evaluate(() => window.odx.setZoom(1.5));
 await page.waitForTimeout(1500);
 const z150 = await zoomSnap();
-check(z150.pages === z100.pages && z150.tops.every((t, i) => Math.abs(t - z100.tops[i]) <= 1), `at 150% the pages break as at 100% (${z100.pages} pages; ${z150.tops.join(',')})`);
+// (Within a pixel, and a thousandth of how far down the page stack it is: zoomed, the browser lays every length out
+// on a grid half again as fine, a 64th of a pixel a line or a paragraph, 2px by the fourth page here.)
+check(z150.pages === z100.pages && z150.tops.every((t, i) => Math.abs(t - z100.tops[i]) <= 1 + z100.tops[i] / 1000), `at 150% the pages break as at 100% (${z100.pages} pages; ${z150.tops.join(',')} for ${z100.tops.join(',')})`);
 await page.click('[role=tab]:text-is("View")');
 check(await page.evaluate(() => document.querySelector('.odx-zoomsel').value === '1.5'), 'View > Zoom shows 150%');
 await page.click('.odx-content p:has-text("Front matter paragraph 2.")', { position: { x: 30, y: 8 } });
@@ -1919,6 +1921,75 @@ await open('footer-tab-fits.docx');
 await page.waitForTimeout(600);
 const ftab = await onSheets(45, 46);
 check(ftab[0] === 2 && ftab[1][0] === 1 && ftab[2][0] === 2 && Math.abs(ftab[2][1] - 96) < 1.5, `a footer as tall as it is drawn, its tabs laid out (${JSON.stringify(ftab)}, want 46 lines on page 1)`);
+// A paragraph kept with the next that may split sends only its last lines on with the block that moved (why-tests gen2.py
+// keepsplit; Word: 30 lines, four 4-line paragraphs each kept with the next, the fourth split two lines and two, the
+// four after it on page 2; the whole run had gone to page 2).
+await open('keep-next-splits.docx');
+await page.waitForTimeout(600);
+const kn = await onSheets(30, 34);
+const knCut = await page.evaluate(() => { const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((x) => x.getBoundingClientRect()); const r = document.querySelectorAll('.odx-content > p')[33].getBoundingClientRect(); return r.top < sh[0].bottom && r.bottom > sh[1].top; });
+check(kn[0] === 2 && kn[1][0] === 1 && kn[2][0] === 2 && knCut, `a kept paragraph splits to stay with the next (${JSON.stringify(kn)}, split ${knCut})`);
+
+// A page's last line is fitted exactly (why-tests gen2.py fitedge; Word: 56 single-spaced 10pt Arial lines, the first
+// with space after; with 81 twips of it the last line ends on the bottom margin and stays, with 82 it goes to page 2.
+// And 46 lines of exactly 14pt: 80 twips stay, 81 go).
+const sheetsOf = async (f) => { await open(f); await page.waitForTimeout(400); return page.evaluate(() => document.querySelectorAll('.odx-sheets > .odx-sheet').length); };
+const fitPages = [await sheetsOf('page-foot-line-fits.docx'), await sheetsOf('page-foot-line-passes.docx'), await sheetsOf('page-foot-exact-fits.docx'), await sheetsOf('page-foot-exact-passes.docx')];
+check(fitPages.join() === '1,2,1,2', `a page's last line stays when it ends on the margin and goes a twip past it (${fitPages}, want 1,2,1,2 pages)`);
+// Spacing adds up down a page as Word's does (gen2.py sprnd; Word: 28 Calibri paragraphs at 1.08 lines with 6.65pt
+// after, the last 761.23px under the first; cut to the browser's 64ths it came out half a pixel short).
+await open('spacing-adds-up.docx');
+const sa = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return [ps.length, +(ps[ps.length - 1].getBoundingClientRect().top - ps[0].getBoundingClientRect().top).toFixed(2)]; });
+check(sa[0] === 28 && Math.abs(sa[1] - 761.23) < 0.3, `paragraph spacing adds up to Word's down a page (${JSON.stringify(sa)}, want 761.23px)`);
+// A table with no alignment of its own takes its style's, and starts half its left line's width in (gen2.py tbljc,
+// cellx; Word: the centred style's table's cells start their text 215.2 and 415.3px in; a table with 6pt lines, 107.23
+// and 373.99px).
+const cellStarts = () => page.evaluate(() => { const sh = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(); return [...document.querySelectorAll('.odx-content table tr:first-child td')].map((td) => { const r = document.createRange(); r.selectNodeContents(document.createTreeWalker(td, NodeFilter.SHOW_TEXT).nextNode()); return +(r.getBoundingClientRect().left - sh.left).toFixed(2); }); });
+await open('table-style-centred.docx');
+const tsc = await cellStarts();
+check(Math.abs(tsc[0] - 215.2) < 0.6 && Math.abs(tsc[1] - 415.3) < 0.6, `a table centred by its style (${JSON.stringify(tsc)}, want 215.2 and 415.3px)`);
+await open('table-left-line-half.docx');
+const tlh = await cellStarts();
+check(Math.abs(tlh[0] - 107.23) < 0.6 && Math.abs(tlh[1] - 373.99) < 0.6, `a table starts half its left line's width in (${JSON.stringify(tlh)}, want 107.23 and 373.99px)`);
+// A table style's header row repeats on the next page (gen2.py stylehdr; Word: two pages, the second starting with it).
+await open('table-style-header-row.docx');
+await page.waitForTimeout(400);
+const tsh = await page.evaluate(() => [document.querySelectorAll('.odx-sheets > .odx-sheet').length, document.querySelectorAll('.odx-repeat tr').length]);
+check(tsh[0] === 2 && tsh[1] === 1, `a table style's header row repeats (${JSON.stringify(tsh)}, want 2 pages and one repeated row)`);
+// In an exact-height row the centred cell's last paragraph's space after counts in the centring (gen2.py exva; Word: a
+// 20pt row, the centred one-line cell with 6pt after it 2.1px under the top-aligned cell's line).
+await open('exact-row-centred-space-after.docx');
+const erc = await page.evaluate(() => { const tr = document.querySelector('.odx-content table tr'); const tops = [...tr.cells].map((td) => { const r = document.createRange(); r.selectNodeContents(document.createTreeWalker(td, NodeFilter.SHOW_TEXT).nextNode()); return r.getBoundingClientRect().top; }); return [+tr.getBoundingClientRect().height.toFixed(2), +(tops[1] - tops[0]).toFixed(2)]; });
+check(Math.abs(erc[0] - 26.67) < 0.4 && Math.abs(erc[1] - 2.1) < 0.3, `space after counts when an exact row's cell centres its text (${JSON.stringify(erc)}, want a 26.67px row, 2.1px down)`);
+// A list number wider than its room pushes its text to the next tab stop (gen2.py lbltab; Word: "Appendix A." from
+// 1in, a half-inch hanging indent, its text 85.3px after the number's start, at the stop at 2000 twips).
+await open('list-wide-label-tab.docx');
+const lwl = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-li'); const r = document.createRange(); r.selectNodeContents(document.createTreeWalker(p, NodeFilter.SHOW_TEXT).nextNode()); return +(r.getBoundingClientRect().left - p.getBoundingClientRect().left - parseFloat(getComputedStyle(p).textIndent)).toFixed(2); });
+check(Math.abs(lwl - 85.33) < 0.6, `text after a wide list number starts at the next tab stop (${lwl}px after the number's start, want 85.3)`);
+// A restarted list restarts at its first paragraph only, and a paragraph holding only a page break is counted and shows
+// no number (gen2.py numbrk; Word: A, B, then E to H after an override to 5; A, a page break, C and D on page 2).
+const liLabels = () => page.evaluate(() => [...document.querySelectorAll('.odx-content p.odx-li')].map((p) => (p.dataset.label ?? '').replace('Item ', '').replace('.', '')).join(''));
+await open('list-restart-first-only.docx');
+const lrf = await liLabels();
+await open('list-break-only-item.docx');
+await page.waitForTimeout(300);
+const lbo = [await liLabels(), await page.evaluate(() => document.querySelectorAll('.odx-sheets > .odx-sheet').length)];
+check(lrf === 'ABEFGH' && lbo[0] === 'ACD' && lbo[1] === 2, `a list restarts once, and counts a page-break-only item without numbering it (${lrf}, ${JSON.stringify(lbo)}, want ABEFGH and ACD on 2 pages)`);
+// A list number with no font of its own takes its paragraph mark's (gen2.py markfont; Word: the number in the mark's
+// Courier New, the text in its run's Arial).
+await open('list-number-mark-font.docx');
+const lmf = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-li'); return [getComputedStyle(p, '::before').fontFamily, getComputedStyle(p.querySelector('.odx-t')).fontFamily]; });
+check(lmf[0].replace('"', '').startsWith('Courier New') && lmf[1].replace('"', '').startsWith('Arial'), `a list number in its paragraph mark's font (${JSON.stringify(lmf)})`);
+// Tabs in a centred paragraph go to their stops, and a right stop past the paragraph's right indent, on the margin, is
+// a stop (gen2.py tabjc, tabind; Word: left, centre and right text at 96-123, 395-421 and 685-720px; with a 1in right
+// indent the text ends at the indent and its number sits at 687-720px on the next line).
+const textSpans = (n) => page.evaluate((k) => { const sh = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(); const out = []; const w = document.createTreeWalker(document.querySelectorAll('.odx-content > p')[k], NodeFilter.SHOW_TEXT); for (let t = w.nextNode(); t; t = w.nextNode()) { if (!t.data.trim()) continue; const r = document.createRange(); r.selectNodeContents(t); const b = r.getBoundingClientRect(); out.push([Math.round(b.left - sh.left), Math.round(b.right - sh.left), Math.round(b.top - sh.top)]); } return out; }, n);
+await open('tabs-centred-paragraph.docx');
+const tcp = await textSpans(1);
+check(tcp.length === 3 && Math.abs(tcp[1][0] - 395) < 2 && Math.abs(tcp[1][1] - 421) < 2 && Math.abs(tcp[2][0] - 685) < 2 && Math.abs(tcp[2][1] - 720) < 2, `tabs in a centred paragraph go to their stops (${JSON.stringify(tcp)})`);
+await open('tab-stop-past-indent.docx');
+const tpi = await textSpans(1);
+check(tpi.length === 3 && tpi[1][1] <= 624.5 && Math.abs(tpi[2][0] - 687) < 2 && Math.abs(tpi[2][1] - 720) < 2 && tpi[2][2] > tpi[1][2] + 10, `a right stop on the margin past the right indent (${JSON.stringify(tpi)}, want the number at 687-720px on the next line)`);
 
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px

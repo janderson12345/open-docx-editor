@@ -39,6 +39,7 @@ import { baselineCss, blockShifts, cellShifts, hfShifts, shiftFor } from './base
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { placeVar, padOf } from '../ooxml/place.js';
+import { styleHeaderRows } from '../ooxml/styles.js';
 
 // Spacers that push a paragraph's remaining lines onto the next page. They
 // are view decorations (not document content), set by the layout pass below.
@@ -87,7 +88,7 @@ const lineless = (node) => {
 const bothShape = (e) => e.tagName === 'IMG' && !!e.style.getPropertyValue('--odx-both') && getComputedStyle(e).position === 'absolute';
 
 const GAP = 24; // px between sheets
-const TIE = 0.33; // px an exactly spaced line must end above the page's bottom margin (splitParagraph)
+const TIE = 0; // (was 0.33px: fitted when spacing was cut to the browser's 64ths of a pixel, a third of a pixel short a page)
 // Guards, not fitted values: loops that walk columns or pages stop here, should a layout never settle.
 const MAX_CARRY = 64; // columns a paragraph or table is carried over, and flow pages a note band is looked for past its page
 const MAX_FLOW_PAGES = 8192; // flow pages walked to find each sheet's note band (placeColumns)
@@ -556,7 +557,11 @@ export function createPages(view, session, { sheet, scope }) {
   // Splitting paragraphs line by line needs each page-crossing paragraph laid
   // out; in very long documents (content-visibility skips off-screen blocks)
   // that costs too much, so there paragraphs move to the next page whole.
-  const lineSplits = !sheet.classList.contains('odx-large') && !cols;
+  // (On screen. For print every block is laid out, editor.css, and the paragraphs split as in any document: a document
+  // of 3,162 paragraphs had printed 128 pages for Word's 122, each page ending where a whole paragraph did.)
+  let printing = false;
+  const splitsNow = () => (!sheet.classList.contains('odx-large') || printing) && !cols;
+  let lineSplits = splitsNow();
 
   const layer = document.createElement('div');
   layer.className = 'odx-sheets';
@@ -676,6 +681,7 @@ export function createPages(view, session, { sheet, scope }) {
     const pushes = new Map();
     const offs = new Map();
     const cellPushes = [];
+    const cellTops = []; // cells of rows split here that are top-aligned for it (splitRow)
     const bands = [];
     const closes = []; // where a row broken across pages gets its closing border
     const inRow = new Set();
@@ -734,6 +740,7 @@ export function createPages(view, session, { sheet, scope }) {
       const rs = !brk && j >= headerRows && lineSplits && !short && !(keepsHold && j > headerRows && j < rows.length - 1 && keeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
+        cellTops.push(...(rs.tops || []));
         for (const [q, cut] of rs.crossings) {
           bands.push([cut - (b.tableTop + shift), contentTop(q + 1) + headH - (b.tableTop + shift)]);
           heads.push(contentTop(q + 1));
@@ -754,7 +761,7 @@ export function createPages(view, session, { sheet, scope }) {
       heads.push(contentTop(pg + 1));
       extra += d;
     }
-    return pushes.size || inRow.size ? { rows: pushes, offs, heads, total: extra, cellPushes, bands, inRow, closes } : null;
+    return pushes.size || inRow.size ? { rows: pushes, offs, heads, total: extra, cellPushes, cellTops, bands, inRow, closes } : null;
   }
 
   const cellWidow = (p) => {
@@ -809,10 +816,11 @@ export function createPages(view, session, { sheet, scope }) {
     const base = view.dom.getBoundingClientRect().top + b.rows[j].undo;
     const pushes = [];
     const crossings = new Map(); // page -> bottom of the row's part that stays on it
+    const asTop = new Set(); // the row's own centred or bottom-aligned cells, laid out from its top as it splits
     let keeps = false;
     let newBottom = -Infinity;
     // The lines of a run of paragraphs in one cell from `extra0` on: which move to the next page, as a paragraph's.
-    function runLines(lines, extra0, padTop, padBottom, line, seq0, out) {
+    function runLines(lines, extra0, padTop, padBottom, line, seq0, out, after = 0) {
       let extra = extra0;
       for (let n = 0; n < lines.length; n++) {
         let top = lines[n].top + rowShift + extra;
@@ -842,15 +850,17 @@ export function createPages(view, session, { sheet, scope }) {
         else out.kept = true;
         extra += delta;
       }
-      if (lines.length) out.end = Math.max(out.end, lines[lines.length - 1].bottom + rowShift + extra + padBottom);
+      // (The cell ends below its last paragraph's space after: margins don't pass through a cell's edge.)
+      if (lines.length) out.end = Math.max(out.end, lines[lines.length - 1].bottom + rowShift + extra + after + padBottom);
       return extra;
     }
     // One cell from `extra0` on (`undoOut`: the natural offset the cells round it give a place in it). Its paragraphs line
     // by line; a table in it row by row, each of its cells as one of these, the row as tall as its tallest (Word breaks a
     // table in a cell across pages too). false: the row has to move whole.
     function plan(td, undoOut, extra0, padTop0, padBottom0, line, seq0, out) {
-      // Cells centred or bottom-aligned in the row would shift as lines move, so such a row moves whole.
-      if (!/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
+      // A cell centred or bottom-aligned inside a nested table would shift as lines move: such a row moves whole. (A cell
+      // of the row itself is laid out from the row's top as it splits: asTop, below.)
+      if (!asTop.has(td) && !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
       const cs = getComputedStyle(td);
       const padTop = padTop0 + (parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
       const padBottom = padBottom0 + (parseFloat(cs.paddingBottom) || 0);
@@ -858,8 +868,8 @@ export function createPages(view, session, { sheet, scope }) {
       let extra = extra0;
       let seq = seq0;
       let lines = [];
-      const flush = () => {
-        const e = runLines(lines, extra, padTop, padBottom, line, seq, out);
+      const flush = (after = 0) => {
+        const e = runLines(lines, extra, padTop, padBottom, line, seq, out, after);
         if (e === false) return false;
         extra = e;
         seq += lines.length;
@@ -898,14 +908,43 @@ export function createPages(view, session, { sheet, scope }) {
           seq += 1;
         }
       }
-      if (!flush()) return false;
+      const lastEl = td.lastElementChild;
+      if (!flush(lastEl && lastEl.tagName === 'P' ? Math.max(0, parseFloat(getComputedStyle(lastEl).marginBottom) || 0) : 0)) return false;
       return extra;
     }
+    // A cell centred or set at the bottom (as its document has it: a split row's cells are top-aligned by a class, below):
+    // Word breaks the row all the same, line by line. Content that fits in the part of the row on its first page is
+    // aligned in that part (centred between the row's top and the last line kept on the page, or ending with that line);
+    // longer content runs from the row's top as a top-aligned cell's does (48 generated documents: a two-line label
+    // cell, top, centred and at the bottom, beside 25 to 100 lines, from 5 and 30 lines down the page).
+    const rowTop = b.rows[j].top + rowShift;
+    const pg0 = pageOf(rowTop);
+    const aligned = [];
+    const tops = [];
     for (const td of tr.cells) {
       if (td.hasAttribute('data-odx-phantom')) continue; // an empty grid slot, nothing to move
       const line = parseFloat(td.style.getPropertyValue('--odx-bdb')) || 0; // the line under the row, the next row's: it has to fit too
       const out = { atStart: false, kept: false, end: -Infinity };
-      if (plan(td, () => 0, 0, 0, 0, line, 0, out) === false) return null;
+      const va = /^(middle|bottom)$/.exec(td.style.verticalAlign || '')?.[1];
+      let off = 0; // how far the browser's own alignment has the cell's content from where a top-aligned cell's starts
+      if (va) {
+        const kids = [...td.children].filter((e) => !e.classList.contains('odx-push'));
+        if (!kids.length) continue;
+        const cs = getComputedStyle(td);
+        const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
+        const padBottom = parseFloat(cs.paddingBottom) || 0;
+        const first = kids[0].getBoundingClientRect(), last = kids[kids.length - 1].getBoundingClientRect();
+        // (With its first paragraph's space before and its last's space after, which Word centres with the text: a sample's
+        // one-line label beside six lines kept on the page, 2pt before and after, was 2.4px low without them.)
+        const space = Math.max(0, parseFloat(getComputedStyle(kids[0]).marginTop) || 0) + Math.max(0, parseFloat(getComputedStyle(kids[kids.length - 1]).marginBottom) || 0);
+        const content = last.bottom - first.top - undoIn(td, last.bottom) + space;
+        const tdTop = td.getBoundingClientRect().top;
+        off = /^(top|baseline)$/.test(cs.verticalAlign) ? 0 : Math.max(0, first.top - tdTop - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.paddingTop) || 0));
+        tops.push(td);
+        if (rowTop + padTop + content + padBottom + line <= contentBottom(pg0) + 1) { aligned.push({ td, va, content, padTop, padBottom, first: kids[0] }); continue; }
+        asTop.add(td);
+      }
+      if (plan(td, () => off, 0, 0, 0, line, 0, out) === false) return null;
       // The row splits only when a cell that breaks keeps some of its lines here (as in Word);
       // if one would have to move whole, so does the row.
       if (out.atStart) return null;
@@ -915,7 +954,15 @@ export function createPages(view, session, { sheet, scope }) {
       newBottom = Math.max(newBottom, out.end);
     }
     if (!keeps || !pushes.length) return null;
-    return { pushes, crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
+    // The aligned cells' content in the row's part on its first page: a spacer above it, the cell top-aligned.
+    const cut0 = crossings.get(pg0);
+    for (const a of aligned) {
+      if (!Number.isFinite(cut0) || a.first.tagName !== 'P') continue;
+      const room = Math.min(cut0, contentBottom(pg0)) - a.padBottom - (rowTop + a.padTop) - a.content;
+      const down = Math.round((a.va === 'middle' ? room / 2 : room) * 10) / 10;
+      if (down > 0.5) pushes.push({ pos: view.posAtDOM(a.first, 0), delta: down });
+    }
+    return { pushes, tops: tops.map((td) => view.posAtDOM(td, 0) - 1), crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
   }
 
   const widowControl = (node) => node.attrs.view.widowControl ?? session.styleProp(node.attrs.styleId, 'widowControl') ?? session.styles.defaults.pPr.widowControl ?? true; // on when nothing says (Word's own default, though the OOXML spec says off)
@@ -1045,6 +1092,39 @@ export function createPages(view, session, { sheet, scope }) {
     const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
     return run === 0 || mult === 1 ? TIE : 0;
   }
+  let roundOver = 0; // the walk's: what the page so far takes more than exactly, at the block being fitted (roundOff)
+  const roundMemo = new WeakMap(); // paragraph node -> { h, own }
+  /**
+   * What a paragraph's box, and the room between it and the block above it on its page, take in the browser more than
+   * exactly (px, either sign): a line's height is laid out as the nearest 64th of a pixel, and so is each paragraph's
+   * spacing (props.js spacePt), where Word adds twips and parts of them up. Its lines all of one height, or nothing
+   * for the box (a taller run or a picture in a line: not known). The room above as the nearest twip to what is there.
+   */
+  function roundOff(b, above) {
+    if (b.node.type !== schema.nodes.paragraph) return 0;
+    const h = b.bottom - b.top;
+    let own = 0;
+    const memo = roundMemo.get(b.node);
+    if (memo && memo.h === h) own = memo.own;
+    else {
+      const cs = getComputedStyle(b.el);
+      const box = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
+      const near = parseFloat(lineHeightOf(cs));
+      const n = near > 0 ? Math.round(box / near) : 0;
+      if (n >= 1 && box > 0) {
+        // A line's exact height: the font's own times the spacing's multiple, or the exact height set (in px or pt).
+        const each = box / n;
+        const set = /^([\d.]+)(px|pt)$/.exec(cs.getPropertyValue('--odx-lhv').trim());
+        const font = (parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * (parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
+        const exact = [font, set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0].find((v) => v > 0 && Math.abs(v - each) < 0.012);
+        if (exact) own = n * (each - exact);
+      }
+      roundMemo.set(b.node, { h, own });
+    }
+    const gap = above ? b.top - above.bottom : 0;
+    return own + (gap > 0.004 && gap < 200 ? gap - Math.round(gap * 15) / 15 : 0);
+  }
+
   /**
    * How far a paragraph's last line may hang below the page's text area: Word places the extra space of
    * "multiple" line spacing below the text and doesn't count it when fitting a line (1px for rounding).
@@ -1093,7 +1173,7 @@ export function createPages(view, session, { sheet, scope }) {
   function colSplit(b, shift, firstOnPage, p) {
     const lines = paragraphLines(b);
     if (!lines || lines.length < 2 || keepLines(b.node)) return null;
-    const slack = lineSlack(b.el) - 1;
+    const slack = lineSlack(b.el) - 1 + roundOver;
     const after = bandAfter(p, b.node);
     // (As splitParagraph fits a line at a page's foot: a line's bottom here is the next line's text top, its half of
     // the leading under "multiple" spacing below the line's box, taken back off; and a line carried on keeps that
@@ -1225,7 +1305,7 @@ export function createPages(view, session, { sheet, scope }) {
     copy.style.margin = '0';
     const lines = [];
     const bottom = b.top + heightAt(copy, widthIn(b, g, p), lines);
-    let at = lines.findIndex((l) => b.top + l.bottom + shift > contentBottom(p) + lineSlack(b.el) - 1);
+    let at = lines.findIndex((l) => b.top + l.bottom + shift > contentBottom(p) + roundOver + lineSlack(b.el) - 1);
     if (lines.length < 2 || keepLines(b.node)) at = -1;
     if (at > 0 && widowControl(b.node)) {
       at = widowCut(at, lines.length, firstOnPage);
@@ -1248,7 +1328,7 @@ export function createPages(view, session, { sheet, scope }) {
     let cut = null;
     const node = b.node.child(at);
     const rowTop = trs[at].getBoundingClientRect().top - top0;
-    if (!sheet.classList.contains('odx-large') && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
+    if (lineSplits && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
       const base = view.dom.getBoundingClientRect().top + b.undo;
       const spans = [];
       for (const el of trs[at].querySelectorAll('p')) {
@@ -1286,11 +1366,23 @@ export function createPages(view, session, { sheet, scope }) {
   }
 
   /**
+   * The line a paragraph that keeps with the next block is cut before when that block moves on and the paragraph may
+   * split: its last line goes with the block, its last two under widow control, where as many stay behind; else null.
+   */
+  function keepCut(b) {
+    if (b.node.type !== schema.nodes.paragraph || keepLines(b.node) || hasPageBreak(b.node)) return null;
+    const lines = paragraphLines(b);
+    if (!lines || lines.some((l) => l.forced || l.blank)) return null;
+    const take = widowControl(b.node) ? 2 : 1;
+    return lines.length >= 2 * take ? lines.length - take : null;
+  }
+
+  /**
    * Lines that must start a new page: after a page break, or where the page
    * runs out (with Word's widow/orphan control and keep-lines-together).
    * Returns null when the paragraph should move to the next page whole.
    */
-  function splitParagraph(b, shift, blockFirstOnPage, moved = false) {
+  function splitParagraph(b, shift, blockFirstOnPage, moved = false, keepAt = -1) {
     const lines = paragraphLines(b);
     if (!lines) return null;
     const pushes = [];
@@ -1301,7 +1393,7 @@ export function createPages(view, session, { sheet, scope }) {
     // Only the extra below the text may pass the margin (no more). And an exactly spaced line must end a little
     // short of it: Word moves one ending 0.05pt above the margin (doc 13's page 3, its own layout). (Not lines of other
     // spacing: sample4's 1.08-spaced Calibri ends 0.2px above it and stays.)
-    const slack = lineSlack(b.el) - 1 - tie(b.el);
+    const slack = lineSlack(b.el) - 1 - tie(b.el) + roundOver;
     // A line carried to the next page under "multiple" spacing keeps the browser's half of the extra above its text, as
     // the paragraph's first line does (the print shift takes it back): Word's text sits at the line's top either way.
     const { lead0, lead } = lineLead(b, lines, true);
@@ -1376,6 +1468,8 @@ export function createPages(view, session, { sheet, scope }) {
         if (n === 1 && moved && pushes.length === 0 && leadingBreak(b.el)) continue;
         at = n;
       }
+      // (Its last lines taken on to stay with the block it keeps with, which has moved: keepCut.)
+      else if (n === keepAt && n > pageStart) at = n;
       else if (fitBottom > room(n) + slack && n > pageStart && !(ownNotes.length && partialFits(pg, n, bottom))) {
         if (keepLines(b.node) && pushes.length === 0) return blockFirstOnPage ? { pushes, total: 0 } : null;
         at = n;
@@ -1383,7 +1477,16 @@ export function createPages(view, session, { sheet, scope }) {
           at = widowCut(at, lines.length, blockFirstOnPage, pageStart);
           if (at < 0) return null;
         }
-      } else if (fitBottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) return null;
+      } else if (fitBottom > room(n) + slack && n === 0 && !blockFirstOnPage && !lines[1]?.forced) {
+        // A paragraph holding nothing but a page break stays at its page's foot when its line fits there without the
+        // paragraph's own space before, which Word doesn't count for it: what follows starts the next page (breakAfter),
+        // where taking the paragraph over left a page blank. Word's PDFs of 124 generated documents: 45 lines of a
+        // 46-line page, then the break's paragraph with 0 to 35pt before, two pages each; with that much after the
+        // line above it instead, or 46 lines, three.
+        const own = lines.length === 1 && !b.node.textContent && hasPageBreak(b.node) ? Math.min(spaceBefore(b.node), parseFloat(getComputedStyle(b.el).marginTop) || 0) : 0;
+        if (own > 0 && fitBottom - own <= room(n) + slack) continue;
+        return null;
+      }
       // (A first line that only holds a page break stays at the bottom of its page, as in Word: the text after it starts the next.)
       if (at < 0) continue;
       const lineTop = lines[at].top + shift + extra;
@@ -1556,8 +1659,16 @@ export function createPages(view, session, { sheet, scope }) {
     return (tw / 20) * (4 / 3);
   };
   // How many rows a table starts with that repeat at each page's top (w:tblHeader).
-  const headerRowsOf = (table) => { let h = 0; while (h < table.childCount && isHeader(table.child(h))) h++; return h; };
-  const isHeader = (row) => /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '');
+  // (A row that says nothing of its own is one when its table's style makes its rows header rows: Word's prints of 12
+  // generated documents, the style's setting with the first row's own on, off or absent. Every row a header row: none
+  // repeats here; Word then repeats the first on the second page only.)
+  const headerRowsOf = (table) => {
+    const byStyle = styleHeaderRows(session.styles, table.attrs.tblPr);
+    let h = 0;
+    while (h < table.childCount && isHeader(table.child(h), byStyle)) h++;
+    return h;
+  };
+  const isHeader = (row, byStyle = false) => (/<w:tblHeader\b/.test(row.attrs.trPr || '') ? /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr) : byStyle);
   // (In newspaper columns a page break goes on at the next page's first column, a column break at the next column.)
   const breakKindOf = (node) => {
     let kind = null;
@@ -1760,7 +1871,9 @@ export function createPages(view, session, { sheet, scope }) {
                 const last = td.lastElementChild;
                 if (!last) continue;
                 const spacers = undoIn(td, Infinity); // (in a table in the cell, a row's tallest cell's)
-                bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
+                // (Its last paragraph's space after is in the cell too: margins don't pass through a cell's edge.)
+                const after = Math.max(0, parseFloat(getComputedStyle(last).marginBottom) || 0);
+                bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + after + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
               }
               if (!(bottom > rr.top)) bottom = rr.bottom;
             }
@@ -2247,6 +2360,11 @@ export function createPages(view, session, { sheet, scope }) {
     const decos = [...blockDecos];
     for (const split of splits.values()) {
       for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
+      // (A split row's centred and bottom-aligned cells: from the top, their content placed by a spacer, splitRow.)
+      for (const pos of split.cellTops || []) {
+        const cell = pos >= 0 && pos < view.state.doc.content.size ? view.state.doc.nodeAt(pos) : null;
+        if (cell && /^table_(cell|header)$/.test(cell.type.name)) decos.push(Decoration.node(pos, pos + cell.nodeSize, { class: 'odx-vtop' }, { key: 'vtop' }));
+      }
       // A list item moved whole to the row's next page: its label, the paragraph's ::before, came before the spacer and
       // kept a line of its own above it, the item's text a line low on the new page (Word's prints: the item's first
       // line at the top of the cell's part there, bullet or not). The paragraph is told how far it's pushed, and takes
@@ -2298,6 +2416,7 @@ export function createPages(view, session, { sheet, scope }) {
   };
   function layout() { return unzoomed(layoutPass); }
   function layoutPass() {
+    lineSplits = splitsNow();
     frame = 0;
     passed = false;
     if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
@@ -2362,6 +2481,14 @@ export function createPages(view, session, { sheet, scope }) {
     const pulls = new Map();
     let band = null; // { p, y0, y1 }: where such a table sits, which text after it goes above or below
     let shift = 0;
+    // What the page's blocks so far, this one included, take in the browser more than they do exactly: its lines'
+    // heights and the room between paragraphs are whole 64ths of a pixel there, to the nearest, and 50 lines of one
+    // height add up to a third of a pixel either way. Word fits a page's last line exactly: in its PDFs of 189
+    // generated documents (Arial, Times New Roman and Calibri, single, 1.15 and exact spacing), a page of one-line
+    // paragraphs holds its last line when that ends on the margin and loses it one twip (0.07px) past.
+    let roundDrift = 0;
+    let roundOwn = 0;
+    roundOver = 0;
     let breakPending = false;
     let breakKind = null;
     if (sectCache.doc !== doc) sectCache = { doc, ...sectionBreaks(doc, session, page, storyHeight) };
@@ -2542,6 +2669,9 @@ export function createPages(view, session, { sheet, scope }) {
         sections.push([from, sect.index]);
       }
       const firstOnPage = top <= contentTop(p) + 1;
+      roundDrift = firstOnPage ? 0 : roundDrift + roundOwn;
+      roundOwn = roundOff(b, firstOnPage || k === 0 ? null : blocks[k - 1]);
+      roundOver = roundDrift + roundOwn;
       // A columns section: the first column starts where the section does (on a new page, at its top), the others beside
       // it at that height (flow pages P+1.. of the same sheet), then whole sheets of columns. Balanced, the columns of
       // its last sheet (as the last pass found it) end at the height worked out for them, all but the last.
@@ -2600,7 +2730,7 @@ export function createPages(view, session, { sheet, scope }) {
         overflow = true;
       }
       else if (((cols && !lineSplits) || inReg) && b.node.type === schema.nodes.paragraph && hasPageBreak(b.node) && splitAtBreak(k, b, p, top, inReg)) continue;
-      else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift + bandAfter(p, b.node) > contentBottom(p) + lineSlack(b.el) - 1) {
+      else if (inCols && b.node.type === schema.nodes.paragraph && !hasPageBreak(b.node) && bottom + shift + bandAfter(p, b.node) > contentBottom(p) + roundOver + lineSlack(b.el) - 1) {
         // In columns a paragraph goes on in the next column line by line, as in Word: it stays put, cut at the column's
         // bottom, and its lines from there are drawn again at the next column's top (drawHeads); what follows it moves
         // down below them.
@@ -2651,7 +2781,7 @@ export function createPages(view, session, { sheet, scope }) {
           overflow = true;
         }
       }
-      else if (lineSplits && !inCols && b.node.type === schema.nodes.paragraph && (hasPageBreak(b.node) || b.bottom + shift + bandAfter(p, b.node) > contentBottom(p) + (footBand(p) ? 0 : lineSlack(b.el) - 1) - tie(b.el))) {
+      else if (lineSplits && !inCols && b.node.type === schema.nodes.paragraph && (hasPageBreak(b.node) || b.bottom + shift + bandAfter(p, b.node) > contentBottom(p) + roundOver + (footBand(p) ? 0 : lineSlack(b.el) - 1) - tie(b.el))) {
         // Paragraphs continue on the next page line by line (and after a page break), as in Word.
         const split = splitParagraph(b, shift, firstOnPage);
         if (split && split.pushes.length) {
@@ -2662,6 +2792,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (split) {
           breakPending = split.breakAfter;
           if (blocks[k + 1]) { if (split.tail) tails.set(blocks[k + 1].i, split.tail); else tails.delete(blocks[k + 1].i); }
+          if (split.pushes.length) { roundDrift = 0; roundOwn = 0; } // (its last lines start a page: nothing above them there)
           continue;
         }
         // (One taller than a page moves too, and splits on its new page.)
@@ -2669,7 +2800,7 @@ export function createPages(view, session, { sheet, scope }) {
           target = p + 1;
           overflow = true;
         }
-      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + (b.node.type === schema.nodes.paragraph && !b.node.content.size ? lineSlack(b.el) : 1) || (b.rows && rowBreakIn(b.node)))) {
+      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + roundOver + (b.node.type === schema.nodes.paragraph && !b.node.content.size ? lineSlack(b.el) : 1) || (b.rows && rowBreakIn(b.node)))) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
         // One holding only a picture has no such extra, and moves. An empty one's line is its mark's, with that extra
         // under it as a line of text has: a sample's empty 10pt paragraph at 1.15 lines, reaching 1.05px past the
@@ -2695,6 +2826,8 @@ export function createPages(view, session, { sheet, scope }) {
       breakPending = (!lineSplits || !!inReg) && hasPageBreak(b.node);
       breakKind = breakKindOf(b.node);
       if (target == null) continue;
+      roundDrift = 0; // (first on its new page: only its own part counts there)
+      roundOver = roundOwn;
       // Keep with next: headings at the bottom of a page move with the block they introduce.
       let m = k;
       if (overflow) {
@@ -2702,7 +2835,35 @@ export function createPages(view, session, { sheet, scope }) {
         // takes a paragraph on with the one it keeps with column by column, to the next page's first column at most.
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
-        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        let cut = null;
+        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) {
+          // A paragraph of several lines that keeps with the block moving on, and may split: only its last lines go
+          // with that block (two under widow control, one without), the rest staying on this page, as Word breaks it
+          // (120 generated documents: 2 to 6-line paragraphs each kept with the next, widow control on and off; with
+          // it a paragraph under four lines can't split and moves whole, as one whose lines keep together does).
+          cut = !midSheet && lineSplits && !cols ? keepCut(blocks[m - 1]) : null;
+          if (cut) break;
+          m--;
+        }
+        if (cut) {
+          const prev = blocks[m - 1];
+          const split = splitParagraph(prev, shift, false, false, cut);
+          if (split && split.pushes.length) {
+            paraSplits.set(prev.i, split);
+            notesByLine(prev, shift, split);
+            shift += split.total;
+            for (let n = m; n <= k; n++) {
+              sbTop.delete(blocks[n].i);
+              shapeUp.delete(blocks[n].i);
+              moveNotes(blocks[n].i, target);
+              splits.delete(blocks[n].i);
+              paraSplits.delete(blocks[n].i);
+              colSplits.delete(blocks[n].i);
+            }
+            k = m - 1; // (everything after the split paragraph again, from its new place)
+            continue;
+          }
+        }
         // A run of blocks each kept with the next that reaches back to the page's top is longer than the page: moving
         // part of it on gains nothing, and Word breaks it where the page ends (generated documents: 55 to 120 paragraphs
         // each kept with the next, 51 lines a page in Word; each had gone to a page of its own, 113 pages for 14).
@@ -3056,6 +3217,7 @@ export function createPages(view, session, { sheet, scope }) {
   let printBox = null;
   let printZoom = '';
   const beforePrint = () => {
+    printing = true;
     // (Printed at full size, whatever the zoom on screen.)
     printZoom = sheet.style.zoom;
     sheet.style.zoom = '';
@@ -3079,7 +3241,7 @@ export function createPages(view, session, { sheet, scope }) {
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
+  const afterPrint = () => { printing = false; removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 
