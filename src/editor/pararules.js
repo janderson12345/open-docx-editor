@@ -196,6 +196,20 @@ export function labelLine(node, session, l, label, run, style) {
   // A Symbol bullet is taller than the text (ascent 1.005em), and Word's line takes the tallest
   // ascent and descent on it, so the bullet's line comes out ~4% taller.
   const lvlFont = label != null && listLevel(session.numbering, l.numId, l.ilvl)?.font;
+  // With no font of its level's: the paragraph mark's (w:rFonts in the paragraph's own rPr, by name or the theme's),
+  // else the paragraph style's, not the font its text's runs are set in. (Word's prints of 12 generated documents: the
+  // level, the mark and the runs each with a font of their own or none; a sample's one heading number in Calibri, its
+  // mark's font, among 35 in the style's Arial.)
+  if (label != null && !lvlFont) {
+    const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
+    const fonts = /<w:rFonts\b[^>]*>/.exec(mark)?.[0] || '';
+    const named = /\bw:ascii="([^"]+)"/.exec(fonts)?.[1];
+    const themed = /\bw:asciiTheme="([^"]+)"/.exec(fonts)?.[1];
+    const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
+    const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
+    const own = named || ofTheme(themed) || (run.font ? session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont) : null);
+    if (own) style.push(`--odx-lfont:${fontStack(own)}`);
+  }
   // The label is in the level's own size, else the paragraph mark's, else the style's (12pt bullets over 10pt code
   // lines make Word's bullet lines taller).
   const lblSize = label != null && (listLevel(session.numbering, l.numId, l.ilvl)?.size || markSize(node) || session.styleRunProp(node.attrs.styleId, 'size') || 20);
