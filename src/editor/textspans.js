@@ -63,8 +63,11 @@ function blockDecos(node, pos, out) {
   let last = null, lastAt = 0, some = false;
   node.forEach((c, off) => { if (c.isText) { if (last && last.text.trim()) some = true; last = c; lastAt = pos + 1 + off; } else if (!marker(c)) { if (last && last.text.trim()) some = true; last = null; } });
   if (last) {
-    const m = / +$/.exec(last.text);
-    if (m && (m.index > 0 || some)) out.push(Decoration.inline(lastAt + m.index, lastAt + last.nodeSize, { class: 'odx-trail' }));
+    // (Counted back from the end, not by a pattern: " +$" tries again from every space of a long run that doesn't end
+    // the text, time that grows with the square of its length in a document made to be slow.)
+    let from = last.text.length;
+    while (from > 0 && last.text.charCodeAt(from - 1) === 32) from--;
+    if (from < last.text.length && (from > 0 || some)) out.push(Decoration.inline(lastAt + from, lastAt + last.nodeSize, { class: 'odx-trail' }));
   }
   return out;
 }
