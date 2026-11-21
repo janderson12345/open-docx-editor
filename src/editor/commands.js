@@ -158,21 +158,28 @@ export const setMark = (name, attrs) => (state, dispatch) => {
   return true;
 };
 
-export function setLink(href) {
+/**
+ * Makes the selection a link to `href` (or types the address as one), or takes its link off (`href` null). `styleId`:
+ * the document's Hyperlink character style, which a new link's text is given, as Word gives it to the links it makes:
+ * a link has no look of its own in Word, and one saved without the style opened there as plain text.
+ */
+export function setLink(href, styleId = null) {
   return (state, dispatch) => {
     const { from, to, empty } = state.selection;
     const type = schema.marks.link;
     if (!dispatch) return true;
     const tr = state.tr;
+    const look = href && styleId ? schema.marks.cstyle.create({ val: styleId }) : null;
     if (empty && href) {
-      tr.insert(from, schema.text(href, [type.create({ href })]));
+      tr.insert(from, schema.text(href, [...(look ? [look] : []), type.create({ href })]));
       tr.setSelection(TextSelection.create(tr.doc, from + href.length));
     } else {
       tr.removeMark(from, to, type);
       if (href) tr.addMark(from, to, type.create({ href }));
+      if (look) tr.addMark(from, to, look);
       // Remove Hyperlink takes the link's look with it (its Hyperlink character style: blue, underlined), as in Word.
       else tr.doc.nodesBetween(from, to, (n, pos) => {
-        const cs = n.isText && n.marks.find((m) => m.type.name === 'cstyle' && /^(Hyperlink|FollowedHyperlink)$/.test(m.attrs.val));
+        const cs = n.isText && n.marks.find((m) => m.type.name === 'cstyle' && (/^(Hyperlink|FollowedHyperlink)$/.test(m.attrs.val) || (styleId && m.attrs.val === styleId)));
         if (cs) tr.removeMark(Math.max(pos, from), Math.min(pos + n.nodeSize, to), cs);
       });
     }

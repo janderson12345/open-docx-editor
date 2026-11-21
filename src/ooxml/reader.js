@@ -624,8 +624,11 @@ function anchorCss(drawing, page, compatMode = 15) {
     const w = ext ? px(ext.getAttribute('cx')) : 0;
     const span = fromPage ? '100%' : 'calc(100% - var(--odx-page-left, 96px) - var(--odx-page-right, 96px))';
     const from = fromPage ? '0px' : 'var(--odx-page-left, 96px)';
-    const aligned = hAlign === 'center' ? `left:calc(${from} + (${span} - ${w}px) / 2);` : hAlign === 'right' ? `left:calc(${from} + ${span} - ${w}px);` : hAlign === 'left' && hRel === 'page' ? 'left:0px;' : '';
-    const left = hAlign ? (['column', 'margin', 'page'].includes(hRel) ? aligned : '') : fromPage ? `left:${x}px;` : `left:calc(var(--odx-page-left, 96px) + ${x}px);`;
+    // (From the page's edge in a header or footer too, whose box starts at the section's left margin: --odx-hf-left,
+    // pages.js. A header's text box 3.76in from the page's edge was drawn that far from the margin, 89px right of
+    // Word's.)
+    const aligned = hAlign === 'center' ? `left:calc(${from} + (${span} - ${w}px) / 2);` : hAlign === 'right' ? `left:calc(${from} + ${span} - ${w}px);` : hAlign === 'left' && hRel === 'page' ? 'left:calc(0px - var(--odx-hf-left, 0px));' : '';
+    const left = hAlign ? (['column', 'margin', 'page'].includes(hRel) ? aligned : '') : fromPage ? `left:calc(${x}px - var(--odx-hf-left, 0px));` : `left:calc(var(--odx-page-left, 96px) + ${x}px);`;
     // Placed against the page or its margins vertically: pagination puts it at that height on its paragraph's page
     // (pages.js placeOnPage).
     const onPage = ['page', 'margin', 'topMargin', 'bottomMargin'].includes(vRel)

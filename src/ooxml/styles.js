@@ -159,6 +159,8 @@ export function readNumbering(pkg) {
     size: Number(attr(kid(kid(l, 'rPr'), 'sz'), 'val')) || null, // half-points
     // (How far the label is raised, w:position, in half-points, lowered when negative; within a quarter of an inch.)
     position: Math.max(-36, Math.min(36, Number(attr(kid(kid(l, 'rPr'), 'position'), 'val')) || 0)),
+    // (The label's own letter-spacing, w:spacing, in twips: within a quarter of an inch either way.)
+    spacing: Math.max(-360, Math.min(360, Number(attr(kid(kid(l, 'rPr'), 'spacing'), 'val')) || 0)),
     // The label's own bold, italic, colour and underline (null where the level doesn't set them).
     bold: onOff(kid(kid(l, 'rPr'), 'b')),
     italic: onOff(kid(kid(l, 'rPr'), 'i')),
@@ -318,6 +320,11 @@ export function listCounter(numbering) {
     started.add(String(numId));
     c[ilvl] = c[ilvl] == null || over ? startOf(ilvl) : c[ilvl] + 1;
     c.length = ilvl + 1; // deeper levels restart
+    // (A paragraph of a deeper level before any of an upper one uses that upper level's first number: the upper level's
+    // own first paragraph, when it comes, has the second. Word's prints of 14 generated lists, upper roman over decimal
+    // over letters: 1.1 then the first top-level paragraph is II, I.1.a then I.2 then II, the same whether the deeper
+    // levels' text names the upper number or not.)
+    for (let i = 0; i < ilvl; i++) if (c[i] == null) c[i] = startOf(i);
     return lvl.text.replace(/%(\d)/g, (_, d) => {
       const i = Number(d) - 1;
       const v = c[i] ?? startOf(i);

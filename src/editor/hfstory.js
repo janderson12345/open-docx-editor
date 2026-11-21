@@ -128,7 +128,8 @@ function placeStoryShapes(el) {
     st.float = 'none';
     st.position = 'absolute';
     st.marginTop = '0';
-    st.left = `${lefts[i]}px`;
+    // (One set across the page from the page's edge keeps its own place, which goes by where the story's box starts.)
+    if (!st.left.includes('--odx-hf-left')) st.left = `${lefts[i]}px`;
     st.marginLeft = '0';
     if (!geo || !Object.values(geo).every(Number.isFinite)) return;
     // Its area on the page (px from the page's top): the page, its margin box, or the margin above or below it.
@@ -139,9 +140,18 @@ function placeStoryShapes(el) {
     // (Its top in its containing block, which may be its paragraph: from where it is now, at the story's zoom.)
     st.top = '0px';
     const er = el.getBoundingClientRect();
-    const scale = el.offsetHeight ? er.height / el.offsetHeight : 1;
+    // (The zoom from the page the story is set in, where there is one: a one-line header's own height, 15.33px read
+    // as a whole 15, gave a zoom of 1.02 and its shapes a place a pixel low.)
+    const box = el.offsetParent;
+    const scale = box && box.offsetHeight > 100 ? box.getBoundingClientRect().height / box.offsetHeight : el.offsetHeight ? er.height / el.offsetHeight : 1;
     const now = img.getBoundingClientRect().top;
-    st.top = `${((er.top + (y - geo.top) * scale - now) / (scale || 1)).toFixed(2)}px`;
+    // (The story's top on its page to the fraction, where the box it is set in gives the same within a pixel:
+    // offsetTop is a whole number of pixels, and a footer starts where its lines' heights put it, up to half a pixel
+    // off.)
+    const host = el.offsetParent;
+    const exact = host ? (er.top - host.getBoundingClientRect().top) / (scale || 1) - host.clientTop : NaN;
+    const top = Math.abs(exact - geo.top) < 1 ? exact : geo.top;
+    st.top = `${((er.top + (y - top) * scale - now) / (scale || 1)).toFixed(2)}px`;
   });
 }
 

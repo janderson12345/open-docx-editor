@@ -146,6 +146,7 @@ export function editStory(main, kind, p = null) {
   const el = document.createElement('div');
   el.className = `odx-hfedit odx-hfedit-${kind}`;
   el.style.left = `${page.left}px`;
+  el.style.setProperty('--odx-hf-left', `${page.left}px`); // (for its shapes set from the page's edge, reader.js)
   el.style.right = `${page.right}px`;
   if (kind === 'header') el.style.top = `${at.top + hfDist}px`;
   else el.style.bottom = `${sheet.scrollHeight - (at.top + page.height - hfDist)}px`;

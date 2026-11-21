@@ -391,7 +391,8 @@ export const schema = new Schema({
       attrs: { href: { default: null }, rId: { default: null }, anchor: { default: null }, extra: { default: null } },
       inclusive: false,
       parseDOM: [{ tag: 'a[href]', getAttrs: (d) => { const h = d.getAttribute('href') || ''; return safeHref(h) ? { href: h.trim() } : h.startsWith('#') && h.length > 1 ? { anchor: h.slice(1) } : false; } }], // (pasted: web, mail and phone links, and links within the document)
-      toDOM: (m) => ['a', { href: safeHref(m.attrs.href) || (m.attrs.anchor ? '#' + m.attrs.anchor : '#'), title: m.attrs.href || '', class: 'odx-link' }, 0],
+      // (odx-link-doc: a link the document came with, or one to a place in it. Drawn as its runs, editor.css.)
+      toDOM: (m) => ['a', { href: safeHref(m.attrs.href) || (m.attrs.anchor ? '#' + m.attrs.anchor : '#'), title: m.attrs.href || '', class: m.attrs.rId || m.attrs.anchor ? 'odx-link odx-link-doc' : 'odx-link' }, 0],
     },
     ins: {
       attrs: { id: { default: null }, author: { default: null }, date: { default: null }, dateUtc: { default: null }, move: { default: false } },
@@ -433,6 +434,15 @@ function rextraCss(items) {
     else if (name === 'bCs') css.push(`--odx-bcs:${on(xml) ? 'bold' : 'normal'}`);
     else if (name === 'iCs') css.push(`--odx-ics:${on(xml) ? 'italic' : 'normal'}`);
     else if (name === 'szCs' && Number(val(xml))) css.push(`--odx-szcs:${Number(val(xml)) / 2}pt`);
+    // An underline with a colour of its own (w:u with w:color, kept as it is for saving): drawn, in that colour. (It
+    // was not drawn at all: a converted document's links, blue with a blue line under them, had none. Word's prints
+    // of four generated lines: a red line under black text, single and double; "auto" the text's own colour.)
+    else if (name === 'u') {
+      const v = val(xml) || 'single';
+      const c = /w:color="([0-9A-Fa-f]{6})"/.exec(xml)?.[1];
+      if (v === 'none') css.push('text-decoration-line:none');
+      else css.push('text-decoration-line:underline', ...(v === 'double' ? ['text-decoration-style:double'] : []), ...(c ? [`text-decoration-color:#${c}`] : []));
+    }
     else if (name === 'caps' && on(xml)) css.push('text-transform:uppercase');
     else if (name === 'smallCaps' && on(xml)) css.push('font-variant:small-caps');
     else if (name === 'vanish' && on(xml)) css.push('display:none');

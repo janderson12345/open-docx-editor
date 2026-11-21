@@ -1249,6 +1249,7 @@ export function createPages(view, session, { sheet, scope }) {
     range.deleteContents();
     copy.removeAttribute('contenteditable');
     copy.style.removeProperty('margin-top');
+    copy.style.removeProperty('--odx-push');
     copy.style.margin = '0';
     copy.style.textIndent = '0';
     copy.classList.add('odx-contlines'); // (no list number or bullet: editor.css)
@@ -1302,6 +1303,7 @@ export function createPages(view, session, { sheet, scope }) {
     const copy = b.el.cloneNode(true);
     copy.removeAttribute('contenteditable');
     copy.style.removeProperty('margin-top');
+    copy.style.removeProperty('--odx-push');
     copy.style.margin = '0';
     const lines = [];
     const bottom = b.top + heightAt(copy, widthIn(b, g, p), lines);
@@ -1570,7 +1572,8 @@ export function createPages(view, session, { sheet, scope }) {
         host.className = 'odx-content';
         const copy = b.el.cloneNode(true);
         copy.removeAttribute('contenteditable');
-        copy.style.removeProperty('margin-top'); // (its page push, set as !important: margin 0 alone wouldn't take)
+        copy.style.removeProperty('margin-top');
+        copy.style.removeProperty('--odx-push'); // (its page push, which editor.css makes an !important margin: margin 0 alone wouldn't take)
         copy.style.margin = '0';
         const to = stop ?? end; // (only down to there: the next part's cut, or a table's header rows)
         copy.style.clipPath = `inset(${cut.toFixed(2)}px ${-CLIP_SIDE}px ${to != null ? (r.height - to).toFixed(2) : -CLIP_TOP}px ${-CLIP_SIDE}px)`;
@@ -2321,7 +2324,10 @@ export function createPages(view, session, { sheet, scope }) {
       // one. (Only after a balanced columns section does a block move up past it.)
       const mb = colRegs.length && k > 0 ? parseFloat(getComputedStyle(blocks[k - 1].el).marginBottom) || 0 : 0;
       const set = margin < mb ? Math.round((margin - mb) * 10) / 10 : margin;
-      onBlock(i, { style: `margin-top:${set}px !important` }, `mt:${set}`);
+      // (As a property of its own, which editor.css makes the margin: a decoration's style is taken off name by name
+      // when it goes, and one that set margin-top took the paragraph's own space before with it. A paragraph pushed to
+      // the next page in one pass and back in a later one stood 14px high, its 10pt of space before gone.)
+      onBlock(i, { style: `--odx-push:${set}px` }, `mt:${set}`);
     }
     lastMargins = margins;
     marginsDoc = doc;
@@ -2663,8 +2669,17 @@ export function createPages(view, session, { sheet, scope }) {
       let sect = null;
       if (k > 0) for (let j = b.i - 1; j >= blocks[k - 1].i && !sect; j--) sect = sectEnds.get(j) || null;
       if (sect) {
-        const from = sect.page ? (top <= contentTop(p) + 1 ? p : p + 1) : p + 1;
-        setMargins(from, sect.next, sect.page);
+        // (A continuous section whose text starts a page all the same, a page break before it: that page is the
+        // section's own from its top, its first page, with the first-page header and footer where it has them. Word's
+        // prints of 18 generated documents: a section with a different first page starting part way down page 1
+        // shows the ordinary header on page 2, whatever its margins, columns or the sections before it; with its first
+        // paragraph set to break before, or a page break last before the section's end mark, page 2 has the
+        // first-page header. A sample's page 2 stood 27px low under the ordinary header, and ran a page over.)
+        // (At a page's top already, or about to be taken to the next page's by the break, below.)
+        const atTop = top <= contentTop(p) + 1;
+        const broken = !atTop && k > 0 && ((breakPending && breakKind !== 'column') || breakBefore(b.node));
+        const from = atTop ? p : p + 1;
+        setMargins(from, sect.next, sect.page || ((atTop || broken) && from > 0));
         while (sections.length > 1 && sections[sections.length - 1][0] >= from) sections.pop();
         sections.push([from, sect.index]);
       }
@@ -2844,6 +2859,15 @@ export function createPages(view, session, { sheet, scope }) {
           cut = !midSheet && lineSplits && !cols ? keepCut(blocks[m - 1]) : null;
           if (cut) break;
           m--;
+        }
+        // (A continuous section whose first block goes on to the next page, by itself or with the blocks it is kept
+        // with: the section's text starts that page, which is its first, as above. A sample's section opening with
+        // two headings kept with their text, no room for them under the section before.)
+        if (!cut && m > 0) {
+          let s0 = null;
+          for (let j = blocks[m].i - 1; j >= blocks[m - 1].i && !s0; j--) s0 = sectEnds.get(j) || null;
+          const e = s0 && !s0.page ? margins.find((x) => x[1] === s0.next) : null;
+          if (e && e[0] === target) e[2] = true;
         }
         if (cut) {
           const prev = blocks[m - 1];
@@ -3084,7 +3108,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (header) {
           const h = story(header, 'odx-header', numText, pages);
           // (In the section's own side margins: sample S106's 0.75in sections under a 1in last one.)
-          h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          h.style.cssText = `top:${hf.headerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;--odx-hf-left:${at[1].left ?? page.left}px`;
           // (The page's geometry, for its shapes placed against the page or margins: hfstory.js placeStoryShapes.)
           Object.assign(h.dataset, { odxPh: pageH(p), odxMtop: marginsAt(p).top, odxMbot: marginsAt(p).bottom });
           // A header reaching most of the way down the page (past 70% of it) is cut off 60px above the middle of the page,
@@ -3104,12 +3128,12 @@ export function createPages(view, session, { sheet, scope }) {
         }
         if (footer) {
           const f = story(footer, 'odx-footer', numText, pages);
-          f.style.cssText = `bottom:${hf.footerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px`;
+          f.style.cssText = `bottom:${hf.footerDist}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;--odx-hf-left:${at[1].left ?? page.left}px`;
           Object.assign(f.dataset, { odxPh: pageH(p), odxMtop: marginsAt(p).top, odxMbot: marginsAt(p).bottom });
           // A footer reaching most of the way up the page (above 30% of it) starts 46pt below the middle of the page and is
           // cut off at its distance from the foot, as Word draws it (not running up off the page).
           const fTop = pageH(p) / 2 + HF_GAP + 4 / 3;
-          if (pageH(p) - hf.footerDist - storyHeight(footer) < pageH(p) * HF_FAR) f.style.cssText = `top:${fTop}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;max-height:${Math.max(0, pageH(p) - hf.footerDist - fTop)}px;overflow:hidden`;
+          if (pageH(p) - hf.footerDist - storyHeight(footer) < pageH(p) * HF_FAR) f.style.cssText = `top:${fTop}px;left:${at[1].left ?? page.left}px;right:${at[1].right ?? page.right}px;--odx-hf-left:${at[1].left ?? page.left}px;max-height:${Math.max(0, pageH(p) - hf.footerDist - fTop)}px;overflow:hidden`;
           s.append(f);
         }
       }

@@ -34,6 +34,34 @@ test('a picture that is a link (a:hlinkClick) keeps its address, shown on the pi
   assert.equal(schema.nodes.image.spec.toDOM(bad)[1]['data-href'], null);
 });
 
+test('a link made in the editor has the Hyperlink character style, and is saved with it', async () => {
+  const { setLink } = await import('../src/editor/commands.js');
+  const { EditorState, TextSelection } = await import('prosemirror-state');
+  const { DocxSession } = await import('../src/ooxml/docx.js');
+  const session = DocxSession.blank();
+  session.addBuiltInStyles(['Hyperlink']);
+  const id = session.builtInId('Hyperlink');
+  assert.ok(session.styles.styles.has(id), 'the document has the style');
+  // Over a selection, and typed at the caret.
+  const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [schema.text('our site here')])]);
+  let s = EditorState.create({ doc, selection: TextSelection.create(doc, 5, 9) });
+  setLink('https://example.com/', id)(s, (tr) => { s = s.apply(tr); });
+  const linked = [];
+  s.doc.firstChild.forEach((n) => linked.push([n.text, n.marks.map((m) => m.type.name).sort().join('+')]));
+  assert.deepEqual(linked, [['our ', ''], ['site', 'cstyle+link'], [' here', '']]);
+  let c = EditorState.create({ doc, selection: TextSelection.create(doc, 1) });
+  setLink('https://example.org/', id)(c, (tr) => { c = c.apply(tr); });
+  assert.deepEqual(c.doc.firstChild.firstChild.marks.map((m) => m.type.name).sort(), ['cstyle', 'link']);
+  // Saved: the link's run names the style, and styles.xml defines it as Word's own does.
+  const saved = new DocxSession(session.save(s.doc));
+  assert.match(saved.originalXml, new RegExp('<w:hyperlink [^>]*>(?:<w:r>|<w:r [^>]*>)<w:rPr><w:rStyle w:val="' + id + '"/>'));
+  assert.match(saved.pkg.text('word/styles.xml'), /<w:style w:type="character" w:styleId="Hyperlink">[^]*?<w:color w:val="0563C1"[^>]*\/><w:u w:val="single"\/>/);
+  // Taking the link off takes the style with it.
+  setLink(null, id)(s, (tr) => { s = s.apply(tr); });
+  assert.equal(s.doc.firstChild.childCount, 1);
+  assert.deepEqual(s.doc.firstChild.firstChild.marks.map((m) => m.type.name), []);
+});
+
 test('removing a link takes its Hyperlink character style too', async () => {
   const { setLink } = await import('../src/editor/commands.js');
   const { EditorState, TextSelection } = await import('prosemirror-state');

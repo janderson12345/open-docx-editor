@@ -162,6 +162,18 @@ export function shiftFor(el, host, anchored = false) {
   // open with a bold word printed 0.7px low.)
   const own = el.classList.contains('odx-markers') && !/^(SPAN|STRONG|EM|U|S|B|I|SUB|SUP|A)$/.test(el.firstElementChild?.tagName || 'SPAN');
   let pcs = own ? rcs : getComputedStyle(el);
+  // (And where none of its text is in the paragraph's own size, a run among them leaving its size unset: its lines are
+  // its runs' own, as tall as their sizes make them, the paragraph's size in none of them. A list paragraph of 12pt
+  // runs and one 10pt character in an 11pt style, measured as an 11pt line holding a 12pt run, printed its four lines
+  // 1px low. Runs that need Word's boxes are sized and shifted together: mixlines.js, mixedShift above.)
+  // (Larger than the paragraph's size, that is: smaller runs share their line with what is left in the paragraph's
+  // own size, an unsized space or its mark, and Word's line is that size's. Cells of 10pt runs and one unsized space in
+  // an 11pt style, measured as 10pt lines, printed 0.7px lower, 1.3px under Word's.)
+  if (!own && rcs.fontSize !== pcs.fontSize && parseFloat(rcs.fontSize) > parseFloat(pcs.fontSize) && el.dataset.odxMix !== '1') {
+    let none = true;
+    for (const s of el.querySelectorAll('.odx-t')) { if (s.textContent.trim() && getComputedStyle(s).fontSize === pcs.fontSize) { none = false; break; } }
+    if (none) pcs = rcs;
+  }
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
   const known = knownFamily;
   let family = known(rcs);
@@ -267,7 +279,10 @@ export function baselineCss(scope) {
   // One holding anchored pictures is moved down by padding instead (position:relative would make it their containing
   // block), and they are moved back up: sample S062's footer "Page 3 of 9" beside its page art, 1.3px high.
   rules.push(`.odx-hf p[style*="--odx-bla"]{padding-top:var(--odx-bla);margin-bottom:calc(-1 * var(--odx-bla))}`);
-  rules.push(`.odx-hf p[style*="--odx-bla"] [style*="position: absolute"]{translate:0 calc(-1 * var(--odx-bla))}`);
+  // (Not one set on the page from its top or its margins, hfstory.js placeStoryShapes: its place is the page's, which
+  // the padding doesn't move. Word's prints of six generated footers, a text box 9.5in down the page beside the
+  // footer's line: its text 1.7px high with this taken off it too.)
+  rules.push(`.odx-hf p[style*="--odx-bla"] [style*="position: absolute"]:not([style*="--odx-arel"], [style*="--odx-lrel"]){translate:0 calc(-1 * var(--odx-bla))}`);
   return `@media print{${rules.join('')}}`;
 }
 

@@ -265,12 +265,20 @@ function wideLabels(view, decos) {
       const cs = label ? getComputedStyle(el, '::before') : null;
       const size = cs ? parseFloat(cs.fontSize) || 0 : 0;
       // (No wider than its letters could be: most labels, without measuring.)
-      if (size && label.length * size * 1.2 > gap / 15) {
+      // (Measured where the label may be wider than its room, or the paragraph has a stop of its own inside that room:
+      // the text starts at such a stop when it comes after the label's end, as after a tab typed there. Word's prints of
+      // 12 generated lists, the number at 100 twips and the text's indent at 1540: a stop at 300, 819 or 1200 twips
+      // takes the text of "1.", only the one at 1200 that of "Section 1.", which ends past the others; a stop on the
+      // indent or past it, or none, leaves the text at the indent.)
+      const inside = own.some((t) => t > start && t < start + gap);
+      if (size && (inside || label.length * size * 1.2 > gap / 15)) {
         labelCtx = labelCtx || document.createElement('canvas').getContext('2d');
         labelCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`;
         const width = labelCtx.measureText(label).width + label.length * (parseFloat(cs.letterSpacing) || 0);
         // (Wider by anything at all: a sample's heading number 24.09px wide in 24px of room has its text at the next stop.)
-        if (width > gap / 15 + 0.03) {
+        const before = inside ? own.find((t) => t > start + width * 15 + 1 && t < start + gap) : undefined;
+        if (before != null && width <= gap / 15 + 0.03) room = Math.round(((before - start) / 15) * 100) / 100;
+        else if (width > gap / 15 + 0.03) {
           const end = start + width * 15;
           const mine = own.find((t) => t > end + 1);
           const pitch = dts > 0 ? dts : 720;

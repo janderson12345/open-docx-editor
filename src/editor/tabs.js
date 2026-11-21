@@ -91,7 +91,11 @@ export function layoutTabsIn(root, session, nodeOf) {
     // Stops are measured from the column's start edge: the paragraph box less its start indent. In a right-to-left
     // paragraph that is the right edge, and positions run leftwards.
     const rtl = cs.direction === 'rtl';
-    const startMargin = parseFloat(rtl ? cs.marginRight : cs.marginLeft) || 0;
+    // (Less the part of its margins that is its section's side, where the section's margins differ from the page's,
+    // editor.js --odx-sds and --odx-sde: a stop is measured from the section's margin. A document of a section a page,
+    // each with side margins of its own: its contents entries' page numbers, at a right stop, stood 56px short.)
+    const sideStart = parseFloat(cs.getPropertyValue('--odx-sds')) || 0, sideEnd = parseFloat(cs.getPropertyValue('--odx-sde')) || 0;
+    const startMargin = (parseFloat(rtl ? cs.marginRight : cs.marginLeft) || 0) - sideStart;
     // A hanging indent is a stop too: a tab on the first line, before the indent, goes to it first.
     const indent = (parseFloat(cs.textIndent) || 0) < 0 ? startMargin : null;
     let aligned = false; // the tab before was a right, centre or decimal one
@@ -133,7 +137,7 @@ export function layoutTabsIn(root, session, nodeOf) {
       const right = rtl ? edge - (pr.left + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0)) : pr.right - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderRightWidth) || 0) - edge;
       // A tab with no stop left that starts at the right margin goes to the next line in Word (sample S097's
       // footer: "Revision Date: …" ends at the right stop, and the tab after it makes an empty line).
-      const margin = right + Math.max(0, parseFloat(rtl ? cs.marginLeft : cs.marginRight) || 0); // the line's end with no end indent
+      const margin = right + Math.max(0, (parseFloat(rtl ? cs.marginLeft : cs.marginRight) || 0) - sideEnd); // the line's end with no end indent
       const past = !!stop && margin > right + 0.5 && stop.x > right - 0.5 && stop.x <= margin + 0.5; // (on the indent too: centred or left-set text there runs past it)
       const wraps = !stop && x >= right - 1;
       if (wraps) w = right - x + 1;
@@ -182,6 +186,9 @@ export function layoutTabsIn(root, session, nodeOf) {
       aligned = !!stop && ['right', 'end', 'decimal', 'center'].includes(stop.val);
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
       if (nl) { s.classList.add('odx-tabnl'); s.style.setProperty('--odx-tabnl', `${nl.toFixed(2)}px`); } else s.classList.remove('odx-tabnl');
+      // (Where it ends, from the paragraph's own left edge: the stop it goes to, for the squeeze of the text after
+      // it, justify.js. Its width alone changes with the words before it, which a justified line stretches.)
+      if (!rtl && (!stop || stop.val === 'left' || stop.val === 'start' || stop.val === 'num')) s.dataset.odxTabend = (x + Math.max(0, w) - startMargin).toFixed(2); else delete s.dataset.odxTabend;
     }
     if (setAside != null) p.style.textAlign = setAside;
     if (over > 0.5 && overTab) {

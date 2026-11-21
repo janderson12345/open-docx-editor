@@ -499,6 +499,9 @@ function paragraphPlugin(session) {
           // for the column each block lands in.)
           const coln = sd[2] ? ' + var(--odx-coln, 0px)' : '';
           style.push(`margin-inline-start:calc(${own('margin-inline-start')} + ${ds}px${rtl ? coln : ''})`, `margin-inline-end:calc(${own('margin-inline-end')} + ${de}px${rtl ? '' : coln})`);
+          // (How much of each margin is the section's side, not the paragraph's indent: tab stops are measured from the
+          // section's margin, tabs.js.)
+          style.push(`--odx-sds:${+ds.toFixed(3)}px`, `--odx-sde:${+de.toFixed(3)}px`);
         }
         // A cell whose end mark is left out of its row's height (w:hideMark): its last paragraph, empty, takes no room, its
         // spacing and size with it (Word: a row of such cells is as tall as its cells' margins; one with text, or an

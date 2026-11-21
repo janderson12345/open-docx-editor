@@ -251,7 +251,8 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope, quiet = (fn) =
         if (eo !== ln.end[1]) r.setEnd(en, eo);
       }
       const line = el.cloneNode(false);
-      line.style.removeProperty('margin-top'); // (a page's push, set on the block (pages.js), not the line's: !important, it beat margin:0 below)
+      line.style.removeProperty('margin-top');
+      line.style.removeProperty('--odx-push'); // (a page's push, set on the block (pages.js), not the line's: !important, it beat margin:0 below)
       line.removeAttribute('id');
       // (Not the paragraph's inset clip: its lines were chosen by it above, and on one line it would cut the line's own
       // text, sample S045's column copies printing only their parentheses' descenders.)

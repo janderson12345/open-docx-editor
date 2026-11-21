@@ -48,6 +48,15 @@ const NO_BREAK_AFTER_DASH = /[^\s\p{L}\p{N}]/u;
 /** Whether a line may break in Word between a dash and `next`, after `before` (the character before the dash), where the browser's own rules don't let it. */
 const dashBreak = (before, dash, next) => !!before && !/\s/.test(before) && DASH.test(dash) && !!next && NO_BREAK_AFTER_DASH.test(next) && !DASH.test(next);
 const wbr = () => document.createElement('wbr');
+// And the other way: Word breaks a line of Latin text at its spaces (and after hyphens and dashes) and nowhere else,
+// where the browser also breaks between a closing bracket and an opening one, after a full stop before an opening
+// bracket, and after a question mark or an ellipsis before a letter (Word's prints of 31 generated paragraphs, a token
+// of letters round each kind of punctuation: every one moved whole to the next line; the browser broke six). A
+// sample's "(a)(1)(i)" at a line's end was split after "(1)". So no break there: the two characters in a span of
+// their own that doesn't wrap (odx-nb, editor.css), or, where they are in two runs, a word joiner between them.
+const CLOSER = /[)\]}]/, OPENER = /[([{]/, WORDISH = /[\p{L}\p{N}]/u;
+const noBreak = (a, b) => !!a && !!b && ((CLOSER.test(a) && OPENER.test(b)) || (a === '.' && OPENER.test(b)) || ((a === '?' || a === '\u2026') && (WORDISH.test(b) || OPENER.test(b))));
+const joiner = () => { const j = document.createElement('span'); j.className = 'odx-nb'; j.textContent = '\u2060'; return j; };
 // (No more than this many in one text block: each is an element in the page, and a paragraph made of nothing but
 // "a-." a hundred thousand times would have had a third as many.)
 const MAX_DASH_BREAKS = 400;
@@ -65,6 +74,10 @@ function blockDecos(node, pos, out) {
     if (c.isText) {
       const t = tail + c.text;
       for (let i = Math.max(1, tail.length - 1); i < t.length - 1; i++) {
+        if (breaks < MAX_DASH_BREAKS && noBreak(t[i], t[i + 1]) && ++breaks) {
+          if (i >= tail.length) out.push(Decoration.inline(at + i - tail.length, at + i + 2 - tail.length, { class: 'odx-nb' }));
+          else out.push(Decoration.widget(at, joiner, { side: -1, marks: c.marks, key: 'odx-nb', ignoreSelection: true }));
+        }
         if (breaks < MAX_DASH_BREAKS && dashBreak(t[i - 1], t[i], t[i + 1]) && ++breaks) out.push(Decoration.widget(at + i + 1 - tail.length, wbr, { side: -1, marks: c.marks, key: 'odx-wbr', ignoreSelection: true }));
       }
       tail = t.slice(-2);
@@ -174,9 +187,19 @@ export function wrapText(root) {
   const texts = [];
   for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t);
   // (A break after a dash where Word has one and the browser none, as in the editor: the text split there, a wbr between.)
+  const glued = new Set();
   for (let k = 0, made = 0; k < texts.length && made < MAX_DASH_BREAKS; k++) {
     const t = texts[k];
     for (let i = t.data.length - 2; i >= 1 && made < MAX_DASH_BREAKS; i--) {
+      if (noBreak(t.data[i], t.data[i + 1])) {
+        // (The pair in a text node of its own, which gets the class below.)
+        const rest = t.splitText(i + 2);
+        const pair = t.splitText(i);
+        glued.add(pair);
+        texts.splice(k + 1, 0, pair, rest);
+        made++;
+        continue;
+      }
       if (!dashBreak(t.data[i - 1], t.data[i], t.data[i + 1])) continue;
       const rest = t.splitText(i + 1);
       t.after(wbr());
@@ -186,7 +209,7 @@ export function wrapText(root) {
   }
   for (const t of texts) {
     const s = document.createElement('span');
-    s.className = /^ +$/.test(t.data) ? 'odx-t odx-blank' : 'odx-t';
+    s.className = (/^ +$/.test(t.data) ? 'odx-t odx-blank' : 'odx-t') + (glued.has(t) ? ' odx-nb' : '');
     t.replaceWith(s);
     s.append(t);
     // (A reflected or inner-shadowed run's words, as in the editor.)

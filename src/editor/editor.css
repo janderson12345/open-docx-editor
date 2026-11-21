@@ -191,6 +191,16 @@
    under the baseline and a pixel thick at 12pt: 0.7px above Word's under Calibri, 2.5px under Courier New. From the font
    it still sets the line on whole pixels: within half a pixel of Word's.) */
 .odx-content, .odx-hf, .odx-pl-host { text-underline-position: from-font; }
+/* And through the letters that reach below it, where the browser leaves a gap round each (why-tests gen2.py utab:
+   Word's line under "Alpha" unbroken from the A's left to the tab after it, the browser's cut either side of the p). */
+.odx-content, .odx-hf, .odx-pl-host { text-decoration-skip-ink: none; }
+/* A block moved down to its page's top, or under something set on the page (pages.js): the room above it. */
+/* (Over every other top margin, the important ones too, as it was when set on the element itself: a section's kept
+   last paragraph and the paragraph after a floated table set theirs with more classes than this rule has. The
+   :not(#...) gives it an id's weight.) */
+.odx-content [style*="--odx-push:"]:not(#odx-no-such-id) { margin-top: var(--odx-push) !important; }
+/* Two characters Word never breaks a line between, where the browser would (textspans.js): ")(", "?a". */
+.odx-content .odx-nb, .odx-hf .odx-nb, .odx-pl-host .odx-nb { white-space: nowrap; }
 .odx-content :not(s, del), .odx-hf :not(s, del) { text-decoration-thickness: from-font; } /* (not struck-out text: its line's own thickness isn't measured) */
 .odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
 /* Under a character style (Hyperlink, which Word gives every link it makes) the link has that style's look and what
@@ -202,6 +212,12 @@
 /* (A link whose runs are underlined by hand and carry no character style: as its runs, in Word's print black with its
    line, not the editor's blue.) */
 .odx-content u a.odx-link { color: inherit; text-decoration: none; }
+/* A link the document came with has the look of its runs and no other: Word gives a link no colour or line of its own,
+   only the Hyperlink style it puts on the links it makes (Word's prints of eight generated documents, a link to a
+   bookmark and one to a web address with no style: plain runs black with no line, blue runs blue with none, underlined
+   runs with theirs; a document converted from a PDF, its contents pages 314 such links, printed black). A link made
+   here is given the Hyperlink style (commands.js setLink); the editor's blue is left for one pasted without it. */
+.odx-content a.odx-link.odx-link-doc { color: inherit; text-decoration: none; }
 /* A contents entry (a link to a _Toc bookmark) is drawn as its paragraph, without the Hyperlink style's colour and
    line under it, as Word draws a table of contents (a sample's five contents pages, black in Word's print). */
 .odx-content a.odx-link[href^="#_Toc"] { color: inherit; text-decoration: none; }
@@ -273,6 +289,8 @@
 .odx-content p.odx-li::before { line-height: 0; }
 /* A label raised or lowered by its level (w:position): off the baseline by that much; its line's room is --odx-lbl-own's. */
 .odx-content p.odx-li[style*="--odx-lraise"]::before { position: relative; top: calc(-1 * var(--odx-lraise)); }
+/* (Its level's own letter-spacing, pararules.js.) */
+.odx-content p.odx-li[style*="--odx-lsp"]::before { letter-spacing: var(--odx-lsp); }
 /* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
    an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
 .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
@@ -632,6 +650,17 @@ body.odx-painting .odx-content { cursor: copy; }
 .odx-mini select option, .odx-toolbar select option { color: var(--odx-bar-fg); background: var(--odx-field); }
 .odx-show-marks .odx-tab { position: relative; }
 .odx-show-marks .odx-tab::before { content: "\2192"; position: absolute; left: 50%; transform: translateX(-50%); color: var(--odx-accent); font-size: 0.8em; pointer-events: none; }
+/* An underlined tab has its line across its whole width, as Word draws it, and the spaces that end a paragraph have
+   none (why-tests gen2.py utab, Word's prints: a tab to a stop at 4in between two words underlined from the first
+   word's end to the stop, a centred stop's to its word's start; forty underlined spaces between words underlined, the
+   same forty at the paragraph's end not). The browser draws no line under an inline block, which a tab is: the tab
+   draws its own, under one no-break space spread across it and cut to its width like a leader's characters. */
+:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-line: underline; clip-path: inset(-0.5em 0); }
+:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl)::after { content: "\0000a0"; white-space: pre; letter-spacing: 3000px; }
+:where(.odx-content, .odx-hf) :is(u[style*="double"], [style*="text-decoration-style:double"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-style: double; }
+/* (And no line height of their own: a span of no size with its text's line height sits half of it under the
+   baseline, and made its line 5px taller: a bold underlined heading ending in a space.) */
+:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-trail { font-size: 0; letter-spacing: 0; line-height: 0; }
 /* Tab leaders made of characters, cut to the tab's width (a clip, not overflow: the line's baseline stays). */
 .odx-tab[data-leader] { clip-path: inset(-0.5em 0); }
 .odx-tab[data-leader]::after { white-space: pre; letter-spacing: 0; }
