@@ -653,7 +653,7 @@ body.odx-painting .odx-content { cursor: copy; }
    same forty at the paragraph's end not). The browser draws no line under an inline block, which a tab is: the tab
    draws its own, under one no-break space spread across it and cut to its width like a leader's characters. */
 :where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-line: underline; clip-path: inset(-0.5em 0); }
-:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl)::after { content: " 0a0"; white-space: pre; letter-spacing: 3000px; }
+:where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-tab:not([data-leader], .odx-tabnl)::after { content: "\0000a0"; white-space: pre; letter-spacing: 3000px; }
 :where(.odx-content, .odx-hf) :is(u[style*="double"], [style*="text-decoration-style:double"]) .odx-tab:not([data-leader], .odx-tabnl) { text-decoration-style: double; }
 :where(.odx-content, .odx-hf) :is(u:not([style*="text-decoration:none"]), [style*="text-decoration-line:underline"]) .odx-trail { font-size: 0; letter-spacing: 0; }
 /* Tab leaders made of characters, cut to the tab's width (a clip, not overflow: the line's baseline stays). */
