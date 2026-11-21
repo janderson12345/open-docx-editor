@@ -159,6 +159,8 @@ export function readNumbering(pkg) {
     size: Number(attr(kid(kid(l, 'rPr'), 'sz'), 'val')) || null, // half-points
     // (How far the label is raised, w:position, in half-points, lowered when negative; within a quarter of an inch.)
     position: Math.max(-36, Math.min(36, Number(attr(kid(kid(l, 'rPr'), 'position'), 'val')) || 0)),
+    // (The label's own letter-spacing, w:spacing, in twips: within a quarter of an inch either way.)
+    spacing: Math.max(-360, Math.min(360, Number(attr(kid(kid(l, 'rPr'), 'spacing'), 'val')) || 0)),
     // The label's own bold, italic, colour and underline (null where the level doesn't set them).
     bold: onOff(kid(kid(l, 'rPr'), 'b')),
     italic: onOff(kid(kid(l, 'rPr'), 'i')),

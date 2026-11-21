@@ -128,7 +128,8 @@ function placeStoryShapes(el) {
     st.float = 'none';
     st.position = 'absolute';
     st.marginTop = '0';
-    st.left = `${lefts[i]}px`;
+    // (One set across the page from the page's edge keeps its own place, which goes by where the story's box starts.)
+    if (!st.left.includes('--odx-hf-left')) st.left = `${lefts[i]}px`;
     st.marginLeft = '0';
     if (!geo || !Object.values(geo).every(Number.isFinite)) return;
     // Its area on the page (px from the page's top): the page, its margin box, or the margin above or below it.

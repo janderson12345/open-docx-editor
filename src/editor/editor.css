@@ -273,6 +273,8 @@
 .odx-content p.odx-li::before { line-height: 0; }
 /* A label raised or lowered by its level (w:position): off the baseline by that much; its line's room is --odx-lbl-own's. */
 .odx-content p.odx-li[style*="--odx-lraise"]::before { position: relative; top: calc(-1 * var(--odx-lraise)); }
+/* (Its level's own letter-spacing, pararules.js.) */
+.odx-content p.odx-li[style*="--odx-lsp"]::before { letter-spacing: var(--odx-lsp); }
 /* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
    an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
 .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }

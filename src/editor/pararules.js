@@ -225,7 +225,16 @@ export function labelLine(node, session, l, label, run, style) {
   const styleSize = Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20);
   const symbol = /^symbol/i.test(lvlFont || '');
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
-  if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
+  // (And a size the level sets that is larger than its style's, whatever its runs set: Word draws the number at the
+  // level's size. Its prints of 24 generated lists: a 12pt and a 14pt "Item 1." from their level over unsized text in
+  // an 11pt document, and over 12pt runs; the line was as tall as Word's already, the number drawn at the text's size.)
+  const larger = !!lvlSize && !run.size && lvlSize > styleSize;
+  if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller || larger)) style.push(`--odx-lsize:${lblSize / 2}pt`);
+  // The label's own letter-spacing, its level's (w:spacing in the level's rPr; the same 24 lists, condensed by 0.3 and
+  // 1.1pt and expanded by 1pt, each number's last character within 0.2px of Word's): a converted document's numbers,
+  // each level condensed by a point or so, were 1.5px a character wider than Word's.
+  const lblSpacing = label != null ? Number(listLevel(session.numbering, l.numId, l.ilvl)?.spacing || 0) : 0;
+  if (lblSpacing) style.push(`--odx-lsp:${+(lblSpacing / 20).toFixed(2)}pt`);
   // (A symbol font's bullet the editor has no plain character for, still its private-use code, is drawn in that font
   // too: a Wingdings 3 arrow had come out as the text font's empty box.)
   if (lvlFont && (!/^(symbol|wingdings)/i.test(lvlFont) || /[-]/.test(String(label || '')))) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
