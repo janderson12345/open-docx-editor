@@ -128,7 +128,9 @@ export function layoutTabsIn(root, session, nodeOf) {
       if (indent != null && indent > x + 0.5 && (!stop || stop.x > indent)) stop = { val: 'left', x: indent };
       let w;
       // (The line's end, from the edge: "right" in a left-to-right paragraph.)
-      const right = rtl ? edge - (pr.left + (parseFloat(cs.paddingLeft) || 0)) : pr.right - (parseFloat(cs.paddingRight) || 0) - edge;
+      // (Inside the paragraph's side line as well as its padding: a boxed contents entry, centred, whose page number ends
+      // at a right stop past its box, was sized the line's width over and its number went to a second line.)
+      const right = rtl ? edge - (pr.left + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0)) : pr.right - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderRightWidth) || 0) - edge;
       // A tab with no stop left that starts at the right margin goes to the next line in Word (sample S097's
       // footer: "Revision Date: …" ends at the right stop, and the tab after it makes an empty line).
       const margin = right + Math.max(0, parseFloat(rtl ? cs.marginLeft : cs.marginRight) || 0); // the line's end with no end indent
