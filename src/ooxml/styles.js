@@ -103,7 +103,12 @@ export function stylesToCss(scope, info, theme) {
     const sel = st.type === 'paragraph'
       ? `${scope} p[data-style="${cssEsc(st.id)}"]` + (st.id === defaultParagraph ? `,${scope} p:not([data-style])` : '')
       : `${scope} span[data-cstyle="${cssEsc(st.id)}"]`;
-    const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(r.rPr, theme)].filter(Boolean).join(';');
+    // Bold and italic are toggles in Word: a character style that sets one to off doesn't switch off what the text
+    // has from its paragraph's or its table's style (a "Table Header" character style with bold off, on the first row
+    // of a table whose style makes that row bold: bold in Word's print). Only a run's own setting turns it off.
+    const rp = st.type === 'character' && (r.rPr.bold === false || r.rPr.italic === false)
+      ? { ...r.rPr, bold: r.rPr.bold === false ? null : r.rPr.bold, italic: r.rPr.italic === false ? null : r.rPr.italic } : r.rPr;
+    const css = [st.type === 'paragraph' ? pPrToCss(r.pPr) : '', rPrToCss(rp, theme)].filter(Boolean).join(';');
     if (css) rules.push(`${sel}{${css}}`);
     // A shadow on the style's text (w14:shadow): its lines that much taller, as in Word (texteffects.js shadowRoom); an
     // empty paragraph's line too, and one of nothing but spaces (its mark's line, pararules.js). (A run's own shadow:
@@ -633,7 +638,12 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       if (name === 'textDirection') dir = { btLr: 'sideways-lr', tbRl: 'vertical-rl', tbRlV: 'vertical-rl' }[(/w:val="(\w+)"/.exec(xml) || [])[1]] || null;
       if (name !== 'tcBorders' && name !== 'shd' && name !== 'tcMar') continue;
       const el = parseXml(xml.replace(/^<w:(\w+)/, (m, n) => `<w:${n} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(xml, ['w'])}`)).documentElement;
-      if (name === 'shd') shading = shdFill(el) ?? shading;
+      if (name === 'shd') {
+        // (A cell's own "no fill", w:fill="auto" with no pattern, is no fill: it clears the shade its row or column band
+        // has from the table style. Word's print of a sample: white rows under a banded style; they were drawn banded.)
+        const f = shdFill(el), v = attr(el, 'val'), fa = attr(el, 'fill');
+        shading = f ?? ((!v || v === 'clear' || v === 'nil') && (!fa || fa === 'auto') ? null : shading);
+      }
       else if (name === 'tcMar') Object.assign(cellPad, readCellMar(el));
       else Object.assign(edge, readBorders(el));
     }
@@ -693,6 +703,10 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   const linePx = (b) => { if (!drawn(b)) return 0; const cb = compoundSide(b); return cb ? cb.px : (Math.max(0.25, (b.sz || 0) / 8) * 4) / 3; };
   const rowLine = new Map();
   for (const { c, edge } of resolved) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
+  // The lower parts of a vertically merged cell too, each in its own row: the top line it sets itself is in that row's
+  // height though nothing of it is drawn (Word's own layout of a sample's table: two rows under the start of three
+  // merged cells, their own cells with no top line, 19.3px each for the merged parts' 1pt lines; they were 17.9px).
+  for (const { c } of resolved) (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) rowLine.set(c.row + k + 1, Math.max(rowLine.get(c.row + k + 1) ?? 0, (Math.max(0.25, sz / 8) * 4) / 3)); });
   const out = [];
   for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ...more } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
@@ -744,7 +758,11 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const share = outer[side] || side === 'top' ? 1 : 0.5;
       const px = (Math.max(pt * 4 / 3, 1) * share).toFixed(3); // drawn at least 1px wide in total
       const [x, y] = DIR[side];
-      shadows.push(`inset ${x * px}px ${y * px}px 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
+      // (On paper a line under a pixel wide is drawn at its own width, Word's half point 0.67px, not the screen's whole
+      // pixel: --odx-hair is 1px on screen and 0px in print, editor.css.)
+      const thin = (pt * 4) / 3 < 1 ? `max(${((pt * 4) / 3 * share).toFixed(3)}px, calc(var(--odx-hair, 1px) * ${share}))` : null;
+      const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
+      shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
       grow[side] = (pt * 4) / 3 * share;
       // A border's space (w:space, points) lies between it and the cell's text in Word (doc 01's 2pt double frame: the
       // nested table 2.7px lower than ours).
@@ -764,7 +782,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     if (drawn(more.ownTop)) grow.top -= Math.min(Math.max(0, linePx(edge.top) - linePx(more.ownTop)), margin, grow.top);
     // (A cell that draws a top line of its own, its tcBorders' or its region's, starts under that line whatever the
     // cells beside it have: corpus 2, and the samples scored with this on and off.)
-    const under = more.setsTop ? 0 : Math.max(0, rowLine.get(c.row) - linePx(edge.top));
+    const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
     if (under > 0.01) grow.top += under;
     const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
     if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);

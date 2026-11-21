@@ -16,10 +16,14 @@ export function uniformRun(node, charStyle, theme) {
     if (!c.isText || (text && !c.text.trim())) return;
     const s = c.marks.find((m) => m.type === schema.marks.size);
     const f = c.marks.find((m) => m.type === schema.marks.font);
-    const sv = s ? s.attrs.val : null;
+    // (A size or font the run takes from its character style, w:rStyle, is its own as one set on it: a table's header
+    // cells, their text 9pt by a "Table Header" character style in 11pt paragraphs, were sized and set on their
+    // baseline as 11pt lines, the text 2px high.)
+    const cst = charStyle && (!s || !f) ? charStyle(c.marks.find((m) => m.type.name === 'cstyle')?.attrs.val) || null : null;
+    const sv = s ? s.attrs.val : cst?.size ? String(cst.size) : null;
     // A run naming a theme font (w:asciiTheme, kept raw) is in that font too.
     const tf = !f && theme && c.marks.find((m) => m.type.name === 'rextra')?.attrs.items?.find(([n, x]) => n === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(major|minor)/.test(x));
-    const fv = f ? f.attrs.val : tf ? theme[/w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(tf[1])[1]] || null : null;
+    const fv = f ? f.attrs.val : tf ? theme[/w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(tf[1])[1]] || null : cst?.font || null;
     most = most === null || sv == null ? null : Math.max(most || 0, Number(sv));
     const up = c.marks.some((m) => m.type.name === 'rextra' && (m.attrs.items || []).some(([n, x]) => n === 'position' && Number((/w:val="(-?\d+)"/.exec(x) || [])[1]) > 0));
     raised = raised !== false && up;

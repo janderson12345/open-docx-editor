@@ -69,6 +69,9 @@ export function fillFields(root, values) {
       if (props.has(key)) return props.get(key);
       return BUILTIN.has(key) ? null : 'Error! Unknown document property name.';
     }
+    // The file's name, as Word shows it when it prints (the saved result is the name the file had when last saved); with
+    // its folder (\p), which the browser doesn't know, the saved result stays.
+    if (name === 'FILENAME' && /\\p(?![a-z])/i.test(instr || '')) return null;
     const v = values[name];
     if (name !== 'PAGE' || v == null) return v;
     const sw = /\\\*\s*(\w+)/.exec(instr || '');

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { VERSION, FONTS_CDN } from '../src/index.js';
-import { fontStack, setFontSubstitutes, lineFactor } from '../src/ooxml/props.js';
+import { fontStack, setFontSubstitutes, setFontAlts, lineFactor } from '../src/ooxml/props.js';
 
 test('src/version.js is the package\'s version, and the stand-ins load from that release on jsDelivr', () => {
   assert.equal(VERSION, JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
@@ -25,4 +25,15 @@ test('"Times" is drawn and measured as Times New Roman, as Windows and Word prin
   assert.equal(fontStack('Times'), fontStack('Times New Roman'));
   assert.equal(fontStack('TIMES'), fontStack('Times New Roman'));
   assert.equal(lineFactor('Times'), lineFactor('Times New Roman'));
+});
+
+test('a missing font is drawn in the other name its file gives it, as Word draws it; a font Word fetches itself in its stand-in', () => {
+  setFontAlts(new Map([['Helvetica Neue', 'Sylfaen'], ['Roboto Condensed', 'Arial']]));
+  // (The file's word over the editor's own for the name, which is Arial.)
+  const hn = fontStack('Helvetica Neue');
+  assert.ok(hn.includes('Sylfaen') && !hn.includes('Arial'), hn);
+  // (Roboto Condensed is an Office cloud font: Word draws it as it is, not as the Arial its file names. Calibri is nearest.)
+  const rc = fontStack('Roboto Condensed');
+  assert.ok(rc.includes('Calibri') && !rc.includes('Arial'), rc);
+  assert.equal(lineFactor('Roboto Condensed'), lineFactor('Calibri'));
 });

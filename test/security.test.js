@@ -26,7 +26,7 @@ test('a document\'s values can\'t write CSS of their own', () => {
   assert.doesNotMatch(fontStack('A"}body{background:url(x)}').replace(/"[^"]*"/g, '""'), ESCAPES);
   assert.equal(highlightColor(evil), 'transparent');
   // Ordinary values still work.
-  assert.equal(pPrToCss(readPPr(kid(el('<w:pPr><w:jc w:val="center"/></w:pPr>'), 'pPr'))), 'text-align:center');
+  assert.equal(pPrToCss(readPPr(kid(el('<w:pPr><w:jc w:val="center"/></w:pPr>'), 'pPr'))), '--odx-trail:1;text-align:center');
   assert.match(rPrToCss(readRPr(kid(el('<w:rPr><w:color w:val="C00000"/><w:highlight w:val="yellow"/></w:rPr>'), 'rPr')), {}), /color:#C00000;background-color:#ffff00/);
 });
 
@@ -71,4 +71,19 @@ test('tags read two attributes at a time in moments, however long a crafted one 
   quick('resizeShape', () => { resized = session.resizeShape(crafted, 48, 36); });
   assert.match(resized.xml, /<wp:extent q='[^']*' cx="457200" cy="342900"\/>/); // (its own cx and cy, not those in q)
   assert.match(resized.xml, /<a:ext cx="457200" cy="342900"\/>/);
+});
+
+test('a long run of spaces that does not end its paragraph is marked in time that grows with its length', async () => {
+  const { schema } = await import('../src/editor/schema.js');
+  const { spanDecos } = await import('../src/editor/textspans.js');
+  const para = (n) => schema.node('doc', null, [schema.node('paragraph', null, [schema.text('a' + ' '.repeat(n) + 'b '.repeat(3))])]);
+  const time = (n) => { const d = para(n); let best = Infinity; for (let i = 0; i < 3; i++) { const t0 = performance.now(); spanDecos(d); best = Math.min(best, performance.now() - t0); } return best; };
+  time(1000);
+  const big = time(200000);
+  // (The pattern " +$" took seconds here: 200,000 spaces before a letter, each a place it tried again from.)
+  assert.ok(big < 250, `${big.toFixed(1)}ms for 200,000 spaces`);
+  // The closing spaces are still marked, from the first of them.
+  const decos = spanDecos(para(5));
+  const trail = decos.find((d) => d.type.attrs.class === 'odx-trail');
+  assert.ok(trail && trail.to - trail.from === 1, 'the one closing space is marked');
 });

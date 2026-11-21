@@ -1142,6 +1142,11 @@ function readTable(tbl, ctx) {
       const vMerge = vMergeEl ? attr(vMergeEl, 'val') || 'continue' : null;
       if (vMerge === 'continue' && open.has(col)) {
         open.get(col).attrs.rowspan++;
+        // (The top line this hidden part of the merged cell sets for itself, in eighths of a point: Word counts it in
+        // its row's height, styles.js tableCellCss.)
+        const top = kid(kid(tcPr, 'tcBorders'), 'top');
+        const tv = top && attr(top, 'val');
+        (open.get(col).attrs.vmTops ||= []).push(tv && tv !== 'nil' && tv !== 'none' ? Math.min(96, Math.max(0, Number(attr(top, 'sz')) || 0)) : 0);
         col += span;
         continue;
       }
@@ -1150,7 +1155,7 @@ function readTable(tbl, ctx) {
       const blocks = readBlocks(kids(tc).filter((c) => c !== tcPr), ctx);
       const cell = {
         type: 'table_cell',
-        attrs: { colspan: span, rowspan: 1, colwidth: widths, colwidth0: widths, tcPr: extra, sdt: cellSdt },
+        attrs: { colspan: span, rowspan: 1, colwidth: widths, colwidth0: widths, tcPr: extra, sdt: cellSdt, vmTops: null },
         content: blocks.length ? blocks : [{ type: 'paragraph' }],
       };
       if (vMerge === 'restart') for (let i = 0; i < span; i++) open.set(col + i, cell);

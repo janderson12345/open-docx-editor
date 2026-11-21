@@ -21,6 +21,7 @@ const tables = tableNodes({
   tableGroup: 'block',
   cellContent: 'block+',
   cellAttributes: {
+    vmTops: { default: null }, // a vertically merged cell: the top line each of its lower parts sets itself (eighths of a point), read only
     tcPr: { // [[localName, xml], ...] minus gridSpan/vMerge; a tracked cell insertion or deletion is shown (editor.css)
       default: [],
       // A pasted cell (a table from another program or a web page): its background and vertical alignment, as cell properties.
@@ -401,6 +402,9 @@ function rextraCss(items) {
       css.push(`font-family:var(--odx-font-${t})`, `--odx-lh:var(--odx-lh-${t})`);
     }
     // Complex-script formatting (editor.css: a run marked w:rtl or w:cs takes it instead of the Latin members).
+    // The automatic colour set on the run itself is the run's colour, over its style's (a heading style's teal, a table
+    // style's white first row): black, as Word prints it on a light ground.
+    else if (name === 'color' && /\bw:val="auto"/.test(xml) && !/w:themeColor=/.test(xml)) css.push('color:var(--odx-autotext, #000)');
     else if (name === 'bCs') css.push(`--odx-bcs:${on(xml) ? 'bold' : 'normal'}`);
     else if (name === 'iCs') css.push(`--odx-ics:${on(xml) ? 'italic' : 'normal'}`);
     else if (name === 'szCs' && Number(val(xml))) css.push(`--odx-szcs:${Number(val(xml)) / 2}pt`);

@@ -21,7 +21,7 @@
                          above the text; --odx-sbtop the most of it left above a page's top (pages.js); --odx-sbtb that space
                          again under a top-and-bottom picture (none in a paragraph without text of its own)
      --odx-mark          the paragraph mark's size, for an empty last line
-     --odx-hang, --odx-lsize, --odx-lfont, --odx-lbl-up, --odx-lbl-down   a list label: its indent, size, font, and
+     --odx-hang, --odx-lsize, --odx-lfont, --odx-lbl-own   a list label: its indent, size, font, and
                          the room a larger bullet adds above or below its line
      --odx-lweight, --odx-lstyle, --odx-lcolor, --odx-ldeco   its bold, italic, colour and underline (labelFormat)
      --odx-fx, --odx-fxt, --odx-fxl, --odx-fxr   a picture's effect extent (room for a shadow or glow) per side
@@ -55,7 +55,7 @@
 .odx-canvas { background: var(--odx-canvas); padding: 24px 16px; overflow: auto; }
 .odx-page { position: relative; margin: 0 auto; color: #000; isolation: isolate; }
 .odx-sheets { position: absolute; inset: 0; pointer-events: none; z-index: -2; } /* below a drawing behind the text (z-index -1, reader.js anchorCss), which had been drawn under the sheet, unseen; the page its own stacking context, so it is above the canvas */
-.odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
+.odx-hf { position: absolute; z-index: 0; opacity: .5; --odx-page-left: 0px; --odx-page-right: 0px; white-space: pre-wrap; word-wrap: break-word; } /* a word too long for its cell is broken, as in Word */
 /* Bold text is bold, not bolder than what it sits in (the browser's rule for <strong>): under a font drawn in its bold
    face, "Arial Bold", it was set in Arial Black. */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) strong { font-weight: bold; }
@@ -215,7 +215,7 @@
 :is(.odx-content, .odx-hf) .odx-opaque[data-kind="bookmarkStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="bookmarkEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="proofErr"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="permStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="permEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="commentRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="commentRangeEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveFromRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveFromRangeEnd"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveToRangeStart"], :is(.odx-content, .odx-hf) .odx-opaque[data-kind="moveToRangeEnd"] { display: none; } /* not even an empty box: one would stop the paragraph spacing around it from collapsing */
 .odx-content li, .odx-content p.odx-li { list-style: none; }
 .odx-content p.odx-bullet::before { font-family: Arial, 'Liberation Sans', sans-serif; }
-.odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; padding-top: var(--odx-lbl-up, 0); padding-bottom: var(--odx-lbl-down, 0); font-size: var(--odx-lsize, inherit); font-weight: var(--odx-lweight, inherit); font-style: var(--odx-lstyle, inherit); color: var(--odx-lcolor, inherit); text-decoration: var(--odx-ldeco, none); }
+.odx-content p.odx-li::before { content: attr(data-label); font-family: var(--odx-lfont, inherit); display: inline-block; min-width: var(--odx-hang, 18pt); text-indent: 0; white-space: pre; font-size: var(--odx-lsize, inherit); font-weight: var(--odx-lweight, inherit); font-style: var(--odx-lstyle, inherit); color: var(--odx-lcolor, inherit); text-decoration: var(--odx-ldeco, none); }
 /* Emphasis marks and run borders make their line taller in Word (schema.js rextraCss): a zero-width box of the line's
    own height at the run's start, padded above or below by that much. */
 /* A complex-script run (w:rtl / w:cs: Hebrew, Arabic...) takes the complex-script members of its formatting, as in Word:
@@ -245,12 +245,17 @@
 .odx-is::before { content: attr(data-odx-is) / ""; position: absolute; left: 0; top: 0; white-space: pre; line-height: normal; text-box: trim-both text alphabetic; color: #000; -webkit-text-fill-color: #000; -webkit-text-stroke: 0; text-shadow: none; text-emphasis: none; background: none; filter: var(--odx-is, none); pointer-events: none; user-select: none; }
 .odx-content p.odx-li.odx-picbullet::before { content: var(--odx-picbullet); } /* a picture bullet, its foot on the baseline as in Word */
 .odx-content p.odx-li.odx-contlines::before { content: none; } /* a paragraph's lines going on in a column of another width (pages.js) */
-/* A label in another font (a Courier New "o") doesn't change Word's line: its ascent and descent split differently from the
-   text's and would push the line apart by a fraction. Only Symbol bullets do, by their own rule (--odx-lbl-up/down). */
-.odx-content p.odx-li:not([style*="--odx-lbl-"])::before { line-height: 0; }
+/* A list label has no box of its own, whatever its font's metrics. Where it reaches above the text (a Symbol bullet, a
+   label in a taller font: pararules.js labelLine, --odx-lbl-own), Word's line is taller by that much above the text: a
+   zero-width box before the paragraph's first text (textspans.js odx-first), in that text's own font and line height,
+   so the line is the text's plus exactly that. */
+.odx-content p.odx-li::before { line-height: 0; }
+/* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
+   an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
+.odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
 /* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
    sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
-.odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); }
+.odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own, 0); }
 .odx-content table, .odx-hf table, .odx-notes table { border-collapse: collapse; table-layout: fixed; margin: 0; font: inherit; color: inherit; white-space: inherit; } /* (a quirks-mode page doesn't inherit fonts into tables) */
 .odx-content td, .odx-content th, .odx-hf td, .odx-hf th, .odx-notes td, .odx-notes th { padding: 0 7px; vertical-align: top; box-sizing: border-box; position: relative; overflow-x: clip; } /* headers, footers and notes too: Word puts cell text at the top */
 .odx-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(43,108,223,.15); pointer-events: none; }
@@ -445,6 +450,9 @@ td[data-odx-phantom] > * { display: none; }
 .odx-page:not(.odx-all-markup) .odx-content p.odx-joined-away, .odx-no-markup .odx-content p.odx-joined-away { display: none; }
 
 /* ==== The ribbon: tabs, groups, buttons, menus, galleries, the find bar and the context menu ==== */
+/* The spaces that end a centred or right-aligned paragraph (textspans.js, --odx-trail from the paragraph's alignment): no
+   width, so the line is centred or set right by its text alone, as Word sets it. */
+@container style(--odx-trail: 1) { .odx-trail { font-size: 0; letter-spacing: 0; } }
 .odx-content .odx-tab { white-space: pre; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* A tab that goes to the next line with the word after it (tabs.js): a line break, then its width there. */
 :where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl { display: inline !important; width: auto !important; }
@@ -667,7 +675,9 @@ body.odx-painting .odx-content { cursor: copy; }
 
 /* ==== Print: the print layer and printing (last: it overrides the screen rules above) ==== */
 /* The print relayer's lines (src/engine/printlines.js), built for printing only, over their hidden paragraphs. */
-.odx-printlines { position: absolute; inset: 0; pointer-events: none; font-kerning: none; font-variant-ligatures: none; }
+/* (Above the repeated header rows, z-index 2: their cells' shading is drawn with them, and covered their text, which is
+   drawn here: a table's header row at the top of its next page printed as an empty shaded band.) */
+.odx-printlines { position: absolute; inset: 0; pointer-events: none; font-kerning: none; font-variant-ligatures: none; z-index: 3; }
 .odx-printlines > .odx-pl-host { position: absolute; inset: 0; min-height: 0; }
 .odx-pl-hide { visibility: hidden !important; }
 /* Printing (and Save as PDF): only the pages, one sheet per printed page. */
@@ -686,6 +696,7 @@ body.odx-painting .odx-content { cursor: copy; }
 @media print { .odx-markup { display: none; } .odx-page.odx-has-markup { left: 0; } }
 @media print { .odx-nav, .odx-findbar { display: none !important; } }
 @media print { .odx-cmt { background: none !important; border-bottom: 0 !important; } }
+@media print { .odx-content, .odx-hf, .odx-repeat, .odx-notes { --odx-hair: 0px; } } /* table lines under a pixel wide at their own width on paper (styles.js) */
 @media print { .odx-hfedit-tag { display: none; } .odx-hfedit { outline: 0; } .odx-hf { opacity: 1; } .odx-content.odx-dim { opacity: 1; } }
 @media print { .odx-ruler { display: none; } }
 /* (Edge prints the blinking caret of a focused document: none on paper.) */

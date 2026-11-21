@@ -717,7 +717,7 @@ export function createPages(view, session, { sheet, scope }) {
             const d = contentTop(pg + 1) + headH - topS;
             pushes.set(s, d);
             offs.set(s, extraAt[s]);
-            if (!headerRows) closes.push(contentTop(pg + 1));
+            if (!headerRows) closes.push(contentTop(pg + 1) + 1);
             heads.push(contentTop(pg + 1));
             extra = extraAt[s] + d;
             j = s;
@@ -750,7 +750,7 @@ export function createPages(view, session, { sheet, scope }) {
       const d = contentTop(pg + 1) + headH - top;
       pushes.set(j, d);
       offs.set(j, extra); // everything above this row has moved down by this much (pushed and split rows)
-      if (!headerRows) closes.push(contentTop(pg + 1)); // the moved row's top border, where it now starts
+      if (!headerRows) closes.push(contentTop(pg + 1) + 1); // the moved row's top border, where it now starts: at the page's top, as Word draws it (it was a pixel above)
       heads.push(contentTop(pg + 1));
       extra += d;
     }
@@ -1080,7 +1080,9 @@ export function createPages(view, session, { sheet, scope }) {
     const pcs = getComputedStyle(b.el);
     const lh1 = pcs.getPropertyValue('--odx-lhlen').trim() === '1';
     const mult = lh1 ? 1 : parseFloat(pcs.getPropertyValue('--odx-mult')) || 1;
-    const lblUp = labelPad && b.el.classList.contains('odx-li') ? parseFloat(getComputedStyle(b.el, '::before').paddingTop) || 0 : 0;
+    // (The room a label reaching above the text adds over the first line, --odx-lbl-own: pararules.js labelLine; an
+    // empty item's is its label's padding.)
+    const lblUp = labelPad && b.el.classList.contains('odx-li') ? Math.max(parseFloat(getComputedStyle(b.el, '::before').paddingTop) || 0, parseFloat(pcs.getPropertyValue('--odx-lbl-own')) || 0) : 0;
     const lead0 = lines[0].screenTop - (b.el.getBoundingClientRect().top + parseFloat(pcs.paddingTop) + parseFloat(pcs.borderTopWidth)) - lblUp;
     const atLeast = lh1 && parseFloat(pcs.getPropertyValue('--odx-runmult')) !== 0;
     const lead = (mult > 1 || atLeast) && Math.abs(lead0) <= 20 ? lead0 : 0;
@@ -1409,6 +1411,27 @@ export function createPages(view, session, { sheet, scope }) {
   let blockCols = new WeakMap(); // block element -> its column ({ x from the text's left, w }), in columns
   const nodeIds = new WeakMap(); // block node -> a number (a block whose content changed is a new node)
   let idSeq = 0;
+  // A line at a table's page break, `y` px down the layer: in the colour and at the width of the top line of the row
+  // there (its first cell's; else the table's first cell's), a hairline at its own width on paper (--odx-hair). False
+  // for a table with no lines.
+  function breakRule(frag, t, r, origin, y) {
+    const at = [...t.rows].find((tr) => { const q = tr.getBoundingClientRect(); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
+    const shadow = getComputedStyle((at && at.cells[0]) || t.querySelector('td') || t).boxShadow;
+    if (!shadow || shadow === 'none') return false;
+    let color = null, w = 1;
+    for (const m of shadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px/g)) {
+      if (!color) color = m[1]; // (the first line named, unless a top line is)
+      if (Number(m[2]) === 0 && Number(m[3]) > 0) { color = m[1]; w = Number(m[3]); break; }
+    }
+    const line = document.createElement('div');
+    line.className = 'odx-repeat';
+    // (As an inset shadow at the box's top, as the cells' own lines are: a box's background is drawn to whole pixels, a
+    // hairline a full pixel thick on paper.)
+    const h = w <= 1 ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
+    line.style.cssText = `top:${y}px;left:${r.left - origin.left}px;width:${r.width}px;height:${Math.max(4, Math.ceil(w) + 2)}px;box-shadow:inset 0 ${h} 0 0 ${color || '#000'}`;
+    frag.append(line);
+    return true;
+  }
   function drawHeads(list) {
     // (Unchanged repeats are left as they are: redrawing a long document's every pass took a third of its layout time.)
     const key = list.map((h) => { if (!nodeIds.has(h.b.node)) nodeIds.set(h.b.node, ++idSeq); return `${nodeIds.get(h.b.node)}:${h.b.i}:${h.b.top.toFixed(1)}:${h.top}:${h.rule ? 1 : 0}:${h.dy ?? ''}:${h.dx ?? ''}:${h.cut ?? ''}:${h.stop ?? ''}:${h.end ?? ''}:${h.rewrap ? `${h.rewrap.width.toFixed(1)}/${h.rewrap.h.toFixed(1)}` : ''}`; }).join(',');
@@ -1459,13 +1482,7 @@ export function createPages(view, session, { sheet, scope }) {
       if (rule) {
         // The bottom border of a row's part left behind at a page break, in the table's line colour.
         const r = t.getBoundingClientRect();
-        const shadow = getComputedStyle(t.querySelector('td') || t).boxShadow;
-        if (!shadow || shadow === 'none') continue; // a borderless table gets no break rule
-        const color = (/rgb\([^)]*\)/.exec(shadow) || ['#000'])[0];
-        const line = document.createElement('div');
-        line.className = 'odx-repeat';
-        line.style.cssText = `top:${top - 1}px;left:${r.left - origin.left}px;width:${r.width}px;height:1px;background:${color}`;
-        frag.append(line);
+        if (!breakRule(frag, t, r, origin, top - 1)) continue; // a borderless table gets no break rule
         continue;
       }
       const copy = t.cloneNode(true);
@@ -1479,6 +1496,12 @@ export function createPages(view, session, { sheet, scope }) {
       wrap.style.cssText = `top:${top}px;left:${r.left - origin.left}px;width:${r.width}px`;
       wrap.append(copy);
       frag.append(wrap);
+      // The line under the repeated header rows: the top line of the row that follows them on this page, whose own is
+      // drawn at its cell's top, above its push (Word's print of a sample: a black line under the header row at the top
+      // of the table's second page; there was none).
+      let hh = 0;
+      for (let k = 0; k < b.headerRows && k < t.rows.length; k++) hh += t.rows[k].getBoundingClientRect().height;
+      breakRule(frag, t, r, origin, top + hh);
     }
     repeats.replaceChildren(frag);
   }
@@ -1560,6 +1583,10 @@ export function createPages(view, session, { sheet, scope }) {
       settleStoryShapes(el); // (a shape the body wraps round, below its paragraph: not in its height)
       clipExactRows(el); // (its exact rows as drawn: a cell's overflow doesn't grow them)
       fitRowspans(el);
+      // Its tabs to their stops, as when it is drawn (below): left as plain tab characters, each kept at its full width
+      // now that header and footer spaces are (editor.css), a footer line of a page number, a tab and text that just
+      // fits wrapped here alone, the footer measured a line taller than it is drawn and every page a line short.
+      try { layoutTabsIn(el, session, (p) => { const n = hfNodes.get(p); if (!n) throw new Error('no node'); return n; }); } catch { /* measured as it is */ }
       heights.set(doc, flowHeight(el)); // (what floats in it doesn't count: hfstory.js flowHeight)
       el.remove();
     }
@@ -2642,9 +2669,11 @@ export function createPages(view, session, { sheet, scope }) {
           target = p + 1;
           overflow = true;
         }
-      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + 1 || (b.rows && rowBreakIn(b.node)))) {
+      } else if (!(lineSplits && b.node.type === schema.nodes.paragraph && b.node.textContent.trim()) && (bottom + shift > contentBottom(p) + (b.node.type === schema.nodes.paragraph && !b.node.content.size ? lineSlack(b.el) : 1) || (b.rows && rowBreakIn(b.node)))) {
         // (A paragraph of text that passed the line test above stays: only the extra below its text passes the margin.
-        // One holding only a picture has no such extra, and moves.)
+        // One holding only a picture has no such extra, and moves. An empty one's line is its mark's, with that extra
+        // under it as a line of text has: a sample's empty 10pt paragraph at 1.15 lines, reaching 1.05px past the
+        // margin, stays at its page's foot in Word and had gone to the next page's top, everything after it 32px low.)
         // Tables continue on the next page row by row, as in Word; other blocks move whole.
         if (b.rows && bottom + shift > contentBottom(p) + 1 && setDown(b.node) && !crossFoot.has(b.node) && crossPasses < CROSS_MAX && outOfFlow(b.el) && !roomBeside(b.el)) {
           crossFoot.add(b.node); // (a float set down that reaches past the foot: in the flow, next pass)
@@ -2674,6 +2703,10 @@ export function createPages(view, session, { sheet, scope }) {
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
         while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        // A run of blocks each kept with the next that reaches back to the page's top is longer than the page: moving
+        // part of it on gains nothing, and Word breaks it where the page ends (generated documents: 55 to 120 paragraphs
+        // each kept with the next, 51 lines a page in Word; each had gone to a page of its own, 113 pages for 14).
+        if (!midSheet && m < k && m > 0 && keepsOn(blocks[m - 1], p)) m = k;
       }
       const moved = blocks[m];
       // With "page break before" or a new section Word keeps the paragraph's space before.

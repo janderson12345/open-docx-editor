@@ -177,12 +177,36 @@ export function storyDrawer(session) {
       if (p && sz) p.style.fontSize = `${sz[1] / 2}pt`;
       const font = empty && /<w:rFonts\b[^>]*w:(?:ascii|hAnsi)="([^"]+)"/.exec(mark);
       if (p && font) { p.style.fontFamily = fontStack(font[1]); p.style.setProperty('--odx-lh', lineFactor(font[1])); }
+      // (Or the theme's font, w:asciiTheme, as in the body, runs.js: a footer's empty last paragraph, its mark the theme's
+      // Calibri under a Times style, is Calibri's 17.9px line at 11pt, not Times's 16.9px; the line above it 1pt higher.)
+      const themed = empty && !font && session.theme && /<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)Theme="(major|minor)/.exec(mark);
+      const tf = themed && session.theme[themed[1]];
+      if (p && tf) { p.style.fontFamily = fontStack(tf); p.style.setProperty('--odx-lh', lineFactor(tf)); }
       // With text, as in the body: when every run shares a size or font, the line is sized from it.
       const run = !empty && p && uniformRun(node, (id) => session.charStyle?.(id), session.theme);
       if (run && run.size) p.style.fontSize = `${run.size / 2}pt`;
       else if (run && run.strut && run.raised && node.attrs.numId == null && !node.content.content.some((c) => c.type.name === 'hard_break')) p.style.fontSize = '0';
       else if (run && run.strut && Number(run.strut) < Number(session.styleRunProp(node.attrs.styleId, 'size') || 20)) p.style.fontSize = `${run.strut / 2}pt`;
       if (run && run.font) { p.style.fontFamily = fontStack(run.font); p.style.setProperty('--odx-lh', lineFactor(run.font)); }
+      // Spaces with no size or font of their own keep the paragraph style's, not the text's given to the paragraph
+      // above: 28 spaces before 20pt text in an 11pt style are 11pt spaces in Word, 93px wide; at the text's 20pt they
+      // were 169px, the line 69px too wide for its header and wrapped to two, the whole body 33px low.
+      // (They size no line, as in Word: 10pt spaces beside 9pt text had made a header line 0.6px taller.)
+      if (run && (run.size || run.font) && node.textContent.trim()) {
+        const size = Number(session.styleRunProp(node.attrs.styleId, 'size') || 20);
+        const tfn = session.styleRunProp(node.attrs.styleId, 'themeFont');
+        const fname = session.styleRunProp(node.attrs.styleId, 'font') || (tfn && session.theme?.[tfn.startsWith('major') ? 'major' : 'minor']) || null;
+        for (const b of p.querySelectorAll('span.odx-blank')) {
+          let sized = false;
+          let fonted = false;
+          for (let a = b.parentElement; a && a !== p; a = a.parentElement) {
+            if (a.style.fontSize || a.dataset.cstyle) sized = true;
+            if (a.style.fontFamily || a.dataset.cstyle) fonted = true;
+          }
+          if (run.size && !sized && size !== Number(run.size)) { b.style.fontSize = `${size / 2}pt`; b.style.lineHeight = '0'; }
+          if (run.font && !fonted && fname && fname !== run.font) b.style.fontFamily = fontStack(fname);
+        }
+      }
       return false;
     });
     // "Don't add space between paragraphs of the same style" (contextualSpacing), as in the body (editor.js): each such
@@ -209,7 +233,7 @@ export function storyDrawer(session) {
       b.style.borderTop = b.style.paddingTop = '';
     }
     styleTables(doc, el);
-    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, PROPS: props || (props = docProps(session.pkg)), RESOLVE: pageNo?.resolve });
+    fillFields(el, { PAGE: pageNo?.n ?? pageNo, PAGEFMT: pageNo?.fmt, NUMPAGES: pages, SECTIONPAGES: pages, FILENAME: session.fileName || null, PROPS: props || (props = docProps(session.pkg)), RESOLVE: pageNo?.resolve });
     return el;
   };
 }

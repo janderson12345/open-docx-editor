@@ -54,6 +54,7 @@ import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.
 import { twipsToPx } from '../ooxml/units.js';
 import { protectPlugin, tabLeaves } from './protect.js';
 import { tableArrow, tableVert } from './tablecaret.js';
+import { keepFitted } from './tablefit.js';
 
 let scopeSeq = 0;
 
@@ -82,7 +83,15 @@ class StyledTableView extends TableView {
       this.table.style.width = '';
       this.table.style.minWidth = '';
       for (const col of this.colgroup.children) col.style.width = '';
-    } else this.table.classList.remove('odx-autofit');
+    } else {
+      this.table.classList.remove('odx-autofit');
+      // (The file's own grid, px: the widths Word last laid the table out at, which the fitting takes when it comes out
+      // within a pixel and a half of them, tablefit.js.)
+      const grid = [...(node.attrs.tblGrid || '').matchAll(/<w:gridCol\b[^>]*\bw:w="(\d+)/g)].map((m) => Math.round((Number(m[1]) / 15) * 100) / 100);
+      if (grid.length) this.table.setAttribute('data-grid', grid.join(','));
+      else this.table.removeAttribute('data-grid');
+      keepFitted(this.table);
+    }
     // The table's placement, set property by property: the wrapper's style also carries the view's decorations (the
     // page push's margin-top), which a whole new style attribute would wipe out on each update (a click moving the caret
     // updates the view), leaving the table pulled up onto the page before.
@@ -146,9 +155,9 @@ function tableCells(table, pos, cache, session) {
     const node = table.nodeAt(rel);
     if (!node || !node.type.spec.tableRole?.includes('cell')) continue; // holes left by ragged rows
     const rect = map.findCell(rel);
-    cells.push({ rel, node, row: rect.top, col: rect.left, rowspan: rect.bottom - rect.top, colspan: rect.right - rect.left, tcPr: node.attrs.tcPr });
+    cells.push({ rel, node, row: rect.top, col: rect.left, rowspan: rect.bottom - rect.top, colspan: rect.right - rect.left, tcPr: node.attrs.tcPr, vmTops: node.attrs.vmTops });
   }
-  const key = table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')}`).join(';');
+  const key = table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')},${(c.vmTops || []).join('.')}`).join(';');
   let res = cache.get(key);
   if (!res) {
     res = tableCellCss(session.styles, table.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme);

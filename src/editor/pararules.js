@@ -5,6 +5,7 @@ import { listLevel, resolveStyle } from '../ooxml/styles.js';
 import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 import { outlineLevel } from './commands.js';
+import { wordAscent } from './baseline.js';
 
 // The paragraph mark's own font size (half-points), if it sets one.
 export function markSize(node) {
@@ -18,8 +19,25 @@ export function listLabel(node, session, l, label, attrs, style) {
   if (label != null) {
     const lvl = listLevel(session.numbering, l.numId, l.ilvl);
     const ind = lvl ? lvl.pPr : {};
-    const left = node.attrs.view.indLeft ?? ind.indLeft ?? 720;
-    const hang = -(node.attrs.view.indFirst ?? ind.indFirst ?? -360);
+    // A list that comes from the paragraph's style: an indent that style sets itself (it, or a style based on it) is
+    // the paragraph's, over the list level's, each part on its own (Word's prints of generated documents: a level at
+    // 2.375in hanging 0.25in under a style with a 0.25in left indent, the label at the margin and the text 0.25in in;
+    // with a hanging indent of its own, that one). With the list set on the paragraph itself the level's stands.
+    const styleInd = {};
+    if (node.attrs.numId == null && node.attrs.styleId) {
+      const seen = new Set();
+      for (let id = node.attrs.styleId; id && !seen.has(id); ) {
+        seen.add(id);
+        const st = session.styles.styles.get(id);
+        if (!st) break;
+        if (styleInd.indLeft == null && st.pPr.indLeft != null) styleInd.indLeft = st.pPr.indLeft;
+        if (styleInd.indFirst == null && st.pPr.indFirst != null) styleInd.indFirst = st.pPr.indFirst;
+        if (st.pPr.numId != null) break;
+        id = st.basedOn;
+      }
+    }
+    const left = node.attrs.view.indLeft ?? styleInd.indLeft ?? ind.indLeft ?? 720;
+    const hang = -(node.attrs.view.indFirst ?? styleInd.indFirst ?? ind.indFirst ?? -360);
     attrs.class = lvl && lvl.fmt === 'bullet' ? 'odx-li odx-bullet' : 'odx-li';
     // A number formatted as hidden text (w:vanish on its level, or on the paragraph mark it takes its look from) isn't
     // shown, nor the room after it, as in Word.
@@ -150,10 +168,15 @@ export function labelFormat(node, session, l, label, style) {
   if (bold != null) style.push(`--odx-lweight:${bold ? 'bold' : 'normal'}`);
   if (italic != null) style.push(`--odx-lstyle:${italic ? 'italic' : 'normal'}`);
   if (hexColor(color)) style.push(`--odx-lcolor:#${color}`);
+  // (The automatic colour, set on the mark or the level: black, over the paragraph style's colour, as the runs'.)
+  else if (color === 'auto') style.push('--odx-lcolor:var(--odx-autotext, #000)');
   if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
 }
 
-/** A list label's own size and font, and the room a taller Symbol bullet adds to its line. */
+const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
+const WINGDINGS_ASCENT = 0.8994; // Wingdings', 1842 of 2048
+
+/** A list label's own size and font, and the room a label reaching above the text adds to its line. */
 export function labelLine(node, session, l, label, run, style) {
   // A Symbol bullet is taller than the text (ascent 1.005em), and Word's line takes the tallest
   // ascent and descent on it, so the bullet's line comes out ~4% taller.
@@ -175,32 +198,33 @@ export function labelLine(node, session, l, label, run, style) {
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
   if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
-  // Wingdings (ascent 0.899em, descent 0.211em) fits inside Calibri's line and adds nothing.
-  if (lvlFont && /^symbol/i.test(lvlFont)) {
+  // A label in a font of its own (a Symbol bullet, a bullet or number set in Segoe UI over Calibri text): Word's line is
+  // taller by what the label's top reaches above the text's, its font's ascent with its external leading (baseline.js
+  // wordAscent) at the label's size; the label's descent never counts, and line spacing doesn't multiply it. Word's
+  // PDFs of 368 generated lists, each within 0.1px: bullets, "o" and numbers in Calibri, Segoe UI, Courier New, Times
+  // New Roman, Arial and Verdana over 12pt Times New Roman, Calibri and Arial, the label the text's size, 14pt (by its
+  // level or the paragraph mark) and 10pt; Symbol bullets over ten fonts at 9 to 12pt, the bullet the text's size, 2pt
+  // larger and 2pt smaller; single, 1.15 and double spacing. A Symbol bullet over 12pt Calibri is 0.85px a line, over
+  // Times New Roman 1.15px, Courier New 2.77px, Verdana and Segoe UI nothing; a Segoe UI bullet over Calibri 2.03px; a
+  // Courier New "o" nothing until it is larger than the text. The room goes above the first line's text (editor.css
+  // odx-first), so wrapped lines keep the text's own height. A Wingdings bullet (ascent 0.899em) is under every text
+  // font's at the text's size and adds nothing; 14pt over 12pt Calibri it adds 1.55px (a sample's Word PDF: 21.1px lines).
+  if (lvlFont) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
-    const base = lineFactor(fname);
-    // Only the line with the bullet: wrapped lines keep the text's own height (the label is padded above).
-    // Aptos lines take a bullet the text's size (sample S101), not a smaller one (a 10pt bullet over 12pt text). The
-    // extra goes above the text (sample S093: a heading's first bullet 2px lower than with it below;
-    // Fitted to Word's PDFs, not a font rule.
-    const lbl = Number(lblSize) || Number(run.size) || 20;
-    const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || lbl;
-    const line = node.attrs.view.line ?? session.styleProp(node.attrs.styleId, 'line') ?? session.styles.defaults.pPr.line ?? 240;
-    const aptos = /^aptos/i.test(fname);
-    // (Verdana's ascent, 1.0054em, already reaches the bullet's: nothing added. file-sample's DejaVu Sans list, set in
-    // Verdana: 0.11pt a bullet line over Word's.)
-    const tall = /^(verdana|dejavu sans)/i.test(fname);
-    let up = (aptos && lbl < txt) || tall ? 0 : (base >= 1.22 ? 1.2737 : Math.max(base, 1.2247)) - base;
-    // A bullet larger than the text: its own ascent over the text's descent, in the label's em (sample S071's 12pt
-    // Symbol bullets over 11pt Calibri, 24px lines in Word where the text's are 21.3).
-    if (up > 0 && !aptos && lbl > txt) up = (1.005 * lbl + (up + base - 1.005) * txt - base * txt) / lbl;
-    // (Exact line spacing: nothing makes Word's line taller, the bullet neither.)
+    const dings = /^wingdings$/i.test(lvlFont);
+    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase());
+    // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
+    const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
-    // (Multiple spacing stretches an Aptos bullet line's extra too: 1.25 lines add 1.25 times as much, Product
-    // Management. Not Calibri's at 1.15: sample S047, sample S067 and sample S125 lose lines with it.)
-    const mult = aptos && (!rule || rule === 'auto') ? Math.max(1, line / 240) : 1;
-    if (up > 0 && rule !== 'exact') style.push(`--odx-lbl-up:${+(up * mult).toFixed(4)}em`);
+    // (Lines sized from their runs: an exact line stays as set. A text font's label under "at least" isn't measured.)
+    if (la && ta && (symbol || dings ? rule !== 'exact' : !rule || rule === 'auto')) {
+      const lbl = Number(lblSize) || Number(run.size) || 20;
+      const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
+      const up = (la * lbl - ta * txt) / 2 * (4 / 3);
+      // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
+      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
+    }
   }
 }
 

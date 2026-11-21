@@ -132,3 +132,25 @@ test('a wider line from the row above takes its room out of the top margin of a 
   const none = grid((row) => (row === 0 ? cell(2, 8) : [['tcMar', mar]]), '');
   assert.equal(padTop(none[3]), 6.667); // no top line of its own: the line from above in full
 });
+
+test('a cell\'s own "no fill" clears the shade its band has from the table style', () => {
+  const cells = [];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) cells.push({ row, col, rowspan: 1, colspan: 1, tcPr: row === 1 && col === 1 ? [['shd', '<w:shd w:val="clear" w:color="auto" w:fill="auto"/>']] : [] });
+  const css = tableCellCss(readStyles(pkg), '<w:tblPr><w:tblStyle w:val="Corners"/><w:tblLook w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/></w:tblPr>', 3, 3, cells, parseXml).css;
+  assert.match(css[1], /background-color:#111111/i); // the first row keeps its shade
+  assert.doesNotMatch(css[4], /background-color/); // the cell that says "no fill" has none
+});
+
+test('the top line a merged cell\'s lower part sets counts in that part\'s row', () => {
+  const cells = [
+    { row: 0, col: 0, rowspan: 2, colspan: 1, tcPr: [], vmTops: [8] }, { row: 0, col: 1, rowspan: 1, colspan: 1, tcPr: [] },
+    { row: 1, col: 1, rowspan: 1, colspan: 1, tcPr: [['tcBorders', '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>']] },
+  ];
+  const css = tableCellCss(readStyles(pkg), '<w:tblPr></w:tblPr>', 2, 2, cells, parseXml).css;
+  assert.equal(padTop(css[2]), 1.333); // a 1pt line's room, though the cell itself draws none
+});
+
+test('a line under a pixel wide is drawn at its own width on paper', () => {
+  const c = grid(() => []);
+  assert.match(c[3], /box-shadow:inset 0px calc\(1 \* max\(0\.667px, calc\(var\(--odx-hair, 1px\) \* 1\)\)\)/);
+});

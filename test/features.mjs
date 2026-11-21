@@ -1883,6 +1883,42 @@ check(sb.length === 5 && sb[2][1] === 0 && Math.abs(sb[3][0] - sb[1][0] - (sb[1]
 await open('section-break-only.docx');
 const so = await tops();
 check(so.length === 7 && so[2][1] === 0 && so[3][1] > 15 && so[4][1] > 15 && Math.abs(so[5][0] - so[1][0] - 3 * so[1][1]) < 0.5, `a section break paragraph that is all of its section keeps its line (${JSON.stringify(so)})`);
+// A run of paragraphs each kept with the next that is longer than a page breaks where the page ends (why-tests gen2.py
+// keepchain; Word: 10 lines, then the 55 kept paragraphs from the next page's top, 51 on it and 4 with the 6 after).
+await open('keep-chain-long.docx');
+await page.waitForTimeout(600);
+const kc = await page.evaluate(() => [document.querySelectorAll('.odx-sheets > .odx-sheet').length, document.querySelectorAll('.odx-content > p').length]);
+check(kc[0] === 3 && kc[1] === 71, `a keep-with-next run longer than a page takes the pages its lines need (${JSON.stringify(kc)}, want 3 pages)`);
+// A list from the paragraph's style, the style setting a left indent itself: that indent, not the list level's
+// (why-tests gen2.py styleind; Word: the label at the margin, the level's left 2.375in).
+await open('list-style-indent.docx');
+const si = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return [ps[1].getBoundingClientRect().left - ps[0].getBoundingClientRect().left, parseFloat(getComputedStyle(ps[1]).textIndent)]; });
+check(Math.abs(si[0] - 24) < 0.5 && Math.abs(si[1] + 24) < 0.5, `a style's own indent over its list level's (${JSON.stringify(si)}, want 24px in, hanging 24px)`);
+// A list label in a font of its own makes Word's line taller by what its top reaches above the text's (why-tests gen2.py
+// lblfont, lblsym; Word, 12pt Calibri text: a Segoe UI bullet 2.03px a line, a Courier New "o" nothing, 14pt 0.31px, a
+// Verdana number 0.85px).
+await open('list-label-font.docx');
+const lf = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+const lfNear = (from, add) => [0, 1, 2].every((k) => Math.abs(lf[from + k] - lf[0] - add) < 0.12);
+check(lf.length === 18 && lfNear(3, 2.03) && lfNear(6, 0) && lfNear(9, 0.31) && lfNear(12, 0.85) && lfNear(15, 0), `a label's own font makes its line as much taller as Word does (${JSON.stringify(lf)})`);
+// Spaces with no size of their own before larger text in a header keep their style's size (gen2.py fix3; Word: 28 spaces
+// of 11pt Calibri, 93px, before 20pt text, the whole on one line).
+await open('header-leading-spaces.docx');
+const hs = await page.evaluate(() => { const p = document.querySelector('.odx-hf.odx-header p'); const t = p && [...p.querySelectorAll('.odx-t')].find((s) => s.textContent.trim()); return t ? [+p.getBoundingClientRect().height.toFixed(1), +(t.getBoundingClientRect().left - p.getBoundingClientRect().left).toFixed(1)] : null; });
+check(hs && hs[0] < 40 && Math.abs(hs[1] - 92.8) < 1.5, `a header's unsized spaces stay in their style's size (${JSON.stringify(hs)}, want one line, the text 92.8px in)`);
+// An empty paragraph whose line reaches past the bottom margin only by its line spacing's extra stays on its page, as a
+// line of text does (gen2.py fix3; Word: 46 lines, the empty 1.15-line paragraph under them, the next text at page 2's top).
+const onSheets = (a, b) => page.evaluate(([i, j]) => { const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((x) => x.getBoundingClientRect()); const ps = [...document.querySelectorAll('.odx-content > p')]; const of = (k) => { const r = ps[k].getBoundingClientRect(); const n = sh.findIndex((x) => r.top >= x.top - 1 && r.top < x.bottom); return [n + 1, n < 0 ? null : +(r.top - sh[n].top).toFixed(1)]; }; return [sh.length, of(i), of(j)]; }, [a, b]);
+await open('empty-line-page-foot.docx');
+await page.waitForTimeout(600);
+const ef = await onSheets(46, 47);
+check(ef[0] === 2 && ef[1][0] === 1 && ef[2][0] === 2 && Math.abs(ef[2][1] - 96) < 1.5, `an empty line at a page's foot stays there (${JSON.stringify(ef)}, want it on page 1, the next text at page 2's top)`);
+// A footer is measured with its tabs at their stops, as it is drawn (gen2.py fix3; Word: three footer lines, the first
+// text after a right tab that just fits, 46 body lines above them).
+await open('footer-tab-fits.docx');
+await page.waitForTimeout(600);
+const ftab = await onSheets(45, 46);
+check(ftab[0] === 2 && ftab[1][0] === 1 && ftab[2][0] === 2 && Math.abs(ftab[2][1] - 96) < 1.5, `a footer as tall as it is drawn, its tabs laid out (${JSON.stringify(ftab)}, want 46 lines on page 1)`);
 
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
