@@ -336,6 +336,9 @@ function readTableStyle(s) {
   t.place = {};
   if (attr(kid(tp, 'jc'), 'val')) t.place.jc = attr(kid(tp, 'jc'), 'val');
   if (attr(kid(kid(s, 'trPr'), 'jc'), 'val')) t.place.rowJc = attr(kid(kid(s, 'trPr'), 'jc'), 'val');
+  // (Its rows header rows, w:tblHeader in its trPr: a row of such a table that says nothing of its own is one.)
+  const th = kid(kid(s, 'trPr'), 'tblHeader');
+  if (th) t.place.header = !/^(0|false|off)$/.test(attr(th, 'val') || '');
   if (ind && attr(ind, 'type') !== 'pct' && Number.isFinite(Number(attr(ind, 'w')))) t.place.ind = Number(attr(ind, 'w'));
   // It formats its text or paragraphs at all: a colour, a language, a spacing, or in a part of the table (a bold first
   // row); cell and table settings alone don't count (tableStylesCss: Word's older rule for a cell's font size).
@@ -373,6 +376,12 @@ export function resolveTableStyle(styles, id, seen = new Set()) {
   out.cond = { ...base.cond };
   for (const [k, v] of Object.entries(st.table.cond)) out.cond[k] = base.cond[k] ? merge(base.cond[k], v) : v;
   return out;
+}
+
+/** Whether a table's style makes its rows header rows (w:tblHeader in the style's trPr), from the table's w:tblPr XML. */
+export function styleHeaderRows(info, tblPrXml) {
+  const id = /<w:tblStyle\b[^>]*\bw:val="([^"]+)"/.exec(tblPrXml || '')?.[1] || info.defaultTable;
+  return !!(id && resolveTableStyle(info.styles, id)?.place?.header);
 }
 
 /**

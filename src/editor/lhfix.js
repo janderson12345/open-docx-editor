@@ -206,11 +206,39 @@ export function applyLineFix(view) {
     return false;
   });
   box.remove();
+  overfullCells(view, decos);
   const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
   view.dispatch(view.state.tr.setMeta(key, decos).setMeta('addToHistory', false));
   return true;
+}
+
+/**
+ * Cells of exact-height rows holding more than the row has room for, over several paragraphs: marked (odx-exover), so
+ * the row keeps its height and the text starts at the cell's top, cut at the row's foot, as in Word. (One paragraph is
+ * held to the row's room by its own max-height, editor.css; a browser's cell is as tall as all it holds, and the row
+ * with it: a sample's 78px row holding five lines and an empty paragraph came out 13px taller, its other cells' centred
+ * text 6.5px lower.) Measured from the paragraphs' own boxes, which the mark doesn't move.
+ */
+function overfullCells(view, decos) {
+  for (const tr of view.dom.querySelectorAll('tr[data-exact]')) {
+    const h = parseFloat(tr.style.getPropertyValue('--odx-trh'));
+    if (!(h > 0)) continue;
+    for (const td of tr.cells) {
+      if (td.childElementCount < 2 || td.rowSpan > 1) continue; // (a cell merged down several rows has their height, not this one's)
+      const first = td.firstElementChild.getBoundingClientRect(), end = td.lastElementChild.getBoundingClientRect();
+      if (!first.height && !end.height) continue; // not laid out
+      const cs = getComputedStyle(td);
+      const room = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      const held = end.bottom - first.top + Math.max(0, parseFloat(getComputedStyle(td.firstElementChild).marginTop) || 0);
+      if (held <= room + 0.5) continue;
+      let pos;
+      try { pos = view.posAtDOM(td, 0) - 1; } catch { continue; }
+      const cell = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+      if (cell && /^table_(cell|header)$/.test(cell.type.name)) decos.push(Decoration.node(pos, pos + cell.nodeSize, { class: 'odx-exover' }, { key: 'exover' }));
+    }
+  }
 }
 
 /** A paragraph's first text's elements below it (where its line height is probed), or []. */

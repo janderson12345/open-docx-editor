@@ -368,6 +368,10 @@ td[data-odx-phantom] > * { display: none; }
    paragraph no taller than the row's room under its space before (above): one that fits is placed with its space, one
    that doesn't fills the row from its top. */
 .odx-content tr[data-exact] > td > p:last-child, .odx-hf tr[data-exact] > td > p:last-child, .odx-repeat tr[data-exact] > td > p:last-child { margin-bottom: 0 !important; padding-bottom: var(--odx-sa, 0px); }
+/* A cell holding more than its exact row has room for, over several paragraphs (marked by lhfix.js): from the top, and
+   no taller for it (the last paragraph's margin takes back all the cell holds, so the cell is its set height). */
+.odx-content tr[data-exact] > td.odx-exover { vertical-align: top !important; }
+.odx-content tr[data-exact] > td.odx-exover > :last-child { margin-bottom: -100000px !important; }
 /* The row's own edge clips (Word shows text into the cell's bottom margin, not past the row). */
 .odx-content tr[data-exact] > td, .odx-hf tr[data-exact] > td, .odx-repeat tr[data-exact] > td { overflow: clip; }
 /* (A bottom border doesn't lift an exact row's centred text in Word, as a top one lowers it: sample S108's "PLAN RV:" row,

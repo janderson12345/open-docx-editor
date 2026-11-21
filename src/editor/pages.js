@@ -39,6 +39,7 @@ import { baselineCss, blockShifts, cellShifts, hfShifts, shiftFor } from './base
 import { buildPrintLines, removePrintLines, engineOn } from '../engine/printlines.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { placeVar, padOf } from '../ooxml/place.js';
+import { styleHeaderRows } from '../ooxml/styles.js';
 
 // Spacers that push a paragraph's remaining lines onto the next page. They
 // are view decorations (not document content), set by the layout pass below.
@@ -1622,8 +1623,16 @@ export function createPages(view, session, { sheet, scope }) {
     return (tw / 20) * (4 / 3);
   };
   // How many rows a table starts with that repeat at each page's top (w:tblHeader).
-  const headerRowsOf = (table) => { let h = 0; while (h < table.childCount && isHeader(table.child(h))) h++; return h; };
-  const isHeader = (row) => /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '');
+  // (A row that says nothing of its own is one when its table's style makes its rows header rows: Word's prints of 12
+  // generated documents, the style's setting with the first row's own on, off or absent. Every row a header row: none
+  // repeats here; Word then repeats the first on the second page only.)
+  const headerRowsOf = (table) => {
+    const byStyle = styleHeaderRows(session.styles, table.attrs.tblPr);
+    let h = 0;
+    while (h < table.childCount && isHeader(table.child(h), byStyle)) h++;
+    return h;
+  };
+  const isHeader = (row, byStyle = false) => (/<w:tblHeader\b/.test(row.attrs.trPr || '') ? /<w:tblHeader(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr) : byStyle);
   // (In newspaper columns a page break goes on at the next page's first column, a column break at the next column.)
   const breakKindOf = (node) => {
     let kind = null;
