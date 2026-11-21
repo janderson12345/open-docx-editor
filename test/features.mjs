@@ -2097,6 +2097,20 @@ await page.waitForTimeout(300);
 const jls = await page.evaluate(() => [document.querySelectorAll('.odx-content [style*="word-spacing:-"], .odx-content [style*="word-spacing: -"]').length, document.querySelectorAll('.odx-content [style*="letter-spacing"]').length]);
 check(jls[0] >= 5 && jls[1] >= 50, `justified lines of letter-spaced runs squeezed (${JSON.stringify(jls)}, want 5 or more squeezed pieces)`);
 
+// An underlined tab has its line across its width, through the letters that reach below it, and the spaces that end a
+// paragraph have none (why-tests gen2.py utab; Word: one unbroken line from "Alpha" across the tab to "Bravo"'s end;
+// none under forty underlined spaces at a paragraph's end).
+await open('underlined-tab.docx');
+const utb = await page.evaluate(() => { const t = document.querySelector('.odx-content .odx-tab'); return [getComputedStyle(t).textDecorationLine, getComputedStyle(t, '::after').content !== 'none', getComputedStyle(t.closest('p')).textDecorationSkipInk]; });
+await open('underlined-closing-spaces.docx');
+const ucs = await page.evaluate(() => { const t = document.querySelector('.odx-content .odx-trail'); return t ? getComputedStyle(t).fontSize : null; });
+check(/underline/.test(utb[0]) && utb[1] && utb[2] === 'none' && ucs === '0px', `an underlined tab's line across it, none under a paragraph's closing spaces (${JSON.stringify([utb, ucs])})`);
+
+// An underline with a colour of its own is drawn, in that colour (gen2.py ucol; Word: a red line under black text).
+await open('underline-own-colour.docx');
+const uoc = await page.evaluate(() => { const e = document.querySelector('.odx-content [style*="text-decoration-color"]'); const cs = e && getComputedStyle(e); return cs ? [cs.textDecorationLine, cs.textDecorationColor, cs.color] : null; });
+check(uoc && /underline/.test(uoc[0]) && uoc[1] === 'rgb(255, 0, 0)' && uoc[2] === 'rgb(0, 0, 0)', `an underline in its own colour (${JSON.stringify(uoc)})`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

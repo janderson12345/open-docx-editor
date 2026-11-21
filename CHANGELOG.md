@@ -30,6 +30,10 @@ within 1px of Word's went from 47% to 74%, and documents laid out exactly as Wor
 - **A header's or footer's text box is set from the page's edge and shows each page's own number** (six generated
   footers): a shape placed from the page's edge stood in from the margin instead, and up to 1.7px high; a page
   number inside a text box showed the number it was saved with on every page.
+- **Underlines as Word draws them: in their own colour, across tabs, through descenders** (11 generated documents):
+  an underline given a colour of its own was not drawn at all; an underlined tab had no line (Word draws it across
+  the tab's whole width); the browser left a gap in the line round each letter that reaches below it, where Word's
+  is unbroken; and underlined spaces at a paragraph's end had a line where Word draws none.
 - **A link without the Hyperlink style is drawn as its text** (eight generated documents): Word gives a link no
   colour or line of its own, only the Hyperlink style it puts on the links it makes; a contents page of unstyled
   links was blue and underlined. A link made in the editor keeps its blue until it is saved.
