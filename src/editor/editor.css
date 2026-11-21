@@ -195,7 +195,10 @@
    Word's line under "Alpha" unbroken from the A's left to the tab after it, the browser's cut either side of the p). */
 .odx-content, .odx-hf, .odx-pl-host { text-decoration-skip-ink: none; }
 /* A block moved down to its page's top, or under something set on the page (pages.js): the room above it. */
-.odx-content [style*="--odx-push:"] { margin-top: var(--odx-push) !important; }
+/* (Over every other top margin, the important ones too, as it was when set on the element itself: a section's kept
+   last paragraph and the paragraph after a floated table set theirs with more classes than this rule has. The
+   :not(#...) gives it an id's weight.) */
+.odx-content [style*="--odx-push:"]:not(#odx-no-such-id) { margin-top: var(--odx-push) !important; }
 /* Two characters Word never breaks a line between, where the browser would (textspans.js): ")(", "?a". */
 .odx-content .odx-nb, .odx-hf .odx-nb, .odx-pl-host .odx-nb { white-space: nowrap; }
 .odx-content :not(s, del), .odx-hf :not(s, del) { text-decoration-thickness: from-font; } /* (not struck-out text: its line's own thickness isn't measured) */
