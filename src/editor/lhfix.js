@@ -207,6 +207,7 @@ export function applyLineFix(view) {
   });
   box.remove();
   overfullCells(view, decos);
+  wideLabels(view, decos);
   const sig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).join(','); // (positions here, not in the keys: pages.js applyPushes)
   if (sig === last) return false;
   last = sig;
@@ -238,6 +239,47 @@ function overfullCells(view, decos) {
       const cell = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
       if (cell && /^table_(cell|header)$/.test(cell.type.name)) decos.push(Decoration.node(pos, pos + cell.nodeSize, { class: 'odx-exover' }, { key: 'exover' }));
     }
+  }
+}
+
+let labelMemo = new WeakMap(); // paragraph node -> the room its wide label needs (px), 0 for none
+let labelFonts = -1;
+let labelCtx = null;
+/**
+ * List labels wider than the room before their text (pararules.js data-ltab): the text starts at the next tab stop after
+ * the label's end, as in Word, where it had followed the label with nothing between ("Appendix A." and its title). The
+ * label's width from its own font, measured apart from the page (the label's box is as wide as the room it's given).
+ */
+function wideLabels(view, decos) {
+  if (labelFonts !== fontLoads) { labelMemo = new WeakMap(); labelFonts = fontLoads; }
+  for (const el of view.dom.querySelectorAll('p.odx-li[data-ltab]')) {
+    let pos;
+    try { pos = view.posAtDOM(el, 0) - 1; } catch { continue; }
+    const node = pos >= 0 ? view.state.doc.nodeAt(pos) : null;
+    if (!node || node.type !== schema.nodes.paragraph) continue;
+    let room = labelMemo.get(node);
+    if (room == null) {
+      room = 0;
+      const [start, gap, dts, ...own] = el.dataset.ltab.split(',').map(Number);
+      const label = el.dataset.label || '';
+      const cs = label ? getComputedStyle(el, '::before') : null;
+      const size = cs ? parseFloat(cs.fontSize) || 0 : 0;
+      // (No wider than its letters could be: most labels, without measuring.)
+      if (size && label.length * size * 1.2 > gap / 15) {
+        labelCtx = labelCtx || document.createElement('canvas').getContext('2d');
+        labelCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`;
+        const width = labelCtx.measureText(label).width + label.length * (parseFloat(cs.letterSpacing) || 0);
+        if (width > gap / 15 + 0.5) {
+          const end = start + width * 15;
+          const mine = own.find((t) => t > end + 1);
+          const pitch = dts > 0 ? dts : 720;
+          const stop = mine ?? (Math.floor((Math.max(end, own.length ? own[own.length - 1] : 0) + 1) / pitch) + 1) * pitch;
+          room = Math.round(((stop - start) / 15) * 100) / 100;
+        }
+      }
+      labelMemo.set(node, room);
+    }
+    if (room > 0) decos.push(Decoration.node(pos, pos + node.nodeSize, { style: `--odx-hangw:${room}px` }, { key: `lw:${room}` }));
   }
 }
 

@@ -297,6 +297,7 @@ const roman = (n) => {
  */
 export function listCounter(numbering) {
   const counters = new Map(); // abstractId -> number[]
+  const started = new Set(); // "numId:ilvl" of lists that start over (w:startOverride), once they have
   return (numId, ilvl) => {
     const n = numbering.nums.get(String(numId));
     if (!n) return null;
@@ -307,7 +308,12 @@ export function listCounter(numbering) {
     let c = counters.get(n.abstractId);
     if (!c) counters.set(n.abstractId, (c = []));
     const startOf = (i) => n.overrides[i] ?? levels[i]?.start ?? 1;
-    c[ilvl] = c[ilvl] == null ? startOf(ilvl) : c[ilvl] + 1;
+    // (A list that starts over, w:startOverride on its level, does at its first paragraph, though another list of the
+    // same definition has counted before it; the count then goes on from there in both. Word's prints of generated
+    // documents: A B, the second list set to start at 5: E F, the first again: G H.)
+    const over = n.overrides[ilvl] != null && !started.has(`${numId}:${ilvl}`);
+    if (n.overrides[ilvl] != null) started.add(`${numId}:${ilvl}`);
+    c[ilvl] = c[ilvl] == null || over ? startOf(ilvl) : c[ilvl] + 1;
     c.length = ilvl + 1; // deeper levels restart
     return lvl.text.replace(/%(\d)/g, (_, d) => {
       const i = Number(d) - 1;
@@ -565,7 +571,14 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
   // (At the right and wider than the column: its right edge on the margin, all of the overhang at the left.)
   else if ((jc === 'right' || jc === 'end') && wPx) css.push('width:fit-content', `margin-left:calc(100% - ${+wPx.toFixed(2)}px)`, 'margin-right:0');
   else if (jc === 'right' || jc === 'end') css.push('width:fit-content', 'margin-left:auto');
-  else if (left) css.push(`margin-left:${+left.toFixed(2)}px`);
+  else {
+    // (At the left margin a table starts half its left line's width in from where its indent puts it, all of it moved
+    // by that: Word's prints of 15 generated documents, outer lines of a quarter point to 6pt, the lines between the
+    // cells as wide or not: each cell's text half the outer line's width further right, whatever the inside lines'.)
+    const own = readBorders(kid(el, 'tblBorders')).left, lb = own || ts.borders?.left;
+    const half = lb && lb.val && lb.val !== 'nil' && lb.val !== 'none' ? ((lb.sz / 8) * (4 / 3)) / 2 : 0;
+    if (left || half) css.push(`margin-left:${+(left + half).toFixed(2)}px`);
+  }
   // A right-to-left table (w:bidiVisual): its first column at the right, its indent from the right margin. (Its cells'
   // paragraphs keep their own direction: editor.css and styles.js give every paragraph one.)
   // (Its style's bottom line, px: the room under a last row of an exact height, when the table sets no borders of its

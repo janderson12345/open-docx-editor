@@ -42,7 +42,11 @@ export function listLabel(node, session, l, label, attrs, style) {
     // A number formatted as hidden text (w:vanish on its level, or on the paragraph mark it takes its look from) isn't
     // shown, nor the room after it, as in Word.
     const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr');
-    const hidden = !!lvl?.hidden || (!!mark && /<w:vanish(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(mark[1]));
+    // (Nor a paragraph holding only a page break: Word counts it and shows no number for it, an "Appendix B." that had
+    // stood alone at the foot of the page before the break. Its prints of generated documents.)
+    let breakOnly = node.childCount > 0;
+    node.forEach((c) => { if (!(c.type.name === 'hard_break' && c.attrs.type === 'page')) breakOnly = false; });
+    const hidden = breakOnly || !!lvl?.hidden || (!!mark && /<w:vanish(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(mark[1]));
     attrs['data-label'] = hidden ? '' : label;
     // A picture bullet (w:lvlPicBulletId): the picture in the label's place (editor.css odx-picbullet).
     // (Its picture is in the document's stylesheet once, docx.js picBulletCss, not in every item's style.)
@@ -60,8 +64,17 @@ export function listLabel(node, session, l, label, attrs, style) {
     // (Word 2003's rule, w:doNotUseIndentAsNumberingTabStop: the hanging indent is the label's stop only when it comes
     // before the next tab stop; past it, the text after the label goes to that stop.)
     const viaIndent = hang > 0 ? (session.compat?.has('doNotUseIndentAsNumberingTabStop') ? Math.min(hang, next) : hang) : next;
-    const gap = hidden || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
+    // (A space after the label, w:suff="space": the label and a space, the text right after, as nothing's.)
+    const spaced = !hidden && lvl && lvl.suff === 'space';
+    if (spaced && label != null) attrs['data-label'] = `${label} `;
+    const gap = hidden || spaced || (lvl && lvl.suff === 'nothing') ? 0 : viaIndent;
     style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
+    // A label wider than that room: the text goes on from the next tab stop after the label's end, the paragraph's own
+    // or, past its last, a default one (lhfix.js wideLabels measures the label and sets the room; where the label
+    // starts, the room, the default stops' pitch and the paragraph's stops, twips). Word's prints of 20 generated
+    // documents: a label of 83px with hanging indents of 0 to 720 twips, left-aligned and centred, with a stop of the
+    // paragraph's own and none.
+    if (gap > 0 && !(lvl && (lvl.jc === 'right' || lvl.jc === 'end' || lvl.jc === 'center'))) attrs['data-ltab'] = [start, gap, dts, ...own.sort((x, y) => x - y)].join(',');
     // A right-aligned number ends at its position, not starts there (roman "i." / "ii." levels): drawn in its box
     // that much to the left, the text still at the indent.
     if (lvl && (lvl.jc === 'right' || lvl.jc === 'end')) attrs.class += ' odx-lbl-right';

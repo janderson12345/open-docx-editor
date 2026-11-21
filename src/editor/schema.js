@@ -179,6 +179,7 @@ export const schema = new Schema({
           if (d.style) a.style = (a.style ? a.style + ';' : '') + d.style;
           if (d.role) { a.role = d.role; a['aria-level'] = d['aria-level']; } // (a heading, editor.js)
           for (const k of ['data-frame', 'data-fy', 'data-fyalign']) if (d[k] != null) a[k] = d[k]; // (a frame, frames.js)
+          if (typeof d['data-ltab'] === 'string' && /^[0-9.,-]+$/.test(d['data-ltab'])) a['data-ltab'] = d['data-ltab']; // (a list label's stops, pararules.js)
         }
         if (node.attrs.sdt) a['data-field'] = (/<w:tag w:val="([^"]*)"/.exec(node.attrs.sdt.open) || [])[1] || '';
         return ['p', a, 0];
