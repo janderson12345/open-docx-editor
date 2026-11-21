@@ -780,7 +780,12 @@ export function createPages(view, session, { sheet, scope }) {
   };
   // (A floating table's keeps don't hold: Word breaks its rows as without them; generated documents.)
   const floating = (table) => /<w:tblpPr\b/.test(table.attrs.tblPr || '');
-  const cantSplit = (row, table) => /<w:cantSplit(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '') || (!(table && floating(table)) && keepsWhole(row));
+  // (Nor a row of exact height: it moves whole, its text cut to the row or not. Word's prints of 24 generated tables at
+  // a page's foot, rows of three lines: automatic rows break line by line, exact ones never, also 0.5in ones that cut
+  // their text. Such a row can't grow to span the page's foot either: broken, the rows after it stayed where they
+  // were and ran off the page, a sample's 21-row table printed over the footer and every page after it out of place.)
+  const exactRow = (row) => /<w:trHeight\b[^>]*w:hRule="exact"/.test(row.attrs.trPr || '');
+  const cantSplit = (row, table) => /<w:cantSplit(?![^>]*w:val="(?:0|false|off)")/.test(row.attrs.trPr || '') || exactRow(row) || (!(table && floating(table)) && keepsWhole(row));
 
   // Our spacers in a cell (not in the tables in it), and how much they have made a row of a table in a cell taller:
   // what's below them is measured less that, at its natural place.
@@ -895,7 +900,7 @@ export function createPages(view, session, { sheet, scope }) {
         const t = cellTable(el);
         if (!t || !t.tBodies[0] || !flush()) return false; // anything else in the cell: move the row whole
         for (const ntr of t.tBodies[0].rows) {
-          if (/<w:cantSplit/.test(ntr.dataset?.trpr || '')) return false;
+          if (/<w:cantSplit|<w:trHeight\b[^>]*w:hRule="exact"/.test(ntr.dataset?.trpr || '')) return false;
           const start = extra;
           let most = start;
           for (const ntd of ntr.cells) {
