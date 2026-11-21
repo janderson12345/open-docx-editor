@@ -1249,6 +1249,7 @@ export function createPages(view, session, { sheet, scope }) {
     range.deleteContents();
     copy.removeAttribute('contenteditable');
     copy.style.removeProperty('margin-top');
+    copy.style.removeProperty('--odx-push');
     copy.style.margin = '0';
     copy.style.textIndent = '0';
     copy.classList.add('odx-contlines'); // (no list number or bullet: editor.css)
@@ -1302,6 +1303,7 @@ export function createPages(view, session, { sheet, scope }) {
     const copy = b.el.cloneNode(true);
     copy.removeAttribute('contenteditable');
     copy.style.removeProperty('margin-top');
+    copy.style.removeProperty('--odx-push');
     copy.style.margin = '0';
     const lines = [];
     const bottom = b.top + heightAt(copy, widthIn(b, g, p), lines);
@@ -1570,7 +1572,8 @@ export function createPages(view, session, { sheet, scope }) {
         host.className = 'odx-content';
         const copy = b.el.cloneNode(true);
         copy.removeAttribute('contenteditable');
-        copy.style.removeProperty('margin-top'); // (its page push, set as !important: margin 0 alone wouldn't take)
+        copy.style.removeProperty('margin-top');
+        copy.style.removeProperty('--odx-push'); // (its page push, which editor.css makes an !important margin: margin 0 alone wouldn't take)
         copy.style.margin = '0';
         const to = stop ?? end; // (only down to there: the next part's cut, or a table's header rows)
         copy.style.clipPath = `inset(${cut.toFixed(2)}px ${-CLIP_SIDE}px ${to != null ? (r.height - to).toFixed(2) : -CLIP_TOP}px ${-CLIP_SIDE}px)`;
@@ -2321,7 +2324,10 @@ export function createPages(view, session, { sheet, scope }) {
       // one. (Only after a balanced columns section does a block move up past it.)
       const mb = colRegs.length && k > 0 ? parseFloat(getComputedStyle(blocks[k - 1].el).marginBottom) || 0 : 0;
       const set = margin < mb ? Math.round((margin - mb) * 10) / 10 : margin;
-      onBlock(i, { style: `margin-top:${set}px !important` }, `mt:${set}`);
+      // (As a property of its own, which editor.css makes the margin: a decoration's style is taken off name by name
+      // when it goes, and one that set margin-top took the paragraph's own space before with it. A paragraph pushed to
+      // the next page in one pass and back in a later one stood 14px high, its 10pt of space before gone.)
+      onBlock(i, { style: `--odx-push:${set}px` }, `mt:${set}`);
     }
     lastMargins = margins;
     marginsDoc = doc;

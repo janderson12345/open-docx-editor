@@ -191,6 +191,10 @@
    under the baseline and a pixel thick at 12pt: 0.7px above Word's under Calibri, 2.5px under Courier New. From the font
    it still sets the line on whole pixels: within half a pixel of Word's.) */
 .odx-content, .odx-hf, .odx-pl-host { text-underline-position: from-font; }
+/* A block moved down to its page's top, or under something set on the page (pages.js): the room above it. */
+.odx-content [style*="--odx-push:"] { margin-top: var(--odx-push) !important; }
+/* Two characters Word never breaks a line between, where the browser would (textspans.js): ")(", "?a". */
+.odx-content .odx-nb, .odx-hf .odx-nb, .odx-pl-host .odx-nb { white-space: nowrap; }
 .odx-content :not(s, del), .odx-hf :not(s, del) { text-decoration-thickness: from-font; } /* (not struck-out text: its line's own thickness isn't measured) */
 .odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
 /* Under a character style (Hyperlink, which Word gives every link it makes) the link has that style's look and what

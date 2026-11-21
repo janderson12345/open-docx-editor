@@ -320,6 +320,11 @@ export function listCounter(numbering) {
     started.add(String(numId));
     c[ilvl] = c[ilvl] == null || over ? startOf(ilvl) : c[ilvl] + 1;
     c.length = ilvl + 1; // deeper levels restart
+    // (A paragraph of a deeper level before any of an upper one uses that upper level's first number: the upper level's
+    // own first paragraph, when it comes, has the second. Word's prints of 14 generated lists, upper roman over decimal
+    // over letters: 1.1 then the first top-level paragraph is II, I.1.a then I.2 then II, the same whether the deeper
+    // levels' text names the upper number or not.)
+    for (let i = 0; i < ilvl; i++) if (c[i] == null) c[i] = startOf(i);
     return lvl.text.replace(/%(\d)/g, (_, d) => {
       const i = Number(d) - 1;
       const v = c[i] ?? startOf(i);

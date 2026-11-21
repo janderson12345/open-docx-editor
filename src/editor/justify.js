@@ -92,9 +92,10 @@ function squeezedLines(view, node, pos, el, split) {
     const at = view.domAtPos(pos + 1 + off + 1);
     const host = at.node.nodeType === 3 ? at.node.parentElement : at.node;
     const cs = getComputedStyle(host);
-    // (Spacing of the run's own stops it; the hundredths of a pixel that make up for Edge's cut font size (sizeCss) don't.)
+    // (A run's own letter-spacing is measured with its text, the space's too: Word squeezes such lines as any other.
+    // Its prints of 27 justified documents whose runs each carry a few twips of spacing, as a document converted from a
+    // PDF has: none of them broke as Word's while these paragraphs were left alone.)
     const ls = cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing) || 0;
-    if (Math.abs(ls) >= 0.01 && !host.classList.contains('odx-wfix')) { plain = false; return; } // (widths.js's correction is measured with)
     ctx.font = fontOf(cs);
     ctx.letterSpacing = `${ls}px`;
     // Measured as the page sets it: kerning is off unless the run turns it on (w:kern), as in Word.
