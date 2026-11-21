@@ -48,6 +48,9 @@ const NO_BREAK_AFTER_DASH = /[^\s\p{L}\p{N}]/u;
 /** Whether a line may break in Word between a dash and `next`, after `before` (the character before the dash), where the browser's own rules don't let it. */
 const dashBreak = (before, dash, next) => !!before && !/\s/.test(before) && DASH.test(dash) && !!next && NO_BREAK_AFTER_DASH.test(next) && !DASH.test(next);
 const wbr = () => document.createElement('wbr');
+// (No more than this many in one text block: each is an element in the page, and a paragraph made of nothing but
+// "a-." a hundred thousand times would have had a third as many.)
+const MAX_DASH_BREAKS = 400;
 /** A word's decoration attributes for a reflection and an inner shadow. */
 const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filter(Boolean).join(' '), ...(rf ? { 'data-odx-rf': w } : {}), ...(is ? { 'data-odx-is': w } : {}) });
 
@@ -56,12 +59,13 @@ function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
   let first = true; // no text yet
   let tail = ''; // the two characters before this child, in text right before it
+  let breaks = 0;
   node.forEach((c, off) => {
     const at = pos + 1 + off;
     if (c.isText) {
       const t = tail + c.text;
       for (let i = Math.max(1, tail.length - 1); i < t.length - 1; i++) {
-        if (dashBreak(t[i - 1], t[i], t[i + 1])) out.push(Decoration.widget(at + i + 1 - tail.length, wbr, { side: -1, marks: c.marks, key: 'odx-wbr', ignoreSelection: true }));
+        if (breaks < MAX_DASH_BREAKS && dashBreak(t[i - 1], t[i], t[i + 1]) && ++breaks) out.push(Decoration.widget(at + i + 1 - tail.length, wbr, { side: -1, marks: c.marks, key: 'odx-wbr', ignoreSelection: true }));
       }
       tail = t.slice(-2);
     } else if (!marker(c)) tail = '';
@@ -170,12 +174,13 @@ export function wrapText(root) {
   const texts = [];
   for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t);
   // (A break after a dash where Word has one and the browser none, as in the editor: the text split there, a wbr between.)
-  for (let k = 0; k < texts.length; k++) {
+  for (let k = 0, made = 0; k < texts.length && made < MAX_DASH_BREAKS; k++) {
     const t = texts[k];
-    for (let i = t.data.length - 2; i >= 1; i--) {
+    for (let i = t.data.length - 2; i >= 1 && made < MAX_DASH_BREAKS; i--) {
       if (!dashBreak(t.data[i - 1], t.data[i], t.data[i + 1])) continue;
       const rest = t.splitText(i + 1);
       t.after(wbr());
+      made++;
       texts.splice(k + 1, 0, rest);
     }
   }
