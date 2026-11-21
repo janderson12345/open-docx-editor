@@ -245,14 +245,23 @@ export const schema = new Schema({
         const src = typeof shown === 'string' && /^(data:|blob:|https?:|$)/i.test(shown) ? shown : '';
         const w = Number(n.attrs.width) || 0;
         // (A drawn shape, shapes.js shapesSvg, in a box of whole pixels as its drawing is: the part of a pixel added is
-        // taken back off by its margins, so it takes the same room; where its place sets those margins itself the box
-        // is that part of a pixel larger.)
+        // taken back off its room below and on the right, --odx-fx and --odx-fxr, which editor.css makes its margins
+        // with the rest of its line's spacing; as margins of its own they replaced that spacing, and an outlined
+        // shape's line came out 1.1px taller. Where its place sets those margins itself the box is that part larger.)
         const bw = w + 2 * pad, bh = h + 2 * pad;
         const whole = w > 0 && h > 0 && typeof n.attrs.src === 'string' && n.attrs.src.startsWith('data:image/svg+xml') && n.attrs.src.slice(0, 600).includes('font-kerning');
         const cw = Math.ceil(bw - 0.005), ch = Math.ceil(bh - 0.005);
-        const back = whole && !/margin-(?:right|bottom)\s*:/.test(place) ? `;margin-right:${+(bw - cw).toFixed(2)}px;margin-bottom:${+(bh - ch).toFixed(2)}px` : '';
-        const size = whole ? `width:${cw}px;height:${ch}px${back}` : w || h ? `width:${bw}px;height:${bh}px` : '';
-        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [size, place].filter(Boolean).join(';') }];
+        const fold = whole && !/margin-(?:right|bottom)\s*:/.test(place);
+        // (From the size the browser gave the box before, cut to its 64ths of a pixel: the line is then as tall as it was.)
+        const grid = (v) => Math.floor(v * 64) / 64;
+        const room = (css, re, name, add) => {
+          const m = re.exec(css);
+          const v = +((m ? Number(m[2]) : 0) + add).toFixed(6);
+          return m ? css.replace(re, `$1${name}:${v}px`) : [css, `${name}:${v}px`].filter(Boolean).join(';');
+        };
+        const placed = fold ? room(room(place, /(^|;)\s*--odx-fx:\s*(-?[\d.]+)px/, '--odx-fx', grid(bh) - ch), /(^|;)\s*--odx-fxr:\s*(-?[\d.]+)px/, '--odx-fxr', grid(bw) - cw) : place;
+        const size = whole ? `width:${cw}px;height:${ch}px` : w || h ? `width:${bw}px;height:${bh}px` : '';
+        return ['img', { src, alt: n.attrs.alt, 'data-href': link || null, title: link ? `${link}\nCtrl+Click to follow link` : null, class: /^display:block/.test(place) ? 'odx-wrap-block' : null, style: [size, placed].filter(Boolean).join(';') }];
       },
       // Pasted pictures: the document's own (copied here: what it was, by its address) or one given in full (a data: URL,
       // from a web page or another editor), which the paste stores in the package (editor.js pastePictures).
