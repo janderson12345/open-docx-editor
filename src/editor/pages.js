@@ -676,6 +676,7 @@ export function createPages(view, session, { sheet, scope }) {
     const pushes = new Map();
     const offs = new Map();
     const cellPushes = [];
+    const cellTops = []; // cells of rows split here that are top-aligned for it (splitRow)
     const bands = [];
     const closes = []; // where a row broken across pages gets its closing border
     const inRow = new Set();
@@ -734,6 +735,7 @@ export function createPages(view, session, { sheet, scope }) {
       const rs = !brk && j >= headerRows && lineSplits && !short && !(keepsHold && j > headerRows && j < rows.length - 1 && keeps(b.node.child(j))) && splitRow(b, j, shift + extra, headH);
       if (rs) {
         cellPushes.push(...rs.pushes);
+        cellTops.push(...(rs.tops || []));
         for (const [q, cut] of rs.crossings) {
           bands.push([cut - (b.tableTop + shift), contentTop(q + 1) + headH - (b.tableTop + shift)]);
           heads.push(contentTop(q + 1));
@@ -754,7 +756,7 @@ export function createPages(view, session, { sheet, scope }) {
       heads.push(contentTop(pg + 1));
       extra += d;
     }
-    return pushes.size || inRow.size ? { rows: pushes, offs, heads, total: extra, cellPushes, bands, inRow, closes } : null;
+    return pushes.size || inRow.size ? { rows: pushes, offs, heads, total: extra, cellPushes, cellTops, bands, inRow, closes } : null;
   }
 
   const cellWidow = (p) => {
@@ -809,6 +811,7 @@ export function createPages(view, session, { sheet, scope }) {
     const base = view.dom.getBoundingClientRect().top + b.rows[j].undo;
     const pushes = [];
     const crossings = new Map(); // page -> bottom of the row's part that stays on it
+    const asTop = new Set(); // the row's own centred or bottom-aligned cells, laid out from its top as it splits
     let keeps = false;
     let newBottom = -Infinity;
     // The lines of a run of paragraphs in one cell from `extra0` on: which move to the next page, as a paragraph's.
@@ -849,8 +852,9 @@ export function createPages(view, session, { sheet, scope }) {
     // by line; a table in it row by row, each of its cells as one of these, the row as tall as its tallest (Word breaks a
     // table in a cell across pages too). false: the row has to move whole.
     function plan(td, undoOut, extra0, padTop0, padBottom0, line, seq0, out) {
-      // Cells centred or bottom-aligned in the row would shift as lines move, so such a row moves whole.
-      if (!/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
+      // A cell centred or bottom-aligned inside a nested table would shift as lines move: such a row moves whole. (A cell
+      // of the row itself is laid out from the row's top as it splits: asTop, below.)
+      if (!asTop.has(td) && !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
       const cs = getComputedStyle(td);
       const padTop = padTop0 + (parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
       const padBottom = padBottom0 + (parseFloat(cs.paddingBottom) || 0);
@@ -901,11 +905,36 @@ export function createPages(view, session, { sheet, scope }) {
       if (!flush()) return false;
       return extra;
     }
+    // A cell centred or set at the bottom (as its document has it: a split row's cells are top-aligned by a class, below):
+    // Word breaks the row all the same, line by line. Content that fits in the part of the row on its first page is
+    // aligned in that part (centred between the row's top and the last line kept on the page, or ending with that line);
+    // longer content runs from the row's top as a top-aligned cell's does (48 generated documents: a two-line label
+    // cell, top, centred and at the bottom, beside 25 to 100 lines, from 5 and 30 lines down the page).
+    const rowTop = b.rows[j].top + rowShift;
+    const pg0 = pageOf(rowTop);
+    const aligned = [];
+    const tops = [];
     for (const td of tr.cells) {
       if (td.hasAttribute('data-odx-phantom')) continue; // an empty grid slot, nothing to move
       const line = parseFloat(td.style.getPropertyValue('--odx-bdb')) || 0; // the line under the row, the next row's: it has to fit too
       const out = { atStart: false, kept: false, end: -Infinity };
-      if (plan(td, () => 0, 0, 0, 0, line, 0, out) === false) return null;
+      const va = /^(middle|bottom)$/.exec(td.style.verticalAlign || '')?.[1];
+      let off = 0; // how far the browser's own alignment has the cell's content from where a top-aligned cell's starts
+      if (va) {
+        const kids = [...td.children].filter((e) => !e.classList.contains('odx-push'));
+        if (!kids.length) continue;
+        const cs = getComputedStyle(td);
+        const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
+        const padBottom = parseFloat(cs.paddingBottom) || 0;
+        const first = kids[0].getBoundingClientRect(), last = kids[kids.length - 1].getBoundingClientRect();
+        const content = last.bottom - first.top - undoIn(td, last.bottom);
+        const tdTop = td.getBoundingClientRect().top;
+        off = /^(top|baseline)$/.test(cs.verticalAlign) ? 0 : Math.max(0, first.top - tdTop - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.paddingTop) || 0));
+        tops.push(td);
+        if (rowTop + padTop + content + padBottom + line <= contentBottom(pg0) + 1) { aligned.push({ td, va, content, padTop, padBottom, first: kids[0] }); continue; }
+        asTop.add(td);
+      }
+      if (plan(td, () => off, 0, 0, 0, line, 0, out) === false) return null;
       // The row splits only when a cell that breaks keeps some of its lines here (as in Word);
       // if one would have to move whole, so does the row.
       if (out.atStart) return null;
@@ -915,7 +944,15 @@ export function createPages(view, session, { sheet, scope }) {
       newBottom = Math.max(newBottom, out.end);
     }
     if (!keeps || !pushes.length) return null;
-    return { pushes, crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
+    // The aligned cells' content in the row's part on its first page: a spacer above it, the cell top-aligned.
+    const cut0 = crossings.get(pg0);
+    for (const a of aligned) {
+      if (!Number.isFinite(cut0) || a.first.tagName !== 'P') continue;
+      const room = Math.min(cut0, contentBottom(pg0)) - a.padBottom - (rowTop + a.padTop) - a.content;
+      const down = Math.round((a.va === 'middle' ? room / 2 : room) * 10) / 10;
+      if (down > 0.5) pushes.push({ pos: view.posAtDOM(a.first, 0), delta: down });
+    }
+    return { pushes, tops: tops.map((td) => view.posAtDOM(td, 0) - 1), crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
   }
 
   const widowControl = (node) => node.attrs.view.widowControl ?? session.styleProp(node.attrs.styleId, 'widowControl') ?? session.styles.defaults.pPr.widowControl ?? true; // on when nothing says (Word's own default, though the OOXML spec says off)
@@ -2261,6 +2298,11 @@ export function createPages(view, session, { sheet, scope }) {
     const decos = [...blockDecos];
     for (const split of splits.values()) {
       for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
+      // (A split row's centred and bottom-aligned cells: from the top, their content placed by a spacer, splitRow.)
+      for (const pos of split.cellTops || []) {
+        const cell = pos >= 0 && pos < view.state.doc.content.size ? view.state.doc.nodeAt(pos) : null;
+        if (cell && /^table_(cell|header)$/.test(cell.type.name)) decos.push(Decoration.node(pos, pos + cell.nodeSize, { class: 'odx-vtop' }, { key: 'vtop' }));
+      }
       // A list item moved whole to the row's next page: its label, the paragraph's ::before, came before the spacer and
       // kept a line of its own above it, the item's text a line low on the new page (Word's prints: the item's first
       // line at the top of the cell's part there, bullet or not). The paragraph is told how far it's pushed, and takes
