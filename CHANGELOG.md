@@ -11,6 +11,21 @@ within 1px of Word's went from 47% to 74%, and documents laid out exactly as Wor
   of a pixel off over a page either way; the page fit now takes that rounding back. Paragraph spacing and cell
   margins are written to the nearest 64th (they were cut short: a page of table rows came out 1.3px short of Word's;
   96 generated documents now end their page within 0.5px of Word's).
+- **A cell's text keeps clear of the lines at its sides** (80 generated documents): it starts and ends its side
+  margin in from the cell's edge, or half the line's width where that is more. A table with no side margins held a
+  third of a pixel more on each side than Word's and kept a word on a line that Word wraps, every row after it a
+  line off: one 78-page document went from 21% of its words in Word's place to all but none.
+- **A line may end after a hyphen or a dash whatever follows it** (112 generated paragraphs): Word breaks after a
+  hyphen, an en dash or an em dash before a quote, a full stop or a currency sign too, where the browser took the
+  word before the hyphen down with what followed.
+- **A page number takes its field's shaded opening mark's look** (33 generated footers): where the run of a page
+  number field's opening mark is shaded, Word draws the number in that run's colour, on its shading, whatever its
+  saved result is set in (the page-number gallery's footer with a mention's look left on its marks: blue on grey on
+  every page).
+- **Underlines sit where the font puts them, as in Word** (84 generated lines in six fonts, regular and bold): Word
+  draws an underline at the font's own distance under the baseline and as thick as the font makes it, the browser a
+  pixel under every font; a link's underline was 0.7px above Word's under Calibri and 2.5px under Courier New. Now
+  within half a pixel (the browser keeps the line on whole pixels).
 - **A line holding a check box set in an East Asian font is as tall as Word's** (70 generated documents): Word's
   check box control writes its box in MS Gothic, and Word makes that line 332/256 of the text's size whatever the
   font beside it; a form of 25 such lines had ended its page a pixel low.

@@ -1991,6 +1991,41 @@ await open('tab-stop-past-indent.docx');
 const tpi = await textSpans(1);
 check(tpi.length === 3 && tpi[1][1] <= 624.5 && Math.abs(tpi[2][0] - 687) < 2 && Math.abs(tpi[2][1] - 720) < 2 && tpi[2][2] > tpi[1][2] + 10, `a right stop on the margin past the right indent (${JSON.stringify(tpi)}, want the number at 687-720px on the next line)`);
 
+// A cell's text keeps clear of the lines at its sides: its side margin in, or half the line's width where that is more
+// (why-tests gen2.py cellin; Word: no side margins and 3pt lines, the two cells' text starting 100.03 and 366.79px in,
+// 2px inside each cell's edge).
+await open('cell-margin-under-line.docx');
+const cml = await cellStarts();
+check(Math.abs(cml[0] - 100.03) < 0.4 && Math.abs(cml[1] - 366.79) < 0.4, `a cell's text half its side line's width in where its margin is less (${JSON.stringify(cml)}, want 100.03 and 366.79px)`);
+// A line may end after a hyphen whatever follows, as in Word (gen2.py brkhy; Word: "ab-" stays at the first line's end
+// before an opening quote, a full stop or a dollar sign, where the browser took it down with what followed).
+await open('break-after-hyphen.docx');
+const bah = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => {
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  let at = 0;
+  const tops = [];
+  const i = p.textContent.indexOf('-');
+  for (let t = w.nextNode(); t; t = w.nextNode()) {
+    for (const k of [i, i + 1]) if (k >= at && k < at + t.data.length) { const r = document.createRange(); r.setStart(t, k - at); r.setEnd(t, k - at + 1); tops[k - i] = r.getBoundingClientRect().top; }
+    at += t.data.length;
+  }
+  return tops[1] > tops[0] + 5;
+}));
+check(bah.length === 14 && bah.every(Boolean), `a line ends after a hyphen whatever follows it (${JSON.stringify(bah)})`);
+
+// A page number whose field's opening mark is in a shaded run is drawn in that run's colour, on its shading, over what
+// its saved result is set in (why-tests gen2.py fldfmt2, fldfmt4; Word: the mark's run red on grey, the saved result
+// green: the number red on grey).
+await open('footer-number-shaded-mark.docx');
+const fns = await page.evaluate(() => { const t = document.querySelector('.odx-hf.odx-footer .odx-t'); const cs = t && getComputedStyle(t); return cs ? [t.textContent, cs.color, cs.backgroundColor] : null; });
+check(fns && fns[0] === '1' && fns[1] === 'rgb(255, 0, 0)' && fns[2] === 'rgb(230, 230, 230)', `a page number in its shaded opening mark's colour and shading (${JSON.stringify(fns)})`);
+
+// An underline is set where its font puts it, as Word draws it (why-tests gen2.py uline; Word: under 12pt Courier New
+// the line's top 3.5px below the baseline, under Calibri 1.7px; the browser's own place is 1px for both).
+await open('underline-from-font.docx');
+const uff = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; const u = ps[3].querySelector('u') || ps[3].querySelector('.odx-t'); const cs = getComputedStyle(u); return [ps.length, cs.textUnderlinePosition, cs.textDecorationThickness, cs.textDecorationLine]; });
+check(uff[0] === 7 && uff[1] === 'from-font' && uff[2] === 'from-font' && /underline/.test(uff[3]), `an underline placed and sized from its font (${JSON.stringify(uff)})`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

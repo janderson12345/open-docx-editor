@@ -88,20 +88,29 @@ export function fillFields(root, values) {
   let instr = '';
   let mode = null; // 'instr' | 'result'
   let value = null;
+  // A page number whose field's opening mark is in a shaded run is drawn in that run's colour, on its shading, over
+  // what its saved result is set in, MERGEFORMAT or not (Word's prints of 33 generated footers: the mark's run
+  // coloured and shaded, the number in its colour on the grey, a saved result in another colour or none; coloured
+  // with no shading, bold or highlighted, the number as its saved result. The page-number gallery's footer with a
+  // mention's look left on its marks: blue on grey on every page in Word, black here).
+  let look = '';
+  const dress = (el) => { if (look && el && /^(PAGE|NUMPAGES|SECTIONPAGES)$/.test(nameOf(instr) || '')) el.style.cssText += `;${look}`; };
+  const LOOK = /^(?:color:#[0-9A-Fa-f]{6};)?background-color:#[0-9A-Fa-f]{6}$/;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (n.nodeType === 1) {
       const fld = n.dataset && n.dataset.fld;
-      if (fld === 'begin') { mode = 'instr'; instr = ''; value = null; }
+      if (fld === 'begin') { mode = 'instr'; instr = ''; value = null; look = LOOK.test(n.dataset.fldlook || '') ? n.dataset.fldlook : ''; }
       else if (fld === 'separate') { value = valueOf(instr); mode = 'result'; }
       else if (fld === 'end') {
         // A field saved with no result text: show the value, styled like the text before it.
-        if (mode === 'result' && value != null && value !== '') n.before(styledLike(n, String(value)));
+        if (mode === 'result' && value != null && value !== '') { const made = styledLike(n, String(value)); n.before(made); dress(made); }
         mode = null;
       }
       else if (mode === 'instr' && n.dataset && n.dataset.instr != null) instr += n.dataset.instr;
     } else if (mode === 'result' && value != null && n.parentElement.closest('.odx-opaque-inline') == null) {
       n.textContent = String(value);
+      dress(n.parentElement);
       value = '';
     }
   }

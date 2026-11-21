@@ -787,6 +787,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       { tl: lt && compoundSide(lt.edge.top), bl: lt && lb && compoundSide(lb.edge.bottom), tu: au && compoundSide(au.edge.left), ru: ar && compoundSide(ar.edge.right) },
     );
     const sideGrow = { left: 0, right: 0 };
+    const sideHalf = { left: 0, right: 0 }; // half the width of the solid line on that side (px)
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const b = edge[side];
       const cb = compound[side];
@@ -815,6 +816,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
       shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
       grow[side] = (pt * 4) / 3 * share;
+      if (side === 'left' || side === 'right') sideHalf[side] = (pt * 4) / 3 / 2;
       // A border's space (w:space, points) lies between it and the cell's text in Word (doc 01's 2pt double frame: the
       // nested table 2.7px lower than ours).
       if ((side === 'top' || side === 'bottom') && b.space > 0) grow[side] += (b.space * 4) / 3;
@@ -835,9 +837,14 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // cells beside it have: corpus 2, and the samples scored with this on and off.)
     const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
     if (under > 0.01) grow.top += under;
-    const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
-    if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
-    if (cellPad.right != null || sideGrow.right) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
+    // A cell's text keeps clear of the lines at its sides: it starts and ends its side margin in from the cell's edge, or
+    // half the line's width where that is more (the line lies half on each side of the edge). Word's prints of 80
+    // generated documents, side margins of 0 to 108 twips against lines of 0.5 to 6pt, the table at the margin and
+    // centred: with no margin, text 0.33px in from a half-point line and 4px from a 6pt one; a sample's table with no
+    // side margins held a third of a pixel more a side than Word's and kept a word on a line that Word wraps.
+    const pad = (side) => (side === 'left' || side === 'right' ? Math.max(cellPad[side] ?? 7, sideHalf[side]) : (cellPad[side] ?? 0) + grow[side]);
+    if (cellPad.left != null || sideGrow.left || sideHalf.left > 7) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
+    if (cellPad.right != null || sideGrow.right || sideHalf.right > 7) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
     // (Top and bottom to the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts them down to one, and
     // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
     const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);

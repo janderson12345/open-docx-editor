@@ -36,6 +36,18 @@ const effect = (c, name, test) => c.marks.some((m) => m.type.name === 'rextra' &
 const reflects = (c) => effect(c, 'reflection', () => true);
 const pressed = (c) => effect(c, 'shadow', (x) => /\bw14:sx="0"/.test(x) && /\bw14:sy="0"/.test(x) && !!w14Color(x));
 const WORD = /\S+/g;
+
+// Word ends a line after a hyphen, an en dash or an em dash whatever comes next: an opening or closing quote, a full
+// stop, a dollar sign (its prints of 112 generated paragraphs: each of the three after letters and after digits, before
+// 14 kinds of character, always broken there; never after a slash). The browser won't break before quotes, closing
+// punctuation or a currency sign, and took the word before the hyphen down with what followed: a sample's "x-" at a
+// line's end in Word started the next line. So a break is allowed there (a wbr element), where the browser has none
+// of its own: before a letter or a digit it breaks as Word does.
+const DASH = /[-–—]/;
+const NO_BREAK_AFTER_DASH = /[^\s\p{L}\p{N}]/u;
+/** Whether a line may break in Word between a dash and `next`, after `before` (the character before the dash), where the browser's own rules don't let it. */
+const dashBreak = (before, dash, next) => !!before && !/\s/.test(before) && DASH.test(dash) && !!next && NO_BREAK_AFTER_DASH.test(next) && !DASH.test(next);
+const wbr = () => document.createElement('wbr');
 /** A word's decoration attributes for a reflection and an inner shadow. */
 const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filter(Boolean).join(' '), ...(rf ? { 'data-odx-rf': w } : {}), ...(is ? { 'data-odx-is': w } : {}) });
 
@@ -43,8 +55,16 @@ const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filt
 function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
   let first = true; // no text yet
+  let tail = ''; // the two characters before this child, in text right before it
   node.forEach((c, off) => {
     const at = pos + 1 + off;
+    if (c.isText) {
+      const t = tail + c.text;
+      for (let i = Math.max(1, tail.length - 1); i < t.length - 1; i++) {
+        if (dashBreak(t[i - 1], t[i], t[i + 1])) out.push(Decoration.widget(at + i + 1 - tail.length, wbr, { side: -1, marks: c.marks, key: 'odx-wbr', ignoreSelection: true }));
+      }
+      tail = t.slice(-2);
+    } else if (!marker(c)) tail = '';
     // (Plain spaces alone also odx-blank: they don't size their line in Word, nor does a shadow on them: editor.css.)
     // (The block's first text is odx-first too: where a list label in a font of its own makes Word's line taller, the
     // room is added above it, editor.css.)
@@ -149,6 +169,16 @@ export function wrapText(root) {
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (t) => (t.data && !t.parentElement.closest('math, svg, .odx-t') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
   const texts = [];
   for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t);
+  // (A break after a dash where Word has one and the browser none, as in the editor: the text split there, a wbr between.)
+  for (let k = 0; k < texts.length; k++) {
+    const t = texts[k];
+    for (let i = t.data.length - 2; i >= 1; i--) {
+      if (!dashBreak(t.data[i - 1], t.data[i], t.data[i + 1])) continue;
+      const rest = t.splitText(i + 1);
+      t.after(wbr());
+      texts.splice(k + 1, 0, rest);
+    }
+  }
   for (const t of texts) {
     const s = document.createElement('span');
     s.className = /^ +$/.test(t.data) ? 'odx-t odx-blank' : 'odx-t';
