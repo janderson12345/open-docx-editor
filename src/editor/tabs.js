@@ -113,7 +113,10 @@ export function layoutTabsIn(root, session, nodeOf) {
     // is then centred or set right as a whole (Word's PDFs of 32 generated documents: "Left<tab>Mid" with a centre stop
     // at 3.25in, centred, is 149px right of where it is left-aligned, half of what the line leaves; a line whose right
     // stop is on the margin doesn't move). So its tabs are sized with the paragraph set at its start edge.
-    const setAside = /^(center|right|end|left|-webkit-center|-webkit-right)$/.test(cs.textAlign) && cs.textAlign !== (rtl ? 'right' : 'left') ? p.style.textAlign : null;
+    // (A justified one too: with a tab still unsized its line takes other words and the browser spreads the spaces
+    // before the tab, so the tab's start was read up to a few pixels late, its width short by that, and by another
+    // amount once the line was squeezed. Word sets the text before a tab unstretched.)
+    const setAside = /^(center|right|end|left|justify|-webkit-center|-webkit-right)$/.test(cs.textAlign) && cs.textAlign !== (rtl ? 'right' : 'left') ? p.style.textAlign : null;
     if (setAside != null) p.style.textAlign = 'start';
     for (const e of p.querySelectorAll('[data-odx-over]')) { e.style.position = ''; e.style.left = ''; e.style.right = ''; e.removeAttribute('data-odx-over'); }
     for (const s of tabs) {
