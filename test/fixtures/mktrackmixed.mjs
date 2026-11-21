@@ -26,5 +26,8 @@ const table = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblBorders><w
 const body = mixed() + table + mixed() + table + mixed();
 const files = unzipSync(blankDocxBytes());
 files['word/document.xml'] = strToU8(strFromU8(files['word/document.xml']).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`));
-files['word/settings.xml'] = strToU8(strFromU8(files['word/settings.xml']).replace(/(<w:settings\b[^>]*>)/, '$1<w:trackRevisions/>'));
+// (The blank document has no settings part: one of its own, with its content type and relationship.)
+files['word/settings.xml'] = strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:trackRevisions/></w:settings>');
+files['[Content_Types].xml'] = strToU8(strFromU8(files['[Content_Types].xml']).replace('</Types>', '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>'));
+files['word/_rels/document.xml.rels'] = strToU8(strFromU8(files['word/_rels/document.xml.rels']).replace('</Relationships>', '<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>'));
 fs.writeFileSync(new URL('./track-mixed-table.docx', import.meta.url), zipSync(files));

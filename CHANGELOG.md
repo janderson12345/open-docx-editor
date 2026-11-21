@@ -3,12 +3,34 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 67%, and documents laid out exactly as Word from 1,157 to 1,611.
+within 1px of Word's went from 47% to 69%, and documents laid out exactly as Word from 1,157 to 1,646.
 
+- **List labels in their own font size their line as Word does** (one rule, pinned with 368 generated lists printed
+  from Word, each within 0.1px): a bullet or number in a font of its own makes its line taller only by what the
+  label's top reaches above the text's, above the first line, whatever the line spacing: a Symbol bullet over Calibri,
+  Times New Roman or Courier New, a Segoe UI bullet over Calibri, a larger Wingdings bullet; a Courier New "o" adds
+  nothing until it is larger than the text.
+- **Headers and footers**: spaces are kept as typed (text set in place with runs of spaces had moved left), each in
+  its own size; a FILENAME field shows the file's current name; a footer is measured with its tabs at their stops, so
+  a page no longer comes out a line short under a footer line that just fits; an empty last paragraph is as tall as
+  its mark's theme font.
+- **Tables**: the top lines set on the hidden lower parts of merged cells count in their rows' heights; a table
+  fitted to its text takes the column widths Word saved where the fitting comes within 1.5px of them, and keeps its
+  fitted widths when it is redrawn (a document had printed two ways); a cell's own "no fill" clears its table
+  style's band shading; a character style that switches bold off doesn't undo the bold of the table style's first
+  row, and its size counts as the run's own; a repeated header row prints its text (it had been painted under its
+  shading); lines under a pixel wide print at their own width; the lines at a table's page break sit where Word
+  draws them, in their own colour and width.
+- **Text**: the automatic colour is drawn as automatic, not as the style's colour; the spaces that end a centred or
+  right-aligned paragraph take no part in the alignment; a missing font is drawn in the other name its file gives
+  it, as Word draws it (pinned with 182 generated documents); an empty paragraph whose line passes the bottom margin
+  only by its line spacing's extra stays on its page.
 - **A long run of paragraphs kept with the next no longer takes a page each**: a run of paragraphs each set to keep
   with the next, longer than a page, breaks where the page ends, as in Word (a document of 120 such paragraphs came
   out at 113 pages for Word's 14). **A list from a paragraph style takes that style's own indent** over the list
   level's, as in Word (a numbered heading had started 2in to the right and wrapped).
+- **AutoCorrect with Track Changes on keeps the caret where you type**: capitalising a sentence's first word left the
+  caret after the new capital, so the next words went inside the word ("Typed bolded" came out "Tboldedyped").
 - **Section breaks and table lines as Word lays them out** (rules pinned with 265 generated documents printed from
   Word): an empty paragraph that carries a continuous section break takes no room and none of its own spacing, the
   space after the paragraph above and the space before the one below both kept (first in the document or under a
