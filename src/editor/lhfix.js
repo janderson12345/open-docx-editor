@@ -269,7 +269,8 @@ function wideLabels(view, decos) {
         labelCtx = labelCtx || document.createElement('canvas').getContext('2d');
         labelCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`;
         const width = labelCtx.measureText(label).width + label.length * (parseFloat(cs.letterSpacing) || 0);
-        if (width > gap / 15 + 0.5) {
+        // (Wider by anything at all: a sample's heading number 24.09px wide in 24px of room has its text at the next stop.)
+        if (width > gap / 15 + 0.03) {
           const end = start + width * 15;
           const mine = own.find((t) => t > end + 1);
           const pitch = dts > 0 ? dts : 720;
