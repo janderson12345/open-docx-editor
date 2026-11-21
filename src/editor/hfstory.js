@@ -160,6 +160,20 @@ export function storyDrawer(session) {
     el.className = `odx-hf ${cls}`;
     el.append(serializer.serializeFragment(doc.content));
     wrapText(el); // (lines as tall as their text, as in the body)
+    // The spaces that end a paragraph are marked, as in the body (textspans.js): under a centred or right-aligned
+    // paragraph they take no room (a header set right, its text ending in a space, a space's width left of Word's).
+    for (const p of el.querySelectorAll('p')) {
+      const spans = [...p.querySelectorAll('span.odx-t')].filter((x) => x.childNodes.length === 1 && x.firstChild.nodeType === 3);
+      const last = spans[spans.length - 1];
+      if (!last || last !== [...p.querySelectorAll('span.odx-t')].pop()) continue;
+      const t = last.firstChild;
+      let from = t.data.length;
+      while (from > 0 && t.data.charCodeAt(from - 1) === 32) from--;
+      if (from === t.data.length || !(from > 0 || spans.some((x) => x !== last && x.textContent.trim()))) continue;
+      const trail = document.createElement('span');
+      trail.className = 'odx-trail';
+      if (from === 0) { last.replaceChildren(trail); trail.append(t); } else { const rest = t.splitText(from); trail.append(rest); last.append(trail); }
+    }
     // An empty line is as tall as its paragraph mark's font, as in the body.
     const ps = el.querySelectorAll('p');
     let n = 0;

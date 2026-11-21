@@ -95,6 +95,23 @@ export function layoutTabsIn(root, session, nodeOf) {
     // A hanging indent is a stop too: a tab on the first line, before the indent, goes to it first.
     const indent = (parseFloat(cs.textIndent) || 0) < 0 ? startMargin : null;
     let aligned = false; // the tab before was a right, centre or decimal one
+    // A stop past the paragraph's end indent, up to the margin, is a stop all the same, and the text after its tab runs
+    // on to it past the indent (a table of contents: entries indented 0.38in from the right, their page numbers at a
+    // right stop on the margin). Word's PDFs of 135 generated documents: end indents of 0, 0.38in and 1in, right, centre
+    // and left stops before the indent, on it, between it and the margin, on the margin and past it; a right or
+    // centre stop past the margin ends its text at the indent, and centred text that would pass the margin ends at
+    // it. The line can't be wider than the paragraph's box here, so the tab gives back what the text runs past the
+    // indent (a negative end margin: drawn at its width, the line still fits) and what follows it on the line is drawn
+    // that much further on.
+    let over = 0;
+    let overTab = null;
+    // In a centred or right-aligned paragraph the tabs go to their stops as in a left-aligned one, and the line so made
+    // is then centred or set right as a whole (Word's PDFs of 32 generated documents: "Left<tab>Mid" with a centre stop
+    // at 3.25in, centred, is 149px right of where it is left-aligned, half of what the line leaves; a line whose right
+    // stop is on the margin doesn't move). So its tabs are sized with the paragraph set at its start edge.
+    const setAside = /^(center|right|end|left|-webkit-center|-webkit-right)$/.test(cs.textAlign) && cs.textAlign !== (rtl ? 'right' : 'left') ? p.style.textAlign : null;
+    if (setAside != null) p.style.textAlign = 'start';
+    for (const e of p.querySelectorAll('[data-odx-over]')) { e.style.position = ''; e.style.left = ''; e.style.right = ''; e.removeAttribute('data-odx-over'); }
     for (const s of tabs) {
       // (The paragraph's box read again for each tab: sizing the one before can move the page, as a scrollbar
       // appearing does, and a stop measured from where the paragraph was would land short.)
@@ -114,6 +131,8 @@ export function layoutTabsIn(root, session, nodeOf) {
       const right = rtl ? edge - (pr.left + (parseFloat(cs.paddingLeft) || 0)) : pr.right - (parseFloat(cs.paddingRight) || 0) - edge;
       // A tab with no stop left that starts at the right margin goes to the next line in Word (sample S097's
       // footer: "Revision Date: …" ends at the right stop, and the tab after it makes an empty line).
+      const margin = right + Math.max(0, parseFloat(rtl ? cs.marginLeft : cs.marginRight) || 0); // the line's end with no end indent
+      const past = !!stop && margin > right + 0.5 && stop.x > right - 0.5 && stop.x <= margin + 0.5; // (on the indent too: centred or left-set text there runs past it)
       const wraps = !stop && x >= right - 1;
       if (wraps) w = right - x + 1;
       // (After text aligned at a stop, which ends the half pixel short of it that the slack below leaves, the next default
@@ -127,19 +146,25 @@ export function layoutTabsIn(root, session, nodeOf) {
       }
       else if (stop.val === 'right' || stop.val === 'end' || stop.val === 'decimal' || stop.val === 'center') {
         const rw = runWidth(p, s, stop.val === 'decimal');
-        const end = Math.min(stop.x, right);
-        const used = stop.val === 'center' ? rw / 2 : rw;
+        let end = Math.min(stop.x, past ? margin : right);
+        let used = stop.val === 'center' ? rw / 2 : rw;
+        if (past && stop.val === 'center' && end + rw / 2 > margin) { end = margin; used = rw; }
+        if (past && end + (rw - used) - right > over) { over = end + (rw - used) - right; overTab = s; }
         w = end - x - used - 0.5; // sub-pixel slack, or a stop at the margin wraps
         // Text that no longer fits before the stop takes its tab to the next line, as Word lays out a long TOC entry:
         // the line's text stays, and the tab starts the next line at the paragraph's indent with its leader up to
         // the right-aligned text (a tab wider than what is left of the line wraps before it).
         if (w < 0 && x + rw > right + 0.5) w = end - startMargin - used - 0.5;
-      } else w = stop.x - x;
+      } else {
+        w = stop.x - x;
+        // (A left stop there, the text after it ending before the margin: on the line too.)
+        if (past) { const rw = runWidth(p, s, false); if (stop.x + rw <= margin + 0.5 && stop.x + rw - right > over) { over = stop.x + rw - right; overTab = s; } }
+      }
       // A left or default tab whose next word doesn't fit after it on the line goes to the next line with that word, as
       // Word wraps it, and takes the first stop there (a cell's "...river<tab>version demand": "version" at 0.5in on
       // the next line). Drawn as a line break and then its width (editor.css: .odx-tabnl).
       let nl = 0;
-      if (!wraps && (!stop || stop.val === 'left' || stop.val === 'start') && x > startMargin + 1) {
+      if (!wraps && !(past && over > 0) && (!stop || stop.val === 'left' || stop.val === 'start') && x > startMargin + 1) {
         const word = firstWordWidth(s);
         if (word > 0 && x + w + word > right + 0.5) {
           const x0 = startMargin;
@@ -155,6 +180,19 @@ export function layoutTabsIn(root, session, nodeOf) {
       aligned = !!stop && ['right', 'end', 'decimal', 'center'].includes(stop.val);
       s.style.cssText = `display:inline-block;tab-size:0;width:${Math.max(0, w)}px${lead ? `;background:${lead}` : ''}${wraps ? ';white-space:pre' : ''}`; // (its tab character gives that line its height)
       if (nl) { s.classList.add('odx-tabnl'); s.style.setProperty('--odx-tabnl', `${nl.toFixed(2)}px`); } else s.classList.remove('odx-tabnl');
+    }
+    if (setAside != null) p.style.textAlign = setAside;
+    if (over > 0.5 && overTab) {
+      const d = +(over + 0.5).toFixed(2);
+      overTab.style[rtl ? 'marginLeft' : 'marginRight'] = `${-d}px`;
+      for (let at = overTab; at && at !== p; at = at.parentElement) {
+        for (let e = at.nextElementSibling; e; e = e.nextElementSibling) {
+          if (/^(BR|IMG)$/.test(e.tagName) || e.classList.contains('odx-push')) continue;
+          e.style.position = 'relative';
+          e.style[rtl ? 'right' : 'left'] = `${d}px`;
+          e.dataset.odxOver = '1';
+        }
+      }
     }
   }
   for (const [p, tabs] of todo) sized.set(p, sigOf(p, tabs));

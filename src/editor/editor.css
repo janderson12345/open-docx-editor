@@ -109,7 +109,7 @@
 .odx-content .odx-mm-hide { display: none !important; }
 .odx-content p.odx-endbreak > br.ProseMirror-trailingBreak { display: none; }
 /* Word doesn't apply ligatures or kerning unless the document asks for them (w:kern). */
-.odx-content, .odx-hf td, .odx-notes, .odx-noteedit { font-variant-ligatures: none; font-kerning: none; } /* (Notes and header tables too: footnote text kerned came out 0.6% narrow, corpus 3, taking a word Word wraps; sample S109's header cells. Not header and footer paragraphs: their print shifts were fitted kerned.) */
+.odx-content, .odx-hf, .odx-notes, .odx-noteedit { font-variant-ligatures: none; font-kerning: none; } /* (Notes, headers and footers too: footnote text kerned came out 0.6% narrow, corpus 3, taking a word Word wraps; sample S109's header cells; a header line of 30 letters 2.7px short, its words up to 1.3px left of Word's, whose letters there stand at their own widths.) */
 /* Stand-in for Consolas where it isn't installed, scaled to Consolas' narrower advance (0.55em vs 0.6em). */
 @font-face { font-family: 'odx-consolas'; src: local('Liberation Mono'), local('LiberationMono'), local('DejaVu Sans Mono'), local('Courier New'); size-adjust: 91.6%; }
 /* Aptos is an Office cloud font browsers rarely have. Its letters are drawn by the stand-in fonts at the end of this
@@ -250,6 +250,8 @@
    zero-width box before the paragraph's first text (textspans.js odx-first), in that text's own font and line height,
    so the line is the text's plus exactly that. */
 .odx-content p.odx-li::before { line-height: 0; }
+/* A label raised or lowered by its level (w:position): off the baseline by that much; its line's room is --odx-lbl-own's. */
+.odx-content p.odx-li[style*="--odx-lraise"]::before { position: relative; top: calc(-1 * var(--odx-lraise)); }
 /* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
    an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
 .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }

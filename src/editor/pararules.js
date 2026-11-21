@@ -175,6 +175,8 @@ export function labelFormat(node, session, l, label, style) {
 
 const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
 const WINGDINGS_ASCENT = 0.8994; // Wingdings', 1842 of 2048
+// (Fonts labels are set in whose ascent the text's table, baseline.js, doesn't hold: looked up by name, no prototype.)
+const LABEL_ASCENT = Object.assign(Object.create(null), { 'arial black': 1.1006 });
 
 /** A list label's own size and font, and the room a label reaching above the text adds to its line. */
 export function labelLine(node, session, l, label, run, style) {
@@ -197,7 +199,9 @@ export function labelLine(node, session, l, label, run, style) {
   const symbol = /^symbol/i.test(lvlFont || '');
   const smaller = lvlSize ? !sized && lvlSize < styleSize : symbol && Number(lblSize) < styleSize;
   if (lblSize && (run.size ? Number(lblSize) !== Number(run.size) : smaller)) style.push(`--odx-lsize:${lblSize / 2}pt`);
-  if (lvlFont && !/^(symbol|wingdings)/i.test(lvlFont)) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
+  // (A symbol font's bullet the editor has no plain character for, still its private-use code, is drawn in that font
+  // too: a Wingdings 3 arrow had come out as the text font's empty box.)
+  if (lvlFont && (!/^(symbol|wingdings)/i.test(lvlFont) || /[-]/.test(String(label || '')))) style.push(`--odx-lfont:${fontStack(lvlFont)}`);
   // A label in a font of its own (a Symbol bullet, a bullet or number set in Segoe UI over Calibri text): Word's line is
   // taller by what the label's top reaches above the text's, its font's ascent with its external leading (baseline.js
   // wordAscent) at the label's size; the label's descent never counts, and line spacing doesn't multiply it. Word's
@@ -209,11 +213,13 @@ export function labelLine(node, session, l, label, run, style) {
   // Courier New "o" nothing until it is larger than the text. The room goes above the first line's text (editor.css
   // odx-first), so wrapped lines keep the text's own height. A Wingdings bullet (ascent 0.899em) is under every text
   // font's at the text's size and adds nothing; 14pt over 12pt Calibri it adds 1.55px (a sample's Word PDF: 21.1px lines).
+  const raise = label != null ? ((listLevel(session.numbering, l.numId, l.ilvl)?.position || 0) / 2) * (4 / 3) : 0;
+  if (raise) style.push(`--odx-lraise:${+raise.toFixed(2)}px`);
   if (lvlFont) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
     const dings = /^wingdings$/i.test(lvlFont);
-    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase());
+    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase()) || LABEL_ASCENT[String(lvlFont).toLowerCase()];
     // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
     const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
@@ -221,7 +227,10 @@ export function labelLine(node, session, l, label, run, style) {
     if (la && ta && (symbol || dings ? rule !== 'exact' : !rule || rule === 'auto')) {
       const lbl = Number(lblSize) || Number(run.size) || 20;
       const txt = Number(run.size) || Number(session.styleRunProp(node.attrs.styleId, 'size')) || Number(session.styles.defaults.rPr.size) || lbl;
-      const up = (la * lbl - ta * txt) / 2 * (4 / 3);
+      // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
+      // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
+      // label never makes its line taller below).
+      const up = (la * lbl - ta * txt) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
       if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
     }

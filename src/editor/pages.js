@@ -556,7 +556,11 @@ export function createPages(view, session, { sheet, scope }) {
   // Splitting paragraphs line by line needs each page-crossing paragraph laid
   // out; in very long documents (content-visibility skips off-screen blocks)
   // that costs too much, so there paragraphs move to the next page whole.
-  const lineSplits = !sheet.classList.contains('odx-large') && !cols;
+  // (On screen. For print every block is laid out, editor.css, and the paragraphs split as in any document: a document
+  // of 3,162 paragraphs had printed 128 pages for Word's 122, each page ending where a whole paragraph did.)
+  let printing = false;
+  const splitsNow = () => (!sheet.classList.contains('odx-large') || printing) && !cols;
+  let lineSplits = splitsNow();
 
   const layer = document.createElement('div');
   layer.className = 'odx-sheets';
@@ -1285,7 +1289,7 @@ export function createPages(view, session, { sheet, scope }) {
     let cut = null;
     const node = b.node.child(at);
     const rowTop = trs[at].getBoundingClientRect().top - top0;
-    if (!sheet.classList.contains('odx-large') && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
+    if (lineSplits && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
       const base = view.dom.getBoundingClientRect().top + b.undo;
       const spans = [];
       for (const el of trs[at].querySelectorAll('p')) {
@@ -2354,6 +2358,7 @@ export function createPages(view, session, { sheet, scope }) {
   };
   function layout() { return unzoomed(layoutPass); }
   function layoutPass() {
+    lineSplits = splitsNow();
     frame = 0;
     passed = false;
     if (!colsRepass) colsPasses = 0; // (a pass asked for from outside: the column widths may settle afresh)
@@ -3140,6 +3145,7 @@ export function createPages(view, session, { sheet, scope }) {
   let printBox = null;
   let printZoom = '';
   const beforePrint = () => {
+    printing = true;
     // (Printed at full size, whatever the zoom on screen.)
     printZoom = sheet.style.zoom;
     sheet.style.zoom = '';
@@ -3163,7 +3169,7 @@ export function createPages(view, session, { sheet, scope }) {
     printBox = printCopies(sheet, pages, { pageW, pageH, pageTop });
     if (printBox) document.body.append(printBox);
   };
-  const afterPrint = () => { removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
+  const afterPrint = () => { printing = false; removePrintLines(sheet, quiet); printBox?.remove(); printBox = null; setGap(GAP); if (printZoom) sheet.style.zoom = printZoom; printZoom = ''; settleHyphens(view); };
   window.addEventListener('beforeprint', beforePrint);
   window.addEventListener('afterprint', afterPrint);
 

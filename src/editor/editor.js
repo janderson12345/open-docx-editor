@@ -332,7 +332,14 @@ function paragraphPlugin(session) {
             // In a section of newspaper columns among others (or with its own side margins), as narrow as its column, as
             // the paragraphs are: an autofit table fits itself to the column, as in Word.
             const sd = parent === doc && sides.get(index);
-            if (sd && !/(?:^|;)float:/.test(place || '')) style = [style, `margin-inline-start:${sd[0]}px`, `margin-inline-end:calc(${sd[1]}px${sd[2] ? ' + var(--odx-coln, 0px)' : ''})`].filter(Boolean).join(';');
+            // (With the table's own place: its indent, and in a document of Word 2010's mode or before its cell margin's
+            // width out into the page margin, were lost here, a table 7.2px right of Word's in a section narrower than
+            // the document's widest.)
+            if (sd && !/(?:^|;)float:/.test(place || '')) {
+              const length = (m) => (m && /^-?[\d.]+(?:px|pt)$/.test(m[1].trim()) ? m[1].trim() : null);
+              const ml = length(/(?:^|;)margin-left:([^;]+)/.exec(place || '')), mr = length(/(?:^|;)margin-right:([^;]+)/.exec(place || ''));
+              style = [style, `margin-inline-start:${ml ? `calc(${sd[0]}px + ${ml})` : `${sd[0]}px`}`, `margin-inline-end:calc(${sd[1]}px${mr ? ` + ${mr}` : ''}${sd[2] ? ' + var(--odx-coln, 0px)' : ''})`].filter(Boolean).join(';');
+            }
             decos.push({ cell: true, pos, node, deco: style ? { style } : null });
             tableCells(node, pos, tableCache, session).forEach((c) => decos.push(c));
           }
