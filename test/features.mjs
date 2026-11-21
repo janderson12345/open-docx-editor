@@ -1919,6 +1919,14 @@ await open('footer-tab-fits.docx');
 await page.waitForTimeout(600);
 const ftab = await onSheets(45, 46);
 check(ftab[0] === 2 && ftab[1][0] === 1 && ftab[2][0] === 2 && Math.abs(ftab[2][1] - 96) < 1.5, `a footer as tall as it is drawn, its tabs laid out (${JSON.stringify(ftab)}, want 46 lines on page 1)`);
+// A paragraph kept with the next that may split sends only its last lines on with the block that moved (why-tests gen2.py
+// keepsplit; Word: 30 lines, four 4-line paragraphs each kept with the next, the fourth split two lines and two, the
+// four after it on page 2; the whole run had gone to page 2).
+await open('keep-next-splits.docx');
+await page.waitForTimeout(600);
+const kn = await onSheets(30, 34);
+const knCut = await page.evaluate(() => { const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((x) => x.getBoundingClientRect()); const r = document.querySelectorAll('.odx-content > p')[33].getBoundingClientRect(); return r.top < sh[0].bottom && r.bottom > sh[1].top; });
+check(kn[0] === 2 && kn[1][0] === 1 && kn[2][0] === 2 && knCut, `a kept paragraph splits to stay with the next (${JSON.stringify(kn)}, split ${knCut})`);
 
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px

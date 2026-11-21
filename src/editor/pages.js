@@ -1286,11 +1286,23 @@ export function createPages(view, session, { sheet, scope }) {
   }
 
   /**
+   * The line a paragraph that keeps with the next block is cut before when that block moves on and the paragraph may
+   * split: its last line goes with the block, its last two under widow control, where as many stay behind; else null.
+   */
+  function keepCut(b) {
+    if (b.node.type !== schema.nodes.paragraph || keepLines(b.node) || hasPageBreak(b.node)) return null;
+    const lines = paragraphLines(b);
+    if (!lines || lines.some((l) => l.forced || l.blank)) return null;
+    const take = widowControl(b.node) ? 2 : 1;
+    return lines.length >= 2 * take ? lines.length - take : null;
+  }
+
+  /**
    * Lines that must start a new page: after a page break, or where the page
    * runs out (with Word's widow/orphan control and keep-lines-together).
    * Returns null when the paragraph should move to the next page whole.
    */
-  function splitParagraph(b, shift, blockFirstOnPage, moved = false) {
+  function splitParagraph(b, shift, blockFirstOnPage, moved = false, keepAt = -1) {
     const lines = paragraphLines(b);
     if (!lines) return null;
     const pushes = [];
@@ -1376,6 +1388,8 @@ export function createPages(view, session, { sheet, scope }) {
         if (n === 1 && moved && pushes.length === 0 && leadingBreak(b.el)) continue;
         at = n;
       }
+      // (Its last lines taken on to stay with the block it keeps with, which has moved: keepCut.)
+      else if (n === keepAt && n > pageStart) at = n;
       else if (fitBottom > room(n) + slack && n > pageStart && !(ownNotes.length && partialFits(pg, n, bottom))) {
         if (keepLines(b.node) && pushes.length === 0) return blockFirstOnPage ? { pushes, total: 0 } : null;
         at = n;
@@ -2702,7 +2716,35 @@ export function createPages(view, session, { sheet, scope }) {
         // takes a paragraph on with the one it keeps with column by column, to the next page's first column at most.
         // The generated documents' headings in two and three columns, tools/doc-generator.)
         const midSheet = !!cols && p % cols.num !== 0;
-        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) m--;
+        let cut = null;
+        while (m > 0 && keepsOn(blocks[m - 1], p) && (midSheet ? blocks[m - 1].top + shift >= contentTop(p) - 1 : !starts.has(blocks[m - 1].i) && blocks[m - 1].top + shift > contentTop(p) + 1)) {
+          // A paragraph of several lines that keeps with the block moving on, and may split: only its last lines go
+          // with that block (two under widow control, one without), the rest staying on this page, as Word breaks it
+          // (120 generated documents: 2 to 6-line paragraphs each kept with the next, widow control on and off; with
+          // it a paragraph under four lines can't split and moves whole, as one whose lines keep together does).
+          cut = !midSheet && lineSplits && !cols ? keepCut(blocks[m - 1]) : null;
+          if (cut) break;
+          m--;
+        }
+        if (cut) {
+          const prev = blocks[m - 1];
+          const split = splitParagraph(prev, shift, false, false, cut);
+          if (split && split.pushes.length) {
+            paraSplits.set(prev.i, split);
+            notesByLine(prev, shift, split);
+            shift += split.total;
+            for (let n = m; n <= k; n++) {
+              sbTop.delete(blocks[n].i);
+              shapeUp.delete(blocks[n].i);
+              moveNotes(blocks[n].i, target);
+              splits.delete(blocks[n].i);
+              paraSplits.delete(blocks[n].i);
+              colSplits.delete(blocks[n].i);
+            }
+            k = m - 1; // (everything after the split paragraph again, from its new place)
+            continue;
+          }
+        }
         // A run of blocks each kept with the next that reaches back to the page's top is longer than the page: moving
         // part of it on gains nothing, and Word breaks it where the page ends (generated documents: 55 to 120 paragraphs
         // each kept with the next, 51 lines a page in Word; each had gone to a page of its own, 113 pages for 14).
