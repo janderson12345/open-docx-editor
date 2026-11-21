@@ -434,6 +434,15 @@ function rextraCss(items) {
     else if (name === 'bCs') css.push(`--odx-bcs:${on(xml) ? 'bold' : 'normal'}`);
     else if (name === 'iCs') css.push(`--odx-ics:${on(xml) ? 'italic' : 'normal'}`);
     else if (name === 'szCs' && Number(val(xml))) css.push(`--odx-szcs:${Number(val(xml)) / 2}pt`);
+    // An underline with a colour of its own (w:u with w:color, kept as it is for saving): drawn, in that colour. (It
+    // was not drawn at all: a converted document's links, blue with a blue line under them, had none. Word's prints
+    // of four generated lines: a red line under black text, single and double; "auto" the text's own colour.)
+    else if (name === 'u') {
+      const v = val(xml) || 'single';
+      const c = /w:color="([0-9A-Fa-f]{6})"/.exec(xml)?.[1];
+      if (v === 'none') css.push('text-decoration-line:none');
+      else css.push('text-decoration-line:underline', ...(v === 'double' ? ['text-decoration-style:double'] : []), ...(c ? [`text-decoration-color:#${c}`] : []));
+    }
     else if (name === 'caps' && on(xml)) css.push('text-transform:uppercase');
     else if (name === 'smallCaps' && on(xml)) css.push('font-variant:small-caps');
     else if (name === 'vanish' && on(xml)) css.push('display:none');
