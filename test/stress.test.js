@@ -455,3 +455,14 @@ test('soft hyphens mapped through edits, the paragraphs touched made again, are 
     }
   }
 });
+
+// A line may end after a dash where the browser has no break of its own (textspans.js): the breaks added to one text
+// block are bounded, however many places it has for them.
+test('dash breaks in one paragraph are bounded', async () => {
+  const { spanDecos } = await import('../src/editor/textspans.js');
+  const para = (text) => schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, schema.text(text))]);
+  const widgets = (doc) => spanDecos(doc).filter((d) => d.spec && d.spec.key === 'odx-wbr').length;
+  assert.equal(widgets(para('well-"known" and re-.entry and plain-text and 3-5')), 2); // before a quote and a full stop only
+  assert.equal(widgets(para('a/"b" and x -"y"')), 0); // not after a slash, nor after a dash that follows a space
+  assert.equal(widgets(para('a-.'.repeat(50000))), 400);
+});

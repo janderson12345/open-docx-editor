@@ -185,6 +185,13 @@
 .odx-content p:has(> img[style*="vertical-align: baseline"])::before { content: "\200b"; }
 .odx-content img.ProseMirror-selectednode { outline: 2px solid var(--odx-accent); }
 .odx-content img.ProseMirror-selectednode.odx-sized { outline: none; } /* (the handles' box drawn instead: the drawing's own box, not its picture with the room round it; none for a line, as in Word) */
+/* An underline where its font puts it and as thick as the font makes it, as Word draws it (its prints of 84 lines: six
+   fonts, regular and bold, 8 to 24pt: the line's middle 0.15em under Arial's and Calibri's baseline, 0.09em under
+   Cambria's, 0.25em under Courier New's, 0.04 to 0.08em thick). The browser's own place is one for every font, a pixel
+   under the baseline and a pixel thick at 12pt: 0.7px above Word's under Calibri, 2.5px under Courier New. From the font
+   it still sets the line on whole pixels: within half a pixel of Word's.) */
+.odx-content, .odx-hf, .odx-pl-host { text-underline-position: from-font; }
+.odx-content :not(s, del), .odx-hf :not(s, del) { text-decoration-thickness: from-font; } /* (not struck-out text: its line's own thickness isn't measured) */
 .odx-content a.odx-link { color: #0563c1; text-decoration: underline; }
 /* Under a character style (Hyperlink, which Word gives every link it makes) the link has that style's look and what
    its runs set over it (an automatic colour: black), as in Word, where a link has no look of its own. */

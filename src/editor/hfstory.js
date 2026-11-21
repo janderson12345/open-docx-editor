@@ -3,7 +3,7 @@
 import { DOMSerializer } from 'prosemirror-model';
 import { TableMap } from 'prosemirror-tables';
 import { schema } from './schema.js';
-import { tableCellCss, tablePlacementCss } from '../ooxml/styles.js';
+import { tableCellCss, tablePlacementCss, firstCellBorders } from '../ooxml/styles.js';
 import { parseXml } from '../ooxml/xml.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { fontStack, lineFactor } from '../ooxml/props.js';
@@ -25,7 +25,7 @@ export function styleStoryTables(session, doc, el, { note = false } = {}) {
   tables.forEach((t, k) => {
     const dom = doms[k];
     if (!dom) return;
-    const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml, t.attrs.tblGrid);
+    const place = tablePlacementCss(session.styles, t.attrs.tblPr, session.compatMode, parseXml, t.attrs.tblGrid, 0, firstCellBorders(t));
     // (A note's tables don't float: Word has no text wrapping in notes, and puts one that says so in the note's flow.)
     if (place && !(note && /(?:^|;)float:/.test(place))) dom.style.cssText += ';' + place;
     // (Floating, placed from the text above its own place: up too, as Word draws it in a header (its PDF: a table at

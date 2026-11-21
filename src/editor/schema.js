@@ -290,6 +290,13 @@ export const schema = new Schema({
         if (n.attrs.width != null) a.style = `display:inline-block;width:${n.attrs.width}px;height:${n.attrs.height}px`;
         // Field hints, used to show live page numbers in headers and footers.
         if (n.attrs.kind === 'fldChar') a['data-fld'] = (/fldCharType="(\w+)"/.exec(n.attrs.xml) || [])[1];
+        // A field's opening mark in a shaded run: Word draws the field's page number in that run's colour, on its shading,
+        // whatever its saved result is set in (pagefields.js; six-digit colours only, the document's own text).
+        if (a['data-fld'] === 'begin') {
+          const fill = /<w:shd\b[^>]*\bw:fill="([0-9A-Fa-f]{6})"/.exec(n.attrs.xml);
+          const ink = /<w:color\b[^>]*\bw:val="([0-9A-Fa-f]{6})"/.exec(n.attrs.xml);
+          if (fill) a['data-fldlook'] = `${ink ? `color:#${ink[1]};` : ''}background-color:#${fill[1]}`;
+        }
         // A legacy check box or drop-down shows its state, which lives in the field's ffData.
         const ff = n.attrs.kind === 'fldChar' && legacyInfo(n.attrs.xml);
         if (ff && ff.kind !== 'text') {

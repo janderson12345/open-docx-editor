@@ -485,15 +485,17 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
 const placements = new WeakMap(); // info -> Map(key -> css)
 // (gridXml: the table's w:tblGrid, whose columns give a floating table of no set width its width; colW: the column's
 // width in px, when known.)
-export function tablePlacementCss(info, tblPrXml, compatMode, parseXml, gridXml = null, colW = 0) {
+// (firstBorders: the w:tcBorders XML of the first row's first cell, or none: its own left line sets the table in.)
+export function tablePlacementCss(info, tblPrXml, compatMode, parseXml, gridXml = null, colW = 0, firstBorders = '') {
   if (!tblPrXml) return compatMode < 15 ? 'margin-left:-7.2px' : '';
   if (!placements.has(info)) placements.set(info, new Map());
   const memo = placements.get(info);
   const floats = tblPrXml.includes('tblpPr');
   const gridTw = floats && gridXml ? gridWidthTw(gridXml) : 0;
   const cw = floats && Number.isFinite(colW) ? Math.min(2112, Math.max(0, Math.round(colW * 100) / 100)) : 0;
-  const key = `${compatMode}|${gridTw}|${cw}|${tblPrXml}`;
-  if (!memo.has(key)) memo.set(key, placementCss(info, tblPrXml, compatMode, parseXml, gridTw, cw));
+  const first = ownLeftLine(firstBorders);
+  const key = `${compatMode}|${gridTw}|${cw}|${first ? `${first.val}:${first.sz}` : ''}|${tblPrXml}`;
+  if (!memo.has(key)) memo.set(key, placementCss(info, tblPrXml, compatMode, parseXml, gridTw, cw, first));
   return memo.get(key);
 }
 /** The sum of a w:tblGrid's columns in twips (each bounded: 0 to 31680, 22in). */
@@ -505,7 +507,21 @@ function gridWidthTw(gridXml) {
   }
   return Math.min(31680, sum);
 }
-function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0) {
+/** The w:tcBorders XML of a table node's first row's first cell, or ''. */
+export function firstCellBorders(table) {
+  const tcPr = table?.firstChild?.firstChild?.attrs?.tcPr;
+  const own = Array.isArray(tcPr) ? tcPr.find((x) => x[0] === 'tcBorders') : null;
+  return own && typeof own[1] === 'string' ? own[1] : '';
+}
+/** A cell's own left line from its w:tcBorders XML: { val, sz } (eighths of a point), or null when it sets none. */
+function ownLeftLine(tcBordersXml) {
+  const tag = /<w:(?:left|start)[ /][^>]*>/.exec(typeof tcBordersXml === 'string' ? tcBordersXml : '');
+  if (!tag) return null;
+  const val = /w:val="([A-Za-z]+)"/.exec(tag[0]);
+  const sz = /w:sz="(\d{1,3})"/.exec(tag[0]);
+  return val ? { val: val[1], sz: Math.min(96, Number(sz ? sz[1] : 0)) } : null;
+}
+function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0, first = null) {
   const el = parseXml(tblPrXml.replace(/^<w:tblPr/, () => `<w:tblPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"${missingDecls(tblPrXml, ['w'])}`)).documentElement;
   const styleId = attr(kid(el, 'tblStyle'), 'val') || info.defaultTable;
   const ts = (styleId && resolveTableStyle(info.styles, styleId)) || { cellMar: {} };
@@ -578,7 +594,11 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // (At the left margin a table starts half its left line's width in from where its indent puts it, all of it moved
     // by that: Word's prints of 15 generated documents, outer lines of a quarter point to 6pt, the lines between the
     // cells as wide or not: each cell's text half the outer line's width further right, whatever the inside lines'.)
-    const own = readBorders(kid(el, 'tblBorders')).left, lb = own || ts.borders?.left;
+    // The line is the first row's first cell's: its own where the cell sets one, over the table's (78 more documents:
+    // the table's lines 0.5pt, 3pt or none, the first column's cells with a left line of their own in both rows, the
+    // first only or the second only: the whole table in by half the first row's cell's line, and by the table's line
+    // where only the second row's cell sets one).
+    const own = readBorders(kid(el, 'tblBorders')).left, lb = first || own || ts.borders?.left;
     const half = lb && lb.val && lb.val !== 'nil' && lb.val !== 'none' ? ((lb.sz / 8) * (4 / 3)) / 2 : 0;
     if (left || half) css.push(`margin-left:${+(left + half).toFixed(2)}px`);
   }
@@ -787,6 +807,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       { tl: lt && compoundSide(lt.edge.top), bl: lt && lb && compoundSide(lb.edge.bottom), tu: au && compoundSide(au.edge.left), ru: ar && compoundSide(ar.edge.right) },
     );
     const sideGrow = { left: 0, right: 0 };
+    const sideHalf = { left: 0, right: 0 }; // half the width of the solid line on that side (px)
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const b = edge[side];
       const cb = compound[side];
@@ -815,6 +836,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
       shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
       grow[side] = (pt * 4) / 3 * share;
+      if (side === 'left' || side === 'right') sideHalf[side] = (pt * 4) / 3 / 2;
       // A border's space (w:space, points) lies between it and the cell's text in Word (doc 01's 2pt double frame: the
       // nested table 2.7px lower than ours).
       if ((side === 'top' || side === 'bottom') && b.space > 0) grow[side] += (b.space * 4) / 3;
@@ -835,9 +857,14 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // cells beside it have: corpus 2, and the samples scored with this on and off.)
     const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
     if (under > 0.01) grow.top += under;
-    const pad = (side) => (cellPad[side] ?? (side === 'left' || side === 'right' ? 7 : 0)) + (side === 'top' || side === 'bottom' ? grow[side] : 0);
-    if (cellPad.left != null || sideGrow.left) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
-    if (cellPad.right != null || sideGrow.right) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
+    // A cell's text keeps clear of the lines at its sides: it starts and ends its side margin in from the cell's edge, or
+    // half the line's width where that is more (the line lies half on each side of the edge). Word's prints of 80
+    // generated documents, side margins of 0 to 108 twips against lines of 0.5 to 6pt, the table at the margin and
+    // centred: with no margin, text 0.33px in from a half-point line and 4px from a 6pt one; a sample's table with no
+    // side margins held a third of a pixel more a side than Word's and kept a word on a line that Word wraps.
+    const pad = (side) => (side === 'left' || side === 'right' ? Math.max(cellPad[side] ?? 7, sideHalf[side]) : (cellPad[side] ?? 0) + grow[side]);
+    if (cellPad.left != null || sideGrow.left || sideHalf.left > 7) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
+    if (cellPad.right != null || sideGrow.right || sideHalf.right > 7) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
     // (Top and bottom to the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts them down to one, and
     // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
     const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);

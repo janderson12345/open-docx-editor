@@ -14,7 +14,7 @@ import { history, undo, redo } from 'prosemirror-history';
 import { autocorrectPlugin } from './autocorrect.js';
 import { updateFieldsCommand } from './refs.js';
 import { tableEditing, columnResizing, goToNextCell, TableMap, TableView } from 'prosemirror-tables';
-import { listCounter, resolveStyle, tableCellCss, tableStylesCss, tablePlacementCss } from '../ooxml/styles.js';
+import { listCounter, resolveStyle, tableCellCss, tableStylesCss, tablePlacementCss, firstCellBorders } from '../ooxml/styles.js';
 import { parseXml } from '../ooxml/xml.js';
 import { ZERO_WIDTH } from '../ooxml/reader.js';
 import { borderCss } from '../ooxml/props.js';
@@ -318,7 +318,7 @@ function paragraphPlugin(session) {
           if (node.type === schema.nodes.table) {
             // (Its column: its own section's, which may be narrower than the last's, a portrait page before landscape ones.)
             const own = parent === doc ? sides.get(index) || [0, 0] : null;
-            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, own ? page.width - page.left - page.right - own[0] - own[1] : 0);
+            const place = tablePlacementCss(session.styles, node.attrs.tblPr, session.compatMode, parseXml, node.attrs.tblGrid, own ? page.width - page.left - page.right - own[0] - own[1] : 0, firstCellBorders(node));
             if (!/(?:^|;)float:/.test(place || '')) { tableEdges(node, before); edgePrev = mark; }
             noRoom = /--odx-fnoroom/.test(place || '') ? 40 : 0;
             fUnder = noRoom ? Number(/(?:^|;)margin-top:([\d.]+)px/.exec(place)?.[1] || 0) : null;
