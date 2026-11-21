@@ -297,7 +297,7 @@ const roman = (n) => {
  */
 export function listCounter(numbering) {
   const counters = new Map(); // abstractId -> number[]
-  const started = new Set(); // "numId:ilvl" of lists that start over (w:startOverride), once they have
+  const started = new Set(); // lists (numId) that have had their first paragraph
   return (numId, ilvl) => {
     const n = numbering.nums.get(String(numId));
     if (!n) return null;
@@ -311,8 +311,11 @@ export function listCounter(numbering) {
     // (A list that starts over, w:startOverride on its level, does at its first paragraph, though another list of the
     // same definition has counted before it; the count then goes on from there in both. Word's prints of generated
     // documents: A B, the second list set to start at 5: E F, the first again: G H.)
-    const over = n.overrides[ilvl] != null && !started.has(`${numId}:${ilvl}`);
-    if (n.overrides[ilvl] != null) started.add(`${numId}:${ilvl}`);
+    // (At the list's first paragraph only, whatever its level: a sample's headings, one list set to start every level
+    // at 1 and first used for a level-1 heading, go on 2.7, 2.8 where that list's first level-2 heading follows
+    // another list's 2.7.)
+    const over = n.overrides[ilvl] != null && !started.has(String(numId));
+    started.add(String(numId));
     c[ilvl] = c[ilvl] == null || over ? startOf(ilvl) : c[ilvl] + 1;
     c.length = ilvl + 1; // deeper levels restart
     return lvl.text.replace(/%(\d)/g, (_, d) => {
