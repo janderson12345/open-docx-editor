@@ -2147,6 +2147,18 @@ await open('list-letter-next-stop.docx');
 const lns2 = [await textSpans(9), await textSpans(16)].map((t) => t[0][0]);
 check(Math.abs(lns2[0] - 108) < 1.5 && Math.abs(lns2[1] - 120) < 1.5, `text after a list letter at the first stop past its unkerned width (${JSON.stringify(lns2)}, want 108 and 120px)`);
 
+// A list number under a highlighted paragraph mark is highlighted, with its room up to the text (why-tests gen2.py
+// lblhl; Word: yellow from the number's place at 144px to the text at 192, under a mark highlighted yellow).
+await open('list-number-mark-highlight.docx');
+const lmh = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-li'); const cs = getComputedStyle(p, '::before'); return [cs.backgroundColor, parseFloat(cs.paddingTop) > 4 && parseFloat(cs.marginTop) < -4, Math.round(parseFloat(cs.minWidth))]; });
+check(lmh[0] === 'rgb(255, 255, 0)' && lmh[1] && lmh[2] === 48, `a list number highlighted with its paragraph mark (${JSON.stringify(lmh)}, want yellow over 48px of room)`);
+
+// A tab stop written after one further along is not a stop: Word takes them in rising order (gen2.py tabdup; Word:
+// stops written 880 then 900 twips take the tab to 154.7px, written 900 then 880 to 156).
+await open('tab-stops-out-of-order.docx');
+const tso = [await textSpans(1), await textSpans(2)].map((t) => t[1][0]);
+check(Math.abs(tso[0] - 155) < 1.01 && Math.abs(tso[1] - 156) < 0.6 && tso[1] > tso[0], `a tab stop written after one further along ignored (${JSON.stringify(tso)}, want 155 and 156px)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

@@ -13,6 +13,13 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   rule). Lines whose runs carry letter-spacing of their
   own (every run of a document converted from a PDF does) are squeezed as any other: they were left alone, and none
   of 27 such documents broke as Word's.
+- **Tab stops are taken in rising order, as Word takes them** (34 generated lines): a stop written after one further
+  along is not a stop. Stops written 900 then 880 twips sent a tab to 880; Word sends it to 900.
+- **A list number is highlighted with its paragraph mark** (five generated lists): the highlight covers the number
+  and its room up to the text; the mark's shading does not colour it.
+- **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
+  And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
+  0.75pt lines).
 - **A table row of exact height never breaks across pages** (24 generated tables): Word moves such a row whole to
   the next page, its text cut to the row or not; automatic rows break line by line. Printing broke one whose text was
   taller than the row: the row could not grow across the page's foot, the rows after it ran off the page over the
