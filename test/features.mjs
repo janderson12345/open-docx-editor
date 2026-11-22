@@ -2159,6 +2159,25 @@ await open('tab-stops-out-of-order.docx');
 const tso = [await textSpans(1), await textSpans(2)].map((t) => t[1][0]);
 check(Math.abs(tso[0] - 155) < 1.01 && Math.abs(tso[1] - 156) < 0.6 && tso[1] > tso[0], `a tab stop written after one further along ignored (${JSON.stringify(tso)}, want 155 and 156px)`);
 
+// A line that crosses the foot of an exact-height row is cut there in print, not drawn whole (gen2.py exclip; Word:
+// under a 20pt row holding two 12pt lines, the second line's ink ends 26.7px below the row's top, 4.5px of it showing).
+await open('exact-row-cut-line.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+await page.waitForTimeout(300);
+const ecl = await page.evaluate(() => {
+  const foot = document.querySelector('.odx-content:not(.odx-pl-host) tr[data-exact] > td').getBoundingClientRect().bottom;
+  return [...document.querySelectorAll('.odx-printlines tr[data-exact] p')].map((p) => {
+    const b = p.getBoundingClientRect();
+    const m = /^inset\(\S+ \S+ ([-\d.]+)px/.exec(p.style.clipPath || '');
+    return [+(b.top - foot).toFixed(1), +(b.bottom - foot).toFixed(1), m ? +(b.bottom - Number(m[1]) - foot).toFixed(1) : null];
+  });
+});
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(ecl.length === 2 && ecl[0][1] <= 0 && ecl[0][2] === null && ecl[1][0] < -3 && ecl[1][1] > 3 && ecl[1][2] !== null && Math.abs(ecl[1][2]) <= 0.5,
+  `a line crossing an exact row's foot cut at the foot in print (${JSON.stringify(ecl)}, want two lines, the second from above the foot to below it and cut at 0)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

@@ -20,6 +20,8 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
   And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
   0.75pt lines).
+- **A line crossing the foot of an exact-height row is cut there in print** (27 generated tables): Word draws such a
+  line down to the row's foot and no further; the print drew it whole, over what followed the row.
 - **A table row of exact height never breaks across pages** (24 generated tables): Word moves such a row whole to
   the next page, its text cut to the row or not; automatic rows break line by line. Printing broke one whose text was
   taller than the row: the row could not grow across the page's foot, the rows after it ran off the page over the

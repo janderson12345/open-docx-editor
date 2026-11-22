@@ -211,7 +211,12 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope, quiet = (fn) =
     const box = el.getBoundingClientRect();
     // An exact row clips its paragraphs: lines past the clip aren't drawn.
     const cell = el.parentElement?.closest('tr[data-exact] > td');
-    let clip = cell ? cell.getBoundingClientRect().bottom : cs.overflowY === 'clip' || cs.overflowY === 'hidden' ? box.bottom : Infinity;
+    // (A line that starts above the row's foot and ends below it is cut at the foot, not drawn whole: Word's prints of 27
+    // generated documents, a row of exact height from 14pt to 30pt holding two 12pt lines, as one wrapped paragraph, one
+    // with a line break, or two paragraphs: the second line's ink ends at the row's top plus its height in every one,
+    // 2px of it under an 18pt row, 12.5px under a 26pt one. The copy was drawn whole in 19 of them.)
+    const foot = cell ? cell.getBoundingClientRect().bottom : Infinity;
+    let clip = cell ? foot : cs.overflowY === 'clip' || cs.overflowY === 'hidden' ? box.bottom : Infinity;
     // A paragraph cut by an inset clip (split across columns: the part above and the copy below): only its lines inside.
     let clipTop = -Infinity;
     const inset = /^inset\(([-\d.]+)px [-\d.]+px ([-\d.]+)px/.exec(cs.clipPath || '');
@@ -297,14 +302,15 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope, quiet = (fn) =
         if (shyAt(ln.end[0]) && own) own.textContent = '-';
         else { const t = texts(line).pop(); if (t) t.data += '-'; }
       }
+      let sides = null;
       if (side) {
         const lx = left + beside + origin.left;
         const cutL = Math.max(0, side.left - lx), cutR = Math.max(0, lx + width - beside - side.right);
         if (cutL >= width - beside) return;
-        if (cutL || cutR) line.style.clipPath = `inset(-50px ${cutR}px -50px ${cutL}px)`;
+        if (cutL || cutR) { line.style.clipPath = `inset(-50px ${cutR}px -50px ${cutL}px)`; sides = [cutR, cutL]; }
       }
       at.append(line);
-      placed.push([line, ln, d]);
+      placed.push([line, ln, d, ln.bottom > foot ? foot : null, sides]);
     });
     // Its borders and shading: the paragraph is hidden in print, so its box is drawn here, under its lines (a framed
     // paragraph's box, a ruled heading's line).
@@ -330,6 +336,9 @@ export function buildPrintLines(sheet, contentEl, shiftOf, scope, quiet = (fn) =
     return ln.top - origin.top - Math.round(off) + d;
   });
   placed.forEach(([line], i) => { line.style.transform = `translateY(${ys[i].toFixed(3)}px)`; });
+  // The lines crossing an exact row's foot, cut there (their copies' boxes all read, then all cut).
+  const crossing = placed.filter((q) => q[3] != null).map((q) => [q[0], q[0].getBoundingClientRect().bottom - q[3], q[4]]);
+  for (const [line, below, sides] of crossing) line.style.clipPath = `inset(-50px ${sides ? sides[0] + 'px' : '-10000px'} ${below.toFixed(2)}px ${sides ? sides[1] + 'px' : '-10000px'})`;
   // The originals hidden by one rule on a mark, not by a rule each on its place (an :nth-child path): those are tried
   // on every element at each restyle, and printing restyles the page, and each page's copy (printcopies.js), again and
   // again: a 16-page document of 950 table cells took 110s in the browser's print.
