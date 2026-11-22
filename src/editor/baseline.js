@@ -12,6 +12,7 @@ export const ASCENT = {
   'trebuchet ms': 0.939, 'century schoolbook': 0.9858, century: 0.9858,
   aptos: 0.939, 'aptos narrow': 0.939, 'aptos display': 0.939, consolas: 0.9136,
   ubuntu: 0.96, 'ubuntu mono': 0.83, // (embedded in sample S125: its own hhea tables)
+  garamond: 0.8618, // (its hhea ascender, no line gap: Word's first baselines in 42 generated documents, 13.79px under the line's top at 12pt whatever the spacing)
   'microsoft sans serif': 0.9219, // (sample S113. Not Comic Sans MS or Century Gothic: their hhea ascents put sample S038's lines low)
 };
 // What remains, per font, in px whatever the size: the average error of printed lines against Word's own PDFs, by font

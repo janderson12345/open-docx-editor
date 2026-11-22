@@ -20,6 +20,11 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
   And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
   0.75pt lines).
+- **A paragraph is no taller than its font's own line** (18 generated documents in Garamond, Georgia and Courier
+  New): fonts whose single line is under 1.15em had every single-spaced paragraph, empty or not, 0.2 to 0.4px too
+  tall, 6 to 15px down a page.
+- **Garamond's line and baseline are Word's** (42 generated documents, 8 to 16pt): 1.125em a line, the text 0.862em
+  under the line's top whatever the spacing.
 - **A line crossing the foot of an exact-height row is cut there in print** (27 generated tables): Word draws such a
   line down to the row's foot and no further; the print drew it whole, over what followed the row.
 - **A table row of exact height never breaks across pages** (24 generated tables): Word moves such a row whole to

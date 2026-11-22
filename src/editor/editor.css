@@ -73,13 +73,16 @@
 .odx-repeat table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .odx-repeat td { vertical-align: top; box-sizing: border-box; padding: 0 7px; }
 .odx-repeat { position: absolute; white-space: pre-wrap; word-wrap: break-word; font-variant-ligatures: none; font-kerning: none; }
-:where(.odx-repeat) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); }
+:where(.odx-repeat) p { min-height: calc(min(1.15, var(--odx-lh, 1.15)) * 1em); --odx-lhv: var(--odx-lh, 1.17); }
 .odx-hf p { margin: 0; }
 /* An empty header line (or one holding only a floating picture) still takes a line, as in Word. */
 .odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]:only-child)::after { content: "\200b"; }
 .odx-content { position: relative; box-sizing: border-box; outline: none; white-space: pre-wrap; word-wrap: break-word; min-height: 1em; }
-:where(.odx-content, .odx-hf) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
-:where(.odx-content, .odx-hf) p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: var(--odx-floor, 1.15em); } /* an empty paragraph's floor: shorter under spacing below a single line (props.js) */
+/* (The floor is 1.15em, or the font's own single line where that is less: Word's prints of 18 generated documents in
+   Garamond, Georgia and Courier New, single spaced: one-line and empty paragraphs 1.125, 1.136 and 1.133em apart, the
+   fonts' own lines; at the 1.15em floor each was 0.2 to 0.4px too tall, 6 to 15px down a page.) */
+:where(.odx-content, .odx-hf) p { min-height: calc(min(1.15, var(--odx-lh, 1.15)) * 1em); --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
+:where(.odx-content, .odx-hf) p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: var(--odx-floor, calc(min(1.15, var(--odx-lh, 1.15)) * 1em)); } /* an empty paragraph's floor: shorter under spacing below a single line (props.js) */
 /* Lines as tall as the text on them, as in Word (textspans.js): a paragraph's line height is carried in --odx-lhv, which
    inherits as line-height does; the paragraph and the elements around its text have line-height 0 (no strut of their
    own on each line), and the text (odx-t), content drawn as it is (fields, labels) and an empty paragraph's line take

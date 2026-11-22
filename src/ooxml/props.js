@@ -538,6 +538,9 @@ const LINE = Object.assign(Object.create(null), {
   // (Arial Narrow: its Windows ascent + descent, Word's 11.473pt at 10pt and 13.769pt at 12pt; measured in the browser
   // from its hhea it came out 1.13, lines of 1.08 and 1.15 spacing 0.2pt short each, 10px a page in the samples.)
   'arial narrow': 1.1474, 'trebuchet ms': 1.1621, 'comic sans ms': 1.3936, impact: 1.2197, 'arial black': 1.4097,
+  // (Garamond: its own tables' 1.125em, Word's line in 42 generated documents at 8 to 16pt; measured in the browser,
+  // whose ascent and descent come whole at 100px, it came out 1.12, each 12pt line 0.05px short.)
+  garamond: 1.125,
   'ms gothic': 1.3, // (not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
 });
 const measured = new Map();

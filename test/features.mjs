@@ -2178,6 +2178,17 @@ await page.emulateMedia({ media: 'screen' });
 check(ecl.length === 2 && ecl[0][1] <= 0 && ecl[0][2] === null && ecl[1][0] < -3 && ecl[1][1] > 3 && ecl[1][2] !== null && Math.abs(ecl[1][2]) <= 0.5,
   `a line crossing an exact row's foot cut at the foot in print (${JSON.stringify(ecl)}, want two lines, the second from above the foot to below it and cut at 0)`);
 
+// Garamond's single line is its own 1.125em, and a paragraph's floor is no taller than its font's line (why-tests
+// gen2.py garaline and floor; Word: 12pt Garamond paragraphs 18px apart, 12pt Courier New ones 18.12px, empty or not;
+// at the 1.15em floor both stood 18.39px).
+await open('garamond-single-lines.docx');
+const gsl = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 20).map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(gsl.length === 20 && gsl.every((h) => Math.abs(h - 18) < 0.06), `single-spaced 12pt Garamond paragraphs one line tall, 1.125em (${JSON.stringify(gsl.slice(0, 4))}, want 18px)`);
+await open('single-lines-under-floor.docx');
+const sluf = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(sluf.length === 42 && sluf.slice(0, 20).every((h) => Math.abs(h - 18.125) < 0.07) && sluf.slice(21, 41).every((h) => Math.abs(h - 18.125) < 0.07),
+  `single-spaced 12pt Courier New paragraphs, with text and empty, as tall as the font's line (${JSON.stringify([sluf[0], sluf[25]])}, want 18.12px, not the 18.4px floor)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).
