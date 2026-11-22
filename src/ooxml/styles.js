@@ -842,6 +842,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       const thin = (pt * 4) / 3 < 1 ? `max(${((pt * 4) / 3 * share).toFixed(3)}px, calc(var(--odx-hair, 1px) * ${share}))` : null;
       const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
       shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
+      if (thin && side === 'top') css.push('--odx-hairtop:1'); // (for the table's line at a page break, pages.js breakRule)
       grow[side] = (pt * 4) / 3 * share;
       if (side === 'left' || side === 'right') sideHalf[side] = (pt * 4) / 3 / 2;
       // A border's space (w:space, points) lies between it and the cell's text in Word (doc 01's 2pt double frame: the

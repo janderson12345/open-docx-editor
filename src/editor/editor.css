@@ -210,8 +210,11 @@
    it: drawn again by the run's own element, over the style's.) */
 .odx-content span[data-cstyle] > span[style*="color:"] { text-decoration-line: inherit; }
 /* (And an underline's own, under text whose colour is set inside it, a colour that also names a theme's: the line is
-   the text's colour in Word, blue under a link's blue text, and was the black of what is round it.) */
-.odx-content u > span[style*="color:"]:not([style*="background-color:"]) { text-decoration-line: inherit; }
+   the text's colour in Word, blue under a link's blue text, and was the black of what is round it. Each part of the
+   underlined text draws the line in its own colour, and the element round them draws none: drawn under them, its
+   black showed as a dark edge to the blue.) */
+.odx-content u:has(> span[style*="color:"]:not([style*="background-color:"])) { text-decoration-color: transparent; }
+.odx-content u:has(> span[style*="color:"]:not([style*="background-color:"])) > * { text-decoration-line: underline; }
 /* (A link whose runs are underlined by hand and carry no character style: as its runs, in Word's print black with its
    line, not the editor's blue.) */
 .odx-content u a.odx-link { color: inherit; text-decoration: none; }
@@ -290,6 +293,9 @@
    zero-width box before the paragraph's first text (textspans.js odx-first), in that text's own font and line height,
    so the line is the text's plus exactly that. */
 .odx-content p.odx-li::before { line-height: 0; }
+/* A number under a highlighted paragraph mark (pararules.js --odx-lbg): its box, which has no height of its own, is
+   given the line's by padding and takes it back by its margins, and is filled. */
+.odx-content p.odx-li[style*="--odx-lbg:"]::before { background-color: var(--odx-lbg); padding-block: 0.55em 0.6em; margin-block: -0.55em -0.6em; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* A label raised or lowered by its level (w:position): off the baseline by that much; its line's room is --odx-lbl-own's. */
 .odx-content p.odx-li[style*="--odx-lraise"]::before { position: relative; top: calc(-1 * var(--odx-lraise)); }
 /* (Its level's own letter-spacing, pararules.js.) */

@@ -1541,8 +1541,7 @@ export function createPages(view, session, { sheet, scope }) {
     // (A hairline only where the cell's own line is one, styles.js: a line of a whole pixel, 0.75pt, is drawn at that
     // on paper too. Taken for a hairline, a table's last line on a page printed at 0.63px under rows whose lines
     // are 1px, and in Word's print 0.88px.)
-    const own = cell.getAttribute('style') || '';
-    const hair = w < 1 || (w === 1 && (!/box-shadow/.test(own) || /odx-hair/.test(own)));
+    const hair = w < 1 || getComputedStyle(cell).getPropertyValue('--odx-hairtop').trim() === '1';
     const h = hair ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
     line.style.cssText = `top:${y}px;left:${r.left - origin.left}px;width:${r.width}px;height:${Math.max(4, Math.ceil(w) + 2)}px;box-shadow:inset 0 ${h} 0 0 ${color || '#000'}`;
     frag.append(line);

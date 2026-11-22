@@ -2,7 +2,7 @@
 // the session and what the pass worked out before it. `attrs` is the paragraph's decoration (class, data-label, role),
 // `style` its list of CSS declarations; both are added to in the pass's order.
 import { listLevel, resolveStyle } from '../ooxml/styles.js';
-import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
+import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor, highlightColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 import { outlineLevel } from './commands.js';
 import { wordAscent } from './baseline.js';
@@ -191,6 +191,11 @@ export function labelFormat(node, session, l, label, style) {
   // (The automatic colour, set on the mark or the level: black, over the paragraph style's colour, as the runs'.)
   else if (color === 'auto') style.push('--odx-lcolor:var(--odx-autotext, #000)');
   if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
+  // A highlighted paragraph mark highlights the number, and its room up to the text (the mark's shading does not).
+  // Word's prints of five generated lists: yellow from the number's place to the text's start, a line tall, under a
+  // mark highlighted yellow; none under one shaded yellow, or with only the text's runs highlighted.
+  const hl = /<w:highlight\b[^>]*w:val="([A-Za-z]{1,20})"/.exec(mark)?.[1];
+  if (hl && hl !== 'none' && highlightColor(hl) !== 'transparent') style.push(`--odx-lbg:${highlightColor(hl)}`);
 }
 
 const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
