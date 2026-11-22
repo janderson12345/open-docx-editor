@@ -2197,6 +2197,26 @@ await page.waitForTimeout(300);
 const clg = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 20).map((p) => +p.getBoundingClientRect().height.toFixed(2)));
 check(clg.length === 20 && clg.every((h) => Math.abs(h - 19.32) < 0.08), `Calibri lines holding a Garamond run no taller than Calibri's own (${JSON.stringify(clg.slice(0, 4))}, want 19.32px)`);
 
+// A row at a page's top starts under its own top line only: where the line over it is the upper row's bottom line, its
+// text starts at the page's top, the row moved whole or split (why-tests gen2.py rowcont; Word: under 3pt bottom-only
+// lines the second page's first line is where a plain first line is; the room for the line had it 4.3px low).
+const rowAtTop = async (file) => {
+  await open(file);
+  await page.waitForTimeout(400);
+  return page.evaluate(() => {
+    const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    // (Each line of text, not its paragraph's box: one carried over the page break has its box, and the spacer that
+    // carries it, start on the page before.)
+    const r = document.createRange();
+    const first = [...document.querySelectorAll('.odx-content td p')].flatMap((p) => { r.selectNodeContents(p); return [...r.getClientRects()].filter((q) => q.width > 1 && q.height > 5).map((q) => q.top); }).filter((t) => sh[1] && t >= sh[1].top + 50).sort((x, y) => x - y)[0];
+    return [sh.length, first == null ? null : +(first - sh[1].top).toFixed(1)];
+  });
+};
+const ram = await rowAtTop('row-moved-under-upper-line.docx');
+const ras = await rowAtTop('row-split-under-upper-line.docx');
+check(ram[0] === 2 && Math.abs(ram[1] - 96.3) < 1 && ras[0] === 2 && Math.abs(ras[1] - 96.3) < 1,
+  `a row at a page's top with no top line of its own starts at the page's top (${JSON.stringify([ram, ras])}, want 96px on page 2, moved whole and split)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

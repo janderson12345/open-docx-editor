@@ -754,7 +754,16 @@ export function createPages(view, session, { sheet, scope }) {
       const first = j === 0 ? tableFirstOnPage : top <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
       if (first || rows[j].bottom - rows[j].top > pageHeight(pg + 1)) continue; // taller than a page: let it run over
       if (j <= headerRows) return null;
-      const d = contentTop(pg + 1) + headH - top;
+      // (Less the room over its text that isn't the row's own, a wider line from the row above, --odx-ptc, styles.js: at
+      // a page's top the row's text starts under its own top line only. Word's prints of six generated tables of rows
+      // that can't split, moved whole: under a top line of their own the text starts that much down the page, with
+      // only bottom lines, at the page's top.)
+      const moved = b.table.tBodies[0]?.rows[j];
+      const lift = moved ? Math.min(...[...moved.cells].filter((td) => !td.hasAttribute('data-odx-phantom')).map((td) => {
+        const ptc = td.style.getPropertyValue('--odx-ptc');
+        return ptc ? Math.max(0, (parseFloat(td.style.getPropertyValue('--odx-pt')) || 0) - (parseFloat(ptc) || 0)) : 0;
+      })) : 0;
+      const d = contentTop(pg + 1) + headH - top - (Number.isFinite(lift) ? lift : 0);
       pushes.set(j, d);
       offs.set(j, extra); // everything above this row has moved down by this much (pushed and split rows)
       if (!headerRows) closes.push(contentTop(pg + 1) + 1); // the moved row's top border, where it now starts: at the page's top, as Word draws it (it was a pixel above)
@@ -867,7 +876,9 @@ export function createPages(view, session, { sheet, scope }) {
       // of the row itself is laid out from the row's top as it splits: asTop, below.)
       if (!asTop.has(td) && !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
       const cs = getComputedStyle(td);
-      const padTop = padTop0 + (parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
+      // (At the next page's top the cell's own room only, --odx-ptc where it is less than its padding: styles.js.)
+      const ptc = td.style.getPropertyValue('--odx-ptc');
+      const padTop = padTop0 + (ptc ? parseFloat(ptc) || 0 : parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
       const padBottom = padBottom0 + (parseFloat(cs.paddingBottom) || 0);
       const undoAt = (y) => undoOut(y) + undoIn(td, y);
       let extra = extra0;

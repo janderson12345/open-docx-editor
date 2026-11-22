@@ -864,7 +864,14 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // (A cell that draws a top line of its own, its tcBorders' or its region's, starts under that line whatever the
     // cells beside it have: corpus 2, and the samples scored with this on and off.)
     const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
+    // The room over the cell's text that is the cell's own: its top margin and its own top line, without what a wider
+    // line from the row above adds. A row going on at the next page's top starts under that much only (pages.js
+    // splitRow): Word's prints of 12 generated tables, a row of 40 lines broken across two pages: under a top line of
+    // its own, 1 to 3pt, the text starts that much down the second page; under none, the line above being the upper
+    // row's bottom line, at the page's top.
+    const ownRoom = 'ownTop' in more ? (drawn(more.ownTop) ? linePx(more.ownTop) : 0) : grow.top;
     if (under > 0.01) grow.top += under;
+    const lessAtBreak = ownRoom < grow.top - 0.01;
     // A cell's text keeps clear of the lines at its sides: it starts and ends its side margin in from the cell's edge, or
     // half the line's width where that is more (the line lies half on each side of the edge). Word's prints of 80
     // generated documents, side margins of 0 to 108 twips against lines of 0.5 to 6pt, the table at the margin and
@@ -877,6 +884,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
     const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);
     css.push(`--odx-pt:${step(pad('top'))}px;padding-top:${step(pad('top'))}px`); // pagination adds to --odx-pt
+    if (lessAtBreak) css.push(`--odx-ptc:${step((cellPad.top ?? 0) + ownRoom)}px`);
     css.push(`--odx-pb:${step(pad('bottom'))}px;padding-bottom:${step(pad('bottom'))}px`);
     const r = rPrToCss(rPr, theme);
     if (r) css.push(r);
