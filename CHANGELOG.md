@@ -20,6 +20,8 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
   And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
   0.75pt lines).
+- **A run in another font deepens a Calibri line only past Calibri's own depth** (20 generated documents): runs in
+  Garamond or Consolas made 11pt Calibri lines 0.2 to 0.4px taller than Word's.
 - **A paragraph is no taller than its font's own line** (18 generated documents in Garamond, Georgia and Courier
   New): fonts whose single line is under 1.15em had every single-spaced paragraph, empty or not, 0.2 to 0.4px too
   tall, 6 to 15px down a page.

@@ -2189,6 +2189,14 @@ const sluf = await page.evaluate(() => [...document.querySelectorAll('.odx-conte
 check(sluf.length === 42 && sluf.slice(0, 20).every((h) => Math.abs(h - 18.125) < 0.07) && sluf.slice(21, 41).every((h) => Math.abs(h - 18.125) < 0.07),
   `single-spaced 12pt Courier New paragraphs, with text and empty, as tall as the font's line (${JSON.stringify([sluf[0], sluf[25]])}, want 18.12px, not the 18.4px floor)`);
 
+// A run in another font makes a Calibri line taller only past Calibri's own Windows ascent and descent (why-tests
+// gen2.py mixdesc; Word: 11pt Calibri lines at 1.08 holding a Garamond run are Calibri's own 19.32px; measured from
+// hhea's shallower descent they stood 19.7px).
+await open('calibri-line-garamond-run.docx');
+await page.waitForTimeout(300);
+const clg = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 20).map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(clg.length === 20 && clg.every((h) => Math.abs(h - 19.32) < 0.08), `Calibri lines holding a Garamond run no taller than Calibri's own (${JSON.stringify(clg.slice(0, 4))}, want 19.32px)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

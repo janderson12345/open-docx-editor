@@ -7,7 +7,7 @@
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { fitOf } from './fittext.js';
-import { ASCENT } from './baseline.js';
+import { ASCENT, wordAscent } from './baseline.js';
 import { lineFactor } from '../ooxml/props.js';
 
 const key = new PluginKey('odx-widths');
@@ -114,7 +114,11 @@ function mixedLine(host, cs) {
   const [ap, bp] = spanBox(fontOfCs(pcs), lp, p);
   const [ar, br, Ab, Db] = spanBox(fontOfCs(cs), lr, p);
   const grow = (k) => Math.max(0, k(fr) * sr - k(fp) * sp);
-  const up = grow((f) => ASCENT[f]), down = grow((f) => lineFactor(f) - ASCENT[f]);
+  // (By Word's own ascent and descent, Calibri's Windows ones: 0.9521 and 0.2686em, not hhea's 0.9707 and 0.25. Word's
+  // prints of 20 generated documents, a Calibri line holding a run in another font: Garamond's (0.2632em deep) and
+  // Consolas's (0.251em) leave the line Calibri's own, Courier New's (0.3003em) makes it 0.47px taller at 11pt, Verdana's
+  // (1.0054em high) 0.79px. Measured from hhea's 0.25em, Garamond and Consolas runs made 11pt lines 0.2 to 0.4px taller.)
+  const up = grow((f) => wordAscent(f)), down = grow((f) => lineFactor(f) - wordAscent(f));
   if (ar <= ap + up + 0.05 && br <= bp + down + 0.05) return 0;
   const lh = Math.min(2 * (ap + up) - (Ab - Db), 2 * (bp + down) + (Ab - Db));
   return lh > 0 && lh < lr - 0.05 ? Math.round(lh * 100) / 100 : 0;
