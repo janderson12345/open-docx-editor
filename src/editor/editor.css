@@ -513,7 +513,10 @@ td[data-odx-phantom] > * { display: none; }
 :where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl { display: inline !important; width: auto !important; }
 :where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl::before { content: "\A"; white-space: pre; }
 :where(.odx-content, .odx-hf, .odx-repeat) .odx-tab.odx-tabnl::after { content: ""; display: inline-block; width: var(--odx-tabnl, 0px); }
-.odx-content p.odx-li.odx-lbl-right::before { text-align: right; position: relative; left: calc(-1 * var(--odx-hang, 18pt)); }
+/* (As wide as its room and no wider, the number set against the room's end and running out of its start when it is
+   wider, then the whole moved back by the room: it ends at its place whatever its width, as Word sets it, and its
+   text starts where the room ends. A box that grew with a wide number pushed the text on and ended past its place.) */
+.odx-content p.odx-li.odx-lbl-right::before { display: inline-flex; justify-content: flex-end; min-width: 0; width: var(--odx-hangw, var(--odx-hang, 18pt)); text-align: right; position: relative; left: calc(-1 * var(--odx-hangw, var(--odx-hang, 18pt))); }
 .odx-group { display: flex; gap: 2px; align-items: center; padding-right: 6px; border-right: 1px solid var(--odx-line); }
 .odx-group:last-child { border-right: 0; }
 .odx-toolbar button { font: inherit; min-width: 28px; height: 28px; padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; color: inherit; }
