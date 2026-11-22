@@ -1526,7 +1526,8 @@ export function createPages(view, session, { sheet, scope }) {
   // for a table with no lines.
   function breakRule(frag, t, r, origin, y) {
     const at = [...t.rows].find((tr) => { const q = tr.getBoundingClientRect(); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
-    const shadow = getComputedStyle((at && at.cells[0]) || t.querySelector('td') || t).boxShadow;
+    const cell = (at && at.cells[0]) || t.querySelector('td') || t;
+    const shadow = getComputedStyle(cell).boxShadow;
     if (!shadow || shadow === 'none') return false;
     let color = null, w = 1;
     for (const m of shadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px/g)) {
@@ -1537,7 +1538,12 @@ export function createPages(view, session, { sheet, scope }) {
     line.className = 'odx-repeat';
     // (As an inset shadow at the box's top, as the cells' own lines are: a box's background is drawn to whole pixels, a
     // hairline a full pixel thick on paper.)
-    const h = w <= 1 ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
+    // (A hairline only where the cell's own line is one, styles.js: a line of a whole pixel, 0.75pt, is drawn at that
+    // on paper too. Taken for a hairline, a table's last line on a page printed at 0.63px under rows whose lines
+    // are 1px, and in Word's print 0.88px.)
+    const own = cell.getAttribute('style') || '';
+    const hair = w < 1 || (w === 1 && (!/box-shadow/.test(own) || /odx-hair/.test(own)));
+    const h = hair ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
     line.style.cssText = `top:${y}px;left:${r.left - origin.left}px;width:${r.width}px;height:${Math.max(4, Math.ceil(w) + 2)}px;box-shadow:inset 0 ${h} 0 0 ${color || '#000'}`;
     frag.append(line);
     return true;

@@ -696,7 +696,13 @@ export function mergeTabs(...lists) {
   let out = [];
   for (const l of lists) {
     if (!l) continue;
+    // (A stop written after one further along is not a stop: Word takes a paragraph's stops in rising order and
+    // drops the rest. Its prints of 34 generated lines, two left stops in either order: 880 then 900 twips takes a
+    // tab to 880, 900 then 880, 870, 860 or 800 takes it to 900. A sample's number, its stops written 900, 880, 2319,
+    // had its text at 880.)
+    let far = -Infinity;
     for (const t of l) {
+      if (t.val !== 'clear') { if (t.pos <= far) continue; far = t.pos; }
       out = out.filter((o) => Math.abs(o.pos - t.pos) > 1);
       if (t.val !== 'clear') out.push(t);
     }

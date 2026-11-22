@@ -170,8 +170,18 @@ export function shiftFor(el, host, anchored = false) {
   // own size, an unsized space or its mark, and Word's line is that size's. Cells of 10pt runs and one unsized space in
   // an 11pt style, measured as 10pt lines, printed 0.7px lower, 1.3px under Word's.)
   if (!own && rcs.fontSize !== pcs.fontSize && parseFloat(rcs.fontSize) > parseFloat(pcs.fontSize) && el.dataset.odxMix !== '1') {
+    // (On its first line, that is, the line this shift is worked out for: text in the paragraph's size further down
+    // takes no part in it. A list paragraph of 12pt runs with five 11pt characters on its third line was measured as
+    // an 11pt line again, and its lines after the first printed 1px low.)
     let none = true;
-    for (const s of el.querySelectorAll('.odx-t')) { if (s.textContent.trim() && getComputedStyle(s).fontSize === pcs.fontSize) { none = false; break; } }
+    const first = document.createRange();
+    first.selectNodeContents(text);
+    const line = first.getClientRects()[0];
+    for (const s of el.querySelectorAll('.odx-t')) {
+      if (!s.textContent.trim()) continue;
+      if (line) { const q = s.getClientRects()[0]; if (q && q.top >= line.bottom) break; }
+      if (getComputedStyle(s).fontSize === pcs.fontSize) { none = false; break; }
+    }
     if (none) pcs = rcs;
   }
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
