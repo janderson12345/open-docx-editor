@@ -2288,6 +2288,14 @@ export function createPages(view, session, { sheet, scope }) {
     const used = t.getBoundingClientRect().width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
     return inner - used >= ROOM_BESIDE;
   }
+  // A floating block's own margin-top (px), as it is without a push of ours: read while it has none (the push is the
+  // margin while it is there, editor.css) and kept by node; one pushed before it was ever read, from its own style.
+  const ownTops = new WeakMap();
+  const ownTop = (b) => {
+    if (!b.el.style.getPropertyValue('--odx-push')) ownTops.set(b.node, parseFloat(getComputedStyle(b.el).marginTop) || 0);
+    else if (!ownTops.has(b.node)) ownTops.set(b.node, parseFloat(b.el.style.marginTop) || 0);
+    return ownTops.get(b.node);
+  };
   function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
@@ -2320,11 +2328,19 @@ export function createPages(view, session, { sheet, scope }) {
       // (Within a tenth of the last pass's, the last pass's: the browser lays that margin out to its sub-pixel grid, which
       // can put this measure on the other side of the rounding, and it flipped a tenth up and down each pass, the pages
       // under it 0.1-0.6px apart from one pass to the next.)
-      let margin = Math.round((gap + delta) * 10) / 10;
+      // A floating block's margin doesn't take the place of the gap above it, as a block's in the flow does (its margin
+      // collapsing with the one above): the float stays under the space after the block before it, and under its own drop,
+      // and its margin moves it from there by all it adds to the float's own. Set to gap + delta it stood a gap too low,
+      // and remembered as moved by delta only, it was measured a gap lower at each pass: the paragraph after a table moved
+      // on to the next page went down by that gap every time the pages were laid out (13.9px a pass in one document,
+      // 2.7px in another), so a print came out by how many passes had run before it.
+      const floats = outOfFlow(blocks[k].el);
+      const from = floats ? ownTop(blocks[k]) : gap;
+      let margin = Math.round((from + delta) * 10) / 10;
       const was = marginsDoc === doc ? lastMargins.get(i) : undefined;
       if (was !== undefined && Math.abs(was - margin) < 0.15) margin = was;
       margins.set(i, margin);
-      applied.set(i, { extra: margin - gap });
+      applied.set(i, { extra: margin - from });
       // Under the bottom margin of the block before, a smaller margin collapses into it: give the difference as a negative
       // one. (Only after a balanced columns section does a block move up past it.)
       const mb = colRegs.length && k > 0 ? parseFloat(getComputedStyle(blocks[k - 1].el).marginBottom) || 0 : 0;
