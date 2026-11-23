@@ -67,6 +67,7 @@ const wordAttrs = (w, rf, is) => ({ class: [rf && 'odx-rf', is && 'odx-is'].filt
 function blockDecos(node, pos, out) {
   let afterBreak = false; // only markers since the last line break
   let first = true; // no text yet
+  let live = true; // no text yet that isn't a tracked deletion
   let tail = ''; // the two characters before this child, in text right before it
   let breaks = 0;
   node.forEach((c, off) => {
@@ -85,8 +86,12 @@ function blockDecos(node, pos, out) {
     // (Plain spaces alone also odx-blank: they don't size their line in Word, nor does a shadow on them: editor.css.)
     // (The block's first text is odx-first too: where a list label in a font of its own makes Word's line taller, the
     // room is added above it, editor.css.)
-    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: (/^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t') + (first ? ' odx-first' : '') }));
+    // (And the first text that isn't a tracked deletion is odx-first-live, for the views that hide deletions: the room put
+    // on a hidden deletion was lost. Word's prints of 16 generated lists, Symbol bullets opening with a deletion.)
+    const gone = c.isText && c.marks.some((m) => m.type.name === 'del');
+    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: (/^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t') + (first ? ' odx-first' : '') + (!first && live && !gone ? ' odx-first-live' : '') }));
     if (c.isText) first = false;
+    if (c.isText && !gone) live = false;
     const rf = c.isText && reflects(c), is = c.isText && pressed(c);
     if (rf || is) for (const m of c.text.matchAll(WORD)) out.push(Decoration.inline(at + m.index, at + m.index + m[0].length, wordAttrs(m[0], rf, is)));
     if (c.type.name === 'hard_break') {

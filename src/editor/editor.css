@@ -309,6 +309,8 @@
 /* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
    an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
 .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
+/* (With deletions hidden, on the first text that isn't one: textspans.js.) */
+.odx-page:not(.odx-all-markup):not(.odx-original) .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first-live:not(span.odx-first-live ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
 /* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
    sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
 .odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own, 0); }

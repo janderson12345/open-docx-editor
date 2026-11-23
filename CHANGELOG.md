@@ -22,6 +22,8 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   0.75pt lines).
 - **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
   its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
+- **A bullet's taller first line holds over a tracked deletion** (16 generated lists): where a paragraph opened with a
+  deletion, hidden in the view printed, the extra room for a Symbol bullet went with it, and the page ran short.
 - **A header line of several floating shapes is a full line** (12 generated headers): with two or more it was a pixel
   short in Calibri, and the page's text under the header moved up with it.
 - **A font's line is measured to its own units** (85 generated documents): measured at 100px it was rounded, a line of
