@@ -768,7 +768,7 @@ export function createPages(view, session, { sheet, scope }) {
         const ptc = td.style.getPropertyValue('--odx-ptc');
         return ptc ? Math.max(0, (parseFloat(td.style.getPropertyValue('--odx-pt')) || 0) - (parseFloat(ptc) || 0)) : 0;
       })) : 0;
-      const d = contentTop(pg + 1) + headH - top - (Number.isFinite(lift) ? lift : 0);
+      const d = toGrid(contentTop(pg + 1) + headH - top - (Number.isFinite(lift) ? lift : 0));
       pushes.set(j, d);
       offs.set(j, extra); // everything above this row has moved down by this much (pushed and split rows)
       if (!headerRows) closes.push(contentTop(pg + 1) + 1); // the moved row's top border, where it now starts: at the page's top, as Word draws it (it was a pixel above)
