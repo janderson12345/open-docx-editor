@@ -59,7 +59,7 @@ export const pagePushPlugin = new Plugin({
 // (In tenths, one near the middle of two came to one or the other by the last bits of the sum or by where an earlier pass
 // had put it, and a print came out by how many passes had run before it. To a thousandth of a grid step first: a value
 // exactly on the grid stays there, whatever its last bits.)
-const toGrid = (px) => Math.floor(Math.round(px * 64000) / 1000) / 64;
+const toGrid = (px) => Math.round(Math.round(px * 64000) / 1000) / 64;
 const spacer = (h) => () => {
   const el = document.createElement('span');
   el.className = 'odx-push';
@@ -2462,6 +2462,7 @@ export function createPages(view, session, { sheet, scope }) {
     const state = `${pushSig}|${css.join('')}`;
     if (state !== pushState) pushesMoved = true;
     pushState = state;
+    pushesKnown = true;
     const now = pushKey.getState(view.state)?.find().map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
     if (pushSig !== now) {
       view.dispatch(view.state.tr.setMeta(pushKey, decos).setMeta('addToHistory', false));
@@ -2503,6 +2504,12 @@ export function createPages(view, session, { sheet, scope }) {
     sheet.style.zoom = '';
     try { return fn(); } finally { sheet.style.zoom = z; }
   };
+  // The wrap step's pass. A header's or footer's shape stays on its page while the text moves, so until the pages' pushes
+  // are in, the text isn't where it will be beside it: lines split round a shape they don't reach on their own pages, and a
+  // page's spacer put in among those lines held them short once they'd gone (20 characters short in a 41-page document, a
+  // line more in the paragraph, and every page after it out). A shape in the body moves with its text, and counts from the start.
+  let pushesKnown = false;
+  const wrapStep = () => applyWrapBoth(view, pushesKnown ? layer : null, pushState);
   function layout() { return unzoomed(layoutPass); }
   function layoutPass() {
     lineSplits = splitsNow();
@@ -2518,7 +2525,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
-    if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
+    if (wrapStep()) return schedule(); // a line split beside a shape with text on both sides: measure again
     if (applyTableClear(view)) return schedule(); // a table that doesn't fit beside a float moved under it: measure again
     // (Its own pass: a view update only lays out again when the document changed, and a squeeze that settled after
     // everything else (lines split beside a shape, wrapboth.js) had left the pages undrawn.)
@@ -3097,7 +3104,7 @@ export function createPages(view, session, { sheet, scope }) {
     const shapesMoved = shapesNow !== shapesAt;
     shapesAt = shapesNow;
     // (Headers and footers drawn afresh with a shape the body's text wraps round: their lines split beside it, again.)
-    const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && applyWrapBoth(view, layer);
+    const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && wrapStep();
     drawHeads(heads.concat(contHeads));
     drawLineNumbers(view, lineNums, pageOf, (el) => carriedParts.get(el), (el) => blockCols.get(el));
     drawBalloons(view, session, sheet, pageTop(pages) - gap);
@@ -3330,6 +3337,8 @@ export function createPages(view, session, { sheet, scope }) {
     const keep = all.filter((d) => !/^push(ed)?:/.test(String(d.spec.key || '')));
     if (keep.length === all.length) return;
     for (const a of applied.values()) a.inline = 0;
+    pushState = ''; // (no longer the pushes the lines stand under: applyWrapBoth tells its rounds by them)
+    pushesKnown = false;
     view.dispatch(view.state.tr.setMeta(pushKey, keep).setMeta('addToHistory', false));
   };
   const onFonts = () => { if (destroyed) return; fontArrivals++; fromNaturalFlow(); scheduleIdle(); };
@@ -3365,6 +3374,7 @@ export function createPages(view, session, { sheet, scope }) {
       applied = new Map();
       pushRound = null;
       pushState = '';
+      pushesKnown = false;
       settleRuns = 0;
       rules.textContent = '';
       view.dispatch(view.state.tr.setMeta(pushKey, []).setMeta('addToHistory', false));
