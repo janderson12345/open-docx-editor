@@ -2233,6 +2233,11 @@ check(ftie[0] === 1 && ftie[1] === 2, `exact lines fitted to the page by the twi
 const ftm = [await onSheetOf('page-foot-multiple-fits.docx', 41), await onSheetOf('page-foot-multiple-passes.docx', 41)];
 check(ftm[0] === 0 && ftm[1] === 1, `multiple-spaced lines fitted to the page by the twip (${JSON.stringify(ftm)}, want the 42nd line on sheets 0 and 1)`);
 
+// ... and bulleted lines with the bullet's exact room (gen2.py foottie3; Word: 12pt Times New Roman under Symbol bullets, the
+// page's 44th line stays with 59 twips of space before the second paragraph and goes on with 60).
+const footBul = [await onSheetOf('page-foot-bullets-fits.docx', 43), await onSheetOf('page-foot-bullets-passes.docx', 43)];
+check(footBul[0] === 0 && footBul[1] === 1, `bulleted lines fitted to the page by the twip (${JSON.stringify(footBul)}, want the 44th line on sheets 0 and 1)`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');

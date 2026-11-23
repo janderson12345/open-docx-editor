@@ -1143,7 +1143,9 @@ export function createPages(view, session, { sheet, scope }) {
     if (memo && memo.h === h) own = memo.own;
     else {
       const cs = getComputedStyle(b.el);
-      const box = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
+      // (Less the room a list label adds over the first line: what it takes more than exactly is counted by itself, below.)
+      const room = parseFloat(b.el.style.getPropertyValue('--odx-lbl-own')) || 0;
+      const box = h - room - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
       const near = parseFloat(lineHeightOf(cs));
       const n = near > 0 ? Math.round(box / near) : 0;
       if (n >= 1 && box > 0) {
@@ -1158,7 +1160,7 @@ export function createPages(view, session, { sheet, scope }) {
         // (The set height before the font's: 10pt Times New Roman's line, 15.332px, is within a rounding of an exact 11.5pt,
         // 15.333px, and counted as it a page of 55 such lines came a twip short, keeping a last line Word moves on.)
         const exact = [Math.abs(twips - setPx) < 0.0002 ? twips : setPx, font].find((v) => v > 0 && Math.abs(v - each) < 0.012);
-        if (exact) own = n * (each - exact);
+        if (exact) own = n * (each - exact) + (room ? room - (parseFloat(b.el.style.getPropertyValue('--odx-lbl-up')) || room) : 0);
       }
       roundMemo.set(b.node, { h, own });
     }

@@ -20,7 +20,7 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
   And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
   0.75pt lines).
-- **A page's last line is fitted to the twip** (255 generated pages, exact and multiple spacing): Word adds the font's
+- **A page's last line is fitted to the twip** (281 generated pages, exact, multiple and bulleted lines): Word adds the font's
   exact units and the exact multiple, unrounded. An exact height close to the font's own line was counted as that line,
   and four-decimal metrics left a full page up to a twip out, keeping a last line Word moves on or moving one it keeps.
 - **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than

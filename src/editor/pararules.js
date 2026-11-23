@@ -298,20 +298,23 @@ export function labelLine(node, session, l, label, run, style) {
       // generated lists, a Symbol bullet over 11pt Calibri and 10pt Arial in a 12pt Times New Roman style: the line is the
       // tallest top of bullet and runs and their deepest foot; against the style's Times it had no room and stood 0.75px
       // short. mixlines.js gives the runs their boxes.)
-      let textTop = ta * txt;
+      let topA = ta, topSize = txt;
       if (!run.size || !run.font) {
         let seen = false;
         node.descendants((c) => {
           if (seen || !c.isText || !c.text.trim()) return !seen;
           seen = true;
           const a = wordAscent(String(c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname).toLowerCase());
-          if (a) textTop = a * (Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl);
+          if (a) { topA = a; topSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl; }
           return false;
         });
       }
-      const up = (la * lbl - textTop) / 2 * (4 / 3) + raise;
+      const up = (la * lbl - topA * topSize) / 2 * (4 / 3) + raise;
+      // (And as Word has it, from the fonts' own units, unrounded: what a page's foot is fitted by, pages.js roundOff.)
+      const units = (v) => Math.round(v * 2048) / 2048;
+      const upExact = (units(la) * lbl - units(topA) * topSize) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
-      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
+      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`, `--odx-lbl-up:${+upExact.toFixed(5)}px`);
     }
   }
 }
