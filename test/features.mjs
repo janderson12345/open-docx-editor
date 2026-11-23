@@ -2272,6 +2272,12 @@ const fmd = await page.evaluate(() => {
 });
 check(fmd[0] === 2 && Math.abs(fmd[1] - 108.13) < 0.6 && Math.abs(fmd[2] - 96) < 1.5, `a floating table moved on keeps its drop, the text after it with it (${JSON.stringify(fmd)}, want the table at 108.13px and the text at 96px on page 2)`);
 
+// A floating table goes where its tblpXSpec puts it, against the margin or the page (why-tests gen2.py fltx3; Word: a 4in
+// table centred in a 6.5in column starts 216px across; at the page's right its 0.5pt line ends at the page's edge).
+const fltBox = async (f) => { await open(f); await page.waitForTimeout(300); return page.evaluate(() => { const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(), t = document.querySelector('.odx-content table').getBoundingClientRect(); return [+(t.left - s.left).toFixed(2), +(t.right - s.left).toFixed(2)]; }); };
+const fltC = await fltBox('float-table-centred.docx'), fltR = await fltBox('float-table-page-right.docx');
+check(Math.abs(fltC[0] - 216) < 0.6 && Math.abs(fltR[1] - 815.67) < 0.6, `floating tables centred and at the page's right (${JSON.stringify([fltC, fltR])}, want 216 across and 815.67 at the right)`);
+
 // A page a fraction of a pixel wider than whole pixels prints in a box of whole pixels, its text laid out at its own
 // width: wider than the printed page, the browser cut each page a pixel late (a sample's 47 pages of 12242 by 15842
 // twips, each page's text a pixel higher than the last).

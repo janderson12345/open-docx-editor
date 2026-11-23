@@ -556,13 +556,27 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // text fits beside it, as the band lays it out. With room beside it, a float, as before: the band would put the text
     // Word sets beside it under it, a landscape page's 200px beside a table of 9625tw.)
     const v0 = attr(fp, 'vertAnchor');
-    const noRoom = wSet && colW && colW - (left + tw('tblpX')) - wSet - tw('rightFromText') < 24;
+    // Across the page: tblpXSpec against the margin, column or page (inside as left and outside as right, on the odd pages
+    // measured), else tblpX from there. Word's prints of 81 generated tables, left, centred and right, lines of 0 to 3pt:
+    // at the left the table's line starts at the place, as a table in the flow (below); at the right its line ends there,
+    // the table a half line further in than its box; centred on the place. (All had been set at the left margin.)
+    const xSpec = attr(fp, 'tblpXSpec');
+    const onPage = attr(fp, 'horzAnchor') === 'page';
+    const atRight = xSpec === 'right' || xSpec === 'outside';
+    const centred = xSpec === 'center' && wSet > 0;
+    const lineL = readBorders(kid(el, 'tblBorders')).left, lineB = first || lineL || ts.borders?.left;
+    const halfLine = lineB && lineB.val && lineB.val !== 'nil' && lineB.val !== 'none' ? ((lineB.sz / 8) * (4 / 3)) / 2 : 0;
+    const PL = 'var(--odx-page-left, 96px)', PR = 'var(--odx-page-right, 96px)';
+    const fromX = (xSpec ? 0 : tw('tblpX')) + left + halfLine;
+    const leftCss = centred ? (onPage ? `calc((100% + ${PL} + ${PR} - ${wSet}px) / 2 - ${PL})` : `calc((100% - ${wSet}px) / 2)`) : onPage ? `calc(${+fromX.toFixed(2)}px - ${PL})` : `${+fromX.toFixed(2)}px`;
+    const fromLeft = centred ? (colW - wSet) / 2 : fromX;
+    const noRoom = wSet && colW && colW - fromLeft - wSet - tw('rightFromText') < 24;
     const v = v0 || (noRoom ? 'margin' : null);
     if ((v === 'page' || v === 'margin') && !attr(fp, 'tblpYSpec')) {
-      const x = attr(fp, 'horzAnchor') === 'page' ? `calc(${tw('tblpX')}px - var(--odx-page-left, 96px))` : `${left + tw('tblpX')}px`;
+      const x = atRight && wSet ? (onPage ? `calc(100% + ${PR} - ${wSet}px - ${+halfLine.toFixed(2)}px)` : `calc(100% - ${wSet}px - ${+halfLine.toFixed(2)}px)`) : leftCss;
       return [`margin-left:${x}`, `--odx-fy:${tw('tblpY')}px`, `--odx-fyrel:${v}`, `--odx-fyb:${tw('bottomFromText')}px`, `--odx-fyt:${tw('topFromText')}px`].join(';');
     }
-    const right = attr(fp, 'tblpXSpec') === 'right' || jc === 'right';
+    const right = atRight || (!xSpec && jc === 'right');
     css.push('width:fit-content', `float:${right ? 'right' : 'left'}`, `position:relative;z-index:1`);
     // At the right, its edge is on the margin and its distance from the text is on its left (rightFromText is the
     // gap a table at the left keeps from the text after it), as in Word.
@@ -570,7 +584,8 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // (21.5px left of the column beside it stayed empty, 24.9px took short words; nor an empty paragraph, which would
     // fit any room): that room is its margin too.
     const side = (gap, room) => (wSet ? `max(${gap}px, min(${room}, calc((24px + ${gap}px - ${room}) * 1000)))` : `${gap}px`);
-    const x = +(left + tw('tblpX')).toFixed(2), lft = +tw('leftFromText').toFixed(2), rft = +tw('rightFromText').toFixed(2);
+    const x = +fromLeft.toFixed(2), lft = +tw('leftFromText').toFixed(2), rft = +tw('rightFromText').toFixed(2);
+    const rightEdge = onPage ? `calc(${+halfLine.toFixed(2)}px - ${PR})` : `${+halfLine.toFixed(2)}px`;
     const y = tw('tblpY');
     // (No vertAnchor with room beside it, against the margin in Word: placed so too, down from where it is, with the text
     // after it filling the room above and beside it; the samples' such tables open their documents, at the margin.)
@@ -578,7 +593,7 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // Placed down from the paragraph it's anchored to with no room beside it: the empty paragraphs after it are marked
     // (editor.js, --odx-fnoroom) to go under it, as in Word (a line with nothing on it fits beside a float in no room).
     if (down && wSet && colW && (right ? colW - wSet - lft : colW - x - wSet - rft) < 24) css.push('--odx-fnoroom:1');
-    css.push(`margin-left:${right ? side(lft, `calc(100% - ${wSet}px)`) : `${x}px`}`, `margin-right:${right ? '0px' : side(rft, `calc(100% - ${x}px - ${wSet}px)`)}`, `margin-bottom:${tw('bottomFromText')}px`);
+    css.push(`margin-left:${right ? side(lft, `calc(100% - ${wSet}px)`) : leftCss}`, `margin-right:${right ? rightEdge : side(rft, centred ? `calc((100% - ${wSet}px) / 2)` : `calc(100% - ${x}px - ${wSet}px)`)}`, `margin-bottom:${tw('bottomFromText')}px`);
     // Placed down from the paragraph it's anchored to: there, with the text after it filling the room above it (its
     // margin, which no line wraps around) and wrapping beside it below, as in Word (a table 1in down from the text had
     // been drawn there over the text, which went on under it from where it starts).

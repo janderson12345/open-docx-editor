@@ -25,6 +25,8 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   and four-decimal metrics left a full page up to a twip out, keeping a last line Word moves on or moving one it keeps.
 - **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
   its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
+- **A floating table sits where its horizontal setting puts it** (72 generated tables): centred, right, inside and outside,
+  against the margin, column or page. All had been set at the left margin.
 - **A floating table that moves to the next page keeps its place there** (12 generated tables): it lost its drop below
   its paragraph, and the text after it stayed behind and ran past the old page's foot, every page after it out.
 - **A bullet's line over runs of mixed fonts is Word's** (24 generated lists): the line is the tallest top of bullet and
