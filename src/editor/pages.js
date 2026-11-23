@@ -3081,7 +3081,7 @@ export function createPages(view, session, { sheet, scope }) {
       drawnUp = new Set(upNow.keys());
     }
     let text = css.concat(colCss, baselineCss(scope)).join('\n');
-    text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
+    text += `\n@page { size: ${step(page.width)}px ${step(page.height)}px; margin: 0; }\n@media print { .${scope} { width: ${step(page.width)}px !important; height: ${pages * step(page.height) - 1}px; overflow: hidden; } .${scope} > .odx-content { width: ${page.width}px; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
     // Shapes with text on both sides moved by this walk (their paragraph moved on, or the shape drawn up or down): the
