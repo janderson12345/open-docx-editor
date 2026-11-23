@@ -1144,7 +1144,11 @@ export function createPages(view, session, { sheet, scope }) {
         const each = box / n;
         const set = /^([\d.]+)(px|pt)$/.exec(cs.getPropertyValue('--odx-lhv').trim());
         const font = (parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * (parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
-        const exact = [font, set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0].find((v) => v > 0 && Math.abs(v - each) < 0.012);
+        // (An exact height is whole twips; its style value is cut to four decimals, 18.6667px for 14pt, and over 46 lines
+        // that lost 0.0015px, enough to send a last line ending exactly on the margin to the next page.)
+        const setPx = set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0;
+        const twips = Math.round(setPx * 15) / 15;
+        const exact = [font, Math.abs(twips - setPx) < 0.0002 ? twips : setPx].find((v) => v > 0 && Math.abs(v - each) < 0.012);
         if (exact) own = n * (each - exact);
       }
       roundMemo.set(b.node, { h, own });
@@ -2766,7 +2770,7 @@ export function createPages(view, session, { sheet, scope }) {
       const firstOnPage = top <= contentTop(p) + 1;
       roundDrift = firstOnPage ? 0 : roundDrift + roundOwn;
       roundOwn = roundOff(b, firstOnPage || k === 0 ? null : blocks[k - 1]);
-      roundOver = roundDrift + roundOwn;
+      roundOver = Math.round((roundDrift + roundOwn) * 1e6) / 1e6; // (a tie on the margin isn't lost to floating-point dust)
       // A columns section: the first column starts where the section does (on a new page, at its top), the others beside
       // it at that height (flow pages P+1.. of the same sheet), then whole sheets of columns. Balanced, the columns of
       // its last sheet (as the last pass found it) end at the height worked out for them, all but the last.
