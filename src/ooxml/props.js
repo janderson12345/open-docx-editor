@@ -551,9 +551,11 @@ function measure(key) {
   try {
     if (drawsOwn(key, { probe: 'mmmmmmmmmmlli10WQ', size: 100 })) {
       const ctx = document.createElement('canvas').getContext('2d');
-      ctx.font = `100px "${key}", serif`;
+      // (At 2048px, most fonts' own units: the browser gives ascent and descent in whole pixels, and at 100px Tempus Sans
+      // ITC's 1.3047em line came out 1.30, 0.08px short a line at 12pt against Word's prints.)
+      ctx.font = `2048px "${key}", serif`;
       const m = ctx.measureText('Hg');
-      if (m.fontBoundingBoxAscent) f = Math.round((m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) * 100) / 10000;
+      if (m.fontBoundingBoxAscent) f = Math.round(((m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) / 2048) * 10000) / 10000;
     }
   } catch { /* no DOM */ }
   measured.set(key, f);
