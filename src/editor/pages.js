@@ -1148,7 +1148,9 @@ export function createPages(view, session, { sheet, scope }) {
         // that lost 0.0015px, enough to send a last line ending exactly on the margin to the next page.)
         const setPx = set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0;
         const twips = Math.round(setPx * 15) / 15;
-        const exact = [font, Math.abs(twips - setPx) < 0.0002 ? twips : setPx].find((v) => v > 0 && Math.abs(v - each) < 0.012);
+        // (The set height before the font's: 10pt Times New Roman's line, 15.332px, is within a rounding of an exact 11.5pt,
+        // 15.333px, and counted as it a page of 55 such lines came a twip short, keeping a last line Word moves on.)
+        const exact = [Math.abs(twips - setPx) < 0.0002 ? twips : setPx, font].find((v) => v > 0 && Math.abs(v - each) < 0.012);
         if (exact) own = n * (each - exact);
       }
       roundMemo.set(b.node, { h, own });

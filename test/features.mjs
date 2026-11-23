@@ -2222,6 +2222,12 @@ check(ram[0] === 2 && Math.abs(ram[1] - 96.3) < 1 && ras[0] === 2 && Math.abs(ra
 const rbm = await rowAtTop('row-beside-merged-top-line.docx');
 check(Math.abs(rbm[1] - 100.3) < 1, `a row at a page's top keeps room for a merged cell's own top line (${JSON.stringify(rbm)}, want 100px on page 2)`);
 
+// A page of exact lines is fitted by their set height, not the font's near-equal line (why-tests gen2.py foottie; Word: 55
+// lines of 11.5pt in 10pt Times New Roman, the page at 12960 twips keeps its last line, at 12961 it goes on).
+const onSheetOf = async (f, n) => { await open(f); await page.waitForTimeout(400); return page.evaluate((k) => { const q = document.createRange(); q.selectNodeContents(document.querySelectorAll('.odx-content > p')[k]); const t = q.getClientRects()[0].top; return [...document.querySelectorAll('.odx-sheets > .odx-sheet')].findIndex((s) => { const r = s.getBoundingClientRect(); return t >= r.top && t < r.bottom; }); }, n); };
+const ftie = [await onSheetOf('page-foot-tie-fits.docx', 110), await onSheetOf('page-foot-tie-passes.docx', 110)];
+check(ftie[0] === 1 && ftie[1] === 2, `exact lines fitted to the page by the twip (${JSON.stringify(ftie)}, want the last line on sheets 1 and 2)`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');
