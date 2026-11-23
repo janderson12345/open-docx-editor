@@ -2228,6 +2228,11 @@ const onSheetOf = async (f, n) => { await open(f); await page.waitForTimeout(400
 const ftie = [await onSheetOf('page-foot-tie-fits.docx', 110), await onSheetOf('page-foot-tie-passes.docx', 110)];
 check(ftie[0] === 1 && ftie[1] === 2, `exact lines fitted to the page by the twip (${JSON.stringify(ftie)}, want the last line on sheets 1 and 2)`);
 
+// ... and lines of multiple spacing by the font's exact units and the exact multiple (gen2.py foottie2; Word: 12pt Times New
+// Roman at 259/240, the page's 42nd line stays with 473 twips of space before the second paragraph and goes on with 474).
+const ftm = [await onSheetOf('page-foot-multiple-fits.docx', 41), await onSheetOf('page-foot-multiple-passes.docx', 41)];
+check(ftm[0] === 0 && ftm[1] === 1, `multiple-spaced lines fitted to the page by the twip (${JSON.stringify(ftm)}, want the 42nd line on sheets 0 and 1)`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');

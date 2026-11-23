@@ -60,6 +60,13 @@ export const pagePushPlugin = new Plugin({
 // had put it, and a print came out by how many passes had run before it. To a thousandth of a grid step first: a value
 // exactly on the grid stays there, whatever its last bits.)
 const toGrid = (px) => Math.floor(Math.round(px * 64000) / 1000) / 64;
+// A font's line and a paragraph's multiple as Word has them, unrounded, from the four decimals they're kept in: a font's
+// line in 2048ths of an em (its units), a multiple in 240ths (w:line). Word fits a page's last line by their exact sum,
+// no line rounded: its prints of 156 generated pages, Times New Roman and Calibri at 10 and 12pt, 1.08, 1.15 and 1.5
+// lines, the space that still keeps the last line predicted to the twip in all 12 kinds. (A value that isn't one: as it is.)
+const nearest = (v, per) => { const u = Math.round(v * per) / per; return Math.abs(u - v) < 0.00006 ? u : v; };
+const exactEm = (v) => nearest(v, 2048);
+const exactMult = (v) => nearest(v, 240);
 const spacer = (h) => () => {
   const el = document.createElement('span');
   el.className = 'odx-push';
@@ -1143,7 +1150,7 @@ export function createPages(view, session, { sheet, scope }) {
         // A line's exact height: the font's own times the spacing's multiple, or the exact height set (in px or pt).
         const each = box / n;
         const set = /^([\d.]+)(px|pt)$/.exec(cs.getPropertyValue('--odx-lhv').trim());
-        const font = (parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * (parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
+        const font = exactEm(parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * exactMult(parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
         // (An exact height is whole twips; its style value is cut to four decimals, 18.6667px for 14pt, and over 46 lines
         // that lost 0.0015px, enough to send a last line ending exactly on the margin to the next page.)
         const setPx = set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0;
@@ -1167,6 +1174,10 @@ export function createPages(view, session, { sheet, scope }) {
     const cs = getComputedStyle(el);
     const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
     const lh = parseFloat(lineHeightOf(cs));
+    // (From the font's own units where the line is that font's: what Word adds, unrounded.)
+    const own = exactEm(parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0);
+    const m = exactMult(mult);
+    if (mult > 1 && own > 0 && Math.abs(own * m - lh) < 0.02) return 1 + own * (m - 1);
     return 1 + (mult > 1 && lh ? lh * (1 - 1 / mult) : 0);
   }
 
