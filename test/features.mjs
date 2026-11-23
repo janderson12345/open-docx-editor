@@ -2217,6 +2217,24 @@ const ras = await rowAtTop('row-split-under-upper-line.docx');
 check(ram[0] === 2 && Math.abs(ram[1] - 96.3) < 1 && ras[0] === 2 && Math.abs(ras[1] - 96.3) < 1,
   `a row at a page's top with no top line of its own starts at the page's top (${JSON.stringify([ram, ras])}, want 96px on page 2, moved whole and split)`);
 
+// A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
+// 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
+await open('header-two-floating-shapes.docx');
+const hfs = await page.evaluate(() => +document.querySelector('.odx-hf.odx-header p').getBoundingClientRect().height.toFixed(2));
+check(Math.abs(hfs - 17.9) < 0.1, `a header line of two floating shapes a full line (${hfs}, want 17.9px)`);
+
+// A page a fraction of a pixel wider than whole pixels prints in a box of whole pixels, its text laid out at its own
+// width: wider than the printed page, the browser cut each page a pixel late (a sample's 47 pages of 12242 by 15842
+// twips, each page's text a pixel higher than the last).
+await open('page-fraction-wide.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+await page.waitForTimeout(300);
+const pfw = await page.evaluate(() => [document.querySelector('.odx-page').getBoundingClientRect().width, +document.querySelector('.odx-page > .odx-content').getBoundingClientRect().width.toFixed(2)]);
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(pfw[0] === 816 && Math.abs(pfw[1] - 816.13) < 0.02, `a page a fraction wider prints in whole pixels, its text at its own width (${JSON.stringify(pfw)}, want 816 and 816.13)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

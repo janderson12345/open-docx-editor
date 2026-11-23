@@ -20,6 +20,12 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
   And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
   0.75pt lines).
+- **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
+  its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
+- **A header line of several floating shapes is a full line** (12 generated headers): with two or more it was a pixel
+  short in Calibri, and the page's text under the header moved up with it.
+- **A font's line is measured to its own units** (85 generated documents): measured at 100px it was rounded, a line of
+  Tempus Sans ITC 0.08px short at 12pt.
 - **A table row at a page's top starts under its own top line only** (18 generated tables): where the line over a
   row is the upper row's bottom line, the row's text starts at the page's top, moved whole or split; it stood the
   line's width lower, every page of a long table.

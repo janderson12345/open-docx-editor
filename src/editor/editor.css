@@ -77,7 +77,7 @@
 :where(.odx-repeat) p { min-height: calc(min(1.15, var(--odx-lh, 1.15)) * 1em); --odx-lhv: var(--odx-lh, 1.17); }
 .odx-hf p { margin: 0; }
 /* An empty header line (or one holding only a floating picture) still takes a line, as in Word. */
-.odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]:only-child)::after { content: "\200b"; }
+.odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]):not(:has(> :not(img[style*="position: absolute"])))::after { content: "\200b"; } /* (however many shapes it holds: Word's prints of 12 generated headers, a paragraph of two or three text boxes is a full line like one of one; it stood at the 1.15em floor, 1px short in Calibri, and moved the page's text) */
 .odx-content { position: relative; box-sizing: border-box; outline: none; white-space: pre-wrap; word-wrap: break-word; min-height: 1em; }
 /* (The floor is 1.15em, or the font's own single line where that is less: Word's prints of 18 generated documents in
    Garamond, Georgia and Courier New, single spaced: one-line and empty paragraphs 1.125, 1.136 and 1.133em apart, the
