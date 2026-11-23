@@ -28,6 +28,10 @@ for f in sorted(os.listdir(wd)):
     d = [b[2] - a[2] for a, b in pairs if a[1] == b[1]]
     wp, op = max([a[1] for a in w] or [0]), max([a[1] for a in o] or [0])
     within = sum(abs(v) <= 1 for v in d)
+    # The same, by each line's exact position where both files hold it (lines.cjs): the measure above compares baselines
+    # rounded to half a point (0.67px), so two lines 0.7px apart can read 1.33px apart, or 1.3px apart read 0.67.
+    exact = [b[3] - a[3] for a, b in pairs if a[1] == b[1] and len(a) > 3 and len(b) > 3]
+    within_exact = sum(abs(v) <= 1 for v in exact) if len(exact) == len(d) else None
     missing, extra = len(w) - len(pairs), len(o) - len(pairs)
     other_page = len(pairs) - len(d)
     drift = len(d) - within
@@ -35,9 +39,9 @@ for f in sorted(os.listdir(wd)):
     # The first of Word's lines we don't reproduce: where to look first.
     first = next((a for a, b in pairs if a[1] != b[1] or abs(b[2] - a[2]) > 1), None)
     hit = {i for b in sm.get_matching_blocks() for i in range(b.a, b.a + b.size)}
-    first_missing = next((w[i] for i in range(len(w)) if i not in hit), None)
+    first_missing = next((w[i][:3] for i in range(len(w)) if i not in hit), None)
     res[f[:-5]] = dict(score=round(score, 1), wordPages=wp, ourPages=op, wordLines=len(w), ourLines=len(o), matched=len(pairs),
-                       otherPage=other_page, within1px=within, drift=drift, missing=missing, extra=extra,
+                       otherPage=other_page, within1px=within, within1pxExact=within_exact, drift=drift, missing=missing, extra=extra,
                        meanAbs=round(sum(abs(v) for v in d) / max(1, len(d)), 1), maxAbs=round(max([abs(v) for v in d] or [0]), 1),
                        firstOff=first and [first[0], first[1], first[2]], firstMissing=first_missing)
 json.dump(res, open(outp, 'w', encoding='utf8'), indent=0)

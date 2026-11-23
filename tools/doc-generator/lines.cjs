@@ -25,19 +25,22 @@ fs.mkdirSync(outDir, { recursive: true });
           const y = Math.round((h - it.transform[5]) * 2) / 2; // baseline from the top, pt
           let key = [...rows.keys()].find((k) => Math.abs(k - y) <= 0.6);
           if (key === undefined) rows.set((key = y), []);
-          rows.get(key).push([it.transform[4], it.str, it.width]);
+          rows.get(key).push([it.transform[4], it.str, it.width, h - it.transform[5]]);
         }
         for (const [y, parts] of [...rows].sort((a, b) => a[0] - b[0])) {
           const segs = [];
           let end = -Infinity;
           for (const x of parts.sort((a, b) => a[0] - b[0])) {
             if (!segs.length || x[0] - end > 12) segs.push([]);
-            segs[segs.length - 1].push(x[1]);
+            segs[segs.length - 1].push(x);
             end = Math.max(end, x[0] + (x[2] || 0));
           }
           for (const seg of segs) {
-            const k = seg.join('').replace(/[\s\u200b]+/g, '').slice(0, 40);
-            if (k.length >= 3) out.push([k, p, +(y * 4 / 3).toFixed(1)]);
+            const k = seg.map((s) => s[1]).join('').replace(/[\s\u200b]+/g, '').slice(0, 40);
+            // A line is [text, page, y to the half point in px, y exactly in px]: the exact one is the baseline of the piece
+            // holding most of its text (score.py's second measure; the rounded one stays the first, comparable across runs).
+            const main = seg.reduce((m, s) => (s[1].trim().length > m[1].trim().length ? s : m));
+            if (k.length >= 3) out.push([k, p, +(y * 4 / 3).toFixed(1), +(main[3] * 4 / 3).toFixed(3)]);
           }
         }
       }
