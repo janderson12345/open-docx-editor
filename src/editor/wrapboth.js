@@ -17,6 +17,10 @@ import { padOf } from '../ooxml/place.js';
 import { dropSqueeze, squeezeFits } from './justify.js';
 
 const key = new PluginKey('odx-wrapboth');
+// view -> the sets of spacers its document has had, to see them come round again (applyWrapBoth). Afresh once fonts load.
+const settled = new WeakMap();
+let fontLoads = 0;
+if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { fontLoads++; });
 const spacer = (w) => () => {
   const el = document.createElement('span');
   el.className = 'odx-wb';
@@ -320,6 +324,9 @@ export function applyWrapBoth(view, stories = null) {
   const st = key.getState(view.state);
   // (A paragraph settles in a pass for each line beside a shape; this many means something keeps undoing them.)
   if (!st || st.passes > 80) return false;
+  let seen = settled.get(view);
+  if (!seen || seen.doc !== view.state.doc || seen.fonts !== fontLoads) settled.set(view, seen = { doc: view.state.doc, fonts: fontLoads, states: [], done: false });
+  if (seen.done) return false;
   const zs = zones(view, stories);
   if (!zs.length && !st.list.length) return false;
   let list = st.list.slice().sort((a, b) => a.pos - b.pos);
@@ -412,7 +419,13 @@ export function applyWrapBoth(view, stories = null) {
       const line = lines.find((l) => r.top >= l.top - 1 && r.top <= l.bottom + (l.after || 0) + 1);
       const [top, bottom] = line ? [line.boxTop, line.bottom] : [r.bottom - lh, r.bottom];
       const z = roomAt(top, bottom, s.tail ? after + pitch : line?.after);
-      return !z || Math.abs(r.right - z.right - (s.flush || 0)) > 1;
+      if (!z) return true;
+      const off = r.right - z.right - (s.flush || 0);
+      // (A centred or right-aligned line moves back by half or all of a spacer put in it, so the spacer ends that far short
+      // of the room's side. Taken for stale it went and came back until the passes ran out, the pages undrawn all that time:
+      // a centred line of 28 characters held a 32-page document for 81 passes, and a print taken meanwhile had no pages.)
+      const back = justified ? 0 : cs.textAlign === 'center' ? s.w / 2 : cs.textAlign === 'right' ? s.w : 0;
+      return Math.min(Math.abs(off), Math.abs(off + back)) > 1;
     });
     if (stale) {
       list = list.filter((s) => !(s.pos >= stale.pos && s.pos < to));
@@ -457,6 +470,18 @@ export function applyWrapBoth(view, stories = null) {
     }
   });
   if (!changed) return false;
+  // Spacers come back to a set they've had: two paragraphs undoing each other, each one's spacer moving the other's line
+  // (a 41-page document went between two sets for 81 passes, 12 seconds, and a print took whichever it found). The set of
+  // that round with the most spacers, the same one whichever pass got there first, and no more passes for this document.
+  const sigOf = (l) => l.map((s) => `${s.pos}:${s.w.toFixed(2)}`).join(',');
+  const sig = sigOf(list);
+  const again = seen.states.findIndex((x) => x.sig === sig);
+  if (again >= 0) {
+    const round = seen.states.slice(again).sort((a, b) => b.list.length - a.list.length || (a.sig < b.sig ? -1 : 1));
+    list = round[0].list;
+    seen.done = true;
+    if (sigOf(st.list.slice().sort((a, b) => a.pos - b.pos)) === round[0].sig) return false;
+  } else seen.states.push({ sig, list });
   // (Word's squeezing of justified lines, justify.js, worked out for lines all the column's width: gone from those split
   // now, to be worked out again for the lines above and below the split ones.)
   view.dispatch(dropSqueeze(view.state.tr, fresh).setMeta(key, list).setMeta('addToHistory', false));

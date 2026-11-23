@@ -22,6 +22,7 @@ export { VERSION } from './version.js';
 import { DocxSession as Session } from './ooxml/docx.js';
 import { loadEmbeddedFonts } from './ooxml/fonts.js';
 import { createEditor as make } from './editor/editor.js';
+import { loadHyphenation, nativeHyphens } from './editor/hyphenate.js';
 import { createToolbar as makeToolbar } from './editor/toolbar.js';
 import { listFields, fieldValues, setFieldValues as setFV, setForms as setFormsMode } from './editor/fields.js';
 import { missingFonts, fontsSettled } from './editor/fontcheck.js';
@@ -222,6 +223,10 @@ export function mountDocxEditor(container, { onChange, onSave, onOpened, onError
       urls.splice(0).forEach((u) => URL.revokeObjectURL(u));
       const session = new Session(bytes, { imageUrl });
       await loadEmbeddedFonts(session.pkg); // laid out in the document's own fonts, as Word does
+      // (Before the first layout. Arriving after it, a word it wrapped whole stayed wrapped: the page-break spacer put in
+      // front of the word holds that line break, so a print came out by which of the two was first. If they can't be
+      // loaded, the document still opens, unhyphenated.)
+      if (session.autoHyphenation && !nativeHyphens()) await loadHyphenation().catch(() => {});
       const t2 = performance.now();
       if (collab && share) { dropView(); collab.publish(bytes, session.doc); } // (the old view mustn't follow the new body)
       session.fileName = newName; // (FILENAME fields in headers and footers show it, as Word's do)

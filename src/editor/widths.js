@@ -129,7 +129,8 @@ let last = '';
 let memo = new WeakMap();
 let memoEpoch = -1;
 let loads = 0;
-if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { loads++; });
+// (The font measures go too: one taken in the fallback while a web font was on its way stayed for good otherwise.)
+if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { loads++; hinted.clear(); boxes.clear(); });
 const fontEpoch = () => loads;
 /** Recomputes the corrections; true when they changed. */
 export function applyWidths(view) {

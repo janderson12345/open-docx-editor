@@ -27,6 +27,7 @@ export const lineFixPlugin = new Plugin({
 });
 
 const cache = new Map(); // paragraph and run styles, line height -> chosen line height in px (or null: leave it)
+let cacheFonts = -1;
 const OURS = /;?\s*--odx-lhv:\s*[\d.]+(px)?;?\s*$/; // the decoration's part of a paragraph's style attribute
 
 /**
@@ -61,6 +62,8 @@ function pitch(box, el, chain, lh, length) {
  * kind of box probed in, part of what's remembered (a header's paragraph styles aren't the body's).
  */
 function bestHeight(box, el, chain, want, length, where = '') {
+  // (Until fonts load, as the paragraphs' results made from it: a pitch probed in the fallback stayed for good otherwise.)
+  if (cacheFonts !== fontLoads) { cache.clear(); cacheFonts = fontLoads; }
   const k = [where, el.className, (el.getAttribute('style') || '').replace(OURS, ''), ...chain.map((c) => `${c.tagName}.${c.className}:${c.getAttribute('style') || ''}`), want, length].join('|');
   if (cache.has(k)) return cache.get(k);
   let best = null;
@@ -228,11 +231,14 @@ function overfullCells(view, decos) {
     if (!(h > 0)) continue;
     for (const td of tr.cells) {
       if (td.childElementCount < 2 || td.rowSpan > 1) continue; // (a cell merged down several rows has their height, not this one's)
-      const first = td.firstElementChild.getBoundingClientRect(), end = td.lastElementChild.getBoundingClientRect();
+      // (Those with a box: a hidden one reads as at the window's top, so far from the cell by how far the page is scrolled.)
+      const kids = [...td.children].filter((e) => e.getClientRects().length);
+      if (!kids.length) continue;
+      const first = kids[0].getBoundingClientRect(), end = kids[kids.length - 1].getBoundingClientRect();
       if (!first.height && !end.height) continue; // not laid out
       const cs = getComputedStyle(td);
       const room = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-      const held = end.bottom - first.top + Math.max(0, parseFloat(getComputedStyle(td.firstElementChild).marginTop) || 0);
+      const held = end.bottom - first.top + Math.max(0, parseFloat(getComputedStyle(kids[0]).marginTop) || 0);
       if (held <= room + 0.5) continue;
       let pos;
       try { pos = view.posAtDOM(td, 0) - 1; } catch { continue; }

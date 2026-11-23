@@ -62,7 +62,8 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) strong { font-weight: bold; }
 .odx-content .odx-push { display: block; width: 0; pointer-events: none; }
 /* A list item pushed whole to its row's next page (pages.js): the push is room above its label, the spacer laid over it. */
-.odx-content p.odx-li[style*="--odx-pushed"] { padding-top: var(--odx-pushed); position: relative; }
+/* (!important: a paragraph's own inline padding, 0 under a border between paragraphs, had cancelled the room, and the row was then measured that much short. Its own padding is kept in --odx-pushpad, pages.js.) */
+.odx-content p.odx-li[style*="--odx-pushed"] { padding-top: calc(var(--odx-pushed) + var(--odx-pushpad, 0px)) !important; position: relative; }
 .odx-content p.odx-li[style*="--odx-pushed"] > .odx-push:first-child { position: absolute; margin-top: calc(0px - var(--odx-pushed)); }
 .odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
 .odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
@@ -93,6 +94,8 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :is(span.odx-t, .odx-opaque-inline:not(:empty, [data-kind$="Ref"], [data-kind$="Reference"]), .odx-page-break, :where(span, strong, em, s, u, a, del, ins):has(> br)) { line-height: var(--odx-lhv); } /* (a line break counts as text for the element it's in, as in quirks mode) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
+/* (And one moved to its row's next page, behind a spacer (pages.js) and ProseMirror's separator after it. Without its line it measured a line short there, so the row seemed to fit, was put back whole, no longer fitted and split again: the layout flipped between the two at every pass, and a print came out by which it caught.) */
+:where(.odx-content) p:has(> .odx-push):has(> br.ProseMirror-trailingBreak):not(:has(> :not(.odx-push, img.ProseMirror-separator, br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); }
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p[data-odx-mix="mark"] { line-height: var(--odx-lhv); } /* nothing but spaces: the mark's line, as an empty paragraph's (mixlines.js blankOnly) */
 /* Nothing but tabs: the same, its font's line times the paragraph's line spacing (Word's prints: Calibri 11pt at 1.15
    lines 20.6px, where the tabs' boxes alone left the 1.15em floor, 17px). */
@@ -406,6 +409,8 @@ td[data-odx-phantom] > * { display: none; }
 .odx-content table.odx-autofit > tbody > tr > td > p { max-width: 2112px; }
 /* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
    drawn again at the top of a page: sample S057's 864-twip bottom-aligned header, 6.7px short.) */
+/* (The room added to a row is that row's: inherited, every row of a table in its cells that has a height of its own grew by it too, six of them 3,950px in one document, and the layout flipped between moving the table on and splitting it.) */
+.odx-content td table { --odx-trh-add: 0px; }
 .odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }
 /* An exact row height clips what doesn't fit, as in Word (a two-line placeholder in a one-line header row): each paragraph
    is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */
