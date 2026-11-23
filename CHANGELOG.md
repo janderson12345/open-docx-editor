@@ -25,6 +25,8 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   and four-decimal metrics left a full page up to a twip out, keeping a last line Word moves on or moving one it keeps.
 - **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
   its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
+- **A bullet's line over runs of mixed fonts is Word's** (24 generated lists): the line is the tallest top of bullet and
+  runs over their deepest foot; measured against the style's font, which nothing on the line used, it stood 0.75px short.
 - **A bullet's taller first line holds over a tracked deletion** (16 generated lists): where a paragraph opened with a
   deletion, hidden in the view printed, the extra room for a Symbol bullet went with it, and the page ran short.
 - **A header line of several floating shapes is a full line** (12 generated headers): with two or more it was a pixel

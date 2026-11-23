@@ -92,7 +92,7 @@ function blankOnly(el, pcs) {
  * Word's boxes for the text spans of a paragraph `el` (drawn, in the document) whose runs differ in font, size or raise,
  * where the browser's lines would come out more than 0.05px off Word's: { spans: [[span, css]] }, or null to leave it.
  * Only "auto" spacing of 1 or more (exact and at-least lines aren't sized from their runs this way), and not a paragraph
- * with pictures, equations, breaks, fields drawn as text, a padded list label or a document grid.
+ * with pictures, equations, breaks, fields drawn as text or a document grid.
  */
 export function mixedLines(el, host) {
   if (el.tagName !== 'P' || el.dataset.odxGrid === '1') return null;
@@ -101,7 +101,7 @@ export function mixedLines(el, host) {
   const mult = rm ? parseFloat(rm) : 1; // (no spacing of its own: single, sample S078's footer)
   if (!(mult >= 1) || pcs.getPropertyValue('--odx-lhlen').trim() === '1') return null;
   if (el.querySelector('img:not(.ProseMirror-separator), math, svg, br:not(.ProseMirror-trailingBreak), .odx-opaque-inline:not(:empty), .odx-strut')) return null;
-  if (/--odx-lbl-/.test(el.getAttribute('style') || '')) return null;
+  // (A label's room over the first text stays: editor.css puts it in that text's box, whatever box it has here.)
   const blankLine = blankOnly(el, pcs);
   if (blankLine !== undefined) return blankLine;
   const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);

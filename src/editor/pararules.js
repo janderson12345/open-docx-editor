@@ -293,7 +293,23 @@ export function labelLine(node, session, l, label, run, style) {
       // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
       // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
       // label never makes its line taller below).
-      const up = (la * lbl - ta * txt) / 2 * (4 / 3) + raise;
+      // (Runs setting fonts and sizes of their own, no one for the paragraph: from the first text's, the one the room is
+      // put over, editor.css; a taller run later on the line stands above that room by itself. Word's prints of 24
+      // generated lists, a Symbol bullet over 11pt Calibri and 10pt Arial in a 12pt Times New Roman style: the line is the
+      // tallest top of bullet and runs and their deepest foot; against the style's Times it had no room and stood 0.75px
+      // short. mixlines.js gives the runs their boxes.)
+      let textTop = ta * txt;
+      if (!run.size || !run.font) {
+        let seen = false;
+        node.descendants((c) => {
+          if (seen || !c.isText || !c.text.trim()) return !seen;
+          seen = true;
+          const a = wordAscent(String(c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname).toLowerCase());
+          if (a) textTop = a * (Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl);
+          return false;
+        });
+      }
+      const up = (la * lbl - textTop) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
       if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
     }

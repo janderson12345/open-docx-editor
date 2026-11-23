@@ -2246,6 +2246,13 @@ await page.waitForTimeout(300);
 const bod = await page.evaluate(() => { const p = document.querySelectorAll('.odx-content > p')[1]; return [+p.getBoundingClientRect().height.toFixed(2), parseFloat(p.style.getPropertyValue('--odx-lbl-own')) || 0]; });
 check(bod[1] > 0.3 && Math.abs(bod[0] - 17.9 - bod[1]) < 0.12, `a bullet's room kept over a paragraph opening with a hidden deletion (${JSON.stringify(bod)}, want the 17.9px line plus the room)`);
 
+// A Symbol bullet over runs in fonts and sizes of their own makes the line its top over their deepest foot (why-tests
+// gen2.py lblmix; Word: 11pt Calibri and 10pt Arial in a 12pt Times New Roman style, 18.63px; it stood 17.84px).
+await open('bullet-over-mixed-runs.docx');
+await page.waitForTimeout(300);
+const bmr = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
+check(Math.abs(bmr - 18.65) < 0.1, `a bullet's line over runs of mixed fonts (${bmr}, want 18.65px)`);
+
 // A page a fraction of a pixel wider than whole pixels prints in a box of whole pixels, its text laid out at its own
 // width: wider than the printed page, the browser cut each page a pixel late (a sample's 47 pages of 12242 by 15842
 // twips, each page's text a pixel higher than the last).
