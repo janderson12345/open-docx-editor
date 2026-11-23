@@ -2217,6 +2217,11 @@ const ras = await rowAtTop('row-split-under-upper-line.docx');
 check(ram[0] === 2 && Math.abs(ram[1] - 96.3) < 1 && ras[0] === 2 && Math.abs(ras[1] - 96.3) < 1,
   `a row at a page's top with no top line of its own starts at the page's top (${JSON.stringify([ram, ras])}, want 96px on page 2, moved whole and split)`);
 
+// ... but beside a merged cell whose lower part sets a top line of its own, the row keeps that line's room (gen2.py
+// rowmerge; Word: 3pt lines, the second page's first line 4px lower than with no such line).
+const rbm = await rowAtTop('row-beside-merged-top-line.docx');
+check(Math.abs(rbm[1] - 100.3) < 1, `a row at a page's top keeps room for a merged cell's own top line (${JSON.stringify(rbm)}, want 100px on page 2)`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');

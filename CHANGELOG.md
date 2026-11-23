@@ -28,9 +28,9 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   short in Calibri, and the page's text under the header moved up with it.
 - **A font's line is measured to its own units** (85 generated documents): measured at 100px it was rounded, a line of
   Tempus Sans ITC 0.08px short at 12pt.
-- **A table row at a page's top starts under its own top line only** (18 generated tables): where the line over a
+- **A table row at a page's top starts under its own top line only** (102 generated tables): where the line over a
   row is the upper row's bottom line, the row's text starts at the page's top, moved whole or split; it stood the
-  line's width lower, every page of a long table.
+  line's width lower, every page of a long table. A merged cell's lower part that sets a top line counts as the row's.
 - **A run in another font deepens a Calibri line only past Calibri's own depth** (20 generated documents): runs in
   Garamond or Consolas made 11pt Calibri lines 0.2 to 0.4px taller than Word's.
 - **A paragraph is no taller than its font's own line** (18 generated documents in Garamond, Georgia and Courier

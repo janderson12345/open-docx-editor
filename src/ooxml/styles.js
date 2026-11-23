@@ -785,6 +785,15 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
   // height though nothing of it is drawn (Word's own layout of a sample's table: two rows under the start of three
   // merged cells, their own cells with no top line, 19.3px each for the merged parts' 1pt lines; they were 17.9px).
   for (const { c } of resolved) (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) rowLine.set(c.row + k + 1, Math.max(rowLine.get(c.row + k + 1) ?? 0, (Math.max(0.25, sz / 8) * 4) / 3)); });
+  // The widest top line a row's cells set for themselves, the hidden lower parts of merged cells too, without a wider line
+  // from the row above: what a row starting a page leaves room for (ownRoom below). Word's prints of eight generated
+  // tables, the row beside merged cells: 3pt lower for a 3pt top line on a merged cell's lower part, none without.)
+  const rowOwn = new Map();
+  const ownAt = (row, px) => rowOwn.set(row, Math.max(rowOwn.get(row) ?? 0, px));
+  for (const { c, edge, ...r } of resolved) {
+    ownAt(c.row, 'ownTop' in r ? linePx(r.ownTop) : linePx(edge.top));
+    (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) ownAt(c.row + k + 1, (Math.max(0.25, sz / 8) * 4) / 3); });
+  }
   const out = [];
   for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ...more } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
@@ -869,7 +878,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // splitRow): Word's prints of 12 generated tables, a row of 40 lines broken across two pages: under a top line of
     // its own, 1 to 3pt, the text starts that much down the second page; under none, the line above being the upper
     // row's bottom line, at the page's top.
-    const ownRoom = 'ownTop' in more ? (drawn(more.ownTop) ? linePx(more.ownTop) : 0) : grow.top;
+    const ownRoom = Math.max('ownTop' in more ? (drawn(more.ownTop) ? linePx(more.ownTop) : 0) : grow.top, rowOwn.get(c.row) ?? 0);
     if (under > 0.01) grow.top += under;
     const lessAtBreak = ownRoom < grow.top - 0.01;
     // A cell's text keeps clear of the lines at its sides: it starts and ends its side margin in from the cell's edge, or
