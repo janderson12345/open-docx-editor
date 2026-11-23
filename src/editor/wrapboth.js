@@ -318,15 +318,19 @@ function linesOf(chars) {
  * start of the first word that doesn't fit before it, as wide as takes that word to the room's right side; a spacer no
  * longer where its line meets the room (the text before it changed) goes, with those after it in the paragraph. True
  * when the spacers changed (lines move: measure again). `stories`: the sheets' headers and footers, for their shapes
- * (storyZones).
+ * (storyZones). `pages`: the page pushes the lines stand under (pages.js), which tell a real round from spacers undone.
  */
-export function applyWrapBoth(view, stories = null) {
+export function applyWrapBoth(view, stories = null, pages = '') {
   const st = key.getState(view.state);
   // (A paragraph settles in a pass for each line beside a shape; this many means something keeps undoing them.)
   if (!st || st.passes > 80) return false;
   let seen = settled.get(view);
-  if (!seen || seen.doc !== view.state.doc || seen.fonts !== fontLoads) settled.set(view, seen = { doc: view.state.doc, fonts: fontLoads, states: [], done: false });
-  if (seen.done) return false;
+  if (!seen || seen.doc !== view.state.doc || seen.fonts !== fontLoads) settled.set(view, seen = { doc: view.state.doc, fonts: fontLoads, states: [], done: false, held: new Set() });
+  // (A round is held under the page pushes it came round under. The lines stand elsewhere under others, and are looked at
+  // again: held for good, spacers from a round among lines with no pushes, a font having just arrived, stayed in the print
+  // on pages that had their pushes back. Under pushes it has already been held at, it stays held: that's a longer round.)
+  if (seen.done && seen.held.has(pages)) return false;
+  seen.done = false;
   const zs = zones(view, stories);
   if (!zs.length && !st.list.length) return false;
   let list = st.list.slice().sort((a, b) => a.pos - b.pos);
@@ -473,15 +477,18 @@ export function applyWrapBoth(view, stories = null) {
   // Spacers come back to a set they've had: two paragraphs undoing each other, each one's spacer moving the other's line
   // (a 41-page document went between two sets for 81 passes, 12 seconds, and a print took whichever it found). The set of
   // that round with the most spacers, the same one whichever pass got there first, and no more passes for this document.
+  // (Under the same page pushes: the same spacers under others are another layout. A 41-page document whose font arrived
+  // late came round among lines with no pushes, and printed with the 107 spacers of that round on its finished pages.)
   const sigOf = (l) => l.map((s) => `${s.pos}:${s.w.toFixed(2)}`).join(',');
   const sig = sigOf(list);
-  const again = seen.states.findIndex((x) => x.sig === sig);
+  const again = seen.states.findIndex((x) => x.sig === sig && x.pages === pages);
   if (again >= 0) {
     const round = seen.states.slice(again).sort((a, b) => b.list.length - a.list.length || (a.sig < b.sig ? -1 : 1));
     list = round[0].list;
     seen.done = true;
+    seen.held.add(pages);
     if (sigOf(st.list.slice().sort((a, b) => a.pos - b.pos)) === round[0].sig) return false;
-  } else seen.states.push({ sig, list });
+  } else seen.states.push({ sig, pages, list });
   // (Word's squeezing of justified lines, justify.js, worked out for lines all the column's width: gone from those split
   // now, to be worked out again for the lines above and below the split ones.)
   view.dispatch(dropSqueeze(view.state.tr, fresh).setMeta(key, list).setMeta('addToHistory', false));
