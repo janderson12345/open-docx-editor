@@ -24,6 +24,8 @@ import { lineFactor } from '../ooxml/props.js';
 const EAST = Object.assign(Object.create(null), { 'ms gothic': [258 / 256, 332 / 256], 'ms pgothic': [258 / 256, 332 / 256], 'ms ui gothic': [258 / 256, 332 / 256], 'ms mincho': [258 / 256, 332 / 256], 'ms pmincho': [258 / 256, 332 / 256] });
 const eastFamily = (cs) => { const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase(); return EAST[f] ? f : ''; };
 const tops = new Map(); // font, line height -> the browser's top of a span's box above its baseline (px)
+// (Until fonts load: one measured in the fallback while a web font was on its way stayed for good otherwise.)
+if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => tops.clear());
 let probe = null;
 
 /** The browser's top (px) of the box of a span in `cs`'s font with line height `lh` (px), above its baseline. */

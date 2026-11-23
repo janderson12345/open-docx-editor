@@ -15,7 +15,10 @@ export function fitRowspans(root) {
   // cell's top: centred or bottom-aligned content sits lower in a row grown for it, and measured from there it asked for
   // more on every pass: a merged, bottom-aligned cell's text pushed onto the next page).
   const own = (td) => {
-    const first = td.firstElementChild, last = td.lastElementChild;
+    // (Its blocks that have a box: a hidden one reads as at the window's top, and a cell starting with one measured the
+    // distance from there, so a row came out thousands of px tall or not, by how far the page was scrolled.)
+    const boxes = [...td.children].filter((e) => e.getClientRects().length);
+    const first = boxes[0], last = boxes[boxes.length - 1];
     if (!last) return 0;
     const cs = getComputedStyle(td);
     const top = first.getBoundingClientRect().top - (parseFloat(getComputedStyle(first).marginTop) || 0) - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.borderTopWidth) || 0);
@@ -47,6 +50,8 @@ export function fitRowspans(root) {
     rows.forEach((tr, k) => {
       const h = need.has(k) ? `${need.get(k).toFixed(2)}px` : '';
       if (tr.style.height !== h) { tr.style.height = h; changed = true; }
+      // (Also by name, for a page's push to go on top of it: pages.js.)
+      if (h) tr.style.setProperty('--odx-rowfit', h); else tr.style.removeProperty('--odx-rowfit');
     });
   }
   return changed;
@@ -72,7 +77,7 @@ export function clipExactRows(root) {
     const h = parseFloat(tr.style.getPropertyValue('--odx-trh'));
     if (!h) continue;
     for (const td of tr.cells) {
-      const ps = [...td.children].filter((e) => e.tagName === 'P');
+      const ps = [...td.children].filter((e) => e.tagName === 'P' && e.getClientRects().length); // (a hidden one has no place)
       if (ps.length < 2 || td.rowSpan > 1) continue; // (a cell merged down several rows has their height, not this one's)
       const cs = getComputedStyle(td);
       const room = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);

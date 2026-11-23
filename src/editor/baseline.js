@@ -90,10 +90,14 @@ function mixedShift(el, first) {
 }
 
 const cache = new Map();
+let cacheEpoch = -1;
 let probe = null;
 
 /** The browser's baseline offset (px) from a line's top, for a paragraph style and its first run's font. */
 function browserOffset(pcs, rcs, host) {
+  // (Until fonts load, as the shifts made from it. Kept longer, one measured in the fallback while a web font was on its
+  // way stayed for good: its line printed 1px off, by which of the two came first.)
+  if (cacheEpoch !== fontLoads) { cache.clear(); cacheEpoch = fontLoads; }
   const key = [pcs.fontSize, pcs.fontFamily, lineHeightOf(pcs), rcs.font].join('|');
   if (cache.has(key)) return cache.get(key);
   if (!probe) {
