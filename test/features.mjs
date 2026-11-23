@@ -2253,6 +2253,20 @@ await page.waitForTimeout(300);
 const bmr = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
 check(Math.abs(bmr - 18.65) < 0.1, `a bullet's line over runs of mixed fonts (${bmr}, want 18.65px)`);
 
+// A floating table placed down from its text and moved to the next page keeps that drop there, and the text after it
+// goes with it (why-tests gen2.py fltmove; Word: 182 twips down, the table 12.13px under the page's top, the paragraph
+// after it at the page's top beside it; the table had lost the drop and the paragraph stayed past the old page's foot).
+await open('float-moved-keeps-drop.docx');
+await page.waitForTimeout(400);
+const fmd = await page.evaluate(() => {
+  const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const t = document.querySelector('.odx-content .tableWrapper').getBoundingClientRect();
+  const r = document.createRange(); r.selectNodeContents(document.querySelector('.odx-content .tableWrapper').nextElementSibling);
+  const a = r.getClientRects()[0];
+  return [sh.length, +(t.top - sh[1].top).toFixed(1), +(a.top - sh[1].top).toFixed(1)];
+});
+check(fmd[0] === 2 && Math.abs(fmd[1] - 108.13) < 0.6 && Math.abs(fmd[2] - 96) < 1.5, `a floating table moved on keeps its drop, the text after it with it (${JSON.stringify(fmd)}, want the table at 108.13px and the text at 96px on page 2)`);
+
 // A page a fraction of a pixel wider than whole pixels prints in a box of whole pixels, its text laid out at its own
 // width: wider than the printed page, the browser cut each page a pixel late (a sample's 47 pages of 12242 by 15842
 // twips, each page's text a pixel higher than the last).

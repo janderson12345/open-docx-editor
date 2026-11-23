@@ -2996,8 +2996,15 @@ export function createPages(view, session, { sheet, scope }) {
       // a Title spaced 9pt before, under a section ended by a 3pt-after paragraph, 6pt down in Word's own layout; under
       // a 6pt one, 3pt; varied in copies of it, a space before up to that space after leaves none).
       const kept = forced && sectStart && m === k && k > 0 ? Math.max(0, spaceBefore(moved.node) - spaceAfter(blocks[k - 1].node)) : spaceBefore(moved.node);
-      const delta = contentTop(target) + (forced ? kept : tails.get(moved.i) || 0) - (moved.top + shift);
+      // (A floating table placed down from its paragraph keeps that drop on the page it moves to, the text after it starting
+      // at the page's top. Word's prints of 12 generated tables, 120 to 300 twips down: all of the drop kept; a sample's
+      // tables had lost it, 12px high and every page after them out.)
+      const floatDrop = moved.rows && outOfFlow(moved.el) && setDown(moved.node) ? ownTop(moved) : 0;
+      const delta = contentTop(target) + floatDrop + (forced ? kept : tails.get(moved.i) || 0) - (moved.top + shift);
       starts.set(moved.i, (cols || carried.has(moved.i) ? starts.get(moved.i) || 0 : 0) + delta); // (in columns it may already carry a split's push; after a frame moved on, that push)
+      // (The text after a floating table goes with it, a float's margin not moving it: it stayed at the old page's foot and
+      // ran past it. Word's prints of the same tables: the next paragraph starts the new page, beside the table or above it.)
+      if (moved.rows && outOfFlow(moved.el) && blocks[m + 1]) { addTo(starts, blocks[m + 1].i, delta); carried.add(blocks[m + 1].i); }
       shift += delta;
       if (rec.has(m)) rec.set(m, { top: moved.top + shift, bottom: moved.bottom + shift }); // (the walk goes on after it, not from it)
       sbTop.set(moved.i, forced ? kept : 0);
