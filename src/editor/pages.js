@@ -29,7 +29,7 @@ import { noteRefs } from './notes.js';
 import { createNoteBoxes, CONT_LEAD } from './notebox.js';
 import { applySqueeze } from './justify.js';
 import { applyLineFix, lineGrid, storyLineFix } from './lhfix.js';
-import { applyWidths } from './widths.js';
+import { applyWidths, fixStoryWidths } from './widths.js';
 import { applyFitText } from './fittext.js';
 import { applyWrapBoth, drawnUpTo } from './wrapboth.js';
 import { applyTableClear } from './tableclear.js';
@@ -1781,6 +1781,8 @@ export function createPages(view, session, { sheet, scope }) {
       // Its tabs to their stops, as when it is drawn (below): left as plain tab characters, each kept at its full width
       // now that header and footer spaces are (editor.css), a footer line of a page number, a tab and text that just
       // fits wrapped here alone, the footer measured a line taller than it is drawn and every page a line short.
+      // (Its text at Word's widths first, as the body's (widths.js): the tabs go after it.)
+      fixStoryWidths(el);
       try { layoutTabsIn(el, session, (p) => { const n = hfNodes.get(p); if (!n) throw new Error('no node'); return n; }); } catch { /* measured as it is */ }
       heights.set(doc, flowHeight(el)); // (what floats in it doesn't count: hfstory.js flowHeight)
       el.remove();
@@ -3349,7 +3351,8 @@ export function createPages(view, session, { sheet, scope }) {
     fitRowspans(layer);
     // Header and footer tabs to their stops (center, right...), as the body's: they had stayed plain tab characters,
     // which collapse to a space (sample S078's centred "Company Proprietary").
-    for (const hf of layer.querySelectorAll('.odx-hf')) layoutTabsIn(hf, session, (p) => { const n = hfNodes.get(p); if (!n) throw new Error('no node'); return n; });
+    // (Their text at Word's widths first, as the body's: widths.js fixStoryWidths.)
+    for (const hf of layer.querySelectorAll('.odx-hf')) { fixStoryWidths(hf); layoutTabsIn(hf, session, (p) => { const n = hfNodes.get(p); if (!n) throw new Error('no node'); return n; }); }
     hfShifts(layer, sheet); // the print-only baseline shifts of header and footer text, as the body's
     const gf = document.createDocumentFragment();
     if (gap) for (let p = 0; p + 1 < pages; p++) {

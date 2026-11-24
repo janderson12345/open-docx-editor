@@ -30,22 +30,38 @@ const hinted = new Map(); // font (style weight family) + size -> true when Edge
 let probe = null;
 function width(cs, px, text, caps = 'normal') {
   if (!probe || !probe.isConnected) {
+    // (In a box of no size that clips it, and emptied after each reading: at 1000px a header's line ran from 99,999px
+    // left of the page past its left edge, the page measured wider than a sheet, and a print came out shrunk to fit,
+    // ten pages on seven.)
+    const box = document.createElement('div');
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none';
     probe = document.createElement('span');
-    probe.setAttribute('aria-hidden', 'true');
-    probe.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:pre;letter-spacing:0;word-spacing:0;font-kerning:none;font-variant-ligatures:none;line-height:normal';
-    document.body.append(probe);
+    probe.style.cssText = 'position:absolute;left:0;top:0;white-space:pre;letter-spacing:0;word-spacing:0;font-kerning:none;font-variant-ligatures:none;line-height:normal';
+    box.append(probe);
+    document.body.append(box);
   }
   probe.style.font = `${cs.fontStyle} ${cs.fontWeight} ${px}px ${cs.fontFamily}`;
   probe.style.fontVariantCaps = caps;
   probe.textContent = text;
-  return probe.getBoundingClientRect().width;
+  const w = probe.getBoundingClientRect().width;
+  probe.textContent = '';
+  return w;
+}
+// The design width of `text` at `px`, scaled from a large size. From 100px, unless the browser sets advances on whole
+// pixels even there (Chromium on Linux: Carlito's space 23px at 100px, for 22.66), when 1000px is taken; where 100px
+// is already exact, as in Edge on Windows, it stays the one, so those corrections are the same as they were.
+function designWidth(m, text, px) {
+  const a = width(m, 100, text) / 100;
+  const b = width(m, 1000, text) / 1000;
+  return (Math.abs(a / b - 1) > 5e-4 ? b : a) * px;
 }
 function isHinted(cs) {
   const k = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontFamily} ${cs.fontSize}`;
   if (!hinted.has(k)) {
     const px = parseFloat(cs.fontSize);
     const at = width(cs, px, REF);
-    const scaled = (width(cs, 100, REF) * px) / 100;
+    const scaled = designWidth(cs, REF, px);
     // (Edge's own cut of the size to 1/100px, sizeCss's business, is far under this.)
     hinted.set(k, Math.abs(at / scaled - 1) > 0.003);
   }
@@ -132,6 +148,57 @@ let loads = 0;
 // (The font measures go too: one taken in the fallback while a web font was on its way stayed for good otherwise.)
 if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => { loads++; hinted.clear(); boxes.clear(); });
 const fontEpoch = () => loads;
+
+/** The letter spacing, px a character, that sets `text` in the font `cs` gives at Word's widths; 0 for none. */
+function spacingFor(cs, text) {
+  // A character scale (w:w): the run's text as wide as Word makes it, its width times the scale (scaleCss's
+  // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
+  const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
+  // Bold over a cloud SemiBold or Demi family (fakeBold): measured, and so set, at the Regular's widths.
+  const fake = fakeBold(cs);
+  const m = fake ? { fontStyle: cs.fontStyle, fontWeight: '400', fontFamily: cs.fontFamily, fontSize: cs.fontSize } : cs;
+  const hinted = isHinted(m);
+  // Small caps as Word sets them: lowercase letters as capitals at 80% of the size (to half a point: 9pt in 11pt
+  // text, Word's PDF), the rest as they are; the browser's own small capitals are another width.
+  const smallCaps = cs.fontVariantCaps === 'small-caps';
+  if (!(hinted || scale !== 1 || smallCaps || fake)) return 0;
+  const px = parseFloat(cs.fontSize);
+  const actual = width(cs, px, text, smallCaps ? 'small-caps' : 'normal');
+  let design = hinted ? designWidth(m, text, px) : fake ? width(m, px, text) : actual;
+  if (smallCaps) {
+    const sc = (Math.round(px * 0.75 * 0.8 * 2) / 2) / 0.75;
+    design = text.match(/\p{Ll}+|\P{Ll}+/gu).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? width(m, sc, part.toUpperCase()) : width(m, px, part)), 0);
+  }
+  return Math.round(((design * scale - actual) / text.length) * 1e4) / 1e4;
+}
+
+// Header and footer text's corrections, by font and text, until fonts load (drawn again for every page).
+const storyMemo = new Map();
+let storyEpoch = -1;
+/**
+ * Header and footer text (drawn by hfstory.js, outside the editor's document) at Word's widths, as applyWidths sets the
+ * body's: each text span in `root`, once it is on the page. Where the browser sets a font's advances on whole pixels, as
+ * Chromium on Linux does for Carlito, that is every span in it: 28 spaces of 11pt Carlito in a header came out 84px for
+ * Word's 93 there, and Windows had them right.
+ */
+export function fixStoryWidths(root) {
+  if (storyEpoch !== fontEpoch()) { storyMemo.clear(); storyEpoch = fontEpoch(); }
+  for (const s of root.querySelectorAll('span.odx-t')) {
+    const text = s.textContent;
+    if (text.length < 2 || !s.isConnected || s.closest('.odx-fit')) continue;
+    const cs = getComputedStyle(s);
+    if (!parseFloat(cs.fontSize)) continue;
+    const k = `${cs.fontStyle}|${cs.fontWeight}|${cs.fontFamily}|${cs.fontSize}|${cs.fontVariantCaps}|${cs.getPropertyValue('--odx-w')}|${text}`;
+    if (!storyMemo.has(k)) {
+      if (storyMemo.size > 4000) storyMemo.clear();
+      storyMemo.set(k, spacingFor(cs, text));
+    }
+    const ls = storyMemo.get(k);
+    const v = ls ? `calc(var(--odx-csp, 0px) + ${ls}px)` : '';
+    if (s.style.letterSpacing !== v && (ls || s.dataset.odxWfix)) { s.style.letterSpacing = v; if (ls) s.dataset.odxWfix = '1'; else delete s.dataset.odxWfix; }
+  }
+}
+
 /** Recomputes the corrections; true when they changed. */
 export function applyWidths(view) {
   const decos = [];
@@ -153,28 +220,8 @@ export function applyWidths(view) {
     if (!host) return false;
     const cs = getComputedStyle(host);
     const style = [];
-    // A character scale (w:w): the run's text as wide as Word makes it, its width times the scale (scaleCss's
-    // average-advance estimate made exact for this text: 150% Calibri lines came out a word short or long).
-    const scale = parseFloat(cs.getPropertyValue('--odx-w')) || 1;
-    // Bold over a cloud SemiBold or Demi family (fakeBold): measured, and so set, at the Regular's widths.
-    const fake = fakeBold(cs);
-    const m = fake ? { fontStyle: cs.fontStyle, fontWeight: '400', fontFamily: cs.fontFamily, fontSize: cs.fontSize } : cs;
-    const hinted = isHinted(m);
-    // Small caps as Word sets them: lowercase letters as capitals at 80% of the size (to half a point: 9pt in 11pt
-    // text, Word's PDF), the rest as they are; the browser's own small capitals are another width.
-    const smallCaps = cs.fontVariantCaps === 'small-caps';
-    if (hinted || scale !== 1 || smallCaps || fake) {
-      const px = parseFloat(cs.fontSize);
-      const actual = width(cs, px, node.text, smallCaps ? 'small-caps' : 'normal');
-      let design = hinted ? (width(m, 100, node.text) * px) / 100 : fake ? width(m, px, node.text) : actual;
-      if (smallCaps) {
-        const sc = (Math.round(px * 0.75 * 0.8 * 2) / 2) / 0.75;
-        design = node.text.match(/\p{Ll}+|\P{Ll}+/gu).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? width(m, sc, part.toUpperCase()) : width(m, px, part)), 0);
-      }
-      const target = design * scale;
-      const ls = Math.round(((target - actual) / node.text.length) * 1e4) / 1e4;
-      if (ls) style.push(`letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)`);
-    }
+    const ls = spacingFor(cs, node.text);
+    if (ls) style.push(`letter-spacing:calc(var(--odx-csp, 0px) + ${ls}px)`);
     const lh = mixedLine(host, cs);
     if (lh) style.push(`--odx-lhv:${lh}px`);
     const css = style.join(';');

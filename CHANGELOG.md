@@ -7,6 +7,10 @@ within 1px of Word's went from 47% to 82%, and documents laid out exactly as Wor
 
 - **Hardening from the release review**: a table's first cell's left border is found in one pass over its border
   XML (a crafted file with a long run of unclosed border tags took time growing with its square: 1.8s for 160KB).
+- **Header and footer text at Word's widths on Linux**: where the browser sets a font's advances on whole pixels, as
+  Chromium on Linux does for Carlito (Calibri's stand-in), body text was corrected back to Word's widths but headers
+  and footers were not, so 28 spaces of 11pt Carlito came out 84px for Word's 93. They get the same correction now,
+  measured against a 1000px reference where even 100px is rounded.
 - **Long documents open faster in Firefox**: Firefox lays pages out in 60ths of a pixel, where the editor had set its
   page pushes in 64ths, so each layout pass moved blocks a hair back and forth and the next pass moved them back. The
   editor now works on the browser's own grid: a 122-page document took 28 layout passes to open in Firefox and is now
