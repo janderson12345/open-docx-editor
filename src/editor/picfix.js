@@ -17,6 +17,8 @@ import { layoutRect, lineHeightOf } from './util.js';
 const DESCENT = { calibri: 0.2686, 'calibri light': 0.2686, carlito: 0.2686 };
 
 const cache = new Map();
+// (Until fonts load: one measured in the fallback while a web font was on its way stayed for good otherwise.)
+if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => cache.clear());
 
 /** The browser's room above and below the baseline (px) of a line of the paragraph's text: [above, below]. */
 function strut(box, el, chain, lhv) {

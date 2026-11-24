@@ -2147,6 +2147,154 @@ await open('list-letter-next-stop.docx');
 const lns2 = [await textSpans(9), await textSpans(16)].map((t) => t[0][0]);
 check(Math.abs(lns2[0] - 108) < 1.5 && Math.abs(lns2[1] - 120) < 1.5, `text after a list letter at the first stop past its unkerned width (${JSON.stringify(lns2)}, want 108 and 120px)`);
 
+// A list number under a highlighted paragraph mark is highlighted, with its room up to the text (why-tests gen2.py
+// lblhl; Word: yellow from the number's place at 144px to the text at 192, under a mark highlighted yellow).
+await open('list-number-mark-highlight.docx');
+const lmh = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-li'); const cs = getComputedStyle(p, '::before'); return [cs.backgroundColor, parseFloat(cs.paddingTop) > 4 && parseFloat(cs.marginTop) < -4, Math.round(parseFloat(cs.minWidth))]; });
+check(lmh[0] === 'rgb(255, 255, 0)' && lmh[1] && lmh[2] === 48, `a list number highlighted with its paragraph mark (${JSON.stringify(lmh)}, want yellow over 48px of room)`);
+
+// A tab stop written after one further along is not a stop: Word takes them in rising order (gen2.py tabdup; Word:
+// stops written 880 then 900 twips take the tab to 154.7px, written 900 then 880 to 156).
+await open('tab-stops-out-of-order.docx');
+const tso = [await textSpans(1), await textSpans(2)].map((t) => t[1][0]);
+check(Math.abs(tso[0] - 155) < 1.01 && Math.abs(tso[1] - 156) < 0.6 && tso[1] > tso[0], `a tab stop written after one further along ignored (${JSON.stringify(tso)}, want 155 and 156px)`);
+
+// A line that crosses the foot of an exact-height row is cut there in print, not drawn whole (gen2.py exclip; Word:
+// under a 20pt row holding two 12pt lines, the second line's ink ends 26.7px below the row's top, 4.5px of it showing).
+await open('exact-row-cut-line.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+await page.waitForTimeout(300);
+const ecl = await page.evaluate(() => {
+  const foot = document.querySelector('.odx-content:not(.odx-pl-host) tr[data-exact] > td').getBoundingClientRect().bottom;
+  return [...document.querySelectorAll('.odx-printlines tr[data-exact] p')].map((p) => {
+    const b = p.getBoundingClientRect();
+    const m = /^inset\(\S+ \S+ ([-\d.]+)px/.exec(p.style.clipPath || '');
+    return [+(b.top - foot).toFixed(1), +(b.bottom - foot).toFixed(1), m ? +(b.bottom - Number(m[1]) - foot).toFixed(1) : null];
+  });
+});
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(ecl.length === 2 && ecl[0][1] <= 0 && ecl[0][2] === null && ecl[1][0] < -3 && ecl[1][1] > 3 && ecl[1][2] !== null && Math.abs(ecl[1][2]) <= 0.5,
+  `a line crossing an exact row's foot cut at the foot in print (${JSON.stringify(ecl)}, want two lines, the second from above the foot to below it and cut at 0)`);
+
+// Garamond's single line is its own 1.125em, and a paragraph's floor is no taller than its font's line (why-tests
+// gen2.py garaline and floor; Word: 12pt Garamond paragraphs 18px apart, 12pt Courier New ones 18.12px, empty or not;
+// at the 1.15em floor both stood 18.39px).
+await open('garamond-single-lines.docx');
+const gsl = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 20).map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(gsl.length === 20 && gsl.every((h) => Math.abs(h - 18) < 0.06), `single-spaced 12pt Garamond paragraphs one line tall, 1.125em (${JSON.stringify(gsl.slice(0, 4))}, want 18px)`);
+await open('single-lines-under-floor.docx');
+const sluf = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(sluf.length === 42 && sluf.slice(0, 20).every((h) => Math.abs(h - 18.125) < 0.07) && sluf.slice(21, 41).every((h) => Math.abs(h - 18.125) < 0.07),
+  `single-spaced 12pt Courier New paragraphs, with text and empty, as tall as the font's line (${JSON.stringify([sluf[0], sluf[25]])}, want 18.12px, not the 18.4px floor)`);
+
+// A run in another font makes a Calibri line taller only past Calibri's own Windows ascent and descent (why-tests
+// gen2.py mixdesc; Word: 11pt Calibri lines at 1.08 holding a Garamond run are Calibri's own 19.32px; measured from
+// hhea's shallower descent they stood 19.7px).
+await open('calibri-line-garamond-run.docx');
+await page.waitForTimeout(300);
+const clg = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 20).map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+check(clg.length === 20 && clg.every((h) => Math.abs(h - 19.32) < 0.08), `Calibri lines holding a Garamond run no taller than Calibri's own (${JSON.stringify(clg.slice(0, 4))}, want 19.32px)`);
+
+// A row at a page's top starts under its own top line only: where the line over it is the upper row's bottom line, its
+// text starts at the page's top, the row moved whole or split (why-tests gen2.py rowcont; Word: under 3pt bottom-only
+// lines the second page's first line is where a plain first line is; the room for the line had it 4.3px low).
+const rowAtTop = async (file) => {
+  await open(file);
+  await page.waitForTimeout(400);
+  return page.evaluate(() => {
+    const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    // (Each line of text, not its paragraph's box: one carried over the page break has its box, and the spacer that
+    // carries it, start on the page before.)
+    const r = document.createRange();
+    const first = [...document.querySelectorAll('.odx-content td p')].flatMap((p) => { r.selectNodeContents(p); return [...r.getClientRects()].filter((q) => q.width > 1 && q.height > 5).map((q) => q.top); }).filter((t) => sh[1] && t >= sh[1].top + 50).sort((x, y) => x - y)[0];
+    return [sh.length, first == null ? null : +(first - sh[1].top).toFixed(1)];
+  });
+};
+const ram = await rowAtTop('row-moved-under-upper-line.docx');
+const ras = await rowAtTop('row-split-under-upper-line.docx');
+check(ram[0] === 2 && Math.abs(ram[1] - 96.3) < 1 && ras[0] === 2 && Math.abs(ras[1] - 96.3) < 1,
+  `a row at a page's top with no top line of its own starts at the page's top (${JSON.stringify([ram, ras])}, want 96px on page 2, moved whole and split)`);
+
+// ... but beside a merged cell whose lower part sets a top line of its own, the row keeps that line's room (gen2.py
+// rowmerge; Word: 3pt lines, the second page's first line 4px lower than with no such line).
+const rbm = await rowAtTop('row-beside-merged-top-line.docx');
+check(Math.abs(rbm[1] - 100.3) < 1, `a row at a page's top keeps room for a merged cell's own top line (${JSON.stringify(rbm)}, want 100px on page 2)`);
+
+// A page of exact lines is fitted by their set height, not the font's near-equal line (why-tests gen2.py foottie; Word: 55
+// lines of 11.5pt in 10pt Times New Roman, the page at 12960 twips keeps its last line, at 12961 it goes on).
+const onSheetOf = async (f, n) => { await open(f); await page.waitForTimeout(400); return page.evaluate((k) => { const q = document.createRange(); q.selectNodeContents(document.querySelectorAll('.odx-content > p')[k]); const t = q.getClientRects()[0].top; return [...document.querySelectorAll('.odx-sheets > .odx-sheet')].findIndex((s) => { const r = s.getBoundingClientRect(); return t >= r.top && t < r.bottom; }); }, n); };
+const ftie = [await onSheetOf('page-foot-tie-fits.docx', 110), await onSheetOf('page-foot-tie-passes.docx', 110)];
+check(ftie[0] === 1 && ftie[1] === 2, `exact lines fitted to the page by the twip (${JSON.stringify(ftie)}, want the last line on sheets 1 and 2)`);
+
+// ... and lines of multiple spacing by the font's exact units and the exact multiple (gen2.py foottie2; Word: 12pt Times New
+// Roman at 259/240, the page's 42nd line stays with 473 twips of space before the second paragraph and goes on with 474).
+const ftm = [await onSheetOf('page-foot-multiple-fits.docx', 41), await onSheetOf('page-foot-multiple-passes.docx', 41)];
+check(ftm[0] === 0 && ftm[1] === 1, `multiple-spaced lines fitted to the page by the twip (${JSON.stringify(ftm)}, want the 42nd line on sheets 0 and 1)`);
+
+// ... and bulleted lines with the bullet's exact room (gen2.py foottie3; Word: 12pt Times New Roman under Symbol bullets, the
+// page's 44th line stays with 59 twips of space before the second paragraph and goes on with 60).
+const footBul = [await onSheetOf('page-foot-bullets-fits.docx', 43), await onSheetOf('page-foot-bullets-passes.docx', 43)];
+check(footBul[0] === 0 && footBul[1] === 1, `bulleted lines fitted to the page by the twip (${JSON.stringify(footBul)}, want the 44th line on sheets 0 and 1)`);
+
+// ... and empty paragraphs at their exact line (gen2.py footempty; Word: 12pt Calibri with 16 empty paragraphs among the lines,
+// the page's 44th paragraph stays with 69 twips of space before the second and goes on with 70).
+const footEmpty = [await onSheetOf('page-foot-empties-fits.docx', 43), await onSheetOf('page-foot-empties-passes.docx', 43)];
+check(footEmpty[0] === 0 && footEmpty[1] === 1, `empty paragraphs fitted to the page by the twip (${JSON.stringify(footEmpty)}, want the 44th paragraph on sheets 0 and 1)`);
+
+// A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
+// 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
+await open('header-two-floating-shapes.docx');
+const hfs = await page.evaluate(() => +document.querySelector('.odx-hf.odx-header p').getBoundingClientRect().height.toFixed(2));
+check(Math.abs(hfs - 17.9) < 0.1, `a header line of two floating shapes a full line (${hfs}, want 17.9px)`);
+
+// A Symbol bullet's taller first line holds when its paragraph opens with a tracked deletion, hidden in this view (why-tests
+// gen2.py lbldel; Word: the line as tall as one opening with plain text; the room was put on the hidden deletion).
+await open('bullet-opens-with-deletion.docx');
+await page.waitForTimeout(300);
+const bod = await page.evaluate(() => { const p = document.querySelectorAll('.odx-content > p')[1]; return [+p.getBoundingClientRect().height.toFixed(2), parseFloat(p.style.getPropertyValue('--odx-lbl-own')) || 0]; });
+check(bod[1] > 0.3 && Math.abs(bod[0] - 17.9 - bod[1]) < 0.12, `a bullet's room kept over a paragraph opening with a hidden deletion (${JSON.stringify(bod)}, want the 17.9px line plus the room)`);
+
+// A Symbol bullet over runs in fonts and sizes of their own makes the line its top over their deepest foot (why-tests
+// gen2.py lblmix; Word: 11pt Calibri and 10pt Arial in a 12pt Times New Roman style, 18.63px; it stood 17.84px).
+await open('bullet-over-mixed-runs.docx');
+await page.waitForTimeout(300);
+const bmr = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
+check(Math.abs(bmr - 18.65) < 0.1, `a bullet's line over runs of mixed fonts (${bmr}, want 18.65px)`);
+
+// A floating table placed down from its text and moved to the next page keeps that drop there, and the text after it
+// goes with it (why-tests gen2.py fltmove; Word: 182 twips down, the table 12.13px under the page's top, the paragraph
+// after it at the page's top beside it; the table had lost the drop and the paragraph stayed past the old page's foot).
+await open('float-moved-keeps-drop.docx');
+await page.waitForTimeout(400);
+const fmd = await page.evaluate(() => {
+  const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const t = document.querySelector('.odx-content .tableWrapper').getBoundingClientRect();
+  const r = document.createRange(); r.selectNodeContents(document.querySelector('.odx-content .tableWrapper').nextElementSibling);
+  const a = r.getClientRects()[0];
+  return [sh.length, +(t.top - sh[1].top).toFixed(1), +(a.top - sh[1].top).toFixed(1)];
+});
+check(fmd[0] === 2 && Math.abs(fmd[1] - 108.13) < 0.6 && Math.abs(fmd[2] - 96) < 1.5, `a floating table moved on keeps its drop, the text after it with it (${JSON.stringify(fmd)}, want the table at 108.13px and the text at 96px on page 2)`);
+
+// A floating table goes where its tblpXSpec puts it, against the margin or the page (why-tests gen2.py fltx3; Word: a 4in
+// table centred in a 6.5in column starts 216px across; at the page's right its 0.5pt line ends at the page's edge).
+const fltBox = async (f) => { await open(f); await page.waitForTimeout(300); return page.evaluate(() => { const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(), t = document.querySelector('.odx-content table').getBoundingClientRect(); return [+(t.left - s.left).toFixed(2), +(t.right - s.left).toFixed(2)]; }); };
+const fltC = await fltBox('float-table-centred.docx'), fltR = await fltBox('float-table-page-right.docx');
+check(Math.abs(fltC[0] - 216) < 0.6 && Math.abs(fltR[1] - 815.67) < 0.6, `floating tables centred and at the page's right (${JSON.stringify([fltC, fltR])}, want 216 across and 815.67 at the right)`);
+
+// A page a fraction of a pixel wider than whole pixels prints in a box of whole pixels, its text laid out at its own
+// width: wider than the printed page, the browser cut each page a pixel late (a sample's 47 pages of 12242 by 15842
+// twips, each page's text a pixel higher than the last).
+await open('page-fraction-wide.docx');
+await page.emulateMedia({ media: 'print' });
+await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+await page.waitForTimeout(300);
+const pfw = await page.evaluate(() => [document.querySelector('.odx-page').getBoundingClientRect().width, +document.querySelector('.odx-page > .odx-content').getBoundingClientRect().width.toFixed(2)]);
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.emulateMedia({ media: 'screen' });
+check(pfw[0] === 816 && Math.abs(pfw[1] - 816.13) < 0.02, `a page a fraction wider prints in whole pixels, its text at its own width (${JSON.stringify(pfw)}, want 816 and 816.13)`);
+
 // Text with an outer shadow (w14:shadow) has a taller line in Word: on the run, from its paragraph style, on an empty
 // paragraph of that style (texteffects.js shadowRoom; mkspacing.mjs, Word's PDF: 3.6px for its preset at 15pt, 5.33px
 // for an 8pt blur at 10pt).

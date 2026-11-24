@@ -12,6 +12,8 @@ export const ASCENT = {
   'trebuchet ms': 0.939, 'century schoolbook': 0.9858, century: 0.9858,
   aptos: 0.939, 'aptos narrow': 0.939, 'aptos display': 0.939, consolas: 0.9136,
   ubuntu: 0.96, 'ubuntu mono': 0.83, // (embedded in sample S125: its own hhea tables)
+  'arial narrow': 0.9355, // (its hhea ascender, no line gap)
+  garamond: 0.8618, // (its hhea ascender, no line gap: Word's first baselines in 42 generated documents, 13.79px under the line's top at 12pt whatever the spacing)
   'microsoft sans serif': 0.9219, // (sample S113. Not Comic Sans MS or Century Gothic: their hhea ascents put sample S038's lines low)
 };
 // What remains, per font, in px whatever the size: the average error of printed lines against Word's own PDFs, by font
@@ -90,10 +92,14 @@ function mixedShift(el, first) {
 }
 
 const cache = new Map();
+let cacheEpoch = -1;
 let probe = null;
 
 /** The browser's baseline offset (px) from a line's top, for a paragraph style and its first run's font. */
 function browserOffset(pcs, rcs, host) {
+  // (Until fonts load, as the shifts made from it. Kept longer, one measured in the fallback while a web font was on its
+  // way stayed for good: its line printed 1px off, by which of the two came first.)
+  if (cacheEpoch !== fontLoads) { cache.clear(); cacheEpoch = fontLoads; }
   const key = [pcs.fontSize, pcs.fontFamily, lineHeightOf(pcs), rcs.font].join('|');
   if (cache.has(key)) return cache.get(key);
   if (!probe) {
@@ -170,9 +176,11 @@ export function shiftFor(el, host, anchored = false) {
   // own size, an unsized space or its mark, and Word's line is that size's. Cells of 10pt runs and one unsized space in
   // an 11pt style, measured as 10pt lines, printed 0.7px lower, 1.3px under Word's.)
   if (!own && rcs.fontSize !== pcs.fontSize && parseFloat(rcs.fontSize) > parseFloat(pcs.fontSize) && el.dataset.odxMix !== '1') {
-    let none = true;
-    for (const s of el.querySelectorAll('.odx-t')) { if (s.textContent.trim() && getComputedStyle(s).fontSize === pcs.fontSize) { none = false; break; } }
-    if (none) pcs = rcs;
+    // (Whatever follows it on the line: text in the paragraph's own size is smaller than that run and adds nothing to
+    // the line. Word's prints of eight generated documents, a line opening in 12pt or 14pt and going on in the
+    // document's 11pt, one line and three, in the body and in cells: with the 12pt Times New Roman opening measured
+    // as an 11pt line holding a 12pt run, those lines printed 1.4 to 1.7px low; a sample's heading, 1.3px.)
+    pcs = rcs;
   }
   // The first family of the stack we know: "DejaVu Sans", Verdana prints (in Word too) in Verdana.
   const known = knownFamily;

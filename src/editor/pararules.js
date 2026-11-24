@@ -2,7 +2,7 @@
 // the session and what the pass worked out before it. `attrs` is the paragraph's decoration (class, data-label, role),
 // `style` its list of CSS declarations; both are added to in the pass's order.
 import { listLevel, resolveStyle } from '../ooxml/styles.js';
-import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor } from '../ooxml/props.js';
+import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor, highlightColor } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 import { outlineLevel } from './commands.js';
 import { wordAscent } from './baseline.js';
@@ -191,6 +191,11 @@ export function labelFormat(node, session, l, label, style) {
   // (The automatic colour, set on the mark or the level: black, over the paragraph style's colour, as the runs'.)
   else if (color === 'auto') style.push('--odx-lcolor:var(--odx-autotext, #000)');
   if (underline) style.push(`--odx-ldeco:${underline === 'none' ? 'none' : 'underline'}`);
+  // A highlighted paragraph mark highlights the number, and its room up to the text (the mark's shading does not).
+  // Word's prints of five generated lists: yellow from the number's place to the text's start, a line tall, under a
+  // mark highlighted yellow; none under one shaded yellow, or with only the text's runs highlighted.
+  const hl = /<w:highlight\b[^>]*w:val="([A-Za-z]{1,20})"/.exec(mark)?.[1];
+  if (hl && hl !== 'none' && highlightColor(hl) !== 'transparent') style.push(`--odx-lbg:${highlightColor(hl)}`);
 }
 
 const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
@@ -288,9 +293,28 @@ export function labelLine(node, session, l, label, run, style) {
       // A label its level raises or lowers (w:position) is drawn that far off the baseline, and reaches that much
       // further up, or less far (48 generated lists: labels raised 1.5 to 6pt and lowered 1.5 and 4pt; a lowered
       // label never makes its line taller below).
-      const up = (la * lbl - ta * txt) / 2 * (4 / 3) + raise;
+      // (Runs setting fonts and sizes of their own, no one for the paragraph: from the first text's, the one the room is
+      // put over, editor.css; a taller run later on the line stands above that room by itself. Word's prints of 24
+      // generated lists, a Symbol bullet over 11pt Calibri and 10pt Arial in a 12pt Times New Roman style: the line is the
+      // tallest top of bullet and runs and their deepest foot; against the style's Times it had no room and stood 0.75px
+      // short. mixlines.js gives the runs their boxes.)
+      let topA = ta, topSize = txt;
+      if (!run.size || !run.font) {
+        let seen = false;
+        node.descendants((c) => {
+          if (seen || !c.isText || !c.text.trim()) return !seen;
+          seen = true;
+          const a = wordAscent(String(c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname).toLowerCase());
+          if (a) { topA = a; topSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl; }
+          return false;
+        });
+      }
+      const up = (la * lbl - topA * topSize) / 2 * (4 / 3) + raise;
+      // (And as Word has it, from the fonts' own units, unrounded: what a page's foot is fitted by, pages.js roundOff.)
+      const units = (v) => Math.round(v * 2048) / 2048;
+      const upExact = (units(la) * lbl - units(topA) * topSize) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
-      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`);
+      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`, `--odx-lbl-up:${+upExact.toFixed(5)}px`);
     }
   }
 }

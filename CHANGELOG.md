@@ -3,7 +3,7 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 76%, and documents laid out exactly as Word from 1,157 to 1,812.
+within 1px of Word's went from 47% to 76%, and documents laid out exactly as Word from 1,157 to 1,820.
 
 - **Word squeezes a justified line by a rule of its own, now the editor's** (66 generated justified documents, 4,516
   words that stuck out of a line): Word takes the word on when narrowing the line's spaces for it costs each space no
@@ -13,6 +13,44 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   rule). Lines whose runs carry letter-spacing of their
   own (every run of a document converted from a PDF does) are squeezed as any other: they were left alone, and none
   of 27 such documents broke as Word's.
+- **Tab stops are taken in rising order, as Word takes them** (34 generated lines): a stop written after one further
+  along is not a stop. Stops written 900 then 880 twips sent a tab to 880; Word sends it to 900.
+- **A list number is highlighted with its paragraph mark** (five generated lists): the highlight covers the number
+  and its room up to the text; the mark's shading does not colour it.
+- **An underline is the colour of its text** where that colour also names a theme's (a link's blue): it was black.
+  And a table's line where it breaks across pages is as wide as the table's own lines (it was a hairline under
+  0.75pt lines).
+- **A page's last line is fitted to the twip** (727 generated pages, exact, multiple and bulleted lines and empty
+  paragraphs): Word adds the font's exact units and the exact multiple, unrounded. An exact height close to the font's own
+  line was counted as that line, and four-decimal metrics left a full page up to a twip out, keeping a last line Word
+  moves on or moving one it keeps. An empty paragraph's line came out a 64th of a pixel short.
+- **A document opened after another of the same shape keeps its exact line heights**: it had gone without them.
+- **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
+  its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
+- **A floating table sits where its horizontal setting puts it** (72 generated tables): centred, right, inside and outside,
+  against the margin, column or page. All had been set at the left margin.
+- **A floating table that moves to the next page keeps its place there** (12 generated tables): it lost its drop below
+  its paragraph, and the text after it stayed behind and ran past the old page's foot, every page after it out.
+- **A bullet's line over runs of mixed fonts is Word's** (24 generated lists): the line is the tallest top of bullet and
+  runs over their deepest foot; measured against the style's font, which nothing on the line used, it stood 0.75px short.
+- **A bullet's taller first line holds over a tracked deletion** (16 generated lists): where a paragraph opened with a
+  deletion, hidden in the view printed, the extra room for a Symbol bullet went with it, and the page ran short.
+- **A header line of several floating shapes is a full line** (12 generated headers): with two or more it was a pixel
+  short in Calibri, and the page's text under the header moved up with it.
+- **A font's line is measured to its own units** (85 generated documents): measured at 100px it was rounded, a line of
+  Tempus Sans ITC 0.08px short at 12pt.
+- **A table row at a page's top starts under its own top line only** (102 generated tables): where the line over a
+  row is the upper row's bottom line, the row's text starts at the page's top, moved whole or split; it stood the
+  line's width lower, every page of a long table. A merged cell's lower part that sets a top line counts as the row's.
+- **A run in another font deepens a Calibri line only past Calibri's own depth** (20 generated documents): runs in
+  Garamond or Consolas made 11pt Calibri lines 0.2 to 0.4px taller than Word's.
+- **A paragraph is no taller than its font's own line** (18 generated documents in Garamond, Georgia and Courier
+  New): fonts whose single line is under 1.15em had every single-spaced paragraph, empty or not, 0.2 to 0.4px too
+  tall, 6 to 15px down a page.
+- **Garamond's line and baseline are Word's** (42 generated documents, 8 to 16pt): 1.125em a line, the text 0.862em
+  under the line's top whatever the spacing.
+- **A line crossing the foot of an exact-height row is cut there in print** (27 generated tables): Word draws such a
+  line down to the row's foot and no further; the print drew it whole, over what followed the row.
 - **A table row of exact height never breaks across pages** (24 generated tables): Word moves such a row whole to
   the next page, its text cut to the row or not; automatic rows break line by line. Printing broke one whose text was
   taller than the row: the row could not grow across the page's foot, the rows after it ran off the page over the

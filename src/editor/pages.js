@@ -55,6 +55,18 @@ export const pagePushPlugin = new Plugin({
   },
   props: { decorations: (state) => pushKey.getState(state) },
 });
+// A push in px, on the browser's own grid of 1/64px: laid out exactly as set, and measured back the same at the next pass.
+// (In tenths, one near the middle of two came to one or the other by the last bits of the sum or by where an earlier pass
+// had put it, and a print came out by how many passes had run before it. To a thousandth of a grid step first: a value
+// exactly on the grid stays there, whatever its last bits.)
+const toGrid = (px) => Math.round(Math.round(px * 64000) / 1000) / 64;
+// A font's line and a paragraph's multiple as Word has them, unrounded, from the four decimals they're kept in: a font's
+// line in 2048ths of an em (its units), a multiple in 240ths (w:line). Word fits a page's last line by their exact sum,
+// no line rounded: its prints of 156 generated pages, Times New Roman and Calibri at 10 and 12pt, 1.08, 1.15 and 1.5
+// lines, the space that still keeps the last line predicted to the twip in all 12 kinds. (A value that isn't one: as it is.)
+const nearest = (v, per) => { const u = Math.round(v * per) / per; return Math.abs(u - v) < 0.00006 ? u : v; };
+const exactEm = (v) => nearest(v, 2048);
+const exactMult = (v) => nearest(v, 240);
 const spacer = (h) => () => {
   const el = document.createElement('span');
   el.className = 'odx-push';
@@ -754,7 +766,16 @@ export function createPages(view, session, { sheet, scope }) {
       const first = j === 0 ? tableFirstOnPage : top <= contentTop(pg) + (pushes.size || inRow.size ? headH : 0) + 1;
       if (first || rows[j].bottom - rows[j].top > pageHeight(pg + 1)) continue; // taller than a page: let it run over
       if (j <= headerRows) return null;
-      const d = contentTop(pg + 1) + headH - top;
+      // (Less the room over its text that isn't the row's own, a wider line from the row above, --odx-ptc, styles.js: at
+      // a page's top the row's text starts under its own top line only. Word's prints of six generated tables of rows
+      // that can't split, moved whole: under a top line of their own the text starts that much down the page, with
+      // only bottom lines, at the page's top.)
+      const moved = b.table.tBodies[0]?.rows[j];
+      const lift = moved ? Math.min(...[...moved.cells].filter((td) => !td.hasAttribute('data-odx-phantom')).map((td) => {
+        const ptc = td.style.getPropertyValue('--odx-ptc');
+        return ptc ? Math.max(0, (parseFloat(td.style.getPropertyValue('--odx-pt')) || 0) - (parseFloat(ptc) || 0)) : 0;
+      })) : 0;
+      const d = toGrid(contentTop(pg + 1) + headH - top - (Number.isFinite(lift) ? lift : 0));
       pushes.set(j, d);
       offs.set(j, extra); // everything above this row has moved down by this much (pushed and split rows)
       if (!headerRows) closes.push(contentTop(pg + 1) + 1); // the moved row's top border, where it now starts: at the page's top, as Word draws it (it was a pixel above)
@@ -789,12 +810,19 @@ export function createPages(view, session, { sheet, scope }) {
 
   // Our spacers in a cell (not in the tables in it), and how much they have made a row of a table in a cell taller:
   // what's below them is measured less that, at its natural place.
+  // (A cell's blocks that have a box. A hidden one, tracked or vanished text, reads as at the window's top: scrolled down
+  // the document, that is far below the row, and the row measured thousands of px tall, by how far the page was scrolled.)
+  const shownKids = (el) => [...el.children].filter((e) => e.getClientRects().length);
+  const lastShown = (el) => {
+    for (let e = el.lastElementChild; e; e = e.previousElementSibling) if (e.getClientRects().length) return e;
+    return null;
+  };
   const spacersIn = (td) => [...td.querySelectorAll('.odx-push')].filter((e) => e.closest('td') === td).map((e) => e.getBoundingClientRect());
   const grown = (ntr) => {
     if (!ntr.querySelector('.odx-push')) return 0;
     let nat = -Infinity;
     for (const ntd of ntr.cells) {
-      const last = ntd.lastElementChild;
+      const last = lastShown(ntd);
       if (!last) continue;
       const lb = last.getBoundingClientRect().bottom;
       nat = Math.max(nat, lb - undoIn(ntd, lb) + (parseFloat(getComputedStyle(ntd).paddingBottom) || 0));
@@ -844,7 +872,7 @@ export function createPages(view, session, { sheet, scope }) {
         }
         const whole = lines[n].empty || lines[n] === lines.find((l) => l.p === lines[n].p);
         const lead = whole || Math.abs(lines[n].lead) > 10 ? 0 : lines[n].lead;
-        const delta = Math.round((contentTop(pg + 1) + headH + padTop + lead - top) * 10) / 10;
+        const delta = toGrid(contentTop(pg + 1) + headH + padTop + lead - top);
         if (delta <= 0) continue;
         const pos = whole ? view.posAtDOM(lines[n].p, 0) : lineStart(lines[n].p, lines[n].screenTop);
         if (pos == null) return false;
@@ -867,7 +895,9 @@ export function createPages(view, session, { sheet, scope }) {
       // of the row itself is laid out from the row's top as it splits: asTop, below.)
       if (!asTop.has(td) && !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign)) return false;
       const cs = getComputedStyle(td);
-      const padTop = padTop0 + (parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
+      // (At the next page's top the cell's own room only, --odx-ptc where it is less than its padding: styles.js.)
+      const ptc = td.style.getPropertyValue('--odx-ptc');
+      const padTop = padTop0 + (ptc ? parseFloat(ptc) || 0 : parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0);
       const padBottom = padBottom0 + (parseFloat(cs.paddingBottom) || 0);
       const undoAt = (y) => undoOut(y) + undoIn(td, y);
       let extra = extra0;
@@ -881,7 +911,7 @@ export function createPages(view, session, { sheet, scope }) {
         lines = [];
         return true;
       };
-      for (const el of td.children) {
+      for (const el of shownKids(td)) {
         if (el.tagName === 'P') {
           const r = el.getBoundingClientRect();
           const undo = b.rows[j].undo + undoAt(r.top);
@@ -913,7 +943,7 @@ export function createPages(view, session, { sheet, scope }) {
           seq += 1;
         }
       }
-      const lastEl = td.lastElementChild;
+      const lastEl = lastShown(td);
       if (!flush(lastEl && lastEl.tagName === 'P' ? Math.max(0, parseFloat(getComputedStyle(lastEl).marginBottom) || 0) : 0)) return false;
       return extra;
     }
@@ -933,7 +963,7 @@ export function createPages(view, session, { sheet, scope }) {
       const va = /^(middle|bottom)$/.exec(td.style.verticalAlign || '')?.[1];
       let off = 0; // how far the browser's own alignment has the cell's content from where a top-aligned cell's starts
       if (va) {
-        const kids = [...td.children].filter((e) => !e.classList.contains('odx-push'));
+        const kids = shownKids(td).filter((e) => !e.classList.contains('odx-push'));
         if (!kids.length) continue;
         const cs = getComputedStyle(td);
         const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
@@ -964,7 +994,7 @@ export function createPages(view, session, { sheet, scope }) {
     for (const a of aligned) {
       if (!Number.isFinite(cut0) || a.first.tagName !== 'P') continue;
       const room = Math.min(cut0, contentBottom(pg0)) - a.padBottom - (rowTop + a.padTop) - a.content;
-      const down = Math.round((a.va === 'middle' ? room / 2 : room) * 10) / 10;
+      const down = toGrid(a.va === 'middle' ? room / 2 : room);
       if (down > 0.5) pushes.push({ pos: view.posAtDOM(a.first, 0), delta: down });
     }
     return { pushes, tops: tops.map((td) => view.posAtDOM(td, 0) - 1), crossings: [...crossings].map(([q, v]) => [q, Number.isFinite(v) ? Math.min(v, contentBottom(q)) : b.rows[j].top + rowShift]), growth: Math.max(0, newBottom - (b.rows[j].bottom + rowShift)) };
@@ -1113,16 +1143,24 @@ export function createPages(view, session, { sheet, scope }) {
     if (memo && memo.h === h) own = memo.own;
     else {
       const cs = getComputedStyle(b.el);
-      const box = h - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
+      // (Less the room a list label adds over the first line: what it takes more than exactly is counted by itself, below.)
+      const room = parseFloat(b.el.style.getPropertyValue('--odx-lbl-own')) || 0;
+      const box = h - room - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
       const near = parseFloat(lineHeightOf(cs));
       const n = near > 0 ? Math.round(box / near) : 0;
       if (n >= 1 && box > 0) {
         // A line's exact height: the font's own times the spacing's multiple, or the exact height set (in px or pt).
         const each = box / n;
         const set = /^([\d.]+)(px|pt)$/.exec(cs.getPropertyValue('--odx-lhv').trim());
-        const font = (parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * (parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
-        const exact = [font, set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0].find((v) => v > 0 && Math.abs(v - each) < 0.012);
-        if (exact) own = n * (each - exact);
+        const font = exactEm(parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0) * exactMult(parseFloat(cs.getPropertyValue('--odx-mult')) || 1);
+        // (An exact height is whole twips; its style value is cut to four decimals, 18.6667px for 14pt, and over 46 lines
+        // that lost 0.0015px, enough to send a last line ending exactly on the margin to the next page.)
+        const setPx = set ? Number(set[1]) * (set[2] === 'pt' ? 4 / 3 : 1) : 0;
+        const twips = Math.round(setPx * 15) / 15;
+        // (The set height before the font's: 10pt Times New Roman's line, 15.332px, is within a rounding of an exact 11.5pt,
+        // 15.333px, and counted as it a page of 55 such lines came a twip short, keeping a last line Word moves on.)
+        const exact = [Math.abs(twips - setPx) < 0.0002 ? twips : setPx, font].find((v) => v > 0 && Math.abs(v - each) < 0.012);
+        if (exact) own = n * (each - exact) + (room ? room - (parseFloat(b.el.style.getPropertyValue('--odx-lbl-up')) || room) : 0);
       }
       roundMemo.set(b.node, { h, own });
     }
@@ -1138,6 +1176,10 @@ export function createPages(view, session, { sheet, scope }) {
     const cs = getComputedStyle(el);
     const mult = parseFloat(cs.getPropertyValue('--odx-mult')) || 1;
     const lh = parseFloat(lineHeightOf(cs));
+    // (From the font's own units where the line is that font's: what Word adds, unrounded.)
+    const own = exactEm(parseFloat(cs.getPropertyValue('--odx-lh')) || 0) * (parseFloat(cs.fontSize) || 0);
+    const m = exactMult(mult);
+    if (mult > 1 && own > 0 && Math.abs(own * m - lh) < 0.02) return 1 + own * (m - 1);
     return 1 + (mult > 1 && lh ? lh * (1 - 1 / mult) : 0);
   }
 
@@ -1504,8 +1546,8 @@ export function createPages(view, session, { sheet, scope }) {
       if (lines[at].blank && !lines[at].forced) { tail = lines[at].bottom - lines[at].top; continue; }
       const pos = lineStart(b.el, lines[at].screenTop);
       if (pos == null || delta <= 0) continue;
-      pushes.push({ pos, delta: Math.round(delta * 10) / 10 });
-      extra += Math.round(delta * 10) / 10;
+      pushes.push({ pos, delta: toGrid(delta) });
+      extra += toGrid(delta);
       pageStart = at;
       n = at;
     }
@@ -1526,7 +1568,8 @@ export function createPages(view, session, { sheet, scope }) {
   // for a table with no lines.
   function breakRule(frag, t, r, origin, y) {
     const at = [...t.rows].find((tr) => { const q = tr.getBoundingClientRect(); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
-    const shadow = getComputedStyle((at && at.cells[0]) || t.querySelector('td') || t).boxShadow;
+    const cell = (at && at.cells[0]) || t.querySelector('td') || t;
+    const shadow = getComputedStyle(cell).boxShadow;
     if (!shadow || shadow === 'none') return false;
     let color = null, w = 1;
     for (const m of shadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px/g)) {
@@ -1537,7 +1580,11 @@ export function createPages(view, session, { sheet, scope }) {
     line.className = 'odx-repeat';
     // (As an inset shadow at the box's top, as the cells' own lines are: a box's background is drawn to whole pixels, a
     // hairline a full pixel thick on paper.)
-    const h = w <= 1 ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
+    // (A hairline only where the cell's own line is one, styles.js: a line of a whole pixel, 0.75pt, is drawn at that
+    // on paper too. Taken for a hairline, a table's last line on a page printed at 0.63px under rows whose lines
+    // are 1px, and in Word's print 0.88px.)
+    const hair = w < 1 || getComputedStyle(cell).getPropertyValue('--odx-hairtop').trim() === '1';
+    const h = hair ? 'max(0.667px, var(--odx-hair, 1px))' : `${w}px`;
     line.style.cssText = `top:${y}px;left:${r.left - origin.left}px;width:${r.width}px;height:${Math.max(4, Math.ceil(w) + 2)}px;box-shadow:inset 0 ${h} 0 0 ${color || '#000'}`;
     frag.append(line);
     return true;
@@ -1625,8 +1672,6 @@ export function createPages(view, session, { sheet, scope }) {
   // Floating tables laid out in the flow, by node (an edit above one changes its index, not its node; a changed table is
   // a new node, measured again).
   const unfloated = new WeakSet();
-  let lastMargins = new Map(); // block index -> the margin-top the last pass gave it (applyPushes), of marginsDoc
-  let marginsDoc = null;
   const floatUp = new Map(); // block index -> { el, up: Map(picture's index in it -> px drawn up) }, this pass's (floatsPast)
   let drawnUp = new Set(); // pictures drawn up now
   // A float drawn up (floatsPast) is drawn there, but the browser still lays its paragraph's lines out round where it
@@ -1876,7 +1921,7 @@ export function createPages(view, session, { sheet, scope }) {
               // Split inside its cells: the row's natural bottom is its tallest cell without our spacers.
               bottom = -Infinity;
               for (const td of tr.cells) {
-                const last = td.lastElementChild;
+                const last = lastShown(td);
                 if (!last) continue;
                 const spacers = undoIn(td, Infinity); // (in a table in the cell, a row's tallest cell's)
                 // (Its last paragraph's space after is in the cell too: margins don't pass through a cell's edge.)
@@ -2288,6 +2333,14 @@ export function createPages(view, session, { sheet, scope }) {
     const used = t.getBoundingClientRect().width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
     return inner - used >= ROOM_BESIDE;
   }
+  // A floating block's own margin-top (px), as it is without a push of ours: read while it has none (the push is the
+  // margin while it is there, editor.css) and kept by node; one pushed before it was ever read, from its own style.
+  const ownTops = new WeakMap();
+  const ownTop = (b) => {
+    if (!b.el.style.getPropertyValue('--odx-push')) ownTops.set(b.node, parseFloat(getComputedStyle(b.el).marginTop) || 0);
+    else if (!ownTops.has(b.node)) ownTops.set(b.node, parseFloat(b.el.style.marginTop) || 0);
+    return ownTops.get(b.node);
+  };
   function applyPushes(doc, dom, blocks, base, colRegs, starts, pulls, splits, paraSplits, blockAttrs) {
     // Pushed blocks: margin-top = natural gap + delta. The natural gap is
     // measured between this block's top and the previous block's bottom.
@@ -2308,7 +2361,6 @@ export function createPages(view, session, { sheet, scope }) {
     applied = new Map();
     const index = new Map(blocks.map((b, k) => [b.i, k]));
     const extra = new Map(starts);
-    const margins = new Map(); // block index -> its margin-top this pass (lastMargins next pass)
     for (const list of pulls.values()) for (const [i, d] of list) addTo(extra, i, d);
     for (const [i, delta] of extra) {
       const k = index.get(i);
@@ -2316,26 +2368,29 @@ export function createPages(view, session, { sheet, scope }) {
       // starts at its top. A paragraph after one, starting a page, went to 342px above the page: everything after it lost.)
       let q = k - 1;
       while (q >= 0 && outOfFlow(blocks[q].el)) q--;
-      const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - (parseFloat(getComputedStyle(dom).paddingTop) || 0); // the page's top padding is the first section's plain top margin, not one moved down for a tall header
-      // (Within a tenth of the last pass's, the last pass's: the browser lays that margin out to its sub-pixel grid, which
-      // can put this measure on the other side of the rounding, and it flipped a tenth up and down each pass, the pages
-      // under it 0.1-0.6px apart from one pass to the next.)
-      let margin = Math.round((gap + delta) * 10) / 10;
-      const was = marginsDoc === doc ? lastMargins.get(i) : undefined;
-      if (was !== undefined && Math.abs(was - margin) < 0.15) margin = was;
-      margins.set(i, margin);
-      applied.set(i, { extra: margin - gap });
+      const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - Math.trunc((parseFloat(getComputedStyle(dom).paddingTop) || 0) * 64) / 64; // the page's top padding is the first section's plain top margin, not one moved down for a tall header (as laid out, cut to 1/64px: the 0.014px left over was added to the block's push at every pass, and it never settled)
+      // A floating block's margin doesn't take the place of the gap above it, as a block's in the flow does (its margin
+      // collapsing with the one above): the float stays under the space after the block before it, and under its own drop,
+      // and its margin moves it from there by all it adds to the float's own. Set to gap + delta it stood a gap too low,
+      // and remembered as moved by delta only, it was measured a gap lower at each pass: the paragraph after a table moved
+      // on to the next page went down by that gap every time the pages were laid out (13.9px a pass in one document,
+      // 2.7px in another), so a print came out by how many passes had run before it.
+      const floats = outOfFlow(blocks[k].el);
+      const from = floats ? ownTop(blocks[k]) : gap;
+      const margin = toGrid(from + delta);
+      applied.set(i, { extra: margin - from });
       // Under the bottom margin of the block before, a smaller margin collapses into it: give the difference as a negative
-      // one. (Only after a balanced columns section does a block move up past it.)
-      const mb = colRegs.length && k > 0 ? parseFloat(getComputedStyle(blocks[k - 1].el).marginBottom) || 0 : 0;
-      const set = margin < mb ? Math.round((margin - mb) * 10) / 10 : margin;
+      // one. (After a balanced columns section, and wherever a block in the flow moves up: a table pulled back by 141.8px
+      // under a paragraph with 4px after it stood at -137.8, was remembered at -141.8, and measured 4px lower at each pass,
+      // so a print came out by how many passes had run before it.)
+      const above = colRegs.length ? blocks[k - 1] : !floats && margin < gap ? blocks[q] : undefined;
+      const mb = above ? Math.trunc((parseFloat(getComputedStyle(above.el).marginBottom) || 0) * 64) / 64 : 0;
+      const set = margin < mb ? margin - mb : margin;
       // (As a property of its own, which editor.css makes the margin: a decoration's style is taken off name by name
       // when it goes, and one that set margin-top took the paragraph's own space before with it. A paragraph pushed to
       // the next page in one pass and back in a later one stood 14px high, its 10pt of space before gone.)
       onBlock(i, { style: `--odx-push:${set}px` }, `mt:${set}`);
     }
-    lastMargins = margins;
-    marginsDoc = doc;
     // Split tables: rows that start a page get extra top padding (room for the
     // page gap and the repeated header row), and the table is clipped across
     // that band so its borders and shading don't run through the gap.
@@ -2351,16 +2406,21 @@ export function createPages(view, session, { sheet, scope }) {
       for (const [j, d] of split.rows) {
         // Split rows above grow too, so use the offset measured while splitting.
         const rel = b.rows[j].top - b.tableTop + (split.offs?.get(j) ?? extra);
-        const dd = Math.round(d * 10) / 10;
+        const dd = toGrid(d);
         rows.set(j, dd);
         bands.push([rel + 1, rel + dd]);
         extra += dd;
-        css.push(`${sel} tbody > tr:nth-child(${j + 1}) > td{padding-top:calc(var(--odx-pt, 0px) + ${dd}px) !important;--odx-trh-add:${dd}px}`);
+        // (This table's own rows: the same row of a table in one of its cells took the room too, six of them 3,950px in one
+        // document, and the row measured that much taller, moved the table on, and came back at the next pass.)
+        css.push(`${sel} tbody:not(td tbody) > tr:nth-child(${j + 1}) > td{padding-top:calc(var(--odx-pt, 0px) + ${dd}px) !important;--odx-trh-add:${dd}px}`);
+        // (On top of the height a merged cell's extra gave the row, rowfit.js. Inside it, the push used that height up: the
+        // row measured 17px shorter while pushed, came back, and the layout flipped between the two at every pass.)
+        if (b.table?.tBodies[0]?.rows[j]?.style.getPropertyValue('--odx-rowfit')) css.push(`${sel} tbody:not(td tbody) > tr:nth-child(${j + 1}){height:calc(var(--odx-rowfit) + ${dd}px) !important}`);
       }
       for (const band of split.bands) bands.push(band);
       bands.sort((x, y) => x[0] - y[0]);
       const cut = bands.map(([a, z]) => `V${a.toFixed(1)} H${-CLIP_TOP} V${z.toFixed(1)} H${CLIP_FAR}`).join(' ');
-      css.push(`${sel} table{clip-path:path('M${-CLIP_TOP} ${-CLIP_TOP} H${CLIP_FAR} ${cut} V${CLIP_DEEP} H${-CLIP_TOP} Z')}`);
+      css.push(`${sel} table:not(td table){clip-path:path('M${-CLIP_TOP} ${-CLIP_TOP} H${CLIP_FAR} ${cut} V${CLIP_DEEP} H${-CLIP_TOP} Z')}`);
       const a = applied.get(i) || { extra: 0 };
       a.rows = rows;
       a.inRow = split.inRow;
@@ -2369,8 +2429,16 @@ export function createPages(view, session, { sheet, scope }) {
       for (const t of split.closes) heads.push({ b, top: t, rule: true });
     }
     const decos = [...blockDecos];
+    // A spacer goes with the text before it, unless that is tracked deletion: hidden in simple markup, it took the spacer
+    // with it. The spacer added no height but was still taken off when measuring, so the paragraph read as shorter than
+    // nothing, fitted, split again at the next pass, and the layout flipped between the two.
+    const pushWidget = (pos, delta) => {
+      let side = -1;
+      try { if (doc.resolve(pos).nodeBefore?.marks.some((m) => m.type === schema.marks.del)) side = 1; } catch { /* a position the document no longer has */ }
+      return Decoration.widget(pos, spacer(delta), { side, key: `push:${delta}:${side}`, ignoreSelection: true });
+    };
     for (const split of splits.values()) {
-      for (const { pos, delta } of split.cellPushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
+      for (const { pos, delta } of split.cellPushes) decos.push(pushWidget(pos, delta));
       // (A split row's centred and bottom-aligned cells: from the top, their content placed by a spacer, splitRow.)
       for (const pos of split.cellTops || []) {
         const cell = pos >= 0 && pos < view.state.doc.content.size ? view.state.doc.nodeAt(pos) : null;
@@ -2383,14 +2451,18 @@ export function createPages(view, session, { sheet, scope }) {
       for (const { pos, delta } of split.cellPushes) {
         let at = null;
         try { at = view.state.doc.resolve(pos); } catch { /* a position the document no longer has */ }
-        if (at && at.parentOffset === 0 && at.parent.type.name === 'paragraph' && at.depth > 0) decos.push(Decoration.node(at.before(), at.after(), { style: `--odx-pushed:${delta}px` }, { key: `pushed:${delta}` }));
+        if (at && at.parentOffset === 0 && at.parent.type.name === 'paragraph' && at.depth > 0) {
+          // (Its own inline padding, which the room is added to: the rule above it in editor.css overrides it.)
+          const own = view.nodeDOM(at.before())?.style?.paddingTop || '0px';
+          decos.push(Decoration.node(at.before(), at.after(), { style: `--odx-pushed:${delta}px;--odx-pushpad:${own}` }, { key: `pushed:${delta}:${own}` }));
+        }
       }
     }
     for (const [i, split] of paraSplits) {
       const a = applied.get(i) || { extra: 0 };
       a.inline = split.total;
       applied.set(i, a);
-      for (const { pos, delta } of split.pushes) decos.push(Decoration.widget(pos, spacer(delta), { side: -1, key: `push:${delta}`, ignoreSelection: true }));
+      for (const { pos, delta } of split.pushes) decos.push(pushWidget(pos, delta));
     }
     // Table-cell paragraphs' print-only baseline shifts ride along as node decorations.
     for (const c of cellShifts(view, sheet)) decos.push(Decoration.node(c.pos, c.pos + c.size, { style: `--odx-bl:${c.d}px` }, { key: `bl:${c.d}` }));
@@ -2401,9 +2473,15 @@ export function createPages(view, session, { sheet, scope }) {
     const pushSig = decos.map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
     // (The set the view has, moved through the edits since: the same as this one when the layout didn't change, as after
     // most keystrokes, and then it isn't set again: building it afresh took 70ms a keystroke in a 750-page document.)
+    // (With the rules: a split table's rows are pushed by those, so a pass that only moved a table's split changed them alone.)
+    const state = `${pushSig}|${css.join('')}`;
+    if (state !== pushState) pushesMoved = true;
+    pushState = state;
+    pushesKnown = true;
     const now = pushKey.getState(view.state)?.find().map((d) => `${d.from}:${d.to}:${d.spec.key}`).sort().join(',');
     if (pushSig !== now) {
       view.dispatch(view.state.tr.setMeta(pushKey, decos).setMeta('addToHistory', false));
+      pushesMoved = true;
     }
     return { css, heads };
   }
@@ -2417,7 +2495,23 @@ export function createPages(view, session, { sheet, scope }) {
     o.stop();
     try { return fn(); } finally { o.start(); }
   };
-  let passed = false; // the last layout() got past its early returns
+  let passed = false; // the last layout() got past its early returns, and left the pushes as it found them
+  // Whether this pass changed the pushes, and how many passes in a row have for this document. A spacer can change the lines
+  // it was measured from (a paragraph one line longer with it), so a pass that moved them is measured again; left at
+  // that, the pages stayed as the first pass put them or as the second did, by whether anything else asked for a layout,
+  // and a second print of the same page came out differently from the first.
+  let pushesMoved = false;
+  let settleRuns = 0;
+  let settleDoc = null;
+  const SETTLE_MAX = 24;
+  // Pushes that come back to a set they've had: a floating table moved on to the next page takes the text beside it along,
+  // which brings the table back, and both layouts are good ones. The same one of the round is kept, whichever pass got
+  // there first, until the document, fonts, width or page gap change: left going, a print took whichever it found.
+  let pushState = '';
+  let pushRound = null;
+  let fontArrivals = 0;
+  const roundKey = () => `${fontArrivals}|${gap}|${view.dom.clientWidth}`;
+  const roundHeld = () => !!pushRound?.done && pushRound.doc === view.state.doc && pushRound.key === roundKey();
   // The layout measures the pages at 100% whatever the zoom (zoom.js): every length it reads and sets is the page's own.
   const unzoomed = (fn) => {
     const z = sheet.style.zoom;
@@ -2425,6 +2519,12 @@ export function createPages(view, session, { sheet, scope }) {
     sheet.style.zoom = '';
     try { return fn(); } finally { sheet.style.zoom = z; }
   };
+  // The wrap step's pass. A header's or footer's shape stays on its page while the text moves, so until the pages' pushes
+  // are in, the text isn't where it will be beside it: lines split round a shape they don't reach on their own pages, and a
+  // page's spacer put in among those lines held them short once they'd gone (20 characters short in a 41-page document, a
+  // line more in the paragraph, and every page after it out). A shape in the body moves with its text, and counts from the start.
+  let pushesKnown = false;
+  const wrapStep = () => applyWrapBoth(view, pushesKnown ? layer : null, pushState);
   function layout() { return unzoomed(layoutPass); }
   function layoutPass() {
     lineSplits = splitsNow();
@@ -2440,13 +2540,14 @@ export function createPages(view, session, { sheet, scope }) {
     if (applyWidths(view)) return schedule(); // hinted fonts' widths corrected: measure again once they're drawn
     if (applyFitText(view)) return schedule(); // fitted text spaced out to its width: measure again
     // (And round the shapes wrapped round in the headers and footers drawn on the sheets: wrapboth.js storyZones.)
-    if (applyWrapBoth(view, layer)) return schedule(); // a line split beside a shape with text on both sides: measure again
+    if (wrapStep()) return schedule(); // a line split beside a shape with text on both sides: measure again
     if (applyTableClear(view)) return schedule(); // a table that doesn't fit beside a float moved under it: measure again
     // (Its own pass: a view update only lays out again when the document changed, and a squeeze that settled after
     // everything else (lines split beside a shape, wrapboth.js) had left the pages undrawn.)
     if (applySqueeze(view, session)) return schedule(); // lines changed: measure again once they're drawn
     if (quiet(() => fitRowspans(view.dom))) return schedule(); // merged cells' extra height moved to their last row: measure again
     passed = true;
+    if (roundHeld()) return;
     const dom = view.dom;
     const doc = view.state.doc;
     // Word lets a floating table longer than a page run on in the flow: nothing wraps beside it.
@@ -2691,7 +2792,7 @@ export function createPages(view, session, { sheet, scope }) {
       const firstOnPage = top <= contentTop(p) + 1;
       roundDrift = firstOnPage ? 0 : roundDrift + roundOwn;
       roundOwn = roundOff(b, firstOnPage || k === 0 ? null : blocks[k - 1]);
-      roundOver = roundDrift + roundOwn;
+      roundOver = Math.round((roundDrift + roundOwn) * 1e6) / 1e6; // (a tie on the margin isn't lost to floating-point dust)
       // A columns section: the first column starts where the section does (on a new page, at its top), the others beside
       // it at that height (flow pages P+1.. of the same sheet), then whole sheets of columns. Balanced, the columns of
       // its last sheet (as the last pass found it) end at the height worked out for them, all but the last.
@@ -2904,8 +3005,15 @@ export function createPages(view, session, { sheet, scope }) {
       // a Title spaced 9pt before, under a section ended by a 3pt-after paragraph, 6pt down in Word's own layout; under
       // a 6pt one, 3pt; varied in copies of it, a space before up to that space after leaves none).
       const kept = forced && sectStart && m === k && k > 0 ? Math.max(0, spaceBefore(moved.node) - spaceAfter(blocks[k - 1].node)) : spaceBefore(moved.node);
-      const delta = contentTop(target) + (forced ? kept : tails.get(moved.i) || 0) - (moved.top + shift);
+      // (A floating table placed down from its paragraph keeps that drop on the page it moves to, the text after it starting
+      // at the page's top. Word's prints of 12 generated tables, 120 to 300 twips down: all of the drop kept; a sample's
+      // tables had lost it, 12px high and every page after them out.)
+      const floatDrop = moved.rows && outOfFlow(moved.el) && setDown(moved.node) ? ownTop(moved) : 0;
+      const delta = contentTop(target) + floatDrop + (forced ? kept : tails.get(moved.i) || 0) - (moved.top + shift);
       starts.set(moved.i, (cols || carried.has(moved.i) ? starts.get(moved.i) || 0 : 0) + delta); // (in columns it may already carry a split's push; after a frame moved on, that push)
+      // (The text after a floating table goes with it, a float's margin not moving it: it stayed at the old page's foot and
+      // ran past it. Word's prints of the same tables: the next paragraph starts the new page, beside the table or above it.)
+      if (moved.rows && outOfFlow(moved.el) && blocks[m + 1]) { addTo(starts, blocks[m + 1].i, delta); carried.add(blocks[m + 1].i); }
       shift += delta;
       if (rec.has(m)) rec.set(m, { top: moved.top + shift, bottom: moved.bottom + shift }); // (the walk goes on after it, not from it)
       sbTop.set(moved.i, forced ? kept : 0);
@@ -3002,7 +3110,7 @@ export function createPages(view, session, { sheet, scope }) {
       drawnUp = new Set(upNow.keys());
     }
     let text = css.concat(colCss, baselineCss(scope)).join('\n');
-    text += `\n@page { size: ${page.width}px ${page.height}px; margin: 0; }\n@media print { .${scope} { height: ${pages * step(page.height) - 1}px; overflow: hidden; } }`; // the browser's own print margins would shrink and shift each sheet
+    text += `\n@page { size: ${step(page.width)}px ${step(page.height)}px; margin: 0; }\n@media print { .${scope} { width: ${step(page.width)}px !important; height: ${pages * step(page.height) - 1}px; overflow: hidden; } .${scope} > .odx-content { width: ${page.width}px; } }`; // the browser's own print margins would shrink and shift each sheet
     if (rules.textContent !== text) rules.textContent = text; // unchanged rules: no style recalculation
     drawSheets();
     // Shapes with text on both sides moved by this walk (their paragraph moved on, or the shape drawn up or down): the
@@ -3018,7 +3126,7 @@ export function createPages(view, session, { sheet, scope }) {
     const shapesMoved = shapesNow !== shapesAt;
     shapesAt = shapesNow;
     // (Headers and footers drawn afresh with a shape the body's text wraps round: their lines split beside it, again.)
-    const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && applyWrapBoth(view, layer);
+    const hfWrapAgain = !!layer.querySelector('img[style*="--odx-hfwrap"]') && wrapStep();
     drawHeads(heads.concat(contHeads));
     drawLineNumbers(view, lineNums, pageOf, (el) => carriedParts.get(el), (el) => blockCols.get(el));
     drawBalloons(view, session, sheet, pageTop(pages) - gap);
@@ -3032,6 +3140,20 @@ export function createPages(view, session, { sheet, scope }) {
     else if (colsAgain && colsPasses < 8) { colsPasses++; colsRepass = true; schedule(); }
     else if (shapesMoved && shapesPasses < 6) { shapesPasses++; schedule(); }
     colsAgain = false;
+    if (settleDoc !== doc) { settleDoc = doc; settleRuns = 0; }
+    const rk = roundKey();
+    if (!pushRound || pushRound.doc !== doc || pushRound.key !== rk) pushRound = { doc, key: rk, seen: [], target: null, done: false };
+    if (pushesMoved) {
+      if (pushRound.target === null) {
+        const at = pushRound.seen.indexOf(pushState);
+        if (at >= 0) pushRound.target = pushRound.seen.slice(at).sort()[0];
+        else pushRound.seen.push(pushState);
+      }
+      if (pushRound.target === pushState) { pushRound.done = true; pushRound.seen = []; pushesMoved = false; }
+    }
+    if (!pushesMoved) settleRuns = 0;
+    else if (settleRuns < SETTLE_MAX) { settleRuns++; passed = false; schedule(); }
+    pushesMoved = false;
   }
 
   let drawn = '';
@@ -3067,7 +3189,7 @@ export function createPages(view, session, { sheet, scope }) {
   // same pages, left the endnotes where they were drawn first (columns-endnotes.docx: at the page's foot, under nothing).
   const endnotesAt = () => {
     if (![...notesOn.values()].some((l) => l.some((r) => r.kind === 'endnote'))) return '';
-    const last = view.dom.lastElementChild;
+    const last = lastShown(view.dom);
     const y = cols && colsBal ? colsBal.bottom : last ? last.getBoundingClientRect().bottom - view.dom.getBoundingClientRect().top : 0;
     return y.toFixed(1);
   };
@@ -3157,7 +3279,7 @@ export function createPages(view, session, { sheet, scope }) {
         let top = pageH(p) - marginsAt(p).bottom - (notesH.get(nk) ?? flow.h + NOTE_SEP);
         // Endnotes start where the text ends, as in Word (its separator line under the last paragraph's space after),
         // not at the page's foot as footnotes do: the generated documents' endnotes, tools/doc-generator.
-        const last = view.dom.lastElementChild;
+        const last = lastShown(view.dom);
         const endOnly = flow.items.every((r) => r.kind === 'endnote');
         // (In columns, a page of endnotes alone, after the text's last: from the top, its columns left to right whatever
         // the section's direction, as Word prints them; going on from the page before, under a continuation separator.)
@@ -3218,18 +3340,30 @@ export function createPages(view, session, { sheet, scope }) {
   // Re-run when something changes size on its own: web fonts or images
   // finishing loading, or the window resizing. (Not a ResizeObserver on the
   // content: our own min-height changes would feed back into it.)
-  const onLoad = (e) => { if (e.target.tagName === 'IMG') scheduleIdle(); };
+  const onLoad = (e) => { if (e.target.tagName === 'IMG') { pushRound = null; scheduleIdle(); } };
   view.dom.addEventListener('load', onLoad, true);
   // Long documents skip laying out off-screen blocks (content-visibility) and
   // paginate on estimated heights; when a block is first drawn its real height
   // replaces the estimate, so paginate again.
-  const onShown = (e) => { if (!e.skipped) scheduleIdle(); };
+  const onShown = (e) => { if (!e.skipped) { pushRound = null; scheduleIdle(); } };
   view.dom.addEventListener('contentvisibilityautostatechange', onShown, true);
   window.addEventListener('resize', scheduleIdle);
   if (document.fonts) fontsSettled().then(() => !destroyed && schedule());
   // A web font that arrives later (a stand-in such as Carlito, requested only when the text using it is drawn) changes
   // what was measured in the fallback font: tabs, widths and pages are worked out again.
-  const onFonts = () => { if (!destroyed) scheduleIdle(); };
+  // (From the text's own flow: a spacer put between two lines in the fallback font holds that line break in the real one,
+  // so the pages came out by which arrived first, the font or the first layout.)
+  const fromNaturalFlow = () => {
+    const set = pushKey.getState(view.state);
+    const all = set.find();
+    const keep = all.filter((d) => !/^push(ed)?:/.test(String(d.spec.key || '')));
+    if (keep.length === all.length) return;
+    for (const a of applied.values()) a.inline = 0;
+    pushState = ''; // (no longer the pushes the lines stand under: applyWrapBoth tells its rounds by them)
+    pushesKnown = false;
+    view.dispatch(view.state.tr.setMeta(pushKey, keep).setMeta('addToHistory', false));
+  };
+  const onFonts = () => { if (destroyed) return; fontArrivals++; fromNaturalFlow(); scheduleIdle(); };
   document.fonts?.addEventListener('loadingdone', onFonts);
   let destroyed = false;
   schedule();
@@ -3254,12 +3388,27 @@ export function createPages(view, session, { sheet, scope }) {
     settleHyphens(view);
     // Word updates the body's fields as it prints (page references, cross-references): so do we, from the pages.
     updateFields(view, { all: true });
+    // A very long document is laid out on screen from estimates for what's off screen, so where its pushes stand depends on
+    // where it has been scrolled; and its passes may not settle (the browser rounds some lines' heights by where they
+    // land, 1/32px, and a thousand tables keep moving each other). Its print starts from no pushes at all, so the same
+    // passes from the same place give the same pages, whatever was on screen before.
+    if (sheet.classList.contains('odx-large')) {
+      applied = new Map();
+      pushRound = null;
+      pushState = '';
+      pushesKnown = false;
+      settleRuns = 0;
+      rules.textContent = '';
+      view.dispatch(view.state.tr.setMeta(pushKey, []).setMeta('addToHistory', false));
+    }
     setGap(0);
     // The print is taken right after this handler: finish the layout now rather than on later frames, which a page
     // printed in the background may not get (its pages kept their on-screen gaps).
     // (At least once: the fields' update can draw tables again, at their grid's widths, and the layout before had passed.)
     passed = false;
-    for (let k = 0; k < 8 && !passed; k++) {
+    // (Up to more passes than any one step may take, wrapboth.js's 81: stopped at 8, a layout still settling printed with
+    // no pages drawn.)
+    for (let k = 0; k < 120 && !passed; k++) {
       if (frame) cancelAnimationFrame(frame);
       layout();
     }

@@ -62,7 +62,8 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) strong { font-weight: bold; }
 .odx-content .odx-push { display: block; width: 0; pointer-events: none; }
 /* A list item pushed whole to its row's next page (pages.js): the push is room above its label, the spacer laid over it. */
-.odx-content p.odx-li[style*="--odx-pushed"] { padding-top: var(--odx-pushed); position: relative; }
+/* (!important: a paragraph's own inline padding, 0 under a border between paragraphs, had cancelled the room, and the row was then measured that much short. Its own padding is kept in --odx-pushpad, pages.js.) */
+.odx-content p.odx-li[style*="--odx-pushed"] { padding-top: calc(var(--odx-pushed) + var(--odx-pushpad, 0px)) !important; position: relative; }
 .odx-content p.odx-li[style*="--odx-pushed"] > .odx-push:first-child { position: absolute; margin-top: calc(0px - var(--odx-pushed)); }
 .odx-repeats { position: absolute; inset: 0; pointer-events: none; z-index: 2; } /* above cell shading, so break borders show */
 .odx-gaps { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
@@ -73,13 +74,16 @@
 .odx-repeat table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .odx-repeat td { vertical-align: top; box-sizing: border-box; padding: 0 7px; }
 .odx-repeat { position: absolute; white-space: pre-wrap; word-wrap: break-word; font-variant-ligatures: none; font-kerning: none; }
-:where(.odx-repeat) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); }
+:where(.odx-repeat) p { min-height: calc(min(1.15, var(--odx-lh, 1.15)) * 1em); --odx-lhv: var(--odx-lh, 1.17); }
 .odx-hf p { margin: 0; }
 /* An empty header line (or one holding only a floating picture) still takes a line, as in Word. */
-.odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]:only-child)::after { content: "\200b"; }
+.odx-hf p:empty::after, .odx-hf p:has(> img[style*="position: absolute"]):not(:has(> :not(img[style*="position: absolute"])))::after { content: "\200b"; } /* (however many shapes it holds: Word's prints of 12 generated headers, a paragraph of two or three text boxes is a full line like one of one; it stood at the 1.15em floor, 1px short in Calibri, and moved the page's text) */
 .odx-content { position: relative; box-sizing: border-box; outline: none; white-space: pre-wrap; word-wrap: break-word; min-height: 1em; }
-:where(.odx-content, .odx-hf) p { min-height: 1.15em; --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
-:where(.odx-content, .odx-hf) p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: var(--odx-floor, 1.15em); } /* an empty paragraph's floor: shorter under spacing below a single line (props.js) */
+/* (The floor is 1.15em, or the font's own single line where that is less: Word's prints of 18 generated documents in
+   Garamond, Georgia and Courier New, single spaced: one-line and empty paragraphs 1.125, 1.136 and 1.133em apart, the
+   fonts' own lines; at the 1.15em floor each was 0.2 to 0.4px too tall, 6 to 15px down a page.) */
+:where(.odx-content, .odx-hf) p { min-height: calc(min(1.15, var(--odx-lh, 1.15)) * 1em); --odx-lhv: var(--odx-lh, 1.17); } /* lowest priority: the document's own paragraph styles win */
+:where(.odx-content, .odx-hf) p:where(:empty, :has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty)))) { min-height: var(--odx-floor, calc(min(1.15, var(--odx-lh, 1.15)) * 1em)); } /* an empty paragraph's floor: shorter under spacing below a single line (props.js) */
 /* Lines as tall as the text on them, as in Word (textspans.js): a paragraph's line height is carried in --odx-lhv, which
    inherits as line-height does; the paragraph and the elements around its text have line-height 0 (no strut of their
    own on each line), and the text (odx-t), content drawn as it is (fields, labels) and an empty paragraph's line take
@@ -90,6 +94,8 @@
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p :is(span.odx-t, .odx-opaque-inline:not(:empty, [data-kind$="Ref"], [data-kind$="Reference"]), .odx-page-break, :where(span, strong, em, s, u, a, del, ins):has(> br)) { line-height: var(--odx-lhv); } /* (a line break counts as text for the element it's in, as in quirks mode) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::before, :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p::after { line-height: var(--odx-lhv); } /* (pseudo-elements can't go in :is) */
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p:has(> br.ProseMirror-trailingBreak):not(:has(> :not(br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); } /* an empty paragraph: its line */
+/* (And one moved to its row's next page, behind a spacer (pages.js) and ProseMirror's separator after it. Without its line it measured a line short there, so the row seemed to fit, was put back whole, no longer fitted and split again: the layout flipped between the two at every pass, and a print came out by which it caught.) */
+:where(.odx-content) p:has(> .odx-push):has(> br.ProseMirror-trailingBreak):not(:has(> :not(.odx-push, img.ProseMirror-separator, br.ProseMirror-trailingBreak, .odx-opaque-inline:empty))) { line-height: var(--odx-lhv); }
 :where(.odx-content, .odx-hf, .odx-repeat, .odx-notes, .odx-noteedit) p[data-odx-mix="mark"] { line-height: var(--odx-lhv); } /* nothing but spaces: the mark's line, as an empty paragraph's (mixlines.js blankOnly) */
 /* Nothing but tabs: the same, its font's line times the paragraph's line spacing (Word's prints: Calibri 11pt at 1.15
    lines 20.6px, where the tabs' boxes alone left the 1.15em floor, 17px). */
@@ -199,6 +205,8 @@
    last paragraph and the paragraph after a floated table set theirs with more classes than this rule has. The
    :not(#...) gives it an id's weight.) */
 .odx-content [style*="--odx-push:"]:not(#odx-no-such-id) { margin-top: var(--odx-push) !important; }
+/* (A floating table placed down from its text, moved to another page: the room above it, which the text after it fills, is all of its margin there. styles.js shape-outside.) */
+.odx-content [style*="--odx-push:"][style*="shape-outside"]:not(#odx-no-such-id) { shape-outside: inset(var(--odx-push) 0 0 0) !important; }
 /* Two characters Word never breaks a line between, where the browser would (textspans.js): ")(", "?a". */
 .odx-content .odx-nb, .odx-hf .odx-nb, .odx-pl-host .odx-nb { white-space: nowrap; }
 .odx-content :not(s, del), .odx-hf :not(s, del) { text-decoration-thickness: from-font; } /* (not struck-out text: its line's own thickness isn't measured) */
@@ -209,6 +217,12 @@
 /* (The style's line under text of another colour, a run's own or the automatic black, is in that colour, as Word draws
    it: drawn again by the run's own element, over the style's.) */
 .odx-content span[data-cstyle] > span[style*="color:"] { text-decoration-line: inherit; }
+/* (And an underline's own, under text whose colour is set inside it, a colour that also names a theme's: the line is
+   the text's colour in Word, blue under a link's blue text, and was the black of what is round it. Each part of the
+   underlined text draws the line in its own colour, and the element round them draws none: drawn under them, its
+   black showed as a dark edge to the blue.) */
+.odx-content u:has(> span[style*="color:"]:not([style*="background-color:"])) { text-decoration-color: transparent; }
+.odx-content u:has(> span[style*="color:"]:not([style*="background-color:"])) > * { text-decoration-line: underline; }
 /* (A link whose runs are underlined by hand and carry no character style: as its runs, in Word's print black with its
    line, not the editor's blue.) */
 .odx-content u a.odx-link { color: inherit; text-decoration: none; }
@@ -287,6 +301,9 @@
    zero-width box before the paragraph's first text (textspans.js odx-first), in that text's own font and line height,
    so the line is the text's plus exactly that. */
 .odx-content p.odx-li::before { line-height: 0; }
+/* A number under a highlighted paragraph mark (pararules.js --odx-lbg): its box, which has no height of its own, is
+   given the line's by padding and takes it back by its margins, and is filled. */
+.odx-content p.odx-li[style*="--odx-lbg:"]::before { background-color: var(--odx-lbg); padding-block: 0.55em 0.6em; margin-block: -0.55em -0.6em; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* A label raised or lowered by its level (w:position): off the baseline by that much; its line's room is --odx-lbl-own's. */
 .odx-content p.odx-li[style*="--odx-lraise"]::before { position: relative; top: calc(-1 * var(--odx-lraise)); }
 /* (Its level's own letter-spacing, pararules.js.) */
@@ -294,6 +311,10 @@
 /* (The first piece of that text only: a text drawn in several spans, its closing spaces apart or a word at a time under
    an effect, carries the class on each, and a second box at the paragraph's end made its last line taller too.) */
 .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
+/* (In a line of mixed runs the room goes on the first text's own box, mixlines.js.) */
+.odx-content p.odx-li[data-odx-mix][style*="--odx-lbl-own"] span.odx-first:not(span.odx-first ~ *)::before, .odx-content p.odx-li[data-odx-mix][style*="--odx-lbl-own"] span.odx-first-live:not(span.odx-first-live ~ *)::before { line-height: inherit; }
+/* (With deletions hidden, on the first text that isn't one: textspans.js.) */
+.odx-page:not(.odx-all-markup):not(.odx-original) .odx-content p.odx-li[style*="--odx-lbl-own"] span.odx-first-live:not(span.odx-first-live ~ *)::before { content: "\200b"; display: inline-block; width: 0; line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own); }
 /* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
    sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
 .odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own, 0); }
@@ -394,6 +415,8 @@ td[data-odx-phantom] > * { display: none; }
 .odx-content table.odx-autofit > tbody > tr > td > p { max-width: 2112px; }
 /* Word's minimum row height (w:trHeight) leaves out the cell margins and borders. (.odx-repeat: a table's header row
    drawn again at the top of a page: sample S057's 864-twip bottom-aligned header, 6.7px short.) */
+/* (The room added to a row is that row's: inherited, every row of a table in its cells that has a height of its own grew by it too, six of them 3,950px in one document, and the layout flipped between moving the table on and splitting it.) */
+.odx-content td table { --odx-trh-add: 0px; }
 .odx-content tr[style*="--odx-trh"] > td, .odx-hf tr[style*="--odx-trh"] > td, .odx-repeat tr[style*="--odx-trh"] > td { height: calc(var(--odx-trh) + var(--odx-pt, 0px) + var(--odx-pb, 0px) + var(--odx-trh-add, 0px)); }
 /* An exact row height clips what doesn't fit, as in Word (a two-line placeholder in a one-line header row): each paragraph
    is cut at the row's height, so the row keeps it and centred text starts at the top like Word's. */

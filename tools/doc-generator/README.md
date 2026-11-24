@@ -60,4 +60,8 @@ After a change to the editor only `ours`, `score` and `report` need running agai
 A score is the share of Word's lines the editor doesn't place on the same page within 1px, plus lines Word doesn't
 have, plus 20 per page of difference; 0 is the same as Word. Lines are matched as in `tools/word-compare`.
 
+The score and `within1px` compare baselines rounded to half a point (0.67px), so that results stay comparable from run to
+run; two lines 0.7px apart can read as 1.33px. `within1pxExact` counts the same lines by their exact baselines. It is
+filled in when both line files hold them: line files made before it was added need making again (delete the folder).
+
 Keep the work folder outside the repository: the full set of documents and PDFs is a few hundred megabytes.

@@ -749,7 +749,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   sheet.className = `odx-page ${scope}`;
   if (session.doc.childCount > 1500) sheet.classList.add('odx-large');
   sheet.style.width = `${page.width}px`;
-  styleEl.textContent += `\n@page{size:${page.width}px ${page.height}px;margin:0}`; // print one sheet per page, no browser header/footer
+  styleEl.textContent += `\n@page{size:${Math.round(page.width)}px ${Math.round(page.height)}px;margin:0}`; // print one sheet per page, no browser header/footer
   styleEl.textContent += `\n.${scope} > .odx-content{padding:${page.firstTop ?? page.top}px ${page.right}px 0 ${page.left}px;--odx-page-left:${page.left}px;--odx-page-right:${page.right}px}`;
   if (session.pageColor) sheet.style.setProperty('--odx-page-color', `#${session.pageColor}`);
   mount.replaceChildren(sheet);
