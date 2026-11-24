@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-11-24)
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 82%, and documents laid out exactly as Word from 1,157 to 1,969.
+
+- **Long documents open faster in Firefox**: Firefox lays pages out in 60ths of a pixel, where the editor had set its
+  page pushes in 64ths, so each layout pass moved blocks a hair back and forth and the next pass moved them back. The
+  editor now works on the browser's own grid: a 122-page document took 28 layout passes to open in Firefox and is now
+  drawn in about 6 seconds instead of 9.5, and laid out in full in about 10 instead of 15. Edge is unchanged.
 
 - **A long document's table of contents shows its numbers on screen**: in documents of over 1,500 paragraphs, an
   entry's number hanging in its indent and its page number past the end indent were cut off at the paragraph's edge
