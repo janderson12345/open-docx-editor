@@ -77,6 +77,19 @@ const gridSteps = () => {
 const toGrid = (px) => { const g = gridSteps(); return Math.round(Math.round(px * g * 1000) / 1000) / g; };
 // A length from the style as the browser lays it out: cut to its 64ths in Chromium, to the nearest 60th in Firefox.
 const asLaidOut = (px) => { const g = gridSteps(); return g === 64 ? Math.trunc(px * 64) / 64 : Math.round(px * g) / g; };
+// A box's edges as the browser laid them out. Firefox gives them through single-precision floats: 100,000px down a long
+// document, a few thousandths of a pixel off its own 60ths, and summed over the pushes above a block (what a pass takes
+// off to find where it would be) a 60th off from one pass to the next, so a split row's spacer that fell near half a
+// 60th went one way and then the other, pass after pass (a 122-page document's tables: 6 passes more than in Edge).
+// Put back on its grid there (exact to 262,144px down, where the float is still within half a 60th); elsewhere the
+// browser's own rect, as it was.
+const onGrid = (v) => Math.round(v * 60) / 60;
+const snapRect = (r) => {
+  const top = onGrid(r.top), bottom = onGrid(r.bottom), left = onGrid(r.left), right = onGrid(r.right);
+  return { top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top };
+};
+const rectOf = (el) => { const r = el.getBoundingClientRect(); return gridSteps() === 60 ? snapRect(r) : r; };
+const rectsOf = (range) => { const l = range.getClientRects(); return gridSteps() === 60 ? [...l].map(snapRect) : l; };
 // A font's line and a paragraph's multiple as Word has them, unrounded, from the four decimals they're kept in: a font's
 // line in 2048ths of an em (its units), a multiple in 240ths (w:line). Word fits a page's last line by their exact sum,
 // no line rounded: its prints of 156 generated pages, Times New Roman and Calibri at 10 and 12pt, 1.08, 1.15 and 1.5
@@ -474,8 +487,8 @@ export function createPages(view, session, { sheet, scope }) {
   // A screen y in block b, as it would be laid out without pagination: less where the content starts, the block's own
   // undone pushes (b.undo) and our spacers above it (paragraphLines, rewrapCarry, notesByLine).
   const naturalOf = (b) => {
-    const base = view.dom.getBoundingClientRect().top + b.undo;
-    const pushes = [...b.el.querySelectorAll('.odx-push')].map((e) => e.getBoundingClientRect());
+    const base = rectOf(view.dom).top + b.undo;
+    const pushes = [...b.el.querySelectorAll('.odx-push')].map((e) => rectOf(e));
     return (y) => y - base - pushes.reduce((sum, r) => sum + (r.top + r.height / 2 <= y ? r.height : 0), 0);
   };
   // A footnote goes on the page its reference's line does: in a paragraph split over pages, not always the paragraph's
@@ -488,7 +501,7 @@ export function createPages(view, session, { sheet, scope }) {
       if (r.kind !== 'footnote') continue;
       const el = view.nodeDOM(r.pos);
       if (!el || el.nodeType !== 1) continue;
-      const y0 = el.getBoundingClientRect().top;
+      const y0 = rectOf(el).top;
       const nat = natural(y0);
       moveNote(r, bandOf(pageOf(nat + shift0 + split.pushes.reduce((sum, x) => sum + (x.pos <= r.pos ? x.delta : 0), 0))));
     }
@@ -498,7 +511,7 @@ export function createPages(view, session, { sheet, scope }) {
   const notesByCol = (b, p, cs) => {
     const list = blockNotes.get(b.i);
     if (!list) return false;
-    const top = b.el.getBoundingClientRect().top;
+    const top = rectOf(b.el).top;
     const parts = carriedOf(cs);
     let moved = false;
     for (const r of list) {
@@ -508,7 +521,7 @@ export function createPages(view, session, { sheet, scope }) {
       if (r.kind === 'footnote') {
         const el = view.nodeDOM(r.pos);
         if (!el || el.nodeType !== 1) continue;
-        const y = el.getBoundingClientRect().top - top;
+        const y = rectOf(el).top - top;
         const part = parts.filter((q) => y >= q.cut - 1).pop();
         if (!part) continue;
         to = bandOf(p + part.off);
@@ -522,7 +535,7 @@ export function createPages(view, session, { sheet, scope }) {
   const refsBetween = (b, y0, y1) => (blockNotes.get(b.i) || []).some((r) => {
     const el = r.kind === 'footnote' && view.nodeDOM(r.pos);
     if (!el || el.nodeType !== 1) return false;
-    const y = el.getBoundingClientRect().top - b.el.getBoundingClientRect().top;
+    const y = rectOf(el).top - rectOf(b.el).top;
     return y >= y0 - 1 && y < y1 - 1;
   });
   const moveNotes = (i, v) => {
@@ -623,11 +636,11 @@ export function createPages(view, session, { sheet, scope }) {
   // a text box grown to fit its text past the foot (one grown to fit a long table: the page before holds the title only). Returns { past } for that, or { up },
   // how far to draw the floats up (px), each by its index in the paragraph.
   const floatsPast = (b, shift, p) => {
-    const er = b.el.getBoundingClientRect();
+    const er = rectOf(b.el);
     const up = new Map();
     [...b.el.querySelectorAll('img')].forEach((img, n) => {
       if (getComputedStyle(img).float === 'none') return;
-      const r = img.getBoundingClientRect();
+      const r = rectOf(img);
       // (Where it is laid out: less the drawing up a pass before gave it.)
       const ty = parseFloat((img.style.translate || '').split(/\s+/)[1]) || 0;
       const bottom = b.top + shift + (r.bottom - ty - er.top);
@@ -655,7 +668,7 @@ export function createPages(view, session, { sheet, scope }) {
   const MAX_ABOVE = 50; // blocks above looked at for text a shape drawn up would reach (a bound, not a fitted value)
   const MAX_SCANS = 32; // shapes of one paragraph that look (a bound, not a fitted value)
   const shapesPast = (b, shift, p) => {
-    const er = b.el.getBoundingClientRect();
+    const er = rectOf(b.el);
     const up = new Map();
     let past = false;
     // (At most MAX_SCANS shapes of a paragraph look for text above them: a crafted paragraph of thousands of such shapes,
@@ -663,7 +676,7 @@ export function createPages(view, session, { sheet, scope }) {
     let scans = 0;
     [...b.el.querySelectorAll('img')].forEach((img, n) => {
       if (!bothShape(img)) return;
-      const r = img.getBoundingClientRect();
+      const r = rectOf(img);
       if (r.height >= contentBottom(p) - contentTop(p)) return; // (taller than the page's text area: as it is)
       const ty = parseFloat((img.style.translate || '').split(/\s+/)[1]) || 0;
       const rel = r.top - ty - er.top; // (its top from its paragraph's, as laid out)
@@ -687,13 +700,13 @@ export function createPages(view, session, { sheet, scope }) {
       const range = document.createRange();
       let sib = b.el.previousElementSibling;
       for (let k = 0; sib && k < MAX_ABOVE && !past; k++, sib = sib.previousElementSibling) {
-        const sr = sib.getBoundingClientRect();
+        const sr = rectOf(sib);
         if (sr.bottom <= top) break;
         const walker = document.createTreeWalker(sib, NodeFilter.SHOW_TEXT);
         for (let t = walker.nextNode(); t && !past; t = walker.nextNode()) {
           if (!t.data.trim()) continue;
           range.selectNodeContents(t);
-          for (const q of range.getClientRects()) if (q.width > 0 && q.bottom > top + 0.25 && q.top < own && q.right > left && q.left < right) { past = true; break; }
+          for (const q of rectsOf(range)) if (q.width > 0 && q.bottom > top + 0.25 && q.top < own && q.right > left && q.left < right) { past = true; break; }
         }
       }
     });
@@ -835,23 +848,23 @@ export function createPages(view, session, { sheet, scope }) {
     for (let e = el.lastElementChild; e; e = e.previousElementSibling) if (e.getClientRects().length) return e;
     return null;
   };
-  const spacersIn = (td) => [...td.querySelectorAll('.odx-push')].filter((e) => e.closest('td') === td).map((e) => e.getBoundingClientRect());
+  const spacersIn = (td) => [...td.querySelectorAll('.odx-push')].filter((e) => e.closest('td') === td).map((e) => rectOf(e));
   const grown = (ntr) => {
     if (!ntr.querySelector('.odx-push')) return 0;
     let nat = -Infinity;
     for (const ntd of ntr.cells) {
       const last = lastShown(ntd);
       if (!last) continue;
-      const lb = last.getBoundingClientRect().bottom;
+      const lb = rectOf(last).bottom;
       nat = Math.max(nat, lb - undoIn(ntd, lb) + (parseFloat(getComputedStyle(ntd).paddingBottom) || 0));
     }
-    return Number.isFinite(nat) ? Math.max(0, ntr.getBoundingClientRect().bottom - nat) : 0;
+    return Number.isFinite(nat) ? Math.max(0, rectOf(ntr).bottom - nat) : 0;
   };
   const tablesIn = (td) => [...td.children].map(cellTable).filter(Boolean);
   function undoIn(td, y) {
     let u = spacersIn(td).reduce((sum, r) => sum + (r.bottom <= y + 0.5 ? r.height : 0), 0);
     for (const t of tablesIn(td)) for (const ntr of t.rows) {
-      if (ntr.getBoundingClientRect().bottom > y + 0.5) break;
+      if (rectOf(ntr).bottom > y + 0.5) break;
       u += grown(ntr);
     }
     return u;
@@ -864,7 +877,7 @@ export function createPages(view, session, { sheet, scope }) {
   function splitRow(b, j, rowShift, headH) {
     if (cantSplit(b.node.child(j), b.node)) return null;
     const tr = b.table.tBodies[0].rows[j];
-    const base = view.dom.getBoundingClientRect().top + b.rows[j].undo;
+    const base = rectOf(view.dom).top + b.rows[j].undo;
     const pushes = [];
     const crossings = new Map(); // page -> bottom of the row's part that stays on it
     const asTop = new Set(); // the row's own centred or bottom-aligned cells, laid out from its top as it splits
@@ -931,7 +944,7 @@ export function createPages(view, session, { sheet, scope }) {
       };
       for (const el of shownKids(td)) {
         if (el.tagName === 'P') {
-          const r = el.getBoundingClientRect();
+          const r = rectOf(el);
           const undo = b.rows[j].undo + undoAt(r.top);
           const top = r.top - base - undoAt(r.top);
           const bottom = r.bottom - base - undoAt(r.bottom);
@@ -986,12 +999,12 @@ export function createPages(view, session, { sheet, scope }) {
         const cs = getComputedStyle(td);
         const padTop = parseFloat(td.style.getPropertyValue('--odx-pt')) || parseFloat(cs.paddingTop) || 0;
         const padBottom = parseFloat(cs.paddingBottom) || 0;
-        const first = kids[0].getBoundingClientRect(), last = kids[kids.length - 1].getBoundingClientRect();
+        const first = rectOf(kids[0]), last = rectOf(kids[kids.length - 1]);
         // (With its first paragraph's space before and its last's space after, which Word centres with the text: a sample's
         // one-line label beside six lines kept on the page, 2pt before and after, was 2.4px low without them.)
         const space = Math.max(0, parseFloat(getComputedStyle(kids[0]).marginTop) || 0) + Math.max(0, parseFloat(getComputedStyle(kids[kids.length - 1]).marginBottom) || 0);
         const content = last.bottom - first.top - undoIn(td, last.bottom) + space;
-        const tdTop = td.getBoundingClientRect().top;
+        const tdTop = rectOf(td).top;
         off = /^(top|baseline)$/.test(cs.verticalAlign) ? 0 : Math.max(0, first.top - tdTop - (parseFloat(cs.borderTopWidth) || 0) - (parseFloat(cs.paddingTop) || 0));
         tops.push(td);
         if (rowTop + padTop + content + padBottom + line <= contentBottom(pg0) + 1) { aligned.push({ td, va, content, padTop, padBottom, first: kids[0] }); continue; }
@@ -1033,7 +1046,7 @@ export function createPages(view, session, { sheet, scope }) {
     for (let t = walker.nextNode(); t; t = walker.nextNode()) {
       if (t.parentElement.closest('.odx-push')) continue;
       range.selectNodeContents(t);
-      for (const r of range.getClientRects()) if (r.height > 0) frags.push(r);
+      for (const r of rectsOf(range)) if (r.height > 0) frags.push(r);
     }
     // (A turned picture by its box, not its turned outline: the room it takes on its line.)
     // (Not a shape with text on both sides: bothShape.)
@@ -1046,11 +1059,11 @@ export function createPages(view, session, { sheet, scope }) {
     // for widow control (three lines and the break split two and two).
     const trailing = frags.length ? b.el.querySelector('br.ProseMirror-trailingBreak') : null;
     let trailRect = null;
-    if (trailing) { const r = trailing.getBoundingClientRect(); if (r.height > 0) { frags.push(r); trailRect = r; } }
+    if (trailing) { const r = rectOf(trailing); if (r.height > 0) { frags.push(r); trailRect = r; } }
     // (Drawn by the paragraph's ::after in place of that break, editor.css odx-endbreak: the line at its content's foot.)
     if (frags.length && !trailRect && b.el.classList.contains('odx-endbreak')) {
       const cs = getComputedStyle(b.el);
-      const er = b.el.getBoundingClientRect();
+      const er = rectOf(b.el);
       const bottom = er.bottom - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
       const h = parseFloat(getComputedStyle(b.el, '::after').lineHeight) || 0;
       if (h > 0) { trailRect = { top: bottom - h, bottom, left: er.left, height: h }; frags.push(trailRect); }
@@ -1066,7 +1079,7 @@ export function createPages(view, session, { sheet, scope }) {
       } else lines.push({ fragTop: r.top, fragBottom: r.bottom, left: r.left });
     }
     if (!lines.length) return null;
-    const breaks = [...b.el.querySelectorAll('.odx-page-break')].map((e) => e.getBoundingClientRect().bottom);
+    const breaks = [...b.el.querySelectorAll('.odx-page-break')].map((e) => rectOf(e).bottom);
     const blockTop = b.top;
     const blockBottom = b.bottom;
     return lines.map((l, n) => ({
@@ -1092,11 +1105,11 @@ export function createPages(view, session, { sheet, scope }) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, skipPush);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       if (n.nodeType === 1) {
-        if ((n.tagName === 'IMG' || n.tagName === 'BR') && !bothShape(n) && onLine(n.getBoundingClientRect())) return view.posAtDOM(n.parentNode, [...n.parentNode.childNodes].indexOf(n));
+        if ((n.tagName === 'IMG' || n.tagName === 'BR') && !bothShape(n) && onLine(rectOf(n))) return view.posAtDOM(n.parentNode, [...n.parentNode.childNodes].indexOf(n));
         continue;
       }
       range.selectNodeContents(n);
-      const rects = [...range.getClientRects()];
+      const rects = [...rectsOf(range)];
       if (!rects.some((r) => r.top >= top - 2 && r.top < top + 2) && !rects.some(onLine)) continue;
       // first character on that line (character tops only grow through a text node)
       let lo = 0;
@@ -1105,7 +1118,7 @@ export function createPages(view, session, { sheet, scope }) {
         const mid = (lo + hi) >> 1;
         range.setStart(n, mid);
         range.setEnd(n, mid + 1);
-        const r = range.getClientRects();
+        const r = rectsOf(range);
         const t = r.length ? r[r.length - 1].top : -Infinity;
         if (t >= top - 2) hi = mid; else lo = mid + 1;
       }
@@ -1228,7 +1241,7 @@ export function createPages(view, session, { sheet, scope }) {
     // (The room a label reaching above the text adds over the first line, --odx-lbl-own: pararules.js labelLine; an
     // empty item's is its label's padding.)
     const lblUp = labelPad && b.el.classList.contains('odx-li') ? Math.max(parseFloat(getComputedStyle(b.el, '::before').paddingTop) || 0, parseFloat(pcs.getPropertyValue('--odx-lbl-own')) || 0) : 0;
-    const lead0 = lines[0].screenTop - (b.el.getBoundingClientRect().top + parseFloat(pcs.paddingTop) + parseFloat(pcs.borderTopWidth)) - lblUp;
+    const lead0 = lines[0].screenTop - (rectOf(b.el).top + parseFloat(pcs.paddingTop) + parseFloat(pcs.borderTopWidth)) - lblUp;
     const atLeast = lh1 && parseFloat(pcs.getPropertyValue('--odx-runmult')) !== 0;
     const lead = (mult > 1 || atLeast) && Math.abs(lead0) <= 20 ? lead0 : 0;
     return { lead0, lead };
@@ -1294,7 +1307,7 @@ export function createPages(view, session, { sheet, scope }) {
     const natural = naturalOf(b);
     const y = b.top + cs.cut - 1;
     const range = document.createRange();
-    const box = (t, i) => { range.setStart(t, i); range.setEnd(t, i + 1); return [...range.getClientRects()].find((r) => r.height > 0); };
+    const box = (t, i) => { range.setStart(t, i); range.setEnd(t, i + 1); return [...rectsOf(range)].find((r) => r.height > 0); };
     let at = null;
     const walker = document.createTreeWalker(b.el, NodeFilter.SHOW_TEXT);
     for (let t = walker.nextNode(); t && !at; t = walker.nextNode()) {
@@ -1327,7 +1340,7 @@ export function createPages(view, session, { sheet, scope }) {
   /** A block's width in flow page v's column: as laid out, less the narrowing it has now, plus that column's. */
   function widthIn(b, g, v) {
     const now = parseFloat(getComputedStyle(b.el).getPropertyValue('--odx-coln')) || 0;
-    return b.el.getBoundingClientRect().width + now - (g.width - colWidthAt(g, v));
+    return rectOf(b.el).width + now - (g.width - colWidthAt(g, v));
   }
   /** The height of `el` (a paragraph's copy, its margins 0) laid out `width` wide; with `lines`, its lines' bottoms too. */
   function heightAt(el, width, lines = null) {
@@ -1338,13 +1351,13 @@ export function createPages(view, session, { sheet, scope }) {
     host.append(el);
     outer.append(host);
     sheet.append(outer);
-    const box = el.getBoundingClientRect();
+    const box = rectOf(el);
     if (lines) {
       const range = document.createRange();
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (let t = walker.nextNode(); t; t = walker.nextNode()) {
         range.selectNodeContents(t);
-        for (const r of range.getClientRects()) {
+        for (const r of rectsOf(range)) {
           if (!r.height) continue;
           const l = lines.find((x) => Math.abs(x.top - (r.top - box.top)) < 2);
           if (l) l.bottom = Math.max(l.bottom, r.bottom - box.top); else lines.push({ top: r.top - box.top, bottom: r.bottom - box.top });
@@ -1386,20 +1399,20 @@ export function createPages(view, session, { sheet, scope }) {
     const table = tableOf(b.el);
     const trs = table && table.tBodies[0] ? [...table.tBodies[0].rows] : [];
     if (!trs.length) return null;
-    const top0 = b.el.getBoundingClientRect().top;
+    const top0 = rectOf(b.el).top;
     const room = contentBottom(p) + 1 - (b.top + shift); // how far down the block the column ends
-    const at = trs.findIndex((tr) => tr.getBoundingClientRect().bottom - top0 > room);
+    const at = trs.findIndex((tr) => rectOf(tr).bottom - top0 > room);
     if (at < 0) return null;
     // Inside the row, between its cells' lines, as Word breaks a row line by line (when the row can split and its cells
     // sit at the top): the lowest place above the column's foot that no line of any cell straddles.
     let cut = null;
     const node = b.node.child(at);
-    const rowTop = trs[at].getBoundingClientRect().top - top0;
+    const rowTop = rectOf(trs[at]).top - top0;
     if (lineSplits && node && !cantSplit(node, b.node) && ![...trs[at].cells].some((td) => !/^(top|baseline)$/.test(getComputedStyle(td).verticalAlign))) {
-      const base = view.dom.getBoundingClientRect().top + b.undo;
+      const base = rectOf(view.dom).top + b.undo;
       const spans = [];
       for (const el of trs[at].querySelectorAll('p')) {
-        const r = el.getBoundingClientRect();
+        const r = rectOf(el);
         const pl = paragraphLines({ el, top: r.top - base, bottom: r.bottom - base, undo: b.undo });
         if (pl) for (const l of pl) spans.push([l.top - b.top, l.bottom - b.top]);
         else spans.push([r.top - top0, r.bottom - top0]);
@@ -1413,7 +1426,7 @@ export function createPages(view, session, { sheet, scope }) {
       cut = rowTop;
     }
     const h = headerRowsOf(b.node);
-    const hb = h && h < trs.length ? trs[h].getBoundingClientRect().top - top0 : 0;
+    const hb = h && h < trs.length ? rectOf(trs[h]).top - top0 : 0;
     const head = hb && cut >= hb - 0.5 ? hb : 0; // (the header rows drawn again above what goes on, once the cut is past them)
     // A table longer than the next column too goes on in the one after, and so on: cut again at a row's top at each
     // column's foot (columns of equal widths), its header rows again above each part.
@@ -1422,9 +1435,9 @@ export function createPages(view, session, { sheet, scope }) {
     for (let c = 1; cg && !cg.unequal && c < MAX_CARRY; c++) {
       const from = parts[parts.length - 1];
       const fit = contentBottom(p + c) - contentTop(p + c) - head + 1;
-      const j = trs.findIndex((tr) => tr.getBoundingClientRect().bottom - top0 - from > fit);
+      const j = trs.findIndex((tr) => rectOf(tr).bottom - top0 - from > fit);
       if (j < 0) break;
-      const next = trs[j].getBoundingClientRect().top - top0;
+      const next = rectOf(trs[j]).top - top0;
       if (next <= from + 0.5) break; // (a row taller than a column: it stays whole)
       parts.push(next);
     }
@@ -1478,7 +1491,7 @@ export function createPages(view, session, { sheet, scope }) {
     const ownNotes = (blockNotes.get(b.i) || []).filter((r) => r.kind === 'footnote').map((r) => {
       const e = view.nodeDOM(r.pos);
       // (Its middle: a superscript mark's top is above its line's.)
-      const q = e && e.nodeType === 1 ? e.getBoundingClientRect() : null;
+      const q = e && e.nodeType === 1 ? rectOf(e) : null;
       return { r, y: q ? (q.top + q.bottom) / 2 : null };
     }).filter((x) => x.y != null);
     const bottomFor = (pg, n) => {
@@ -1585,7 +1598,7 @@ export function createPages(view, session, { sheet, scope }) {
   // there (its first cell's; else the table's first cell's), a hairline at its own width on paper (--odx-hair). False
   // for a table with no lines.
   function breakRule(frag, t, r, origin, y) {
-    const at = [...t.rows].find((tr) => { const q = tr.getBoundingClientRect(); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
+    const at = [...t.rows].find((tr) => { const q = rectOf(tr); return q.top - origin.top <= y + 1.5 && q.bottom - origin.top > y + 1.5; });
     const cell = (at && at.cells[0]) || t.querySelector('td') || t;
     const shadow = getComputedStyle(cell).boxShadow;
     if (!shadow || shadow === 'none') return false;
@@ -1614,12 +1627,12 @@ export function createPages(view, session, { sheet, scope }) {
     if (key === headKey && repeats.childElementCount) return;
     headKey = key;
     carriedParts = new WeakMap();
-    const origin = layer.getBoundingClientRect();
+    const origin = rectOf(layer);
     const frag = document.createDocumentFragment();
     for (const { b, top, rule, cont, cut, stop, end, dx, dy, rewrap, col } of list) {
       if (rewrap) {
         // Its lines laid out again at the next column's width (rewrapCarry): from the top of that copy.
-        const r = b.el.getBoundingClientRect();
+        const r = rectOf(b.el);
         const wrap = document.createElement('div');
         wrap.className = 'odx-repeat';
         wrap.style.cssText = `top:${(r.top - origin.top + dy + cut).toFixed(2)}px;left:${(r.left - origin.left + dx).toFixed(2)}px;width:${rewrap.width}px`;
@@ -1634,7 +1647,7 @@ export function createPages(view, session, { sheet, scope }) {
       }
       if (cont) {
         // A paragraph's lines past its column's bottom, again at the next column's top (columns: drawn, not editable there).
-        const r = b.el.getBoundingClientRect();
+        const r = rectOf(b.el);
         const wrap = document.createElement('div');
         wrap.className = 'odx-repeat';
         wrap.style.cssText = `top:${(r.top - origin.top + dy).toFixed(2)}px;left:${(r.left - origin.left + dx).toFixed(2)}px;width:${r.width}px`;
@@ -1657,7 +1670,7 @@ export function createPages(view, session, { sheet, scope }) {
       const t = b.table;
       if (rule) {
         // The bottom border of a row's part left behind at a page break, in the table's line colour.
-        const r = t.getBoundingClientRect();
+        const r = rectOf(t);
         if (!breakRule(frag, t, r, origin, top - 1)) continue; // a borderless table gets no break rule
         continue;
       }
@@ -1666,7 +1679,7 @@ export function createPages(view, session, { sheet, scope }) {
       const body = copy.tBodies[0];
       while (body.rows.length > b.headerRows) body.lastElementChild.remove();
       copy.querySelectorAll('.column-resize-handle, .selectedCell').forEach((n) => n.classList.remove('selectedCell') || (n.classList.contains('column-resize-handle') && n.remove()));
-      const r = t.getBoundingClientRect();
+      const r = rectOf(t);
       const wrap = document.createElement('div');
       wrap.className = 'odx-repeat';
       wrap.style.cssText = `top:${top}px;left:${r.left - origin.left}px;width:${r.width}px`;
@@ -1676,7 +1689,7 @@ export function createPages(view, session, { sheet, scope }) {
       // drawn at its cell's top, above its push (Word's print of a sample: a black line under the header row at the top
       // of the table's second page; there was none).
       let hh = 0;
-      for (let k = 0; k < b.headerRows && k < t.rows.length; k++) hh += t.rows[k].getBoundingClientRect().height;
+      for (let k = 0; k < b.headerRows && k < t.rows.length; k++) hh += rectOf(t.rows[k]).height;
       breakRule(frag, t, r, origin, top + hh);
     }
     repeats.replaceChildren(frag);
@@ -1787,13 +1800,13 @@ export function createPages(view, session, { sheet, scope }) {
   // spacer inside it (a paragraph whose box still starts at the foot of the page before: pagefloat-word pf-early's anchor,
   // its picture lifted onto the wrong page).
   const firstLineTop = (el) => {
-    const top = el.getBoundingClientRect().top;
+    const top = rectOf(el).top;
     const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('.odx-lift, .odx-push') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
     const t = w.nextNode();
     if (!t) return top;
     const rg = document.createRange();
     rg.setStart(t, 0); rg.setEnd(t, Math.min(1, t.data.length));
-    const q = rg.getClientRects()[0];
+    const q = rectsOf(rg)[0];
     return q ? Math.max(top, q.top) : top;
   };
   // The page each float placed against the page went on, for this document (its image node -> flow page): never an
@@ -1837,7 +1850,7 @@ export function createPages(view, session, { sheet, scope }) {
       if (!first || pageOf(firstLineTop(first) - base) !== pg) return false;
       // (A shape drawn with room round its outline, reader.js padPlace: its picture that much larger and higher.)
       const pad = padOf(place);
-      const drop = Math.round((y - pad - Math.max(contentTop(pg), first.getBoundingClientRect().top - base)) * 10) / 10;
+      const drop = Math.round((y - pad - Math.max(contentTop(pg), rectOf(first).top - base)) * 10) / 10;
       const at = view.posAtDOM(first, 0);
       const cs = getComputedStyle(img);
       const side = cs.float === 'right' ? 'right' : 'left';
@@ -1885,7 +1898,7 @@ export function createPages(view, session, { sheet, scope }) {
       const p0 = pageTop(pg), p1 = p0 + pageH(pg);
       const [top0, bottom0] = rel === 'page' ? [p0, p1] : rel === 'topMargin' ? [p0, p0 + m.top] : rel === 'bottomMargin' ? [p1 - m.bottom, p1] : [p0 + m.top, p1 - m.bottom];
       const y = alignedY(align, top0, bottom0, h, off);
-      const top = Math.round((y - (cb.getBoundingClientRect().top - base)) * 10) / 10;
+      const top = Math.round((y - (rectOf(cb).top - base)) * 10) / 10;
       // (Less the room drawn round a shape's outline: reader.js padPlace.)
       const pad = padOf(place);
       out.push(Decoration.node(pos, pos + node.nodeSize, { style: `top:${top - pad}px;margin-top:0` }, { key: `onpage:${top - pad}` }));
@@ -1914,7 +1927,7 @@ export function createPages(view, session, { sheet, scope }) {
       const el = els ? els[i] : view.nodeDOM(pos);
       // Hidden blocks (deleted text with markup off) have no box: measured, they'd sit at the top of the document.
       if (!el || el.nodeType !== 1 || !el.getClientRects().length) return;
-      const r = el.getBoundingClientRect();
+      const r = rectOf(el);
       const a = applied.get(i);
       // (A floating block's margin moves only itself: what follows it in the flow is where it was.)
       const float = a && a.extra && outOfFlow(el);
@@ -1926,10 +1939,10 @@ export function createPages(view, session, { sheet, scope }) {
         const trs = table && table.tBodies[0] ? [...table.tBodies[0].rows] : [];
         if (table && trs.length === node.childCount && !cols && !inRegion(i)) { // (in columns, tables move whole)
           block.table = table;
-          block.tableTop = table.getBoundingClientRect().top - base - undo;
+          block.tableTop = rectOf(table).top - base - undo;
           block.rows = trs.map((tr, j) => {
             // A pushed row's extra padding is inside it: it moves its bottom, not its top.
-            const rr = tr.getBoundingClientRect();
+            const rr = rectOf(tr);
             const rowTop = rr.top - base - undo;
             const d = a && a.rows && a.rows.get(j);
             if (d) undo += d;
@@ -1944,7 +1957,7 @@ export function createPages(view, session, { sheet, scope }) {
                 const spacers = undoIn(td, Infinity); // (in a table in the cell, a row's tallest cell's)
                 // (Its last paragraph's space after is in the cell too: margins don't pass through a cell's edge.)
                 const after = Math.max(0, parseFloat(getComputedStyle(last).marginBottom) || 0);
-                bottom = Math.max(bottom, last.getBoundingClientRect().bottom - spacers + after + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
+                bottom = Math.max(bottom, rectOf(last).bottom - spacers + after + (parseFloat(getComputedStyle(td).paddingBottom) || 0));
               }
               if (!(bottom > rr.top)) bottom = rr.bottom;
             }
@@ -2176,10 +2189,10 @@ export function createPages(view, session, { sheet, scope }) {
       const r = { b, top: b.top + acc, bottom: b.bottom + acc + split, split: split !== 0, sect, after: parseFloat(getComputedStyle(b.el).marginBottom) || 0 };
       // How low it reaches with what floats in it (a text box, a picture): Word centres those too.
       r.reach = r.bottom;
-      const er = b.el.getBoundingClientRect();
+      const er = rectOf(b.el);
       for (const f of b.el.querySelectorAll('img')) {
         if (getComputedStyle(f).position !== 'absolute' && getComputedStyle(f).float === 'none') continue;
-        r.reach = Math.max(r.reach, b.top + acc + (f.getBoundingClientRect().bottom - er.top));
+        r.reach = Math.max(r.reach, b.top + acc + (rectOf(f).bottom - er.top));
       }
       acc += split;
       r.p = pageOf(r.top);
@@ -2348,7 +2361,7 @@ export function createPages(view, session, { sheet, scope }) {
     if (!host) return true;
     const hs = getComputedStyle(host), ts = getComputedStyle(t);
     const inner = host.clientWidth - (parseFloat(hs.paddingLeft) || 0) - (parseFloat(hs.paddingRight) || 0);
-    const used = t.getBoundingClientRect().width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
+    const used = rectOf(t).width + (parseFloat(ts.marginLeft) || 0) + (parseFloat(ts.marginRight) || 0);
     return inner - used >= ROOM_BESIDE;
   }
   // A floating block's own margin-top (px), as it is without a push of ours: read while it has none (the push is the
@@ -2580,7 +2593,7 @@ export function createPages(view, session, { sheet, scope }) {
       // (Not one placed down from the text, setDown, or with no room beside it, styles.js --odx-fnoroom: it stays a
       // float, so the text after it fills the room above it, as in Word, and its empty paragraphs go under it, editor.js.)
       const above = node.type === schema.nodes.table && /--odx-fnoroom/.test(t.getAttribute('style') || '');
-      if (t.getBoundingClientRect().height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
+      if (rectOf(t).height > pageHeight(0)) { quiet(() => { t.style.float = 'none'; }); unfloated.add(node); }
       else if (node.type === schema.nodes.table && !above && !(setDown(node) && !crossFoot.has(node)) && !roomBeside(t)) {
         const mb = inFlowGap(node, doc.maybeChild(i + 1));
         quiet(() => { t.style.float = 'none'; t.style.marginBottom = mb; });
@@ -2592,7 +2605,7 @@ export function createPages(view, session, { sheet, scope }) {
     const inRegion = (i) => colRegs.some((r) => i >= r.lo && i <= r.hi);
     if (cols || colRegs.length) dom.classList.add('odx-measure'); // measure the flow without the columns' moves
     sheet.classList.add('odx-bl-off'); // and without the print-only baseline shifts
-    const base = dom.getBoundingClientRect().top;
+    const base = rectOf(dom).top;
     const blocks = measureBlocks(dom, doc, base, inRegion);
     // Walk the blocks and decide where pages start. `shift` is how far the
     // blocks already pushed have moved everything below them.
@@ -3209,7 +3222,7 @@ export function createPages(view, session, { sheet, scope }) {
   const endnotesAt = () => {
     if (![...notesOn.values()].some((l) => l.some((r) => r.kind === 'endnote'))) return '';
     const last = lastShown(view.dom);
-    const y = cols && colsBal ? colsBal.bottom : last ? last.getBoundingClientRect().bottom - view.dom.getBoundingClientRect().top : 0;
+    const y = cols && colsBal ? colsBal.bottom : last ? rectOf(last).bottom - rectOf(view.dom).top : 0;
     return y.toFixed(1);
   };
   function drawSheets() {
@@ -3306,7 +3319,7 @@ export function createPages(view, session, { sheet, scope }) {
         if (alone) top = marginsAt(p).top + (flow.cont ? 0 : ENDNOTE_TOP);
         else if (last && !flow.skip && endOnly) {
           // (In columns balanced before them, under the lowest column: balanceEndCols.)
-          const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - view.dom.getBoundingClientRect().top - pageTop(p) + ENDNOTE_LEAD;
+          const y = cols && colsBal ? marginsAt(p).top + colsBal.bottom + ENDNOTE_LEAD : rectOf(last).bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0) - rectOf(view.dom).top - pageTop(p) + ENDNOTE_LEAD;
           if (y > 0 && y < top) top = y;
         }
         box.style.cssText = at ? `top:${top}px;left:${page.left + at.x}px;width:${at.w}px` : `top:${top}px;left:${page.left}px;right:${page.right}px`;
