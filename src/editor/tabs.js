@@ -151,7 +151,9 @@ export function layoutTabsIn(root, session, nodeOf) {
         const next = (v) => (Math.floor(v / grid) + 1) * grid;
         // (Not at the line's end: a tab after text right-aligned at the right margin stays on the line there, sample
         // Attachment D's two-part headings.)
-        w = (aligned && next(x + 0.5) < right - 0.5 ? next(x + 0.5) : next(x)) - x;
+        // (A tab that starts on a default stop goes on to the next. The tab before it ended there only to the browser's
+        // 1/64px, a hair short where an indent isn't a whole number of those, and took no width.)
+        w = (aligned && next(x + 0.5) < right - 0.5 ? next(x + 0.5) : next(x + 1 / 32)) - x;
       }
       else if (stop.val === 'right' || stop.val === 'end' || stop.val === 'decimal' || stop.val === 'center') {
         const rw = runWidth(p, s, stop.val === 'decimal');
