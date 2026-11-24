@@ -135,7 +135,25 @@ export function lineSize(node, session, run, label, attrs, style) {
   // (Not a page break, drawn as an element the browser lays out on its own: its paragraph mark stays on the page before.
   // Unless the document asks for Word 2003's rule (w:splitPgBreakAndParaMark): there the mark goes to the next page,
   // an empty line at its top, as in Word.)
-  else if (node.lastChild?.type.name === 'hard_break' && (node.lastChild.attrs.type !== 'page' || session.compat?.has('splitPgBreakAndParaMark'))) attrs.class = [attrs.class, 'odx-endbreak'].filter(Boolean).join(' ');
+  else if (node.lastChild?.type.name === 'hard_break' && (node.lastChild.attrs.type !== 'page' || session.compat?.has('splitPgBreakAndParaMark'))) {
+    attrs.class = [attrs.class, 'odx-endbreak'].filter(Boolean).join(' ');
+    // (That line holds only the paragraph mark, so it is the mark's size, its own or else the style's, not the break's or
+    // the text's: a 14pt title closing with a break over an unsized mark in a 12pt style stood 3px too tall.)
+    const end = markSize(node) || Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20);
+    if (end !== Number(run.size || 0)) style.push(`--odx-endmark:${end / 2}pt`);
+    // (In the mark's font too, its own else the style's: 14pt Calibri closing with a break over a mark in the style's
+    // Times New Roman, 1.1px a paragraph too tall in Word's prints of 48 generated documents.)
+    const mk = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
+    const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
+    const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
+    const mf = /\bw:ascii="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1] || ofTheme(/\bw:asciiTheme="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1])
+      || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
+    // (The line's height is a multiple of its size, whatever the font: scaled by the two fonts' single lines, under
+    // "auto" spacing only, an exact or at-least line staying as set.)
+    const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
+    const k = mf && run.font && (!rule || rule === 'auto') && String(mf).toLowerCase() !== String(run.font).toLowerCase() ? lineFactor(mf) / lineFactor(run.font) : 1;
+    if (k > 0 && Math.abs(k - 1) > 0.002) style.push(`--odx-endfont:${fontStack(mf)}`, `--odx-endk:${+k.toFixed(5)}`);
+  }
   // Empty markers alone, or before a bare line break that starts the paragraph: the browser gives that first line no
   // height (ProseMirror puts a zero-size image before a leading break), Word a full line. (A break inside formatting
   // has its span's strut, and its own size.)
@@ -208,6 +226,7 @@ export function labelLine(node, session, l, label, run, style) {
   // A Symbol bullet is taller than the text (ascent 1.005em), and Word's line takes the tallest
   // ascent and descent on it, so the bullet's line comes out ~4% taller.
   const lvlFont = label != null && listLevel(session.numbering, l.numId, l.ilvl)?.font;
+  let markFont = null; // the font a label with none of its level's is drawn in, where it isn't the text's
   // With no font of its level's: the paragraph mark's (w:rFonts in the paragraph's own rPr, by name or the theme's),
   // else the paragraph style's, not the font its text's runs are set in. (Word's prints of 12 generated documents: the
   // level, the mark and the runs each with a font of their own or none; a sample's one heading number in Calibri, its
@@ -220,7 +239,7 @@ export function labelLine(node, session, l, label, run, style) {
     const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
     const own = named || ofTheme(themed) || (run.font ? session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont) : null);
-    if (own) style.push(`--odx-lfont:${fontStack(own)}`);
+    if (own) { style.push(`--odx-lfont:${fontStack(own)}`); markFont = own; }
   }
   // The label is in the level's own size, else the paragraph mark's, else the style's (12pt bullets over 10pt code
   // lines make Word's bullet lines taller).
@@ -269,11 +288,16 @@ export function labelLine(node, session, l, label, run, style) {
   // font's at the text's size and adds nothing; 14pt over 12pt Calibri it adds 1.55px (a sample's Word PDF: 21.1px lines).
   const raise = label != null ? ((listLevel(session.numbering, l.numId, l.ilvl)?.position || 0) / 2) * (4 / 3) : 0;
   if (raise) style.push(`--odx-lraise:${+raise.toFixed(2)}px`);
-  if (lvlFont) {
+  // (A label with no font of its level's counts the same, in the font it is drawn in: the paragraph mark's, else the
+  // style's. Word's prints of 288 generated lists: a number in a 12 or 14pt level over 10 or 12pt Arial, Calibri and Times
+  // New Roman, the item's line taller by exactly this; 9pt and equal sizes add nothing. A form's numbered headings, a 12pt
+  // level over 10pt text, stood 2.6px high each.)
+  if (label != null) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
     const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
-    const dings = /^wingdings$/i.test(lvlFont);
-    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lvlFont).toLowerCase()) || LABEL_ASCENT[String(lvlFont).toLowerCase()];
+    const lblFont = lvlFont || markFont || fname;
+    const dings = /^wingdings$/i.test(lblFont);
+    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lblFont).toLowerCase()) || LABEL_ASCENT[String(lblFont).toLowerCase()];
     // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
     const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;

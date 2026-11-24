@@ -2263,6 +2263,21 @@ await page.waitForTimeout(300);
 const bmr = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
 check(Math.abs(bmr - 18.65) < 0.1, `a bullet's line over runs of mixed fonts (${bmr}, want 18.65px)`);
 
+// A number whose level sets a larger size but no font makes its line taller by what its top reaches above the text's,
+// in the font it's drawn in (why-tests gen-vs.py lblsize; Word: a 12pt number over 10pt Arial, a 17.83px line; it was
+// the text's 15.33px).
+await open('list-number-larger.docx');
+await page.waitForTimeout(300);
+const nlg = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
+check(Math.abs(nlg - 17.83) < 0.1, `a number larger than its text (${nlg}, want 17.83px)`);
+
+// The empty line after a paragraph's closing line break is the paragraph mark's size (why-tests gen-vs.py trailbr; Word:
+// 14pt Arial text and break over an unsized mark in a 12pt style, 21.47 plus 18.40px; it was two 14pt lines).
+await open('closing-break-mark-line.docx');
+await page.waitForTimeout(300);
+const cbm = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
+check(Math.abs(cbm - 39.87) < 0.15, `the line after a closing break in the mark's size (${cbm}, want 39.87px)`);
+
 // A floating table placed down from its text and moved to the next page keeps that drop there, and the text after it
 // goes with it (why-tests gen2.py fltmove; Word: 182 twips down, the table 12.13px under the page's top, the paragraph
 // after it at the page's top beside it; the table had lost the drop and the paragraph stayed past the old page's foot).

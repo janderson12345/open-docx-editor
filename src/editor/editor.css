@@ -103,6 +103,8 @@
 /* A paragraph ending in a line break: its last line, empty, is as tall as the paragraph's font (quirks mode gave it the
    paragraph's own strut). Drawn by a zero-width ::after in place of ProseMirror's trailing break, as odx-tailmark does (class: pararules.js). */
 .odx-content p.odx-endbreak::after { content: "\200b"; }
+.odx-content p.odx-endbreak[style*="--odx-endmark"]::after { font-size: var(--odx-endmark); } /* (in the paragraph mark's size and font: pararules.js) */
+.odx-content p.odx-endbreak[style*="--odx-endfont"]::after { font-family: var(--odx-endfont); line-height: calc(var(--odx-lhv) * var(--odx-endk)); }
 /* Automatic hyphenation (hyphenate.js): the browser's own where it has it, else soft hyphens shown only at a line's end. */
 .odx-content p.odx-hyph { hyphens: auto; }
 .odx-content .odx-shy { hyphens: manual; }
