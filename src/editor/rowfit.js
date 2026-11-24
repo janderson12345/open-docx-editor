@@ -30,17 +30,35 @@ export function fitRowspans(root) {
     if (!table.querySelector('td[rowspan], th[rowspan]')) continue;
     const sig = `${document.fonts?.status}|${table.rows.length}|${table.offsetWidth}|${table.textContent}`; // (again once fonts load)
     if (fitted.get(table) === sig) continue;
-    fitted.set(table, sig);
     const rows = [...table.rows];
+    // (Not yet laid out, off screen in a long document: its rows have no height to go by. Fitted once they do.)
+    if (rows.every((tr) => !tr.getBoundingClientRect().height)) continue;
+    fitted.set(table, sig);
     if (rows.some((tr) => tr.hasAttribute('data-exact'))) continue;
     const need = new Map(); // row index -> extra height its last-row role needs
     let any = false;
+    // Text turned on its side (w:textDirection) takes the height its rows have from their other cells, and wraps to it,
+    // as Word sets it; it doesn't make them taller. Its length is its height, and measured as what the cell needs it
+    // asked for the height it already had: a merged cell of sideways text stood 351px in one print and 666px in another,
+    // by which pass measured it first, every page after it a page late.
+    const side = (td) => !/^horizontal/.test(getComputedStyle(td).writingMode);
+    const flat = rows.map((tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1 && !side(c)).map(own)));
+    rows.forEach((tr, i) => {
+      for (const td of tr.cells) {
+        if (!side(td) || i + td.rowSpan > rows.length) continue;
+        const cs = getComputedStyle(td);
+        const h = flat.slice(i, i + td.rowSpan).reduce((a, b) => a + b, 0) - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+        const v = h > 1 ? `${h.toFixed(2)}px` : '';
+        if (td.style.getPropertyValue('--odx-sideh') !== v) { if (v) td.style.setProperty('--odx-sideh', v); else td.style.removeProperty('--odx-sideh'); changed = true; }
+      }
+    });
     for (let i = 0; i < rows.length; i++) {
       for (const td of rows[i].cells) {
         if (td.rowSpan < 2 || i + td.rowSpan > rows.length) continue;
         any = true;
+        if (side(td)) continue;
         const span = rows.slice(i, i + td.rowSpan);
-        const natural = span.map((tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1).map(own)));
+        const natural = span.map((tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1 && !side(c)).map(own)));
         const want = own(td) - natural.reduce((a, b) => a + b, 0);
         const k = i + td.rowSpan - 1;
         if (want > 0.5) need.set(k, Math.max(need.get(k) || 0, natural[natural.length - 1] + want));

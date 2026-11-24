@@ -18,6 +18,10 @@ within 1px of Word's went from 47% to 82%, and documents laid out exactly as Wor
 - **A table column of sideways text keeps its width**: in a table set to fit its contents, cells of text turned on its
   side (w:textDirection) were measured as if their lines lay across the page, so a 79px column went to 490px and the
   text beside it to 134px, a page of text 105 short lines long.
+- **Sideways text no longer stretches its rows, and prints the same every time**: a merged cell of sideways text was
+  taken to need its text's length, which depends on the height it already had, so its rows came out 351px in one print
+  and 666px in another. The rows now take their height from their other cells and the sideways text wraps to it, as
+  in Word.
 - **Spaces that open a justified line take room on it** (54 generated documents, 4,205 lines): at a paragraph's
   start, after a line break or after a tab, the spaces before the first word were left out when deciding whether to
   squeeze one more word on, so the editor took on words that Word leaves for the next line. 53 of the 54 now match

@@ -326,6 +326,9 @@
 /* (An empty item's label is its line, the only text on it: with no height the line fell to the 1.15em floor,
    sample S065's empty bullet 16.9px where Word's is a full 19.3px line.) */
 .odx-content p.odx-li:has(> br.ProseMirror-trailingBreak:only-child)::before { line-height: var(--odx-lhv); padding-top: var(--odx-lbl-own, 0); }
+/* A cell of sideways text: its blocks as long as its rows are tall from their other cells, the text wrapping to that
+   (rowfit.js --odx-sideh; in a sideways cell a block's height is its line length). */
+.odx-content td[style*="--odx-sideh"] > * { max-height: var(--odx-sideh); }
 .odx-content table, .odx-hf table, .odx-notes table { border-collapse: collapse; table-layout: fixed; margin: 0; font: inherit; color: inherit; white-space: inherit; } /* (a quirks-mode page doesn't inherit fonts into tables) */
 .odx-content td, .odx-content th, .odx-hf td, .odx-hf th, .odx-notes td, .odx-notes th { padding: 0 7px; vertical-align: top; box-sizing: border-box; position: relative; overflow-x: clip; } /* headers, footers and notes too: Word puts cell text at the top */
 /* A cell centred or set at the bottom in a row that splits across pages: laid out from the row's top, its content put

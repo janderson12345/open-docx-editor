@@ -2382,6 +2382,17 @@ await open('table-sideways-column.docx');
 await page.waitForTimeout(500);
 const sideCols = await page.evaluate(() => [...document.querySelector('.odx-content table > colgroup').children].map((c) => Math.round(parseFloat(c.style.width))));
 check(JSON.stringify(sideCols) === '[79,545]', `a sideways-text column keeps its width (${JSON.stringify(sideCols)}, want [79,545])`);
+// Its rows as tall as their other cells make them, the sideways text wrapping to that (rowfit.js): its length had been
+// taken as what the merged cell needs, and it asked for the height it already had, a row 351px in one print and 666px in
+// another.
+const sideRows = await page.evaluate(() => [...document.querySelector('.odx-content table').rows].map((tr) => {
+  const c = [...tr.cells].find((td) => /^horizontal/.test(getComputedStyle(td).writingMode));
+  const cs = getComputedStyle(c);
+  const ps = [...c.children];
+  const need = ps[ps.length - 1].getBoundingClientRect().bottom - ps[0].getBoundingClientRect().top + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  return Math.round(tr.getBoundingClientRect().height - need);
+}));
+check(sideRows.every((d) => Math.abs(d) <= 1), `sideways merged cells don't stretch their rows (each row's height less its text cell's: ${JSON.stringify(sideRows)})`);
 
 // The same contents in Firefox: its first answer for where a tab sits, read just after the tab before it on the line was
 // sized, was where it had stood before; the leader came out 6px long and every page number went to a second line.
