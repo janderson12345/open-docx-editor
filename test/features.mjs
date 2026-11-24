@@ -1980,7 +1980,7 @@ check(lrf === 'ABEFGH' && lbo[0] === 'ACD' && lbo[1] === 2, `a list restarts onc
 // Courier New, the text in its run's Arial).
 await open('list-number-mark-font.docx');
 const lmf = await page.evaluate(() => { const p = document.querySelector('.odx-content p.odx-li'); return [getComputedStyle(p, '::before').fontFamily, getComputedStyle(p.querySelector('.odx-t')).fontFamily]; });
-check(lmf[0].replace('"', '').startsWith('Courier New') && lmf[1].replace('"', '').startsWith('Arial'), `a list number in its paragraph mark's font (${JSON.stringify(lmf)})`);
+check(lmf[0].replace(/"/g, '').startsWith('Courier New') && lmf[1].replace(/"/g, '').startsWith('Arial'), `a list number in its paragraph mark's font (${JSON.stringify(lmf)})`);
 // Tabs in a centred paragraph go to their stops, and a right stop past the paragraph's right indent, on the margin, is
 // a stop (gen2.py tabjc, tabind; Word: left, centre and right text at 96-123, 395-421 and 685-720px; with a 1in right
 // indent the text ends at the indent and its number sits at 687-720px on the next line).

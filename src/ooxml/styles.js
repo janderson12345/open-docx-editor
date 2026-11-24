@@ -522,8 +522,13 @@ export function firstCellBorders(table) {
 }
 /** A cell's own left line from its w:tcBorders XML: { val, sz } (eighths of a point), or null when it sets none. */
 function ownLeftLine(tcBordersXml) {
-  const tag = /<w:(?:left|start)[ /][^>]*>/.exec(typeof tcBordersXml === 'string' ? tcBordersXml : '');
-  if (!tag) return null;
+  // (The tag found, then its end by indexOf: "[^>]*>" after it, tried from each "<w:left " in a long run of them with
+  // no ">", took time growing with the square of the file's XML.)
+  const xml = typeof tcBordersXml === 'string' ? tcBordersXml : '';
+  const at = /<w:(?:left|start)[ /]/.exec(xml);
+  const end = at ? xml.indexOf('>', at.index) : -1;
+  if (end < 0) return null;
+  const tag = [xml.slice(at.index, end + 1)];
   const val = /w:val="([A-Za-z]+)"/.exec(tag[0]);
   const sz = /w:sz="(\d{1,3})"/.exec(tag[0]);
   return val ? { val: val[1], sz: Math.min(96, Number(sz ? sz[1] : 0)) } : null;

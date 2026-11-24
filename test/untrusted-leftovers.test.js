@@ -8,6 +8,7 @@ import { parseXml, esc } from '../src/ooxml/xml.js';
 import { DocxSession } from '../src/ooxml/docx.js';
 import { boundPr, boundDisplay, showsPlc, dropPlc, storeValue, formatDate } from '../src/ooxml/databind.js';
 import { listFields } from '../src/editor/fields.js';
+import { tablePlacementCss } from '../src/ooxml/styles.js';
 import { bindingDocx, bound } from './fixtures/mkbinding.mjs';
 
 // Crafted values from a file, bounded (the security review of the leftovers after 0.8.0).
@@ -21,6 +22,15 @@ test('a form field read in one pass however many unclosed tags a comment holds',
   assert.equal(info.kind, 'text');
   assert.equal(legacyInfo('<w:ffData><w:textInput><w:maxLength w:val="7"/></w:textInput></w:ffData>').maxLength, 7);
   assert.equal(legacyInfo('<w:ffData><w:textInput/></w:ffData>').maxLength, null);
+});
+
+// (The security review of 0.9.0: a cell's left line found in one pass, CodeQL js/polynomial-redos.)
+test("a table's first cell's left line read in one pass however many unclosed tags its borders hold", () => {
+  const tblPr = '<w:tblPr><w:tblInd w:w="0" w:type="dxa"/></w:tblPr>';
+  const t0 = Date.now();
+  assert.equal(tablePlacementCss({}, tblPr, 15, parseXml, null, 0, '<w:left '.repeat(40000)), '');
+  assert.ok(Date.now() - t0 < 1000);
+  assert.equal(tablePlacementCss({}, tblPr, 15, parseXml, null, 0, '<w:tcBorders><w:left w:val="single" w:sz="24"/></w:tcBorders>'), 'margin-left:2px');
 });
 
 test("a bevel's size kept to 64px however large the file says", () => {
