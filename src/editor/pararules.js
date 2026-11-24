@@ -151,7 +151,11 @@ export function lineSize(node, session, run, label, attrs, style) {
     // (The line's height is a multiple of its size, whatever the font: scaled by the two fonts' single lines, under
     // "auto" spacing only, an exact or at-least line staying as set.)
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
-    const k = mf && run.font && (!rule || rule === 'auto') && String(mf).toLowerCase() !== String(run.font).toLowerCase() ? lineFactor(mf) / lineFactor(run.font) : 1;
+    // (Against the text's font, its runs' else the style's: 10pt text in the style's Segoe UI or Times New Roman, closing
+    // over an 11pt Calibri mark, is a Calibri line in Word's prints of 48 generated documents, and was drawn in the
+    // style's font, 1.6px a paragraph too tall in Segoe UI.)
+    const tfont = run.font || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
+    const k = mf && tfont && (!rule || rule === 'auto') && String(mf).toLowerCase() !== String(tfont).toLowerCase() ? lineFactor(mf) / lineFactor(tfont) : 1;
     if (k > 0 && Math.abs(k - 1) > 0.002) style.push(`--odx-endfont:${fontStack(mf)}`, `--odx-endk:${+k.toFixed(5)}`);
   }
   // Empty markers alone, or before a bare line break that starts the paragraph: the browser gives that first line no
@@ -322,7 +326,7 @@ export function labelLine(node, session, l, label, run, style) {
       // generated lists, a Symbol bullet over 11pt Calibri and 10pt Arial in a 12pt Times New Roman style: the line is the
       // tallest top of bullet and runs and their deepest foot; against the style's Times it had no room and stood 0.75px
       // short. mixlines.js gives the runs their boxes.)
-      let topA = ta, topSize = txt;
+      let topA = ta, topSize = txt, held = false;
       if (!run.size || !run.font) {
         let seen = false;
         node.descendants((c) => {
@@ -332,13 +336,30 @@ export function labelLine(node, session, l, label, run, style) {
           if (a) { topA = a; topSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl; }
           return false;
         });
+        // (And no room where text starting within the paragraph's first 40 characters, on its first line at any width,
+        // reaches as high as the number: that text holds the line up. Word's prints of 48 generated lists: a 12pt number in
+        // the style's Times New Roman over a 10pt Arial lead-in and then the style's own 12pt text adds nothing, and room
+        // over the lead-in stood 0.6px higher than that text's top; a 14pt number still adds its room over the lead-in.
+        // Three samples' numbered paragraphs so, a page's last lines pushed over.)
+        let chars = 0;
+        node.descendants((c) => {
+          if (chars >= 40 || held) return false;
+          if (!c.isText) return true;
+          if (chars > 0 && c.text.trim()) {
+            const a = wordAscent(String(c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname).toLowerCase());
+            const z = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl;
+            if (a && a * z >= la * lbl - 0.01) held = true;
+          }
+          chars += c.text.length;
+          return false;
+        });
       }
       const up = (la * lbl - topA * topSize) / 2 * (4 / 3) + raise;
       // (And as Word has it, from the fonts' own units, unrounded: what a page's foot is fitted by, pages.js roundOff.)
       const units = (v) => Math.round(v * 2048) / 2048;
       const upExact = (units(la) * lbl - units(topA) * topSize) / 2 * (4 / 3) + raise;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
-      if (up > 0.02) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`, `--odx-lbl-up:${+upExact.toFixed(5)}px`);
+      if (up > 0.02 && !held) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`, `--odx-lbl-up:${+upExact.toFixed(5)}px`);
     }
   }
 }

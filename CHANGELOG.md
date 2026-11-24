@@ -3,7 +3,7 @@
 ## Unreleased
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
-within 1px of Word's went from 47% to 76%, and documents laid out exactly as Word from 1,157 to 1,820.
+within 1px of Word's went from 47% to 82%, and documents laid out exactly as Word from 1,157 to 1,969.
 
 - **Spaces that open a justified line take room on it** (54 generated documents, 4,205 lines): at a paragraph's
   start, after a line break or after a tab, the spaces before the first word were left out when deciding whether to
@@ -14,10 +14,14 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   laid out with several tabs closed up. All 56 now match Word; 8 did before.
 - **A list number larger than its text makes its line taller, as in Word** (672 generated lists): a number whose
   level sets a size but no font, or takes a larger paragraph mark's, adds what its top reaches above the text's, in
-  the font it is drawn in. A 12pt number over 10pt text stood 2.6px high on every item.
+  the font it is drawn in. A 12pt number over 10pt text stood 2.6px high on every item. Where text early on the
+  line reaches as high as the number, such as the style's own 12pt text after a 10pt lead-in, the number adds nothing
+  (48 more generated lists).
 - **The empty line after a paragraph's closing line break is the paragraph mark's** (336 generated documents): its
   size and font, the mark's own or else the style's, not the text's. A 14pt title closing with a break over an
-  unsized mark in a 12pt style stood 3px too tall.
+  unsized mark in a 12pt style stood 3px too tall. The break's own run adds nothing to the line it ends, and the
+  mark's font counts where the text's runs set none (48 more generated documents: a 12pt break after 10pt text had
+  made its line 3px taller, an 11pt Calibri mark under Segoe UI text 1.6px).
 - **Word squeezes a justified line by a rule of its own, now the editor's** (66 generated justified documents, 4,516
   words that stuck out of a line): Word takes the word on when narrowing the line's spaces for it costs each space no
   more than half of what leaving it out would widen each by, and never by more than a quarter of a space. Every plain

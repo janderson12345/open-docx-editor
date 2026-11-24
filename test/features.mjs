@@ -2298,6 +2298,25 @@ await page.waitForTimeout(300);
 const cbm = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
 check(Math.abs(cbm - 39.87) < 0.15, `the line after a closing break in the mark's size (${cbm}, want 39.87px)`);
 
+// A number adds no room where text early in its paragraph reaches as high (why-tests gen-m108.py lblrun; Word: a 12pt
+// number in the style's Times New Roman over a 10pt Arial lead-in and then the style's own 12pt text, a 36.7px item of
+// two lines; with room over the lead-in it was 37.25px).
+await open('list-number-early-text.docx');
+await page.waitForTimeout(300);
+const net = await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2));
+check(Math.abs(net - 36.81) < 0.1, `a number under text as tall early on its line (${net}, want 36.81px)`);
+
+// A closing break's own size adds nothing, and the empty line after it is in the mark's font where the text's runs set
+// none (why-tests gen-m108.py endbr; Word: 10pt Times New Roman, a 12pt break over a 12pt mark, 33.3px; 10pt Segoe UI
+// from the style over an 11pt Calibri mark, 36px; they were 36.81 and 37.25px).
+const cbs = [];
+for (const f of ['closing-break-own-size.docx', 'closing-break-mark-font.docx']) {
+  await open(f);
+  await page.waitForTimeout(300);
+  cbs.push(await page.evaluate(() => +document.querySelectorAll('.odx-content > p')[1].getBoundingClientRect().height.toFixed(2)));
+}
+check(Math.abs(cbs[0] - 33.73) < 0.1 && Math.abs(cbs[1] - 35.64) < 0.1, `a closing break's own size and its mark's font (${JSON.stringify(cbs)}, want [33.73,35.64])`);
+
 // A floating table placed down from its text and moved to the next page keeps that drop there, and the text after it
 // goes with it (why-tests gen2.py fltmove; Word: 182 twips down, the table 12.13px under the page's top, the paragraph
 // after it at the page's top beside it; the table had lost the drop and the paragraph stayed past the old page's foot).

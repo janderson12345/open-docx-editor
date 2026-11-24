@@ -105,6 +105,9 @@
 .odx-content p.odx-endbreak::after { content: "\200b"; }
 .odx-content p.odx-endbreak[style*="--odx-endmark"]::after { font-size: var(--odx-endmark); } /* (in the paragraph mark's size and font: pararules.js) */
 .odx-content p.odx-endbreak[style*="--odx-endfont"]::after { font-family: var(--odx-endfont); line-height: calc(var(--odx-lhv) * var(--odx-endk)); }
+/* (The closing break's own run adds nothing to the line it ends: Word's prints of 48 generated documents, a 12pt break
+   after 10pt text the same as an unsized one. Its larger strut had made that line 3px taller.) */
+.odx-content p.odx-endbreak > span:last-of-type:not(.odx-page-break, :has(span.odx-t, img, .odx-opaque-inline, .odx-tab, .odx-page-break)):has(br:only-child) { font-size: 0 !important; } /* (over the run's own size, set inline) */
 /* Automatic hyphenation (hyphenate.js): the browser's own where it has it, else soft hyphens shown only at a line's end. */
 .odx-content p.odx-hyph { hyphens: auto; }
 .odx-content .odx-shy { hyphens: manual; }
