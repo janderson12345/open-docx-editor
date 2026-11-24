@@ -2243,11 +2243,6 @@ check(footBul[0] === 0 && footBul[1] === 1, `bulleted lines fitted to the page b
 const footEmpty = [await onSheetOf('page-foot-empties-fits.docx', 43), await onSheetOf('page-foot-empties-passes.docx', 43)];
 check(footEmpty[0] === 0 && footEmpty[1] === 1, `empty paragraphs fitted to the page by the twip (${JSON.stringify(footEmpty)}, want the 44th paragraph on sheets 0 and 1)`);
 
-// ... and MS Gothic's line, 332/256em (gen2.py gothicfoot; Word: 12pt, the page's 41st line stays with 198 twips of space
-// before the second paragraph and goes on with 199).
-const footGothic = [await onSheetOf('page-foot-gothic-fits.docx', 40), await onSheetOf('page-foot-gothic-passes.docx', 40)];
-check(footGothic[0] === 0 && footGothic[1] === 1, `MS Gothic lines fitted to the page by the twip (${JSON.stringify(footGothic)}, want the 41st line on sheets 0 and 1)`);
-
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');

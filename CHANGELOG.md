@@ -24,8 +24,7 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
   paragraphs): Word adds the font's exact units and the exact multiple, unrounded. An exact height close to the font's own
   line was counted as that line, and four-decimal metrics left a full page up to a twip out, keeping a last line Word
   moves on or moving one it keeps. An empty paragraph's line came out a 64th of a pixel short.
-- **MS Gothic's line is Word's** (84 generated pages): 332/256 of its size, where it was counted as 1.3, 0.05px too
-  tall a line at 10pt. And a document opened after another of the same shape keeps its exact line heights.
+- **A document opened after another of the same shape keeps its exact line heights**: it had gone without them.
 - **A page a fraction of a pixel wider than whole pixels prints in place**: a page of 12242 by 15842 twips was wider than
   its printed sheet, and the browser cut every page a pixel late, so each page's text stood a pixel higher than the last.
 - **A floating table sits where its horizontal setting puts it** (72 generated tables): centred, right, inside and outside,

@@ -541,7 +541,7 @@ const LINE = Object.assign(Object.create(null), {
   // (Garamond: its own tables' 1.125em, Word's line in 42 generated documents at 8 to 16pt; measured in the browser,
   // whose ascent and descent come whole at 100px, it came out 1.12, each 12pt line 0.05px short.)
   garamond: 1.125,
-  'ms gothic': 1.2969, // (332/256em, its own units: Word's prints of 84 generated pages at 10 to 14pt fit no other value. Not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
+  'ms gothic': 1.3, // (not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
 });
 const measured = new Map();
 /** ascent + descent per em of a font the table doesn't know, measured in the browser if it is installed. */
