@@ -2243,6 +2243,16 @@ check(footBul[0] === 0 && footBul[1] === 1, `bulleted lines fitted to the page b
 const footEmpty = [await onSheetOf('page-foot-empties-fits.docx', 43), await onSheetOf('page-foot-empties-passes.docx', 43)];
 check(footEmpty[0] === 0 && footEmpty[1] === 1, `empty paragraphs fitted to the page by the twip (${JSON.stringify(footEmpty)}, want the 44th paragraph on sheets 0 and 1)`);
 
+// Tabs in a row each go on to the next default stop, from an indent that isn't a whole 64th of a px too (why-tests
+// gen-lb.py lbtabs; Word: 56 documents, indents of 0 to 437 twips, every piece of text on its stop).
+await open('tabs-in-a-row-from-an-indent.docx');
+const tabRow = await page.evaluate(() => [...document.querySelectorAll('.odx-content p')].filter((p) => p.querySelector('.odx-tab')).map((p) => {
+  const edge = p.getBoundingClientRect().left - parseFloat(getComputedStyle(p).marginLeft);
+  const ends = [...p.querySelectorAll('.odx-tab')].map((t) => t.getBoundingClientRect().right - edge);
+  return ends.every((e, i) => Math.abs(e / 48 - Math.round(e / 48)) < 0.02 && (!i || e > ends[i - 1] + 1));
+}));
+check(tabRow.length === 18 && tabRow.every(Boolean), `tabs in a row each reach their own default stop (${tabRow.filter(Boolean).length} of ${tabRow.length} paragraphs, want 18)`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');
