@@ -130,7 +130,10 @@ function minimums(tables, ns, host, contentClass) {
       for (const td of tr.cells) {
         while (c < n && covered[c] > 0) c++;
         const span = td.colSpan || 1;
-        if (span === 1 && c < n) { min[c] = Math.max(min[c], td.getBoundingClientRect().width); seen++; }
+        // (Not a cell of text turned on its side, w:textDirection: laid out at its narrowest its lines stand side by side
+        // across the page, and Word keeps its column as given. A 79px column of merged headings in sideways text went to
+        // 490px and the text column beside it to 134px, a page of text 105 short lines long.)
+        if (span === 1 && c < n && /^horizontal/.test(getComputedStyle(td).writingMode)) { min[c] = Math.max(min[c], td.getBoundingClientRect().width); seen++; }
         for (let k = c; k < Math.min(n, c + span); k++) covered[k] = td.rowSpan || 1;
         c += span;
       }

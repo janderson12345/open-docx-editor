@@ -29,11 +29,40 @@ function runWidth(p, tab, decimal) {
     }
   }
   // (Empty boxes left out: a field's hidden code can sit at the end of a line the text after it wrapped from.)
-  const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+  const rects = runRects(r, tab).filter((x) => x.width > 0);
   if (!rects.length) return 0;
   const top = rects[0].top;
   const line = rects.filter((x) => Math.abs(x.top - top) < 2);
   return Math.max(...line.map((x) => x.right)) - Math.min(...line.map((x) => x.left));
+}
+
+/**
+ * The boxes of what a range after a tab holds: its text, and its pictures and other boxes drawn whole. Not the range's
+ * own client rects: Firefox gives those the box of an element the range starts inside too (a contents entry's link, the
+ * whole line), and its page number, 7px, measured 421px: the tab was sized for that and the number went to a second line.
+ */
+function runRects(r, tab) {
+  const root = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode;
+  const out = [];
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  let n = walk.nextNode();
+  while (n) {
+    let skip = false;
+    if (n !== tab && !tab.contains(n) && (tab.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) && r.intersectsNode(n)) {
+      if (n.nodeType === 3) {
+        const q = document.createRange();
+        q.selectNodeContents(n);
+        if (n === r.endContainer) q.setEnd(n, r.endOffset);
+        out.push(...q.getClientRects());
+      } else if (/^(IMG|SVG|svg|CANVAS|VIDEO)$/.test(n.tagName) || /^(inline-block|inline-flex|inline-grid|inline-table)$/.test(getComputedStyle(n).display)) {
+        out.push(n.getBoundingClientRect());
+        skip = true;
+      }
+    }
+    if (skip) { n = walk.nextSibling() || (() => { let u = walk.currentNode; while (u && u !== root) { const s = walk.nextSibling(); if (s) return s; u = walk.parentNode(); } return null; })(); }
+    else n = walk.nextNode();
+  }
+  return out;
 }
 
 /** Width of the word right after a tab (up to the next space), 0 for none. */
@@ -125,6 +154,10 @@ export function layoutTabsIn(root, session, nodeOf) {
       const pr = p.getBoundingClientRect();
       const edge = rtl ? pr.right + startMargin : pr.left - startMargin;
       const from = (r) => (rtl ? edge - r.right : r.left - edge); // a box's start, from the edge
+      // (The pieces before it on the line read first: Firefox's answer for a tab after one just sized was where it stood
+      // before until they were, a contents entry's leader 6px left of where it is, the tab after the number not yet
+      // counted; its page number went to a second line. Reading the tab twice, or the paragraph's range, didn't do.)
+      if (s !== tabs[0]) for (const e of p.querySelectorAll('span.odx-t, .odx-tab')) { if (e === s) break; e.getBoundingClientRect(); }
       const x = from(s.getBoundingClientRect());
       let stop = stops.find((t) => t.x > x + 0.5);
       // (Text ending a fraction of a pixel past the last stop, a right one, is still before it in Word's units: a long

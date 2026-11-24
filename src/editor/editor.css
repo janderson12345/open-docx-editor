@@ -145,7 +145,10 @@
 @font-face { font-family: 'odx-aptos-display'; src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold'); font-weight: 700; size-adjust: 92%; }
 
 /* Skip layout and paint for blocks far off screen: large documents open and type fast. */
-.odx-large > .odx-content > p, .odx-large > .odx-content > table, .odx-large > .odx-content > .odx-opaque { content-visibility: auto; contain-intrinsic-size: auto 1.5em; }
+.odx-large > .odx-content > p, .odx-large > .odx-content > table, .odx-large > .odx-content > .odx-opaque { content-visibility: auto; contain-intrinsic-size: auto 1.5em; overflow-clip-margin: 3in; }
+/* (content-visibility contains paint: what a block draws outside its box was cut off, a hanging number in the indent
+   and a page number at a stop past the end indent, a contents entry's both, shown only once the caret was in it. The
+   margin lets them be drawn, as far as a page's side margins and indents reach.) */
 .odx-large > .odx-content > .odx-active { content-visibility: visible; }
 .odx-large > .odx-content.odx-probes > * { content-visibility: visible; } /* the line-height probes (lhfix.js), off screen: laid out, or they measure nothing */
 /* Exporting a PDF (src/pdf.js) reads every page, as printing does. */

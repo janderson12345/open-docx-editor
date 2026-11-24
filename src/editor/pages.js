@@ -574,6 +574,7 @@ export function createPages(view, session, { sheet, scope }) {
   let printing = false;
   const splitsNow = () => (!sheet.classList.contains('odx-large') || printing) && !cols;
   let lineSplits = splitsNow();
+  let lastPass = 0; // when the last layout pass ran (performance.now)
 
   const layer = document.createElement('div');
   layer.className = 'odx-sheets';
@@ -2527,6 +2528,7 @@ export function createPages(view, session, { sheet, scope }) {
   const wrapStep = () => applyWrapBoth(view, pushesKnown ? layer : null, pushState);
   function layout() { return unzoomed(layoutPass); }
   function layoutPass() {
+    lastPass = performance.now();
     lineSplits = splitsNow();
     frame = 0;
     passed = false;
@@ -3349,6 +3351,23 @@ export function createPages(view, session, { sheet, scope }) {
   view.dom.addEventListener('contentvisibilityautostatechange', onShown, true);
   window.addEventListener('resize', scheduleIdle);
   if (document.fonts) fontsSettled().then(() => !destroyed && schedule());
+  // A long document opens fast, laid out from estimates (odx-large: off-screen blocks skipped, paragraphs moved to the next
+  // page whole). Once it is drawn and the browser is idle, it is laid out in full as any document, so its pages are Word's
+  // on screen as in print: a 122-page document's heading and the paragraph after it had gone to the next page whole, a
+  // third of a page left empty, 125 pages. (About 1.6s more for that document, after it is shown, not before.)
+  if (sheet.classList.contains('odx-large')) {
+    const full = () => {
+      if (destroyed || printing || !sheet.classList.contains('odx-large')) return;
+      // (Only once the pages it opened with are drawn and have stayed so for a second: started while they were still
+      // being laid out, as Firefox's take longer, it held them back 3s more.)
+      if (frame || performance.now() - lastPass < 1000) { setTimeout(() => idle(full), 500); return; }
+      sheet.classList.remove('odx-large');
+      pushRound = null;
+      schedule();
+    };
+    const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 500));
+    (document.fonts ? fontsSettled() : Promise.resolve()).then(() => setTimeout(() => idle(full), 1500));
+  }
   // A web font that arrives later (a stand-in such as Carlito, requested only when the text using it is drawn) changes
   // what was measured in the fallback font: tabs, widths and pages are worked out again.
   // (From the text's own flow: a spacer put between two lines in the fallback font holds that line break in the real one,

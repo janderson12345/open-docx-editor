@@ -1852,7 +1852,8 @@ const hfWant = [17.111, 16.366].map((pt) => +(pt * 4 / 3).toFixed(2));
 check(hfH.every((x, i) => x && x[1] && Math.abs(x[0] - hfWant[i]) < 0.15), `header and footer lines of mixed sizes as tall as Word's (${JSON.stringify(hfH)}, want ${JSON.stringify(hfWant)})`);
 // A large document (over 1,500 blocks: those far off screen skip layout) still gets its line heights fixed (lhfix.js):
 // its probes are laid out, as many of its paragraphs fixed as in the same lines in a document a quarter as long.
-const fixedShare = async (f) => { await open(f); await page.waitForTimeout(1500); return page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')].slice(0, 400); return [ps.filter((p) => p.dataset.odxLh).length, document.querySelector('.odx-large') != null]; }); };
+// (Large as it opens: once drawn and the browser idle, it is laid out in full, pages.js, and no longer marked so.)
+const fixedShare = async (f) => { await open(f); const large = await page.evaluate(() => document.querySelector('.odx-large') != null); await page.waitForTimeout(1500); return page.evaluate((lg) => { const ps = [...document.querySelectorAll('.odx-content > p')].slice(0, 400); return [ps.filter((p) => p.dataset.odxLh).length, lg]; }, large); };
 const [smallFixed] = await fixedShare('lines-small.docx');
 const [largeFixed, isLarge] = await fixedShare('lines-large.docx');
 check(isLarge && largeFixed >= smallFixed, `a large document's line heights fixed as a small one's (${largeFixed} of its first 400 paragraphs, ${smallFixed} in the small one)`);
@@ -2356,6 +2357,50 @@ await open('shadow-lines.docx');
 const shH = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
 const shOk = shH.length >= 11 && [2, 4, 6].every((i) => Math.abs(shH[i] - shH[0] - 3.6) < 0.4) && Math.abs(shH[9] - shH[8] - 5.33) < 0.5 && shH.length >= 13 && Math.abs(shH[11] - shH[0]) < 0.3;
 check(shOk, `shadowed lines as much taller as Word makes them (${JSON.stringify(shH)})`);
+
+// A long document's contents entries, laid out on screen (content-visibility, editor.css .odx-large): each entry's page
+// number on its own line at the right stop, and the number hanging in its indent and the page number past the end
+// indent drawn, not cut off at the paragraph's box until the caret came to it (a 122-page document's contents, both
+// numbers missing on screen in Edge and Firefox).
+const longTocEntries = async (pg) => pg.evaluate(() => [...document.querySelectorAll('.odx-content > p')].filter((p) => p.querySelector('.odx-tab')).map((p) => {
+  const t = [...p.querySelectorAll('span.odx-t')];
+  const a = t[0].getBoundingClientRect(), z = t[t.length - 1].getBoundingClientRect();
+  return { line: Math.abs(a.top - z.top) < 2, clip: parseFloat(getComputedStyle(p).overflowClipMargin) || 0, large: !!p.closest('.odx-large') };
+}));
+await open('contents-long-document.docx');
+await page.waitForTimeout(800);
+const tocE = await longTocEntries(page);
+check(tocE.length === 9 && tocE.every((e) => e.line && (!e.large || e.clip >= 96)), `a long document's contents entries: page numbers on their lines, nothing cut off at the box (${JSON.stringify(tocE.map((e) => [e.line, e.large, e.clip]))})`);
+// And, once drawn and the browser idle, laid out in full as any document (pages.js): paragraphs split across pages on
+// screen as in print (a 122-page document's had gone to the next page whole on screen, 125 pages).
+const tocFull = await page.waitForFunction(() => !document.querySelector('.odx-large'), null, { timeout: 15000 }).then(() => true, () => false);
+check(tocFull, 'a long document is laid out in full once it is drawn');
+
+// A fit-to-contents table whose first column's merged cells hold text turned on its side keeps that column as given:
+// laid out at its narrowest, the sideways text set the column 490px wide and the text beside it 134px.
+await open('table-sideways-column.docx');
+await page.waitForTimeout(500);
+const sideCols = await page.evaluate(() => [...document.querySelector('.odx-content table > colgroup').children].map((c) => Math.round(parseFloat(c.style.width))));
+check(JSON.stringify(sideCols) === '[79,545]', `a sideways-text column keeps its width (${JSON.stringify(sideCols)}, want [79,545])`);
+
+// The same contents in Firefox: its first answer for where a tab sits, read just after the tab before it on the line was
+// sized, was where it had stood before; the leader came out 6px long and every page number went to a second line.
+// (Where Playwright's Firefox is installed: CI installs only Chromium.)
+{
+  let ff = null;
+  try { ff = await firefox.launch(); } catch { console.log('skip contents entries in Firefox (not installed)'); }
+  if (ff) {
+    const fp = await ff.newPage({ viewport: { width: 1300, height: 950 } });
+    await fp.goto(`http://localhost:${server.address().port}/`);
+    await fp.waitForSelector('.odx-content p');
+    await fp.setInputFiles('input[type=file]', 'test/fixtures/contents-long-document.docx');
+    await fp.waitForFunction((n) => window.odx?.fileName === n, 'contents-long-document.docx');
+    await fp.waitForTimeout(2000);
+    const ffE = await longTocEntries(fp);
+    check(ffE.length === 9 && ffE.every((e) => e.line && (!e.large || e.clip >= 96)), `contents entries in Firefox: page numbers on their lines (${JSON.stringify(ffE.map((e) => e.line))})`);
+    await ff.close();
+  }
+}
 
 check(!errors.length, `no page errors ${errors.join(' | ')}`);
 await browser.close();
