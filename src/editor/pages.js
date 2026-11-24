@@ -55,11 +55,28 @@ export const pagePushPlugin = new Plugin({
   },
   props: { decorations: (state) => pushKey.getState(state) },
 });
-// A push in px, on the browser's own grid of 1/64px: laid out exactly as set, and measured back the same at the next pass.
+// The browser's own grid, steps a px: 64 in Chromium and WebKit (their layout unit), 60 in Firefox (its app units), found
+// once by laying out a box 1/64px tall. (On 64ths in Firefox, a push was laid out at the nearest 60th and measured back
+// a hair off, and the next pass put it a 64th the other way: a 122-page document's pushes went back and forth pass after
+// pass, 28 passes to open there and 14 more to its full layout, against Edge's 10 and 3; 7 and 8 on its own grid.)
+let perPx = 0;
+const gridSteps = () => {
+  if (perPx || typeof document === 'undefined' || !document.body) return perPx || 64;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:0.015625px;visibility:hidden;pointer-events:none';
+  document.body.append(box);
+  const h = box.getBoundingClientRect().height;
+  box.remove();
+  perPx = Math.abs(h - 1 / 60) < 1e-4 ? 60 : 64; // (Firefox reports it through a single-precision float: 0.0166626)
+  return perPx;
+};
+// A push in px, on the browser's own grid: laid out exactly as set, and measured back the same at the next pass.
 // (In tenths, one near the middle of two came to one or the other by the last bits of the sum or by where an earlier pass
 // had put it, and a print came out by how many passes had run before it. To a thousandth of a grid step first: a value
 // exactly on the grid stays there, whatever its last bits.)
-const toGrid = (px) => Math.round(Math.round(px * 64000) / 1000) / 64;
+const toGrid = (px) => { const g = gridSteps(); return Math.round(Math.round(px * g * 1000) / 1000) / g; };
+// A length from the style as the browser lays it out: cut to its 64ths in Chromium, to the nearest 60th in Firefox.
+const asLaidOut = (px) => { const g = gridSteps(); return g === 64 ? Math.trunc(px * 64) / 64 : Math.round(px * g) / g; };
 // A font's line and a paragraph's multiple as Word has them, unrounded, from the four decimals they're kept in: a font's
 // line in 2048ths of an em (its units), a multiple in 240ths (w:line). Word fits a page's last line by their exact sum,
 // no line rounded: its prints of 156 generated pages, Times New Roman and Calibri at 10 and 12pt, 1.08, 1.15 and 1.5
@@ -2369,7 +2386,7 @@ export function createPages(view, session, { sheet, scope }) {
       // starts at its top. A paragraph after one, starting a page, went to 342px above the page: everything after it lost.)
       let q = k - 1;
       while (q >= 0 && outOfFlow(blocks[q].el)) q--;
-      const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - Math.trunc((parseFloat(getComputedStyle(dom).paddingTop) || 0) * 64) / 64; // the page's top padding is the first section's plain top margin, not one moved down for a tall header (as laid out, cut to 1/64px: the 0.014px left over was added to the block's push at every pass, and it never settled)
+      const gap = q >= 0 ? blocks[k].top - blocks[q].bottom : blocks[k].top - asLaidOut(parseFloat(getComputedStyle(dom).paddingTop) || 0); // the page's top padding is the first section's plain top margin, not one moved down for a tall header (as laid out, on the browser's grid: the 0.014px left over was added to the block's push at every pass, and it never settled)
       // A floating block's margin doesn't take the place of the gap above it, as a block's in the flow does (its margin
       // collapsing with the one above): the float stays under the space after the block before it, and under its own drop,
       // and its margin moves it from there by all it adds to the float's own. Set to gap + delta it stood a gap too low,
@@ -2385,7 +2402,7 @@ export function createPages(view, session, { sheet, scope }) {
       // under a paragraph with 4px after it stood at -137.8, was remembered at -141.8, and measured 4px lower at each pass,
       // so a print came out by how many passes had run before it.)
       const above = colRegs.length ? blocks[k - 1] : !floats && margin < gap ? blocks[q] : undefined;
-      const mb = above ? Math.trunc((parseFloat(getComputedStyle(above.el).marginBottom) || 0) * 64) / 64 : 0;
+      const mb = above ? asLaidOut(parseFloat(getComputedStyle(above.el).marginBottom) || 0) : 0;
       const set = margin < mb ? margin - mb : margin;
       // (As a property of its own, which editor.css makes the margin: a decoration's style is taken off name by name
       // when it goes, and one that set margin-top took the paragraph's own space before with it. A paragraph pushed to
