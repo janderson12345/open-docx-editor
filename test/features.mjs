@@ -2253,6 +2253,16 @@ const tabRow = await page.evaluate(() => [...document.querySelectorAll('.odx-con
 }));
 check(tabRow.length === 18 && tabRow.every(Boolean), `tabs in a row each reach their own default stop (${tabRow.filter(Boolean).length} of ${tabRow.length} paragraphs, want 18)`);
 
+// A justified paragraph that opens with spaces: they take room on its first line, so Word squeezes no word on there that
+// doesn't fit with them (why-tests gen-lb.py lbleadsp; Word: 54 documents, spaces at the start, after a line break and
+// after a tab; this one 11pt Calibri, two spaces, its paragraphs' lines as Word's print).
+await open('justified-opening-spaces.docx');
+const leadLines = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].filter((p) => p.textContent.trim()).map((p) => {
+  const r = document.createRange(); r.selectNodeContents(p);
+  return new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.bottom))).size;
+}));
+check(JSON.stringify(leadLines) === '[3,4,4,5,4,4,4,4,4,4,4,4]', `justified paragraphs opening with spaces break as Word's (${JSON.stringify(leadLines)})`);
+
 // A header paragraph holding only floating shapes is a full line, however many it holds (why-tests gen2.py hfshapes; Word:
 // 17.9px in 11pt Calibri with one text box, two or three; with two it stood at the 1.15em floor, 16.86px).
 await open('header-two-floating-shapes.docx');

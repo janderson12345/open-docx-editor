@@ -5,6 +5,10 @@
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
 within 1px of Word's went from 47% to 76%, and documents laid out exactly as Word from 1,157 to 1,820.
 
+- **Spaces that open a justified line take room on it** (54 generated documents, 4,205 lines): at a paragraph's
+  start, after a line break or after a tab, the spaces before the first word were left out when deciding whether to
+  squeeze one more word on, so the editor took on words that Word leaves for the next line. 53 of the 54 now match
+  Word; 1 did before.
 - **Tabs in a row each go on to the next default stop** (56 generated documents, 2,604 lines): after an indent that
   isn't a whole 64th of a pixel, such as 0.2in, a tab that started on a stop took no width, and the columns of a form
   laid out with several tabs closed up. All 56 now match Word; 8 did before.

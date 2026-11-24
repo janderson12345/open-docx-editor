@@ -180,11 +180,13 @@ function squeezedLines(view, node, pos, el, split, session) {
   // after the last, as from a line's.)
   if (split) {
     run(words.filter((w) => w.to <= split.first), right - fr.left, segs[0].start);
-    if (split.next != null) run(words.filter((w) => w.from >= split.next), right - left, split.next);
+    if (split.next != null) run(words.filter((w) => w.from >= split.next), right - left, split.next, false);
   } else run(words, right - fr.left, segs[0].start);
   return out;
 
-  function run(words, avail, lineFrom) {
+  // (`opens`: the next word opens a line with the spaces before it kept, at the paragraph's start or after a line break
+  // or tab. Those spaces take room on the line but aren't narrowed. After a line that wrapped they hang off its end.)
+  function run(words, avail, lineFrom, opens = true) {
     let width = 0;
     let spaces = 0;
     let spaceW = 0;
@@ -192,7 +194,7 @@ function squeezedLines(view, node, pos, el, split, session) {
     let lineX = right - avail; // where the line's text starts, or the text after its last tab
     for (let k = 0; k < words.length; k++) {
       const wd = words[k];
-      if (wd.brk) { width = 0; lineFrom = wd.to; lineX = left; avail = right - left; continue; }
+      if (wd.brk) { width = 0; lineFrom = wd.to; lineX = left; avail = right - left; opens = true; continue; }
       if (wd.tab) {
         // (Where the text after it starts: at the stop the tab goes to, which tabs.js leaves on it, from the
         // paragraph's left edge. Not where it is drawn, nor its width: a justified line's spaces before the tab are
@@ -203,10 +205,15 @@ function squeezedLines(view, node, pos, el, split, session) {
         const end = dom && dom.nodeType === 1 && !dom.classList.contains('odx-tabnl') ? parseFloat(dom.dataset.odxTabend) : NaN;
         const x = box.left + end;
         if (!Number.isFinite(end) || !(x < right) || x < lineX + width - 0.5) return;
-        width = 0; lineFrom = wd.to; lineX = x; avail = right - x; spaces = 0; spaceW = 0; spaceEm = 0;
+        width = 0; lineFrom = wd.to; lineX = x; avail = right - x; spaces = 0; spaceW = 0; spaceEm = 0; opens = true;
         continue;
       }
-      if (k === 0 || width === 0) { width = wd.w; spaces = 0; spaceW = 0; spaceEm = 0; continue; }
+      if (k === 0 || width === 0) {
+        width = (opens ? wd.space : 0) + wd.w;
+        if (opens && wd.space) lineFrom = wd.from;
+        opens = false; spaces = 0; spaceW = 0; spaceEm = 0;
+        continue;
+      }
       const add = wd.space + wd.w;
       const gap = wd.space > 0 ? 1 : 0;
       if (width + add <= avail + 0.01) { width += add; spaces += gap; spaceW += wd.space; spaceEm += gap * wd.em; continue; }
