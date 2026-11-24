@@ -12,6 +12,12 @@ within 1px of Word's went from 47% to 76%, and documents laid out exactly as Wor
 - **Tabs in a row each go on to the next default stop** (56 generated documents, 2,604 lines): after an indent that
   isn't a whole 64th of a pixel, such as 0.2in, a tab that started on a stop took no width, and the columns of a form
   laid out with several tabs closed up. All 56 now match Word; 8 did before.
+- **A list number larger than its text makes its line taller, as in Word** (672 generated lists): a number whose
+  level sets a size but no font, or takes a larger paragraph mark's, adds what its top reaches above the text's, in
+  the font it is drawn in. A 12pt number over 10pt text stood 2.6px high on every item.
+- **The empty line after a paragraph's closing line break is the paragraph mark's** (336 generated documents): its
+  size and font, the mark's own or else the style's, not the text's. A 14pt title closing with a break over an
+  unsized mark in a 12pt style stood 3px too tall.
 - **Word squeezes a justified line by a rule of its own, now the editor's** (66 generated justified documents, 4,516
   words that stuck out of a line): Word takes the word on when narrowing the line's spaces for it costs each space no
   more than half of what leaving it out would widen each by, and never by more than a quarter of a space. Every plain
