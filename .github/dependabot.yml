@@ -1,0 +1,8 @@
+# Dependabot keeps the workflows' actions current, weekly. (Security updates for the npm packages are on separately,
+# in the repository's settings.)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
