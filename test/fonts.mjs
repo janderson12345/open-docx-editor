@@ -39,8 +39,9 @@ const report = await page.evaluate(async () => {
 });
 check(!report.before.some((f) => f.font === 'Nonesuch Sans Test'), 'no missing font before');
 const miss = report.after.find((f) => f.font === 'Nonesuch Sans Test');
-// (Drawn in Word's last fallback for a name it knows nothing of, Cambria with no font-table entry, and reported so.)
-check(!!miss && miss.substitute === 'Cambria' && !miss.standIn, `a font nothing has is reported (${JSON.stringify(report.after)})`);
+// (Drawn in Word's last fallback for a name it knows nothing of, Cambria with no font-table entry, and reported so;
+// where Cambria isn't installed, as on Linux, the next in the stack is drawn: Caladea, the bundled font with its widths.)
+check(!!miss && ['Cambria', 'Caladea'].includes(miss.substitute) && !miss.standIn, `a font nothing has is reported (${JSON.stringify(report.after)})`);
 
 // The bundled stand-ins load from fonts.css: Carlito (Calibri's widths) is available whether or not it's installed.
 const carlito = await page.evaluate(async () => {
