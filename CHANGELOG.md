@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.1 (2026-11-27)
+
+More layout fixes from comparing the editor with Word's prints of about 4,000 real-world documents: lines placed
+within 1px of Word's went from 83% to 91.5% (781,025 lines), and documents laid out exactly as Word to 2,221. Each fix
+was pinned with documents generated and printed in Word, and comes with a fixture and a browser check.
+
+- **Hardening from the release review**: a VML length padded with a long run of spaces, and a paragraph mark holding
+  thousands of empty revision tags (w:rPrChange), are read in linear time (a crafted file had taken over a second, the
+  second on every change); line breaks in style names are escaped where they go into CSS selectors.
+- **Prints and PDFs show the final document**: a document with tracked changes prints as Word exports it by default,
+  with the changes accepted and no change bars or struck-out text. Hidden and deleted paragraph marks join their
+  paragraphs, as in Word.
+- **Missing fonts fall back as Word's do**: a font the computer doesn't have is drawn in the font Word substitutes for
+  it: its font-table alternative, Windows' own substitutes (MS Shell Dlg as Microsoft Sans Serif, Times as Times New
+  Roman), Palatino as Book Antiqua, Sylfaen for fonts claiming Armenian or Georgian letters, else Cambria or Calibri by
+  the font table's family. `missingFonts()` now reports that substitute (Cambria for a name Word knows nothing of)
+  rather than null.
+- **Gaps between paragraphs**: space before and after across empty paragraphs, numbered paragraphs and contextual
+  spacing, empty paragraphs' own heights, and line spacing below single for paragraphs with text.
+- **Headers and footers**: header heights on later pages, the body pushed below a tall header as Word does, tabs
+  beside header pictures, positional tabs (left, centred and right) taking their width, a header line of tabs around a
+  logo, a header rule of no height no longer moving the body down, floating VML text boxes in headers and footers.
+- **Tables**: row heights (cell margins, at-least rows, auto spacing in cells, an empty last paragraph in a cell), rows
+  split across a page break where Word splits them, tables kept inside the page, two tables back to back joined into
+  one, merged-cell rows, autofit columns, sideways cells, table style indents, floating tables moved to the next page
+  as Word moves them, notes in tables.
+- **Fonts and text**: theme fonts over named fonts inherited along the style chain, run properties through nested
+  content controls, Aptos Narrow at its own widths, Futura's stand-in at Word's line height, list-level tab stops,
+  text-box theme fonts and small caps, symbol-font characters.
+- **Shapes and pictures**: text boxes and groups at their places, cover shapes behind the text, drawings cut at page
+  edges, black-and-white pictures, header pictures past the margin, inline VML shapes, cover pictures.
+- **Fields**: STYLEREF chapter numbers.
+
 ## 0.9.0 (2026-11-24)
 
 Layout fixes found by comparing the editor with Word's prints of about 4,000 real-world documents: lines placed

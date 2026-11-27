@@ -397,6 +397,8 @@ function drawBoxes(d) {
     const bg = color(cs.backgroundColor);
     const sides = ['Top', 'Right', 'Bottom', 'Left'].map((s) => ({ s, w: parseFloat(cs[`border${s}Width`]) || 0, c: color(cs[`border${s}Color`]), style: cs[`border${s}Style`] }))
       .filter((b) => b.w > 0 && b.c && b.style !== 'none' && b.style !== 'hidden');
+    // A cell's dotted and dashed lines over and under it, drawn as backgrounds (ooxml/props.js brokenLine): as borders here.
+    for (const [side, w, style, c] of dashLines(el)) sides.push({ s: side === 'top' ? 'Top' : 'Bottom', w, c, style });
     // Table cells' plain lines are inset shadows (ooxml/styles.js): a band along the edge the offset points from.
     const bands = cs.boxShadow && cs.boxShadow !== 'none' ? [...cs.boxShadow.matchAll(/(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+0px\s+0px\s+inset/g)]
       .map((m) => ({ c: color(m[1]), x: +m[2], y: +m[3] })).filter((s) => s.c && (s.x || s.y)) : [];
@@ -702,6 +704,20 @@ function clipped(el, r) {
     if (+m[2] > 0 && r.top + (r.height || 0) / 2 > b.bottom - +m[2]) return null;
   }
   return r;
+}
+
+/** A table cell's own dotted and dashed lines over and under it (--odx-dash): [side, width px, style, colour], at most 2. */
+function dashLines(el) {
+  const spec = el.style ? el.style.getPropertyValue('--odx-dash') : '';
+  if (!spec) return [];
+  const out = [];
+  for (const part of spec.split(',', 2)) {
+    const [side, w, style, hex] = part.trim().split(/\s+/);
+    if (!/^(top|bottom)$/.test(side) || !/^(dotted|dashed)$/.test(style) || !/^#[0-9A-Fa-f]{6}$/.test(hex || '') || !(Number(w) > 0 && Number(w) < 100)) continue;
+    const v = parseInt(hex.slice(1), 16);
+    out.push([side, Number(w), style, { rgb: rgb((v >> 16) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255), a: 1 }]);
+  }
+  return out;
 }
 
 /** CSS color to pdf-lib's, with its alpha; null when transparent. */

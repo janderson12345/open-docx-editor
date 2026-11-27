@@ -76,6 +76,25 @@ test('a text box draws a run in all caps (w:caps) in capitals, its own or from i
   assert.match(svg, /BANNER TITLE plain/);
 });
 
+test('a text box takes a character style\'s theme font over Times New Roman defaults, and draws its small caps', () => {
+  const files = unzipSync(bytes);
+  const xml = strFromU8(files['word/document.xml'])
+    .replace(/<w:txbxContent><w:p>([\s\S]*?)<\/w:p><\/w:txbxContent>/g, '<w:txbxContent><w:p><w:r><w:rPr><w:rStyle w:val="coversub"/></w:rPr><w:t>Monthly Report</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Headline</w:t></w:r></w:p></w:txbxContent>');
+  files['word/document.xml'] = strToU8(xml);
+  files['word/styles.xml'] = strToU8(strFromU8(files['word/styles.xml'])
+    .replace(/<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"\/>/, '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>')
+    .replace('</w:styles>', '<w:style w:type="character" w:customStyle="1" w:styleId="coversub"><w:name w:val="cover:sub"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/><w:b/><w:smallCaps/><w:sz w:val="40"/></w:rPr></w:style></w:styles>'));
+  const s = new DocxSession(zipSync(files), { imageUrl: () => 'blob:x' });
+  let node = null;
+  s.doc.descendants((n) => { if (!node && n.type.name === 'image' && /<wp:anchor/.test(n.attrs.xml)) node = n; });
+  const svg = decodeURIComponent(node.attrs.src);
+  const fam = (word) => new RegExp(`<tspan font-family="([^"]*)"[^>]*>[^<]*(?:<tspan[^>]*>[^<]*</tspan>[^<]*)*${word}`).exec(svg)?.[1] || '';
+  assert.match(fam('M'), /^&quot;Calibri&quot;/, 'the character style\'s minorHAnsi, not the defaults\' Times');
+  assert.match(fam('Headline'), new RegExp(`^&quot;${s.theme.major}&quot;`), 'the paragraph style\'s majorHAnsi');
+  // 20pt: lowercase letters as capitals at 16pt (21.33px), capitals and spaces at 26.67px.
+  assert.match(svg, /M<tspan font-size="21.33">ONTHLY<\/tspan> R<tspan font-size="21.33">EPORT<\/tspan>/);
+});
+
 test('the word count takes in text boxes once (not their fallback copy)', async () => {
   const { wordCount } = await import('../src/editor/commands.js');
   const s = new DocxSession(bytes);

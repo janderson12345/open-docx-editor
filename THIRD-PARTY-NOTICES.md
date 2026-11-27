@@ -47,8 +47,8 @@ widened to the width the editor gives Aptos's letter (made by `tools/fonts/build
 fonts under their SIL Open Font License 1.1, with names of their own. The editor loads these files from jsDelivr (or the host's copy) only when a
 document uses a font the computer lacks. For
 other fonts, the stylesheet refers to a stand-in installed on the computer by name (`local()`), sized to the
-original's widths. `src/engine/metrics.json` holds measurements (ascent,
-descent, line gap per em) of common fonts, facts about the fonts rather than any part of them.
+original's widths. `src/fonts/metrics.js` holds measurements (ascent,
+descent, line gap in font units) of common fonts, facts about the fonts rather than any part of them.
 
 The open-metric-fonts fonts (https://github.com/open-metric-fonts/open-metric-fonts, SIL Open Font License 1.1) are not
 in this package: the editor loads them at run time from npm's `@open-metric-fonts` packages on jsDelivr (or the host's

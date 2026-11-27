@@ -104,6 +104,7 @@ function minimums(tables, ns, host, contentClass) {
   box.className = contentClass;
   box.setAttribute('aria-hidden', 'true');
   box.style.cssText = 'position:absolute;left:-99999px;top:0;width:auto;visibility:hidden;contain:layout';
+  const hang = []; // paragraphs whose first-line indent is measured once laid out
   const copies = tables.map((table) => {
     const copy = table.cloneNode(true);
     copy.style.tableLayout = 'auto';
@@ -113,12 +114,33 @@ function minimums(tables, ns, host, contentClass) {
     // Cells spanning columns emptied: laid out at its narrowest, the table would spread their long text over the columns
     // they span, and a column would seem to need far more than its own cells (sample S099 form: a checkbox column, 25px, at 77px).
     for (const tr of copy.rows) for (const td of tr.cells) if (td.colSpan > 1) td.replaceChildren();
+    // A paragraph needs its left and right indents and its longest word, as in Word: not its first-line indent or
+    // hanging, nor its list label; and an empty one nothing, its indents and label too (Word's prints of ..\autofit-word:
+    // an empty bulleted paragraph indented 720 left a 597 column at 597; sample 3143's first column went to 62px for
+    // it here, and its third column lost 12pt, every long cell a line longer).
+    for (const p of copy.querySelectorAll('p')) {
+      // (A hanging indent takes its first line back that far, and Word gives the column that much less of the left
+      // indent: ..\fitind-word, a 0.25in left indent hanging 0.25in no room for it, hanging 0.125in half of it; a first-
+      // line indent none. Measured below, once laid out. A list's label hangs as before.)
+      if (!p.classList.contains('odx-li')) hang.push(p);
+      else p.style.textIndent = '0';
+      p.classList.remove('odx-li');
+      if (!/[^\s\u200b\ufeff]/.test(p.textContent) && !p.querySelector('img, svg, canvas, video, object, embed, iframe, table')) {
+        p.style.marginInlineStart = '0';
+        p.style.marginInlineEnd = '0';
+      }
+    }
     const wrap = document.createElement('div'); // (one per table: each laid out at its own narrowest)
     wrap.append(copy);
     box.append(wrap);
     return copy;
   });
   host.append(box);
+  const back = hang.map((p) => { const cs = getComputedStyle(p); return [p, parseFloat(cs.textIndent) || 0, parseFloat(cs.marginInlineStart) || 0]; });
+  for (const [p, ti, ml] of back) {
+    p.style.textIndent = '0';
+    if (ti < 0 && ml > 0) p.style.marginInlineStart = `${Math.max(0, ml + ti).toFixed(2)}px`;
+  }
   const out = copies.map((copy, t) => {
     const n = ns[t];
     const min = new Array(n).fill(0);

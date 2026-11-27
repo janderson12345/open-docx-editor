@@ -23,8 +23,15 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 ## How layout works
 
 1. **Paragraph and character formatting** become CSS on the document's paragraphs and runs (`ooxml/props.js`,
-   `ooxml/styles.js`, the paragraph pass in `editor/editor.js`). Line heights use each font's own metrics
-   (`engine/metrics.json`, from the installed fonts' hhea tables), not the browser's `normal`.
+   `ooxml/styles.js`, the paragraph pass in `editor/editor.js`). Line heights use each font's own metrics, not the browser's
+   `normal`: `fonts/metrics.js` holds the numbers from the fonts' files (made by `tools/fontmetrics.mjs`), and
+   `fonts/wordmetrics.js` turns them into Word's line and ascent. Word's single line is the larger of the font's hhea
+   total (ascender + descender + line gap) and its Windows ascent + descent, or its typo total where the font asks for
+   its typo metrics; its ascent in a line of mixed runs is the Windows ascent plus whatever the hhea total is larger
+   by; an East Asian font's ascent and descent are each 1.3 times, cut to a whole unit (checked against Word's prints of
+   33 fonts at 10 to 14pt, 2026-11-24). A few values Word was measured at instead are kept as measured. Fonts outside
+   the editor's list are measured in the browser. The print offsets in `editor/baseline.js` (`OFFSET`) are fitted
+   browser corrections, not font data.
    **A line is as tall as the text on it** (`editor/textspans.js`), as Word sizes it: every text node is in a span of
    its own carrying the line height (`--odx-lhv`, a registered property), and the paragraph and the formatting around
    the text have line-height 0. A browser in standards mode otherwise counts each paragraph's own font on every line (its
@@ -48,6 +55,8 @@ comments say *why* a rule exists; this file says what the rules are and how to c
 
 **Lines and spacing**
 - A line's extra "multiple" spacing goes below its text; "at least" spacing puts its extra above.
+- "Multiple" spacing under a single line shortens every line by that multiple, text or not, however tall its text:
+  Word scales the ascent and descent alike, so the baseline is that multiple of the ascent under the line's top.
 - An exactly spaced line must end a little above the bottom margin to stay on its page.
 - Contextual spacing removes only a paragraph's own space.
 - A paragraph mark's size sets the last line's height only when the paragraph shows no text; an empty list item has

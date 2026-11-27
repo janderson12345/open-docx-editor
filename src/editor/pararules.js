@@ -2,16 +2,28 @@
 // the session and what the pass worked out before it. `attrs` is the paragraph's decoration (class, data-label, role),
 // `style` its list of CSS declarations; both are added to in the pass's order.
 import { listLevel, resolveStyle } from '../ooxml/styles.js';
-import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor, highlightColor } from '../ooxml/props.js';
+import { twipsToPt, fontCss, fontStack, lineFactor, mergeTabs, sizeCss, hexColor, highlightColor, themeFace } from '../ooxml/props.js';
 import { paragraphChanged, paragraphMarkRev } from './track.js';
 import { outlineLevel } from './commands.js';
 import { wordAscent } from './baseline.js';
+import { fontMetrics } from '../fonts/wordmetrics.js';
+import { embeddedFamilies } from '../ooxml/fonts.js';
 
 // The paragraph mark's own font size (half-points), if it sets one.
 export function markSize(node) {
   const mark = (node.attrs.extra || []).find((e) => e[0] === 'rPr');
   const sz = mark && /<w:sz w:val="(\d+)"/.exec(mark[1]);
   return sz ? Number(sz[1]) : null;
+}
+
+/** The line break a paragraph ends in, with nothing but tabs after it, else null. */
+function closingBreak(node) {
+  for (let i = node.childCount - 1; i >= 0; i--) {
+    const c = node.child(i);
+    if (c.type.name === 'hard_break') return c;
+    if (c.type.name !== 'tab') return null;
+  }
+  return null;
 }
 
 /** A list paragraph: its label, indents and the room after the label. `l` is its list, `label` its label text. */
@@ -53,10 +65,12 @@ export function listLabel(node, session, l, label, attrs, style) {
     if (lvl && lvl.picBullet != null && session.pictureBullets?.has(lvl.picBullet)) attrs.class += ` odx-picbullet odx-pb-${lvl.picBullet}`;
     // The text after the label starts at the hanging indent; with none (a first-line indent instead), at the
     // next default tab stop after the label's start.
-    // (The paragraph's own tab stops come first; then the default ones.)
+    // (The paragraph's own tab stops come first; then the default ones. Its own take in the list level's, w:lvl's
+    // w:pPr/w:tabs, under its style's: a sample's "Section %1.0" headings, the level's num stop at 1728 twips and the
+    // default stops 1440 apart, have their text at 86.4pt in Word's print, ours had it at the default stop, 72pt.)
     const start = left - hang;
     const dts = session.defaultTabStop || 720;
-    const own = mergeTabs(session.styleProp(node.attrs.styleId, 'tabs'), node.attrs.view?.tabs)
+    const own = mergeTabs(ind.tabs, session.styleProp(node.attrs.styleId, 'tabs'), node.attrs.view?.tabs)
       .filter((t) => t.val !== 'bar' && t.val !== 'clear' && t.pos > start).map((t) => t.pos);
     // (Nothing after the label, w:suff="nothing": the text follows it at once, doc 24's unnumbered headings starting
     // at the hanging position.)
@@ -75,7 +89,7 @@ export function listLabel(node, session, l, label, attrs, style) {
     const endsAtStart = !!lvl && (lvl.jc === 'right' || lvl.jc === 'end');
     const ownFirst = endsAtStart && hang > 0 && own.length ? Math.min(...own) : null;
     const gap = hidden || spaced || (lvl && lvl.suff === 'nothing') ? 0 : ownFirst != null && ownFirst < start + hang ? ownFirst - start : viaIndent;
-    style.push(`margin-inline-start:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
+    style.push(`margin-inline-start:${twipsToPt(left)}pt`, `--odx-il:${twipsToPt(left)}pt`, `text-indent:${-twipsToPt(hang)}pt`, `--odx-hang:${twipsToPt(gap)}pt`);
     // A label wider than that room: the text goes on from the next tab stop after the label's end, the paragraph's own
     // or, past its last, a default one (lhfix.js wideLabels measures the label and sets the room; where the label
     // starts, the room, the default stops' pitch and the paragraph's stops, twips). Word's prints of 20 generated
@@ -87,7 +101,7 @@ export function listLabel(node, session, l, label, attrs, style) {
     if (lvl && (lvl.jc === 'right' || lvl.jc === 'end')) attrs.class += ' odx-lbl-right';
   } else if (node.attrs.numId === '0' && node.attrs.styleId && resolveStyle(session.styles.styles, node.attrs.styleId).pPr.numId != null) {
     // Switching off a style's list also drops the style's indent (Word treats it as the list's).
-    style.push(`margin-inline-start:${twipsToPt(node.attrs.view.indLeft ?? 0)}pt`, `text-indent:${twipsToPt(node.attrs.view.indFirst ?? 0)}pt`);
+    style.push(`margin-inline-start:${twipsToPt(node.attrs.view.indLeft ?? 0)}pt`, `--odx-il:${twipsToPt(node.attrs.view.indLeft ?? 0)}pt`, `text-indent:${twipsToPt(node.attrs.view.indFirst ?? 0)}pt`);
   }
 }
 
@@ -95,9 +109,13 @@ export function listLabel(node, session, l, label, attrs, style) {
 export function lineSize(node, session, run, label, attrs, style) {
   // A paragraph opening with a bare line break (no size of its own): Word's first line is as tall as that break, in
   // the style's size, not the text's (a 12.5pt title under an 11pt break, doc 07); the text's runs keep their own.
+  // Larger too (sample 2466's cover: a 48pt style's break over 36pt text, a 58.5pt line in Word, odx-test mkcover.ps1).
   const fc = node.firstChild;
   const breakSize = fc && fc.type.name === 'hard_break' && !fc.marks.some((m) => m.type.name === 'size') && Number(session.styleRunProp(node.attrs.styleId, 'size') || session.styles.defaults.rPr.size || 20);
-  if (run.size && breakSize && breakSize < Number(run.size)) style.push(sizeCss(breakSize / 2));
+  // (Larger only for a line break: a page break opening a table cell's 10pt text in a 12pt style, samples 0018, 0347
+  // and 3023's forms, isn't a line of its own there, and their rows had stood 3.3px taller than Word's.)
+  const plainBreak = fc?.type.name === 'hard_break' && (!fc.attrs.type || fc.attrs.type === 'textWrapping');
+  if (run.size && breakSize && (breakSize < Number(run.size) || (plainBreak && breakSize > Number(run.size)))) style.push(sizeCss(breakSize / 2));
   else if (run.size) style.push(sizeCss(run.size / 2));
   // Every run raised too (a header line beside a logo, all its text lifted 3pt): no strut at all, as nothing of Word's line
   // hangs below the baseline (a strut would). Not with a line break (its empty line needs one) or a list label.
@@ -130,12 +148,19 @@ export function lineSize(node, session, run, label, attrs, style) {
   } else if (mark && mark > run.size) {
     style.push(`--odx-mark:${mark / 2}pt`);
     attrs.class = [attrs.class, 'odx-mark'].filter(Boolean).join(' ');
+    // (In the mark's font too: five 10pt Calibri spaces, with or without a tab after them, over a mark in the style's
+    // 12pt Times New Roman, are an 18.4px line in Word's prints of 11 generated documents (why-tests rows, blank-*), and
+    // were a 12pt Calibri line here, 1.4px taller; a tab after them put the mark on a line of its own: editor.css.)
+    markLineFont(node, session, run, style);
   }
   // Ending in a line break: its empty last line is as tall as the paragraph's font (editor.css odx-endbreak; textspans.js).
   // (Not a page break, drawn as an element the browser lays out on its own: its paragraph mark stays on the page before.
   // Unless the document asks for Word 2003's rule (w:splitPgBreakAndParaMark): there the mark goes to the next page,
   // an empty line at its top, as in Word.)
-  else if (node.lastChild?.type.name === 'hard_break' && (node.lastChild.attrs.type !== 'page' || session.compat?.has('splitPgBreakAndParaMark'))) {
+  // (Or in a break and then nothing but tabs: Word's line of tabs is the same empty line, tabs sizing no line, a 20pt tab
+  // none either. Its prints of 7 generated documents, w:br or w:cr then tabs, an 18.4px line under 12pt text; here the
+  // tabs' boxes alone gave it no height, a sample's paragraph and everything under it a line short.)
+  else if (closingBreak(node) && (closingBreak(node).attrs.type !== 'page' || session.compat?.has('splitPgBreakAndParaMark'))) {
     attrs.class = [attrs.class, 'odx-endbreak'].filter(Boolean).join(' ');
     // (That line holds only the paragraph mark, so it is the mark's size, its own or else the style's, not the break's or
     // the text's: a 14pt title closing with a break over an unsized mark in a 12pt style stood 3px too tall.)
@@ -143,20 +168,12 @@ export function lineSize(node, session, run, label, attrs, style) {
     if (end !== Number(run.size || 0)) style.push(`--odx-endmark:${end / 2}pt`);
     // (In the mark's font too, its own else the style's: 14pt Calibri closing with a break over a mark in the style's
     // Times New Roman, 1.1px a paragraph too tall in Word's prints of 48 generated documents.)
-    const mk = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
-    const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
-    const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
-    const mf = /\bw:ascii="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1] || ofTheme(/\bw:asciiTheme="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1])
-      || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
-    // (The line's height is a multiple of its size, whatever the font: scaled by the two fonts' single lines, under
-    // "auto" spacing only, an exact or at-least line staying as set.)
-    const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
-    // (Against the text's font, its runs' else the style's: 10pt text in the style's Segoe UI or Times New Roman, closing
-    // over an 11pt Calibri mark, is a Calibri line in Word's prints of 48 generated documents, and was drawn in the
-    // style's font, 1.6px a paragraph too tall in Segoe UI.)
-    const tfont = run.font || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
-    const k = mf && tfont && (!rule || rule === 'auto') && String(mf).toLowerCase() !== String(tfont).toLowerCase() ? lineFactor(mf) / lineFactor(tfont) : 1;
-    if (k > 0 && Math.abs(k - 1) > 0.002) style.push(`--odx-endfont:${fontStack(mf)}`, `--odx-endk:${+k.toFixed(5)}`);
+    markLineFont(node, session, run, style);
+  } else if (node.lastChild?.type.name === 'tab' && node.textContent.trim()) {
+    // Text and then tabs to its end: tabs that run over onto a line of their own make a line in Word, the text's (a
+    // sample's 18 closing tabs, a line under its last line of text in Word's print), where the tabs' boxes give that
+    // line no height here (editor.css odx-tabend: a zero-width character after them, in the paragraph's font).
+    attrs.class = [attrs.class, 'odx-tabend'].filter(Boolean).join(' ');
   }
   // Empty markers alone, or before a bare line break that starts the paragraph: the browser gives that first line no
   // height (ProseMirror puts a zero-size image before a leading break), Word a full line. (A break inside formatting
@@ -168,6 +185,28 @@ export function lineSize(node, session, run, label, attrs, style) {
   if (node.childCount && (!lead || (lead.type.name === 'hard_break' && !lead.marks.length && !lead.attrs.type && !(lead.attrs.clear && lead.attrs.clear !== 'none')))) {
     attrs.class = [attrs.class, 'odx-markers'].filter(Boolean).join(' ');
   }
+}
+
+/**
+ * The paragraph mark's font where it isn't the text's: the line holding only the mark (after a closing break, or under a
+ * line of spaces) is that font's line, its size scaled by the two fonts' single lines (--odx-endfont, --odx-endk).
+ */
+function markLineFont(node, session, run, style) {
+  const mk = (node.attrs.extra || []).find((e) => e[0] === 'rPr')?.[1] || '';
+  const ofTheme = (t) => (t && session.theme ? themeFace(session.theme, t) : null);
+  const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
+  // (The mark's theme font over a named one beside it, w:asciiTheme over w:ascii: props.js readRPr.)
+  const mf = ofTheme(/\bw:asciiTheme="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1]) || /\bw:ascii="([^"]+)"/.exec(/<w:rFonts\b[^>]*>/.exec(mk)?.[0] || '')?.[1]
+    || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
+  // (The line's height is a multiple of its size, whatever the font: scaled by the two fonts' single lines, under
+  // "auto" spacing only, an exact or at-least line staying as set.)
+  const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
+  // (Against the text's font, its runs' else the style's: 10pt text in the style's Segoe UI or Times New Roman, closing
+  // over an 11pt Calibri mark, is a Calibri line in Word's prints of 48 generated documents, and was drawn in the
+  // style's font, 1.6px a paragraph too tall in Segoe UI.)
+  const tfont = run.font || session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont);
+  const k = mf && tfont && (!rule || rule === 'auto') && String(mf).toLowerCase() !== String(tfont).toLowerCase() ? lineFactor(mf) / lineFactor(tfont) : 1;
+  if (k > 0 && Math.abs(k - 1) > 0.002) style.push(`--odx-endfont:${fontStack(mf)}`, `--odx-endk:${+k.toFixed(5)}`);
 }
 
 /** An inline picture on a line with text. `page` is the session's page. */
@@ -223,7 +262,7 @@ export function labelFormat(node, session, l, label, style) {
 const SYMBOL_ASCENT = 1.00537; // Symbol's Windows ascent, 2059 of 2048 units
 const WINGDINGS_ASCENT = 0.8994; // Wingdings', 1842 of 2048
 // (Fonts labels are set in whose ascent the text's table, baseline.js, doesn't hold: looked up by name, no prototype.)
-const LABEL_ASCENT = Object.assign(Object.create(null), { 'arial black': 1.1006 });
+const LABEL_ASCENT = Object.assign(Object.create(null), { 'arial black': fontMetrics('arial black').wordAscent });
 
 /** A list label's own size and font, and the room a label reaching above the text adds to its line. */
 export function labelLine(node, session, l, label, run, style) {
@@ -241,8 +280,8 @@ export function labelLine(node, session, l, label, run, style) {
     const named = /\bw:ascii="([^"]+)"/.exec(fonts)?.[1];
     const themed = /\bw:asciiTheme="([^"]+)"/.exec(fonts)?.[1];
     const st = session.styleRunProp(node.attrs.styleId, 'themeFont');
-    const ofTheme = (t) => (t && session.theme ? session.theme[t.startsWith('major') ? 'major' : 'minor'] : null);
-    const own = named || ofTheme(themed) || (run.font ? session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont) : null);
+    const ofTheme = (t) => (t && session.theme ? themeFace(session.theme, t) : null);
+    const own = ofTheme(themed) || named || (run.font ? session.styleRunProp(node.attrs.styleId, 'font') || ofTheme(st) || session.styles.defaults.rPr.font || ofTheme(session.styles.defaults.rPr.themeFont) : null);
     if (own) { style.push(`--odx-lfont:${fontStack(own)}`); markFont = own; }
   }
   // The label is in the level's own size, else the paragraph mark's, else the style's (12pt bullets over 10pt code
@@ -298,10 +337,23 @@ export function labelLine(node, session, l, label, run, style) {
   // level over 10pt text, stood 2.6px high each.)
   if (label != null) {
     const tf = session.styleRunProp(node.attrs.styleId, 'themeFont');
-    const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && session.theme[tf.startsWith('major') ? 'major' : 'minor']) || session.theme.minor || 'calibri';
+    const fname = run.font || session.styleRunProp(node.attrs.styleId, 'font') || (tf && themeFace(session.theme, tf)) || session.theme.minor || 'calibri';
     const lblFont = lvlFont || markFont || fname;
     const dings = /^wingdings$/i.test(lblFont);
-    const la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lblFont).toLowerCase()) || LABEL_ASCENT[String(lblFont).toLowerCase()];
+    let la = symbol ? SYMBOL_ASCENT : dings ? WINGDINGS_ASCENT : wordAscent(String(lblFont).toLowerCase()) || LABEL_ASCENT[String(lblFont).toLowerCase()];
+    // (A label font whose numbers aren't known, one this machine lacks: its stand-in's, the first font of the stack it is
+    // drawn in whose numbers are, as Word sets a missing font's text on its stand-in's ascent. Word's prints of 6
+    // generated lists: a 12, 14 and 16pt bullet in Noto Sans Symbols over 12pt Times New Roman, drawn in Calibri (props.js
+    // CLOUD_ALTS), each item's first line as tall as under a bullet named Calibri, 2.9px taller at 14pt; a sample's "-" in
+    // Times, Times New Roman's. With no room counted, a sample's 14pt Noto bullets each stood 2.9px short.)
+    // (Not one the document embeds: Word has it then, and its prints of a sample's embedded Noto Sans Symbols bullets, the
+    // bullet drawn in Times New Roman, add no room over the text's 11pt Times New Roman.)
+    if (!la && !symbol && !dings && !(session.pkg && embeddedFamilies(session.pkg).has(String(lblFont).toLowerCase()))) {
+      for (const f of fontStack(lblFont).split(',')) {
+        const a = wordAscent(f.replace(/["']/g, '').trim().toLowerCase());
+        if (a) { la = a; break; }
+      }
+    }
     // (Text in a font whose ascent isn't known, under a Symbol bullet: its line less Calibri's descent, as fitted before.)
     const ta = wordAscent(String(fname).toLowerCase()) || (symbol ? Math.max(lineFactor(fname) - 0.2686, 0.93) : 0);
     const rule = node.attrs.view.lineRule ?? session.styleProp(node.attrs.styleId, 'lineRule') ?? session.styles.defaults.pPr.lineRule;
@@ -326,14 +378,15 @@ export function labelLine(node, session, l, label, run, style) {
       // generated lists, a Symbol bullet over 11pt Calibri and 10pt Arial in a 12pt Times New Roman style: the line is the
       // tallest top of bullet and runs and their deepest foot; against the style's Times it had no room and stood 0.75px
       // short. mixlines.js gives the runs their boxes.)
-      let topA = ta, topSize = txt, held = false;
+      let topA = ta, topSize = txt, topFont = fname, held = false;
       if (!run.size || !run.font) {
         let seen = false;
         node.descendants((c) => {
           if (seen || !c.isText || !c.text.trim()) return !seen;
           seen = true;
-          const a = wordAscent(String(c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname).toLowerCase());
-          if (a) { topA = a; topSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl; }
+          const f = c.marks.find((m) => m.type.name === 'font')?.attrs.val || fname;
+          const a = wordAscent(String(f).toLowerCase());
+          if (a) { topA = a; topSize = Number(c.marks.find((m) => m.type.name === 'size')?.attrs.val) || styleSize || lbl; topFont = f; }
           return false;
         });
         // (And no room where text starting within the paragraph's first 40 characters, on its first line at any width,
@@ -354,10 +407,16 @@ export function labelLine(node, session, l, label, run, style) {
           return false;
         });
       }
-      const up = (la * lbl - topA * topSize) / 2 * (4 / 3) + raise;
+      // Under "at least" spacing the label reaches first into the room the set height leaves over the text's own line: Word's
+      // line is the taller of that height and the text's line with the label (odx-test mkbulletatleast.ps1: a Symbol bullet
+      // over 10pt Calibri, a 12.75pt line single, under at least 12 to 12.75pt; 13 and 14pt as set). Sample 2466's lists,
+      // at least 13pt, each item had stood 0.7px taller than Word's.
+      const least = rule === 'atLeast' ? Number(node.attrs.view.line ?? session.styleProp(node.attrs.styleId, 'line') ?? session.styles.defaults.pPr.line) || 0 : 0;
+      const spare = least > 0 && lineFactor(topFont) > 0 ? Math.max(0, least / 15 - lineFactor(topFont) * topSize / 2 * (4 / 3)) : 0;
+      const up = (la * lbl - topA * topSize) / 2 * (4 / 3) + raise - spare;
       // (And as Word has it, from the fonts' own units, unrounded: what a page's foot is fitted by, pages.js roundOff.)
       const units = (v) => Math.round(v * 2048) / 2048;
-      const upExact = (units(la) * lbl - units(topA) * topSize) / 2 * (4 / 3) + raise;
+      const upExact = (units(la) * lbl - units(topA) * topSize) / 2 * (4 / 3) + raise - spare;
       // (In px, to the nearest of the browser's 1/64px: it cuts a length down to that, a hundredth of a pixel a line.)
       if (up > 0.02 && !held) style.push(`--odx-lbl-own:${Math.round(up * 64) / 64}px`, `--odx-lbl-up:${+upExact.toFixed(5)}px`);
     }

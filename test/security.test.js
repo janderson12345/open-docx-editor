@@ -16,14 +16,15 @@ test('a document\'s values can\'t write CSS of their own', () => {
   const p = readPPr(kid(el(`<w:pPr><w:jc w:val="${evil}"/><w:shd w:fill="${evil}"/></w:pPr>`), 'pPr'));
   assert.doesNotMatch(pPrToCss(p), ESCAPES);
   const r = readRPr(kid(el(`<w:rPr><w:color w:val="000;background:url(https://example.invalid/c)"/><w:highlight w:val="${evil}"/><w:rFonts w:ascii="Arial&quot;;background:url(https://example.invalid/f);x:&quot;"/></w:rPr>`), 'rPr'));
-  // (The font name stays inside its quoted string, which it can't close: what's in it is a name, not CSS.)
+  // (A font name with quote marks is no font Word has: its fallback alone, the name not written at all.)
   const css = rPrToCss(r, {});
-  assert.match(css, /font-family:"[^"]*", sans-serif;/);
+  assert.match(css, /font-family:"Cambria", "Caladea", serif;/);
   assert.doesNotMatch(css.replace(/"[^"]*"/g, '""'), ESCAPES);
   const b = readBorders(el(`<w:top w:val="single" w:sz="4" w:color="${evil}"/>`));
   assert.doesNotMatch(borderCss(b.top), ESCAPES);
   assert.equal(shdFill(kid(el(`<w:shd w:fill="${evil}"/>`), 'shd')), null);
   assert.doesNotMatch(fontStack('A"}body{background:url(x)}').replace(/"[^"]*"/g, '""'), ESCAPES);
+  assert.doesNotMatch(fontStack('A;}body{background:url(x)}').replace(/"[^"]*"/g, '""'), ESCAPES); // (no quote marks: written, inside its string)
   assert.equal(highlightColor(evil), 'transparent');
   // Ordinary values still work.
   assert.equal(pPrToCss(readPPr(kid(el('<w:pPr><w:jc w:val="center"/></w:pPr>'), 'pPr'))), '--odx-trail:1;text-align:center');
@@ -86,4 +87,27 @@ test('a long run of spaces that does not end its paragraph is marked in time tha
   const decos = spanDecos(para(5));
   const trail = decos.find((d) => d.type.attrs.class === 'odx-trail');
   assert.ok(trail && trail.to - trail.from === 1, 'the one closing space is marked');
+});
+
+test('a VML length padded with a long run of spaces is read in moments', async () => {
+  const { vmlEmu } = await import('../src/ooxml/reader.js');
+  const t0 = performance.now();
+  assert.equal(vmlEmu('1' + ' '.repeat(200000) + 'q'), 0);
+  const ms = performance.now() - t0;
+  assert.ok(ms < 100, `${ms.toFixed(1)}ms for 200,000 spaces`);
+  // Ordinary lengths still read: units, a bare number (px), spaces round them.
+  assert.equal(vmlEmu(' 1pt '), 12700);
+  assert.equal(vmlEmu('2 in'), 2 * 914400);
+  assert.equal(vmlEmu('-3'), vmlEmu('-3px'));
+});
+
+test('a paragraph mark with thousands of empty w:rPrChange tags is read in moments', async () => {
+  const { paragraphMarkRev } = await import('../src/editor/track.js');
+  const rPr = '<w:rPr>' + '<w:rPrChange w:id="1"/>'.repeat(16000) + '<w:del w:id="2"/></w:rPr>';
+  const t0 = performance.now();
+  assert.equal(paragraphMarkRev({ extra: [['rPr', rPr]] }), 'del');
+  const ms = performance.now() - t0;
+  assert.ok(ms < 100, `${ms.toFixed(1)}ms for 16,000 tags`);
+  // A w:rPrChange with content still hides what it says the mark was before.
+  assert.equal(paragraphMarkRev({ extra: [['rPr', '<w:rPr><w:rPrChange w:id="1"><w:rPr><w:del w:id="3"/></w:rPr></w:rPrChange></w:rPr>']] }), null);
 });

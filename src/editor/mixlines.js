@@ -15,14 +15,24 @@
 // where it was drawn and only the line's extent changes.
 import { knownFamily, raiseOf, wordAscent } from './baseline.js';
 import { lineFactor } from '../ooxml/props.js';
+import { eastMetrics } from '../fonts/wordmetrics.js';
 
 // The East Asian fonts a check box or another symbol is set in beside Latin text (Word's check box control writes
 // U+2610 in MS Gothic): Word's line for one is 332/256 of its size whatever the Latin font beside it, in Arial, Times
 // New Roman and Calibri at 10 to 12pt (its PDFs of 70 generated documents: 17.292px at 10pt, 19.023px at 11pt,
 // 20.750px at 12pt): the font's ascent and descent, 220 and 36 of 256, each 1.3 times and cut to a whole unit, the
-// added part half above and half below. [ascent, line] per em.
-const EAST = Object.assign(Object.create(null), { 'ms gothic': [258 / 256, 332 / 256], 'ms pgothic': [258 / 256, 332 / 256], 'ms ui gothic': [258 / 256, 332 / 256], 'ms mincho': [258 / 256, 332 / 256], 'ms pmincho': [258 / 256, 332 / 256] });
-const eastFamily = (cs) => { const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase(); return EAST[f] ? f : ''; };
+// added part half above and half below (wordmetrics.js eastMetrics: [ascent, line] per em).
+const eastFamily = (cs) => { const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase(); return eastMetrics(f) ? f : ''; };
+// Symbol fonts a bullet is typed in before the text (a list made by hand: a Symbol bullet, a few small spaces, then text
+// in another font than the paragraph's): Word sizes that line as any line of mixed runs, the symbol font's Windows ascent
+// and descent among the others' ([ascent, line] per em, from the fonts Windows ships). Word's prints of 5 generated
+// documents (why-tests rows, sym-*): Symbol before Calibri 11pt in a Times New Roman paragraph, a first line of 18.72px
+// (Symbol's ascent and Calibri's descent), the next ones Calibri's 17.92; before Times New Roman, 17.92 then 16.8-16.96;
+// Wingdings, no taller than the text. A font left unknown here left the paragraph as it was, every line in the
+// paragraph font's line height (sample 3332's bulleted cells, 1px a line short).
+const SYMBOL_FONTS = { symbol: [1.0054, 1.2251], wingdings: [0.8989, 1.1099], 'wingdings 2': [0.8433, 1.0542], 'wingdings 3': [0.9277, 1.1386], webdings: [0.7998, 1.0] };
+Object.setPrototypeOf(SYMBOL_FONTS, null);
+const symbolFamily = (cs) => { const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim().toLowerCase(); return SYMBOL_FONTS[f] ? f : ''; };
 const tops = new Map(); // font, line height -> the browser's top of a span's box above its baseline (px)
 // (Until fonts load: one measured in the fallback while a web font was on its way stayed for good otherwise.)
 if (typeof document !== 'undefined' && document.fonts) document.fonts.addEventListener('loadingdone', () => tops.clear());
@@ -62,6 +72,7 @@ function cssLine(cs, fs) {
 }
 
 const MAX_TEXTS = 2000; // (a paragraph of more runs than this is left as it is)
+const REF_MARK = '[data-kind$="Ref"], [data-kind$="Reference"]'; // a note's reference mark, in the text or the note
 
 /**
  * A paragraph of nothing but spaces (no text, no tabs or breaks): Word makes its line the paragraph mark's alone, as an
@@ -100,7 +111,9 @@ export function mixedLines(el, host) {
   const rm = pcs.getPropertyValue('--odx-runmult').trim();
   const mult = rm ? parseFloat(rm) : 1; // (no spacing of its own: single, sample S078's footer)
   if (!(mult >= 1) || pcs.getPropertyValue('--odx-lhlen').trim() === '1') return null;
-  if (el.querySelector('img:not(.ProseMirror-separator), math, svg, br:not(.ProseMirror-trailingBreak), .odx-opaque-inline:not(:empty), .odx-strut')) return null;
+  // (A note's reference mark is raised text in a smaller size: it doesn't size its line, as sup and sub don't. A note's
+  // first line holds its own; 3696-like notes, Calibri text after a Times New Roman quote mark, were a Times line.)
+  if (el.querySelector(`img:not(.ProseMirror-separator), math, svg, br:not(.ProseMirror-trailingBreak), .odx-opaque-inline:not(:empty, ${REF_MARK}), .odx-strut`)) return null;
   // (A label's room over the first text stays: editor.css puts it in that text's box, whatever box it has here.)
   const blankLine = blankOnly(el, pcs);
   if (blankLine !== undefined) return blankLine;
@@ -112,14 +125,14 @@ export function mixedLines(el, host) {
     if (!t.data) continue;
     if (++n > MAX_TEXTS) return null;
     const span = t.parentElement;
-    if (span.closest('sup, sub')) continue; // (raised and lowered text in Word's smaller size doesn't size its line)
+    if (span.closest(`sup, sub, ${REF_MARK}`)) continue; // (raised and lowered text in Word's smaller size doesn't size its line)
     // A run of nothing but spaces or tabs doesn't size its line in Word (16pt tabs or spaces in a line of 10pt text: a 10pt
     // line; sample S078's footer, its tabs in the Footer style's 12pt between 10pt runs).
     const blank = !t.data.trim();
     if (blank && span.classList.contains('odx-tab')) continue; // (a tab in the body: no box of its own, line-height 0)
     if (!span.classList.contains('odx-t') || span.childNodes.length !== 1) return null;
     const cs = getComputedStyle(span);
-    const family = eastFamily(cs) || knownFamily(cs);
+    const family = eastFamily(cs) || knownFamily(cs) || symbolFamily(cs);
     if (!family && !blank) return null;
     const fs = parseFloat(cs.fontSize);
     const raise = raiseOf(span, el);
@@ -131,10 +144,12 @@ export function mixedLines(el, host) {
       if (!(lb > 0)) return null;
       g = { cs, fs, raise, blank, chars: 0, lb };
       if (!blank) {
-        const a = EAST[family] ? EAST[family][0] : wordAscent(family);
-        const f = EAST[family] ? EAST[family][1] : lineFactor(family);
+        const east = eastMetrics(family);
+        const sym = SYMBOL_FONTS[family];
+        const a = east ? east[0] : sym ? sym[0] : wordAscent(family);
+        const f = east ? east[1] : sym ? sym[1] : lineFactor(family);
         if (!(f > a)) return null;
-        Object.assign(g, { T: a * fs + raise, B: (f - a) * fs - raise, L: f * fs, east: !!EAST[family] });
+        Object.assign(g, { T: a * fs + raise, B: (f - a) * fs - raise, L: f * fs, east: !!east });
       }
       g.word = `${family}|${cs.fontSize}|${raise}`;
       groups.set(key, g);

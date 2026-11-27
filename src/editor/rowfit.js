@@ -42,6 +42,11 @@ export function fitRowspans(root) {
     // asked for the height it already had: a merged cell of sideways text stood 351px in one print and 666px in another,
     // by which pass measured it first, every page after it a page late.
     const side = (td) => !/^horizontal/.test(getComputedStyle(td).writingMode);
+    // A row's own height without the merged cells: its cells' content or its minimum height (w:trHeight, the cell's
+    // height in editor.css), whichever is more. (Content alone, a merged cell beside five rows of 296tw minimum gave
+    // the last of them 22px more than Word: the rows' own room already held its text. Sample 1113's form.)
+    const least = (tr, c) => tr.hasAttribute('data-exact') ? 0 : (parseFloat(tr.style.getPropertyValue('--odx-trh')) || 0) + (parseFloat(c.style.getPropertyValue('--odx-pt')) || 0) + (parseFloat(c.style.getPropertyValue('--odx-pb')) || 0) + (parseFloat(c.style.getPropertyValue('--odx-bt')) || 0) + (parseFloat(getComputedStyle(c).getPropertyValue('--odx-trh-add')) || 0);
+    const rowOwn = (tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1 && !side(c)).map((c) => Math.max(own(c), least(tr, c))));
     const flat = rows.map((tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1 && !side(c)).map(own)));
     rows.forEach((tr, i) => {
       for (const td of tr.cells) {
@@ -58,7 +63,7 @@ export function fitRowspans(root) {
         any = true;
         if (side(td)) continue;
         const span = rows.slice(i, i + td.rowSpan);
-        const natural = span.map((tr) => Math.max(0, ...[...tr.cells].filter((c) => c.rowSpan === 1 && !side(c)).map(own)));
+        const natural = span.map(rowOwn);
         const want = own(td) - natural.reduce((a, b) => a + b, 0);
         const k = i + td.rowSpan - 1;
         if (want > 0.5) need.set(k, Math.max(need.get(k) || 0, natural[natural.length - 1] + want));

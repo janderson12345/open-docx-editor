@@ -28,7 +28,10 @@ export function printCopies(sheet, pages, { pageW, pageH, pageTop }) {
     // (Each page its own stacking context: the browser paints a page by going through every layer of the stacking
     // context it's in, and with the whole print one, each line of the print layer a layer of its own (its transform), it
     // went through them all for each page: 140s of a 524-page document's print.)
-    one.style.cssText = `page:odx-h${sizeOf(p)};width:${pageW(p)}px;height:${h}px;overflow:hidden;position:relative;break-after:page;isolation:isolate`;
+    // (And contained: its copy of the sheet reaches past it, clipped, but still counted in the print's size: sample 1113,
+    // 71 pages, printed 156, the last 85 blank, and once its landscape tables sat on their own sheets Edge shrank every
+    // page to 90% to fit what reached past them.)
+    one.style.cssText = `page:odx-h${sizeOf(p)};width:${pageW(p)}px;height:${h}px;overflow:hidden;position:relative;break-after:page;isolation:isolate;contain:strict`;
     const c = copyOf(pageTop(p), pageTop(p) + h);
     // (Not cut at its own width, the first section's: a landscape page's sheet is wider than a portrait one's, and printed
     // cut off at the portrait width, longfn-word fnland. The page's box above cuts it at the page's own size.)

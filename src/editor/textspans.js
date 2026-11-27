@@ -70,6 +70,7 @@ function blockDecos(node, pos, out) {
   let live = true; // no text yet that isn't a tracked deletion
   let tail = ''; // the two characters before this child, in text right before it
   let breaks = 0;
+  let afterWord = false; // the child before this one is text with a letter in it
   node.forEach((c, off) => {
     const at = pos + 1 + off;
     if (c.isText) {
@@ -89,7 +90,11 @@ function blockDecos(node, pos, out) {
     // (And the first text that isn't a tracked deletion is odx-first-live, for the views that hide deletions: the room put
     // on a hidden deletion was lost. Word's prints of 16 generated lists, Symbol bullets opening with a deletion.)
     const gone = c.isText && c.marks.some((m) => m.type.name === 'del');
-    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: (/^ +$/.test(c.text) ? 'odx-t odx-blank' : 'odx-t') + (first ? ' odx-first' : '') + (!first && live && !gone ? ' odx-first-live' : '') }));
+    // (Spaces right after text on its line, odx-sp0 as well: no line box at all, editor.css. Word: a 36pt space after,
+    // between or before a break following 20pt words, a 20pt line; sample 2466's cover, odx-test mkcover.ps1.)
+    const blank = c.isText && /^ +$/.test(c.text);
+    if (c.isText) out.push(Decoration.inline(at, at + c.nodeSize, { class: (blank ? (afterWord ? 'odx-t odx-blank odx-sp0' : 'odx-t odx-blank') : 'odx-t') + (first ? ' odx-first' : '') + (!first && live && !gone ? ' odx-first-live' : '') }));
+    afterWord = c.isText ? afterWord || !blank : marker(c) && afterWord;
     if (c.isText) first = false;
     if (c.isText && !gone) live = false;
     const rf = c.isText && reflects(c), is = c.isText && pressed(c);
@@ -103,7 +108,14 @@ function blockDecos(node, pos, out) {
   // take no room (editor.css). Word sets the line as if they weren't there; the browser counts them at a paragraph's end
   // (a centred "Unit Cost " header 1.6px left of Word's, a right-aligned amount 3.3px, one space's width).
   let last = null, lastAt = 0, some = false;
-  node.forEach((c, off) => { if (c.isText) { if (last && last.text.trim()) some = true; last = c; lastAt = pos + 1 + off; } else if (!marker(c)) { if (last && last.text.trim()) some = true; last = null; } });
+  // (Text before them on their own line only: spaces alone on the last line, after a break, are that line's only
+  // content, and with no size it was as short as a sliver; sample 1387's centred heading, a break and
+  // two spaces, its text after 15px high.)
+  node.forEach((c, off) => {
+    if (c.isText) { if (last && last.text.trim()) some = true; last = c; lastAt = pos + 1 + off; }
+    else if (c.type.name === 'hard_break') { some = false; last = null; }
+    else if (!marker(c)) { if (last && last.text.trim()) some = true; last = null; }
+  });
   if (last) {
     // (Counted back from the end, not by a pattern: " +$" tries again from every space of a long run that doesn't end
     // the text, time that grows with the square of its length in a document made to be slow.)

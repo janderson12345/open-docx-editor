@@ -3,6 +3,7 @@
 // (half-points for size, twips for spacing/indent) until CSS is generated.
 import { kid, kids, attr, onOff } from './xml.js';
 import { OMF } from '../fonts/omf.js';
+import { fontMetrics } from '../fonts/wordmetrics.js';
 import { drawsOwn } from './fontprobe.js';
 
 export function readRPr(rPr) {
@@ -27,18 +28,26 @@ export function readRPr(rPr) {
   const hl = kid(rPr, 'highlight');
   if (hl && attr(hl, 'val') !== 'none') p.highlight = attr(hl, 'val');
   const fonts = kid(rPr, 'rFonts');
-  if (fonts) {
-    if (attr(fonts, 'ascii')) p.font = attr(fonts, 'ascii');
-    else if (attr(fonts, 'hAnsi')) p.font = attr(fonts, 'hAnsi');
-    else if (attr(fonts, 'asciiTheme')) p.themeFont = attr(fonts, 'asciiTheme');
+  // A level that names the font, by theme or by name, replaces both what it inherits: font and themeFont are one
+  // slot, the other one kept as null so a merge ({ ...base, ...style }) takes it away too. The theme's beats a named
+  // font set beside it (w:asciiTheme over w:ascii), on any level. Word's PDFs (themefont-word, 360 cases): a heading's
+  // asciiTheme="majorHAnsi" over a Normal naming Times New Roman is Cambria; a style naming Verdana over a theme-font
+  // one is Verdana; the nearest level wins, docDefaults the last. (w:hAnsi or w:hAnsiTheme alone set the font of
+  // letters past ASCII, not this one: Word draws the ASCII letters in the inherited font.)
+  if (fonts && (attr(fonts, 'asciiTheme') || attr(fonts, 'ascii'))) {
+    p.themeFont = attr(fonts, 'asciiTheme') || null;
+    p.font = p.themeFont ? null : attr(fonts, 'ascii');
   }
   // The complex-script members (Hebrew, Arabic...: runs marked w:rtl or w:cs), which Word uses for such text instead.
   flag('bCs', 'boldCs');
   flag('iCs', 'italicCs');
   const szCs = kid(rPr, 'szCs');
   if (szCs) p.sizeCs = Number(attr(szCs, 'val'));
-  if (fonts && attr(fonts, 'cs')) p.fontCs = attr(fonts, 'cs');
-  else if (fonts && attr(fonts, 'cstheme')) p.themeFontCs = attr(fonts, 'cstheme');
+  // (The same slot rule, w:cstheme over w:cs: Word reports each slot inherited on its own, themefont-word word.json.)
+  if (fonts && (attr(fonts, 'cstheme') || attr(fonts, 'cs'))) {
+    p.themeFontCs = attr(fonts, 'cstheme') || null;
+    p.fontCs = p.themeFontCs ? null : attr(fonts, 'cs');
+  }
   const va = kid(rPr, 'vertAlign');
   if (va && attr(va, 'val') !== 'baseline') p.vertAlign = attr(va, 'val');
   const rStyle = kid(rPr, 'rStyle');
@@ -314,7 +323,28 @@ export function cellLines(sides, near) {
   return {
     css: `background-image:${images.join(',')};background-position:${pos.join(',')};background-size:${size.join(',')};background-repeat:no-repeat`,
     lines: lines.join(','),
+    layers: images.map((image, i) => ({ image, pos: pos[i], size: size[i], repeat: 'no-repeat' })),
   };
+}
+
+/**
+ * A dotted or dashed line across a cell's top or bottom, `px` high, as a background layer: Word gives such a line the
+ * room a solid one of its width takes (drawn as a CSS border, half its width went to the row above in a collapsed table:
+ * text under it half a line's width high, Word's prints of rowlines-word's tables). Null for any other kind of line.
+ * Dashes are drawn as Word's are near enough: a dot and a gap of the line's width, dashes three wide (dashSmallGap with
+ * a gap of one), dotDash a dash, a gap, a dot and a gap.
+ */
+export function brokenLine(b, side, px) {
+  if (!b || typeof b !== 'object' || !drawnSide(b) || !Object.hasOwn(BROKEN, b.val) || !(px > 0)) return null;
+  const c = /^[0-9A-Fa-f]{6}$/.test(b.color || '') ? '#' + b.color : '#000000';
+  const u = Math.max(1, px);
+  const r = (v) => +v.toFixed(3);
+  const runs = { dotted: [u, u], dashed: [3 * u, 3 * u], dashSmallGap: [3 * u, u], dotDash: [3 * u, u, u, u] }[b.val];
+  const stops = [];
+  for (let i = 0, at = 0; i < runs.length; at += runs[i], i++) stops.push(`${i % 2 ? 'transparent' : c} ${r(at)}px ${r(at + runs[i])}px`);
+  const period = runs.reduce((a, v) => a + v, 0);
+  // (dash: for the PDF writer, pdf.js, which draws it as a CSS border of its kind.)
+  return { image: `linear-gradient(to right,${stops.join(',')})`, pos: `left 0 ${side} 0`, size: `${r(period)}px ${r(px)}px`, repeat: 'repeat-x', dash: `${side} ${r(px)} ${BROKEN[b.val]} ${c}` };
 }
 
 /** CSS for one border side; Word sizes are eighths of a point. */
@@ -482,67 +512,145 @@ export function setOmf(fn) { omfFamily = fn; }
 const OMF_KEY = new Map(Object.keys(OMF).map((k) => [k.toLowerCase(), k]));
 const OMF_LINE = new Map(Object.entries(OMF).map(([k, v]) => [k.toLowerCase(), v[1]]));
 
+/**
+ * The font a theme font name in a Latin slot stands for (w:asciiTheme, w:hAnsiTheme: majorHAnsi, minorBidi...): the
+ * theme's heading or body font, its Latin typeface; a Bidi name is Times New Roman, whatever the theme's complex-script
+ * typeface (a:cs) and whatever font the text inherits. (Word's prints of 9 generated documents: runs and a paragraph style
+ * in majorBidi or minorBidi, under an Aptos theme whose a:cs is empty or Arial, inheriting Times New Roman or Verdana, all
+ * in Times New Roman. A sample's tracked-change paragraphs so, in Aptos Display here, each line 1.3px taller than Word's.)
+ */
+export function themeFace(theme, name) {
+  if (!theme || !name) return null;
+  if (/Bidi$/.test(name)) return 'Times New Roman';
+  return theme[String(name).startsWith('major') ? 'major' : 'minor'] || null;
+}
+
 export function fontStack(name) {
   const host = HOST.get(name);
   const stack = host && host !== name ? [quoted(name), quoted(host), ...baseStack(name).split(', ').slice(1)].join(', ') : baseStack(name);
   const key = omfFamily && OMF_KEY.get(String(name || '').toLowerCase());
   const omf = key && omfFamily(key);
   if (!omf) return stack;
-  // (Before the generic family at the end.)
+  // (Before the generic family at the end; ahead of a stand-in that is only a guess at the font's widths.)
   const parts = stack.split(', ');
-  parts.splice(parts.length - 1, 0, quoted(omf));
+  const guess = parts.indexOf(quoted(SUBST[key]));
+  parts.splice(GUESSED.has(SUBST[key]) && guess > 0 ? guess : parts.length - 1, 0, quoted(omf));
   return parts.join(', ');
 }
+// Editor stand-ins that only approximate a font: the open-metric-fonts one (its own widths) goes ahead of them where the
+// host loads it. Aptos Narrow as Arial Narrow came out 6.5% narrow (a 12pt word 42.7pt wide, 45.5pt in Word's PDF, as
+// Aptos Narrow's own widths give): sample 0577's lines took a word or two more than Word's on every page.
+const GUESSED = new Set(['odx-aptos-narrow']);
 
 // Names Windows itself maps to another font (its FontSubstitutes), which Word prints in that font: "Times" is Times New
 // Roman in Word's PDFs, where the browser's "Times" is another face with shorter lines (1.11 em, not 1.15).
-const WINDOWS = Object.assign(Object.create(null), { times: 'Times New Roman', courier: 'Courier New' }); // (Courier: Courier New in Word's PDFs, 1.133 em a line; the browser's own "Courier" measured 1.15)
+// (MS Shell Dlg: Windows' FontSubstitutes key gives Microsoft Sans Serif, which Word draws, under the font's own name in
+// its PDFs, in 72 samples' form text, whatever their font table's altName says; MS Shell Dlg 2 is Tahoma there.)
+const WINDOWS = Object.assign(Object.create(null), { times: 'Times New Roman', courier: 'Courier New', 'ms shell dlg': 'Microsoft Sans Serif', 'ms shell dlg 2': 'Tahoma' }); // (Courier: Courier New in Word's PDFs, 1.133 em a line; the browser's own "Courier" measured 1.15)
 const windowsFont = (name) => WINDOWS[String(name || '').toLowerCase()] || null;
 // Fonts Word draws in another where they're missing (the fonts in its PDFs of documents naming each): drawn in that
 // font here too, after the font itself, unless the document's own font table names a stand-in.
 const WORD_ALTS = Object.assign(Object.create(null), { 'tms rmn': 'Times New Roman', 'times-roman': 'Times New Roman', timesnewromanpsmt: 'Times New Roman', 'cg times (w1)': 'Times New Roman', 'new york': 'Times New Roman',
-  'helvetica neue': 'Arial', 'calibri (body)': 'Calibri', palatino: 'Palatino Linotype', 'futura md bt': 'Century Gothic', 'futura lt bt': 'Century Gothic',
+  'helvetica neue': 'Arial', 'calibri (body)': 'Calibri', palatino: 'Book Antiqua', 'futura md bt': 'Century Gothic', 'futura lt bt': 'Century Gothic',
   'lucida grande': 'Segoe UI', 'charter bt': 'Cambria', inter: 'Cambria' });
+// (Palatino: Book Antiqua in Word's PDFs of 14 of the 15 samples naming it with no altName or a mangled one, Palatino
+// Linotype in the other. A Word opened for that one document alone takes Palatino Linotype, but Word keeps the first
+// substitute it picks for a name until it closes, and most documents naming Palatino give Book Antiqua as its altName.)
 // Fonts Word fetches for itself where they're missing (Office's cloud fonts) and draws as they are, whatever other name
 // the file's font table gives: the installed font nearest in width stands in for each here. Roboto Condensed: a sample's
-// bold heading 150px wide in Word, 147px as Calibri Bold, 187px as the Arial its font table names.
-const CLOUD_ALTS = Object.assign(Object.create(null), { 'roboto condensed': 'Calibri' });
-// (Futura in Century Gothic: lines of 1.2261 em in Word's prints, not the 1.19 an installed Century Gothic measures.)
-const WORD_ALT_LINE = Object.assign(Object.create(null), { 'futura md bt': 1.2261, 'futura lt bt': 1.2261 });
+// bold heading 150px wide in Word, 147px as Calibri Bold, 187px as the Arial its font table names. Noto Sans Symbols:
+// Word's prints of generated lists, a bullet in it with the font table's altName Calibri, Arial or none, drawn in
+// Calibri each time, the line as tall as a Calibri bullet's.
+const CLOUD_ALTS = Object.assign(Object.create(null), { 'roboto condensed': 'Calibri', 'noto sans symbols': 'Calibri' });
+// (Futura in Century Gothic: Century Gothic's own line, 1.2261 em in Word's prints, not the 1.19 an installed Century
+// Gothic measures.)
+const WORD_ALT_LINE = Object.assign(Object.create(null), { 'futura md bt': fontMetrics('century gothic').line, 'futura lt bt': fontMetrics('century gothic').line });
+// (Also where the font table's altName names that same font: 58 samples' Futura Lt BT, altName Century Gothic, took the
+// installed Century Gothic's 1.19 and set each heading line 0.6px short, 2px by the heading after an empty one, 0161 p3.)
+const sameFont = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 // (The file's own word for a missing font first: Word draws the font its font table names, w:altName, where that one is
-// installed. Word's PDFs of 182 generated documents: Sylfaen, Georgia, Verdana or Arial as the file named them, the
-// document's default font with no other name given. Word also keeps the first substitute it chose for a font's name
-// until it is closed, so a document printed after another naming the same font can show that one's substitute.)
-const altOf = (name) => CLOUD_ALTS[String(name || '').toLowerCase()] || ALTS.get(name) || WORD_ALTS[String(name || '').toLowerCase()] || null;
+// installed. Word's PDFs of 182 generated documents: Sylfaen, Georgia, Verdana or Arial as the file named them. Word
+// also keeps the first substitute it chose for a font's name until it is closed, so a document printed after another
+// naming the same font can show that one's substitute.)
+const altOf = (name) => CLOUD_ALTS[String(name || '').toLowerCase()] || ALTS.get(name) || WORD_ALTS[String(name || '').toLowerCase()] || wordName(name) || null;
+// Names Word reads as another font's, ahead of the font table's family (new test documents naming each with no entry,
+// and with a swiss one): the PostScript names of Windows' own fonts and the Mac's, in the face's regular weight.
+const WORD_NAMES = Object.assign(Object.create(null), Object.fromEntries([
+  ...['arialmt', 'arial-boldmt', 'arial-italicmt', 'arial-bolditalicmt', 'helv', 'geneva', 'helvetica-bold', 'helvetica-narrow', 'helvetica-oblique', 'helvetica-boldoblique'].map((n) => [n, 'Arial']),
+  ...['timesnewroman', 'timesnewromanps', 'timesnewromanpsmt', 'times', 'cg times'].map((n) => [n, 'Times New Roman']),
+  ...['couriernew', 'couriernewps', 'couriernewpsmt', 'courier'].map((n) => [n, 'Courier New']),
+  ['arial', 'Arial'], ['arialmt', 'Arial'], ['arialnarrow', 'Arial'], ['helv', 'Arial'], ['geneva', 'Arial'], ['helvetica', 'Arial'], ['segoeui', 'Segoe UI'],
+  ['baskerville', 'Baskerville Old Face'], ['futura', 'Century Gothic'], ['ms sans serif', 'Microsoft Sans Serif'],
+]));
+// (Names the editor knows a font for, which a name Word cuts down may come to.)
+const knownName = (n) => { const k = String(n || '').toLowerCase(); return !!(LINE[k] || SUBST[n] || OMF_KEY.has(k) || WORD_ALTS[k] || WORD_NAMES[k] || WINDOWS[k]); };
+/**
+ * The font Word reads a name as, by its rules (new test documents naming each, no entry and a swiss one): its table
+ * above; a name with a style after a comma or hyphen ("Arial,Bold", "Calibri-Light", "TimesNewRomanPS-BoldMT",
+ * "Arial-Black") as the font before it, in its regular face, not bold; and a style Word's own UI writes after the
+ * theme's font ("Calibri (Body)", "Arial (Body CS)", "Times New Roman (Headings CS)") as that font. A cut-down name
+ * the editor has nothing for is left to the name's own fallback ("BookAntiqua-Bold": Cambria, as a missing font).
+ */
+function wordName(name) {
+  const key = String(name || '').toLowerCase();
+  if (WORD_NAMES[key]) return WORD_NAMES[key];
+  const m = /^(.+?) \((?:body|headings)(?: cs)?\)$/i.exec(name || '') || /^(.+?)(?:,[a-z]+|-[a-z]+)$/i.exec(name || '');
+  if (!m) return null;
+  const base = m[1].trim(), b = base.toLowerCase();
+  return WORD_NAMES[b] || WORD_ALTS[b] || (knownName(base) ? WINDOWS[b] || base : null);
+}
+// The open document's font table fallbacks (fonts.js fontFallbacks): font name -> Cambria or Calibri, or null for an
+// entry Word falls back from as the browser does (another charset). A name with no entry falls back to Cambria.
+const FALLBACK = new Map();
+export function setFontFallbacks(map) { for (const [k, v] of map || []) FALLBACK.set(k, v); }
+/**
+ * Word's last word for a missing font it knows nothing else of: the font table's family (roman: Cambria, any other:
+ * Calibri), Cambria with no entry; null where the browser's generic family stands (another charset, a name the editor
+ * has a stand-in or metrics for, a symbol font). Its PDFs of new test documents: whatever the document's default font.
+ */
+function fallbackOf(name) {
+  const key = String(name || '').toLowerCase();
+  // (Not for symbol, emoji and maths fonts, nor East Asian ones: their characters aren't Cambria's or Calibri's, and
+  // Word's fallback for them is untested.)
+  if (!key || LINE[key] || SUBST[name] || OMF_KEY.has(key) || /^(wingdings|webdings|marlett|ms outlook|bookshelf symbol|mt extra)|symbol|emoji|math|mincho|(ms|ms p|ms ui|yu) gothic|ming|song|hei\b|kai\b|batang|gulim|dotum|meiryo|yu /.test(key)) return null;
+  // (Nor a font the browser has: it draws itself, and the characters it lacks are left to the browser as before. With
+  // Calibri after it, Tempus Sans ITC's and Berlin Sans FB Demi's samples lost 619 and 60 lines. Nor a name not in
+  // Latin letters, an East Asian altName. Nor a face Windows names as a font ("Berlin Sans FB Demi", Berlin Sans FB's
+  // bold), which Word has where the browser doesn't: 7 samples lost 60 lines to Calibri.)
+  if (/[^\x20-\x7e]/.test(key) || / demi$/.test(key) || (typeof document !== 'undefined' && measure(key))) return null;
+  return FALLBACK.has(name) ? FALLBACK.get(name) : 'Cambria';
+}
 
 function baseStack(name) {
   if (windowsFont(name)) return fontStack(windowsFont(name));
   if (listed(name)) return '"Segoe UI", sans-serif';
   if (twin(name)) return fontStack(twin(name));
-  if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...fontStack(face(name)).split(', ')].join(', ');
+  if (!LINE[(name || '').toLowerCase()] && face(name)) return [quoted(name), ...faceAlias(name), ...fontStack(face(name)).split(', ')].join(', ');
   const alt = !LINE[(name || '').toLowerCase()] && !SUBST[name] && altOf(name);
   if (alt) return [quoted(name), ...fontStack(alt).split(', ')].join(', ');
+  const last = fallbackOf(name);
+  // (A name in quote marks, a web page's CSS pasted in ("&quot;Courier New&quot;"), is no font Word has: its fallback,
+  // not the font inside the quotes, which the quoted string here would come to.)
+  if (last && /["']/.test(name)) return fontStack(last);
+  if (last && !sameFont(last, name)) return [quoted(name), ...fontStack(last).split(', ')].join(', ');
   const generic = /mono|courier|consol/i.test(name) ? 'monospace' : /times|cambria|georgia|garamond|serif/i.test(name) && !/sans/i.test(name) ? 'serif' : 'sans-serif';
   return [quoted(name), SUBST[name] && quoted(SUBST[name]), generic].filter(Boolean).join(', ');
 }
 
-// Word's "single" line height is the font's own ascent + descent (+ line gap),
-// so it differs per font. Units per em from each font's OS/2 and hhea tables.
-const LINE = Object.assign(Object.create(null), {
-  calibri: 1.2207, 'calibri light': 1.2207, carlito: 1.2207, cambria: 1.1724, caladea: 1.1724,
-  arial: 1.1499, 'liberation sans': 1.1499, helvetica: 1.1499, 'times new roman': 1.1499,
-  'liberation serif': 1.1499, consolas: 1.1709, 'courier new': 1.1328, 'liberation mono': 1.1328,
-  'segoe ui': 1.3301, 'segoe ui light': 1.3301, 'segoe ui semibold': 1.3301, verdana: 1.2153, tahoma: 1.2070,
-  georgia: 1.1362, aptos: 1.2207, 'aptos display': 1.2207, 'century schoolbook': 1.2021, century: 1.2021, 'aptos narrow': 1.2207, 'open sans': 1.3618, 'noto sans': 1.362, 'noto serif': 1.362,
-  ubuntu: 1.149, 'arial unicode ms': 1.3398, roboto: 1.1719, lato: 1.2, candara: 1.2207, corbel: 1.2207, constantia: 1.2207,
-  // (Arial Narrow: its Windows ascent + descent, Word's 11.473pt at 10pt and 13.769pt at 12pt; measured in the browser
-  // from its hhea it came out 1.13, lines of 1.08 and 1.15 spacing 0.2pt short each, 10px a page in the samples.)
-  'arial narrow': 1.1474, 'trebuchet ms': 1.1621, 'comic sans ms': 1.3936, impact: 1.2197, 'arial black': 1.4097,
-  // (Garamond: its own tables' 1.125em, Word's line in 42 generated documents at 8 to 16pt; measured in the browser,
-  // whose ascent and descent come whole at 100px, it came out 1.12, each 12pt line 0.05px short.)
-  garamond: 1.125,
-  'ms gothic': 1.3, // (not its 1.0em ascent + descent: Word's own layout gives a checkbox line 1.30em, 15.6pt over sample S072's 12pt Times and 13.0pt over the contingency plan's 10pt Calibri)
-});
+// Word's "single" line height differs per font: the fonts whose line comes from their own numbers (fontMetrics,
+// src/fonts/wordmetrics.js), font name (lowercase) -> line per em. Others are measured in the browser where installed
+// (measure below; run 419 put Book Antiqua and Century Gothic forms 6 lines off with the computed value ahead of it).
+// (Arial Narrow: measured in the browser from its hhea it came out 1.13, lines of 1.08 and 1.15 spacing 0.2pt short
+// each, 10px a page in the samples. Garamond: measured in the browser, whose ascent and descent come whole at 100px,
+// it came out 1.12, each 12pt line 0.05px short of Word's in 42 generated documents. MS Gothic: Word's checkbox lines
+// over sample S072's 12pt Times and the contingency plan's 10pt Calibri.)
+const LINE = Object.assign(Object.create(null), Object.fromEntries([
+  'calibri', 'calibri light', 'carlito', 'cambria', 'caladea', 'arial', 'liberation sans', 'helvetica', 'times new roman',
+  'liberation serif', 'consolas', 'courier new', 'liberation mono', 'segoe ui', 'segoe ui light', 'segoe ui semibold',
+  'verdana', 'tahoma', 'georgia', 'aptos', 'aptos display', 'century schoolbook', 'century', 'aptos narrow', 'open sans',
+  'noto sans', 'noto serif', 'ubuntu', 'arial unicode ms', 'roboto', 'lato', 'candara', 'corbel', 'constantia',
+  'arial narrow', 'trebuchet ms', 'comic sans ms', 'impact', 'arial black', 'garamond', 'ms gothic',
+].map((f) => [f, fontMetrics(f).line])));
 const measured = new Map();
 /** ascent + descent per em of a font the table doesn't know, measured in the browser if it is installed. */
 function measure(key) {
@@ -563,6 +671,23 @@ function measure(key) {
 }
 // A face named as a font ("Times New Roman Bold", sample S078's headings): its family's metrics.
 const face = (name) => { const m = /^(.+?) (bold|italic|bold italic)$/i.exec(name || ''); return m && (LINE[m[1].toLowerCase()] || OMF_LINE.has(m[1].toLowerCase())) ? m[1] : null; };
+// That face alone, as a family of its own ("odx-face Times New Roman Bold", the installed face by its full name): Word
+// slants the named face where italic is asked for besides, it doesn't take the family's italic. Its PDFs of sample
+// footers in "Times New Roman Bold", bold and italic: TimesNewRomanPS-BoldMT skewed (0.33), and the lines wrap at the
+// bold face's widths; the real bold italic, narrower, had fit a word or two more on each line.
+const faceRules = new Set();
+function faceAlias(name) {
+  if (typeof document === 'undefined' || !document.head) return [];
+  const family = `odx-face ${String(name).replace(/["\\\r\n\f{}<>;()]/g, '')}`;
+  if (!faceRules.has(family)) {
+    faceRules.add(family);
+    const w = /^.+? (bold|italic|bold italic)$/i.exec(name)[1].toLowerCase();
+    let style = document.querySelector('style[data-odx-faces]');
+    if (!style) { style = document.createElement('style'); style.dataset.odxFaces = ''; document.head.appendChild(style); }
+    style.appendChild(document.createTextNode(`@font-face { font-family: "${family}"; src: local("${family.slice(9)}"); font-weight: ${w.includes('bold') ? 700 : 400}; font-style: ${w.includes('italic') ? 'italic' : 'normal'}; }\n`));
+  }
+  return [`"${family}"`];
+}
 export const lineFactor = (name) => {
   // (A font missing here, drawn in the host's substitute: that font's line, unless the editor knows the missing one's.)
   if (HOST.has(name) && !LINE[(name || '').toLowerCase()] && !(typeof document !== 'undefined' && measure((name || '').toLowerCase()))) return lineFactor(HOST.get(name));
@@ -573,7 +698,9 @@ export const lineFactor = (name) => {
   // (A font open-metric-fonts stands in for, missing from the computer: its line as Word sets it, from the stand-in's
   // metrics, which are the original's. An installed one is measured as before: run 419 put Book Antiqua and Century
   // Gothic forms 6 lines off with the computed value ahead of the measure.)
-  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || OMF_LINE.get(key) || LINE[(SUBST[name] || '').toLowerCase()] || (!ALTS.get(name) && WORD_ALT_LINE[key]) || (altOf(name) && altOf(name) !== name ? lineFactor(altOf(name)) : 0) || 1.17;
+  return LINE[key] || (key && typeof document !== 'undefined' && measure(key)) || OMF_LINE.get(key) || LINE[(SUBST[name] || '').toLowerCase()] || ((!ALTS.get(name) || sameFont(ALTS.get(name), WORD_ALTS[key])) && WORD_ALT_LINE[key]) || (altOf(name) && altOf(name) !== name ? lineFactor(altOf(name)) : 0)
+    // (Else the font Word falls back to, Cambria's line or Calibri's, not a guess.)
+    || (fallbackOf(name) && !sameFont(fallbackOf(name), name) ? lineFactor(fallbackOf(name)) : 0) || 1.17;
 };
 /** CSS for a font: the family stack plus the custom property paragraph line heights scale. */
 export const fontCss = (name) => `font-family:${fontStack(name)};--odx-lh:${lineFactor(name)}${faceCss(name)}`;
@@ -598,7 +725,7 @@ export function rPrToCss(p, theme) {
   if (p.size) css.push(sizeCss(p.size / 2));
   if (p.color) css.push(`color:#${p.color}`);
   if (p.highlight) css.push(`background-color:${highlightColor(p.highlight)}`);
-  const font = p.font || (p.themeFont && theme && theme[p.themeFont.startsWith('major') ? 'major' : 'minor']);
+  const font = p.font || (p.themeFont && themeFace(theme, p.themeFont));
   if (font) css.push(fontCss(font));
   if (p.caps) css.push('text-transform:uppercase');
   if (p.smallCaps) css.push('font-variant:small-caps');
@@ -643,14 +770,16 @@ export function pPrToCss(p) {
       // Under a single line, an empty paragraph's floor (editor.css) by the same multiple: Word's empty line is that much
       // shorter (generated documents: ten empty paragraphs at 0.25 lines 3.8px apart in the body; one at 0.06 lines under a
       // footer's text taking 1px, the footer that much lower and the text above it a line longer).
-      if (p.line > 0 && p.line < 240) css.push(`--odx-floor:${+(1.15 * p.line / 240).toFixed(4)}em`);
+      if (p.line > 0 && p.line < 240) css.push(`--odx-floor:calc(min(1.15, var(--odx-lh, 1.15)) * ${+(p.line / 240).toFixed(4)}em)`);
     }
     else if (p.lineRule === 'exact') css.push(`--odx-lhv:${twipsToPt(p.line)}pt;--odx-mult:1;--odx-runmult:0;--odx-lhlen:1;min-height:0`); // runs in other fonts can't make it taller, nor the empty-paragraph floor (sample S085's 11.2pt headings in 10pt Times)
     else css.push(`--odx-lhv:max(${twipsToPt(p.line)}pt, calc(var(--odx-lh, 1.17) * 1em));--odx-mult:1;--odx-runmult:1;--odx-lhlen:1;--odx-atleast:${twipsToPt(p.line)}pt`);
   }
   // A side border and its space sit outside the indent, in Word: the text stays where the indent puts it (--odx-bdl/-bdr).
-  if (p.indLeft != null) css.push(`margin-inline-start:calc(${twipsToPt(p.indLeft)}pt - var(--odx-bdl, 0pt))`);
-  if (p.indRight != null) css.push(`margin-inline-end:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
+  // (And as --odx-il, --odx-ir: in a cell of turned text the space before and after go on its sides, and the indents are
+  // set again over them, editor.css.)
+  if (p.indLeft != null) css.push(`margin-inline-start:calc(${twipsToPt(p.indLeft)}pt - var(--odx-bdl, 0pt))`, `--odx-il:calc(${twipsToPt(p.indLeft)}pt - var(--odx-bdl, 0pt))`);
+  if (p.indRight != null) css.push(`margin-inline-end:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`, `--odx-ir:calc(${twipsToPt(p.indRight)}pt - var(--odx-bdr, 0pt))`);
   if (p.indFirst != null) css.push(`text-indent:${twipsToPt(p.indFirst)}pt`);
   if (p.borders) {
     const borders = cleanBorders(p.borders);
@@ -686,7 +815,10 @@ export function pPrToCss(p) {
       const px = solid && (side === 'top' || side === 'bottom') ? parseFloat(bc) * 4 / 3 : 0;
       const adj = px ? (Math.max(0.25, b.sz / 8) * 4) / 3 - (px < 1 ? 1 : Math.floor(px + 1e-6)) : 0;
       if (adj) css.push(`padding-${side}:${+Math.max(0, ((b.space || 0) * 4) / 3 + adj).toFixed(3)}px`);
-      else if (b.space) css.push(`padding-${side}:${b.space}pt`);
+      // (A side of its own set to none takes its style's border and that border's space away, keeping only a space it
+      // gives itself: hdrht-word d1, a header paragraph's own bottom "none" under a Header style's 1pt-spaced rule, the
+      // next line 1px high in Word's PDF where the style's space had stayed; d4, "none" with 4pt space, 5.3px lower.)
+      else if (b.space || bc === 'none') css.push(`padding-${side}:${b.space || 0}pt`);
       if ((side === 'left' || side === 'right') && bc !== 'none') css.push(`--odx-bd${side[0]}:${parseFloat(bc) + (b.space || 0)}pt`);
     }
   }

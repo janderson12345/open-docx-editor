@@ -37,3 +37,18 @@ test('a missing font is drawn in the other name its file gives it, as Word draws
   assert.ok(rc.includes('Calibri') && !rc.includes('Arial'), rc);
   assert.equal(lineFactor('Roboto Condensed'), lineFactor('Calibri'));
 });
+
+// Word's PDFs of new test documents, one name each with no font table entry, and of samples.
+test('names Word reads as another font: PostScript names, a style after a comma or hyphen, "(Body)"', () => {
+  const lead = (n) => fontStack(n).split(', ').slice(1, 2)[0];
+  for (const [n, f] of [['Arial,Bold', 'Arial'], ['Arial-BoldMT', 'Arial'], ['ArialMT', 'Arial'], ['TimesNewRomanPS-BoldMT', 'Times New Roman'],
+    ['TimesNewRoman,Bold', 'Times New Roman'], ['Times-Bold', 'Times New Roman'], ['Calibri-Light', 'Calibri'], ['Verdana,Bold', 'Verdana'],
+    ['Georgia-Bold', 'Georgia'], ['CourierNewPS-BoldMT', 'Courier New'], ['Helv', 'Arial'], ['Geneva', 'Arial'], ['Helvetica-Narrow', 'Arial'],
+    ['Arial (Body CS)', 'Arial'], ['Times New Roman (Headings CS)', 'Times New Roman'], ['Calibri Light (Headings)', 'Calibri Light'],
+    ['MS Sans Serif', 'Microsoft Sans Serif'], ['Baskerville', 'Baskerville Old Face']]) assert.equal(lead(n), `"${f}"`, n);
+  assert.equal(lineFactor('Arial,Bold'), lineFactor('Arial'));
+  // (Cut down to a name the editor has nothing for: the name's own fallback, Cambria with no entry.)
+  for (const n of ['BookAntiqua-Bold', 'RJCZEJ+Arial-ItalicMT', 'Monaco', '-webkit-standard', 'inherit']) assert.equal(lead(n), '"Cambria"', n);
+  // (In quote marks: no font, its fallback alone.)
+  assert.equal(fontStack('"Courier New"'), fontStack('Cambria'));
+});

@@ -29,7 +29,7 @@ def slug(stem):
 def word_line(font):
     """Word's single line height per em: the typo metrics where the font asks for them (USE_TYPO_METRICS), else the
     Windows ascent and descent plus what the hhea line gap adds beyond them (GDI's external leading). The editor's own
-    table (props.js LINE) has Calibri 1.2207, Arial 1.1499, Corbel 1.2207 and Aptos 1.2207 by this rule."""
+    rule for the fonts it knows (src/fonts/wordmetrics.js fontMetrics) is the same."""
     os2, hhea, upm = font['OS/2'], font['hhea'], font['head'].unitsPerEm
     if os2.fsSelection & (1 << 7):
         return (os2.sTypoAscender - os2.sTypoDescender + os2.sTypoLineGap) / upm

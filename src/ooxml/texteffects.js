@@ -181,6 +181,27 @@ function pageFilter(fx, prefix) {
   }
   return id;
 }
+/**
+ * The id of the page's filter for a picture shown in black and white (a:biLevel): each pixel black under the threshold's
+ * brightness (thousandths of a percent), white from it, its transparency kept. Sample 2466's back-cover logo, stored
+ * grey (its brightness and contrast lowered, a14:imgEffect, already in the picture), black in Word's print at 75%.
+ */
+// (Returned as a mark for the picture's place, --odx-bl:bl<percent>x, which a rule of the page's own turns into the filter:
+// a place holding a url() isn't drawn, schema.js.)
+export const biLevelFilter = (thresh) => {
+  const t = Math.max(0, Math.min(100, Math.round((Number(thresh) || 50000) / 1000)));
+  const table = Array.from({ length: 100 }, (_, k) => (k < t ? 0 : 1)).join(' ');
+  const f = ['R', 'G', 'B'].map((c) => `<feFunc${c} type="discrete" tableValues="${table}"/>`).join('');
+  const id = pageFilter(`<feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0 0.299 0.587 0.114 0 0 0.299 0.587 0.114 0 0 0 0 0 1 0"/><feComponentTransfer>${f}</feComponentTransfer>`, 'bl');
+  const mark = `bl${t}x`;
+  if (typeof document !== 'undefined' && document.head && !document.getElementById(`odx-${mark}`)) {
+    const st = document.createElement('style');
+    st.id = `odx-${mark}`;
+    st.textContent = `img[style*="--odx-bl:${mark}"], img[style*="--odx-bl: ${mark}"] { filter: url(#${id}); }`;
+    document.head.append(st);
+  }
+  return mark;
+};
 /** The id of the page's filter for an inner shadow (offset and blur EMUs, CSS colour), defined in the page if new. */
 export const innerShadowFilter = (dx, dy, blur, c) => pageFilter(innerShadowFx(dx, dy, blur, c, false), 'is');
 

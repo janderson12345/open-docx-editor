@@ -159,7 +159,10 @@ export function layoutTabsIn(root, session, nodeOf) {
       // counted; its page number went to a second line. Reading the tab twice, or the paragraph's range, didn't do.)
       if (s !== tabs[0]) for (const e of p.querySelectorAll('span.odx-t, .odx-tab')) { if (e === s) break; e.getBoundingClientRect(); }
       const x = from(s.getBoundingClientRect());
-      let stop = stops.find((t) => t.x > x + 0.5);
+      // (Any stop past where the tab starts, however near: Word's second tab after a hanging indent at 3020tw goes to the
+      // paragraph's stop at 3021tw, 0.07px on, ..	abnear-word; with half a pixel's leeway it went to the next default
+      // stop, 38px on, and the line broke a word early: sample 1113 page 3. A 64th and a half for the browser's units.)
+      let stop = stops.find((t) => t.x > x + 1 / 32);
       // (Text ending a fraction of a pixel past the last stop, a right one, is still before it in Word's units: a long
       // table of contents title that fills its line, in a font drawn a shade wider than Word's, with its page number
       // after the tab. A tab with nothing after it there starts an empty line, as below.)

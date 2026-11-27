@@ -43,7 +43,7 @@ function draw(view, layer) {
   for (const p of view.dom.querySelectorAll('p')) {
     const box = p.getBoundingClientRect();
     if (box.bottom < top || box.top > bottom || !box.height) continue;
-    if (p.closest('.odx-joined-away, .odx-sep-away, .odx-all-del')) continue;
+    if (p.closest('.odx-joined-away, .odx-hjoined-away, .odx-sep-away, .odx-all-del')) continue;
     let last = null;
     const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
       acceptNode: (n) => (n.nodeType === 1 ? (n.getAttribute('contenteditable') === 'false' ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP) : NodeFilter.FILTER_ACCEPT),

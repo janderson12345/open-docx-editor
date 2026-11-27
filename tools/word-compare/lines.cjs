@@ -21,12 +21,18 @@ fs.mkdirSync(outDir, { recursive: true });
         for (const it of (await page.getTextContent()).items) {
           if (!it.str || !it.str.trim()) continue;
           const y = Math.round((h - it.transform[5]) * 2) / 2; // baseline from the top, pt
+          // (Text turned on its side a line of its own, at where it starts: doc-generator/lines.cjs.)
+          if (Math.abs(it.transform[1]) > 1e-3 || Math.abs(it.transform[2]) > 1e-3) {
+            const k = it.str.replace(/[\s\u200b]+/g, '').replace(/[\u2010\u2011]/g, '-').slice(0, 40);
+            if (k.length >= 3) out.push([k, p, +(y * 4 / 3).toFixed(1)]);
+            continue;
+          }
           let key = [...rows.keys()].find((k) => Math.abs(k - y) <= 0.6);
           if (key === undefined) rows.set((key = y), []);
           rows.get(key).push([it.transform[4], it.str]);
         }
         for (const [y, parts] of [...rows].sort((a, b) => a[0] - b[0])) {
-          const k = parts.sort((a, b) => a[0] - b[0]).map((x) => x[1]).join('').replace(/[\s\u200b]+/g, '').slice(0, 40);
+          const k = parts.sort((a, b) => a[0] - b[0]).map((x) => x[1]).join('').replace(/[\s\u200b]+/g, '').replace(/[\u2010\u2011]/g, '-').slice(0, 40); // (hyphens as one: doc-generator/lines.cjs)
           if (k.length >= 3) out.push([k, p, +(y * 4 / 3).toFixed(1)]);
         }
       }

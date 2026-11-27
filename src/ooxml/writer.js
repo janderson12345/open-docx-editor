@@ -218,7 +218,9 @@ function wrapField(mark, nodes, inner) {
   let { pr, endPr, phText } = mark.attrs;
   // Text typed over the placeholder is a real value now.
   if (phText != null && nodes.map((n) => n.textContent).join('') !== phText) pr = pr.replace(/<w:showingPlcHdr\b[^>]*\/>/g, '');
-  return `<w:sdt>${pr}${endPr}<w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+  let xml = `<w:sdt>${pr}${endPr}<w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+  for (const [opr, oend] of [...(mark.attrs.outer || [])].reverse()) xml = `<w:sdt>${opr}${oend}<w:sdtContent>${xml}</w:sdtContent></w:sdt>`;
+  return xml;
 }
 
 function wrapLink(link, runs, ctx) {

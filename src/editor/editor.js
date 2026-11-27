@@ -22,7 +22,7 @@ import { schema } from './schema.js';
 import { uniformRun } from './runs.js';
 import { columnsIn, sectionJoinPlugin } from './sections.js';
 import { frameOf, frameStyle } from './frames.js';
-import { listLabel, lineSize, pictureLine, labelLine, labelFormat, changeClasses, headingRole } from './pararules.js';
+import { listLabel, lineSize, pictureLine, labelLine, labelFormat, changeClasses, headingRole, deletedWhole } from './pararules.js';
 import * as cmd from './commands.js';
 import { announce } from './live.js';
 
@@ -45,12 +45,13 @@ import { lineFixPlugin } from './lhfix.js';
 import { textSpansPlugin } from './textspans.js';
 import { widthsPlugin } from './widths.js';
 import { fitTextPlugin } from './fittext.js';
+import { labelWordPlugin } from './lblword.js';
 import { createZoom } from './zoom.js';
-import { joinsPlugin } from './joins.js';
+import { joinsPluginFor, runsOnHidden } from './joins.js';
 import { marksPlugin, toggleMarks } from './marks.js';
 import { csFormatPlugin } from './csformat.js';
 import { pastePictures, pictureLinks } from './pastepics.js';
-import { trackPlugin, trackTransaction, tracking, trackedDelete } from './track.js';
+import { trackPlugin, trackTransaction, tracking, trackedDelete, paragraphMarkRev } from './track.js';
 import { twipsToPx } from '../ooxml/units.js';
 import { protectPlugin, tabLeaves } from './protect.js';
 import { tableArrow, tableVert } from './tablecaret.js';
@@ -159,10 +160,10 @@ function tableCells(table, pos, cache, session) {
     const rect = map.findCell(rel);
     cells.push({ rel, node, row: rect.top, col: rect.left, rowspan: rect.bottom - rect.top, colspan: rect.right - rect.left, tcPr: node.attrs.tcPr, vmTops: node.attrs.vmTops });
   }
-  const key = table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')},${(c.vmTops || []).join('.')}`).join(';');
+  const key = session.compatMode + '|' + table.attrs.tblPr + '|' + map.width + 'x' + map.height + '|' + cells.map((c) => `${c.row},${c.col},${c.rowspan},${c.colspan},${c.tcPr.map((x) => x[1]).join('')},${(c.vmTops || []).join('.')}`).join(';');
   let res = cache.get(key);
   if (!res) {
-    res = tableCellCss(session.styles, table.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme);
+    res = tableCellCss(session.styles, table.attrs.tblPr, map.height, map.width, cells, parseXml, session.theme, session.compatMode);
     if (cache.size > 500) cache.clear();
     cache.set(key, res);
   }
@@ -193,7 +194,12 @@ function paragraphPlugin(session) {
   const borderKey = (attrs) => {
     const prop = (k) => attrs.view[k] ?? session.styleProp(attrs.styleId, k);
     const b = prop('borders');
-    return b && (b.top || b.bottom || b.left || b.right) ? JSON.stringify([b, prop('indLeft') ?? 0, prop('indRight') ?? 0]) : null;
+    // (Its box's sides: the right indent and the left edge, the first line's start where that is further left. Word's prints
+    // of generated documents: a hanging paragraph at 0.75in under one at 1in, both first lines at the margin, one group;
+    // a first line at 0.25in or 0.5in, or another right indent, two. A sample's two header paragraphs so had stood 24px
+    // apart, the first's bottom line drawn with its 18pt space.)
+    const left = Number(prop('indLeft') ?? 0);
+    return b && (b.top || b.bottom || b.left || b.right) ? JSON.stringify([b, Math.min(left, left + Number(prop('indFirst') ?? 0)), prop('indRight') ?? 0]) : null;
   };
   const compute = (doc) => {
     const next = listCounter(session.numbering);
@@ -305,6 +311,7 @@ function paragraphPlugin(session) {
       let noRoom = 0; // blocks after a table placed down from the text with no room beside it (styles.js --odx-fnoroom)
       let floatGap = null; // px: the space after the paragraph before a floating table, when this block follows that table
       let fUnder = null; // px: how far down from this block such a table with no room beside it is placed
+      let hiddenRun = null; // { lead }: paragraphs running on through hidden marks (joins.js), lead the first with text
       parent.forEach((node, rel, index) => { // (index: a top-level block's, for sides and collapse; doc.childBefore made this quadratic)
         const pos = offset + rel;
         if (node.type !== schema.nodes.paragraph) {
@@ -312,6 +319,7 @@ function paragraphPlugin(session) {
           if (node.type === schema.nodes.opaque_block && (ZERO_WIDTH.has(node.attrs.kind) || node.attrs.kind === 'proofErr')) return;
           const before = prev;
           prev = null;
+          hiddenRun = null;
           edgePrev = null;
           floatGap = null;
           fUnder = null;
@@ -326,7 +334,9 @@ function paragraphPlugin(session) {
             // and the one before the second (they don't overlap as they would side by side), and the table starts below
             // the first's (editor.css: while the table floats; one the layout puts in the flow, longer than a page, has its
             // margins as they are).
-            let style = place;
+            // (A table in a cell placed up from its text isn't drawn up there, in Word: a sample's logo table in a cell,
+            // 200tw up, drawn at its paragraph's top.)
+            let style = parent === doc ? place : place?.replace(/(^|;)margin-top:-[\d.]+px/, '$1');
             if (/(?:^|;)float:/.test(place || '') && before) {
               floatGap = twipsToPx(spacing(before.node, 'after'));
               if (floatGap) style += `;--odx-fgap:${+floatGap.toFixed(2)}px`;
@@ -350,12 +360,34 @@ function paragraphPlugin(session) {
         }
         const attrs = {};
         const style = [];
+        // A paragraph deleted whole (text and mark, tracked) is gone in the final view Word prints, so it is no one's
+        // neighbour: the paragraphs around it meet (Word's PDFs: a sample's empty deleted paragraph of its heading's
+        // style, contextual spacing, left that heading its 12pt after over the next paragraph in another style; with
+        // it taken as the neighbour the heading lost its space after, every line below 16px high).
+        const gone = deletedWhole(node);
+        const kept = prev;
+        if (gone) prev = null;
         // An empty paragraph that only carries a section break isn't numbered (Word: sample S106's empty Heading 1 holding
         // the break doesn't make the next heading 2.0).
         let sectOnly = !node.textContent.trim() && (node.attrs.extra || []).some((e) => e[0] === 'sectPr');
         if (sectOnly) node.descendants((c) => { if (c.type.name === 'image') sectOnly = false; });
-        const l = sectOnly ? null : cmd.paragraphList(session, node.attrs);
-        const label = l ? next(l.numId, l.ilvl) : null;
+        // Nor one whose mark is deleted (tracked): it runs on into the next paragraph or is gone, and isn't counted
+        // (Word's PDFs of built four-item lists, the second item's mark deleted, or the item whole: 1, 2, 3). (One whose
+        // mark is hidden is counted: a sample's hidden numbered heading, then the next one 2.0 in Word's PDF.)
+        const l = sectOnly || paragraphMarkRev(node.attrs) === 'del' ? null : cmd.paragraphList(session, node.attrs);
+        // Paragraphs running on through hidden marks into this one (joins.js runsOnHidden) are counted as usual; this one
+        // isn't, and shows the first of them's number only when it is numbered itself (Word's PDFs of built documents:
+        // both numbered, "1." for the pair and the next item 2.; the hidden one plain, no number; the hidden one empty,
+        // this one's own; a sample's hidden numbered heading, then the next heading 2.0; a sample's dash item run into a
+        // numbered heading, the dash).
+        const hiddenOn = runsOnHidden(node, session);
+        let label;
+        if (hiddenRun?.lead && !hiddenOn) label = l ? hiddenRun.lead.label ?? '' : null;
+        else {
+          label = l ? next(l.numId, l.ilvl) : null;
+          if (hiddenOn) { hiddenRun ??= { lead: null }; if (!hiddenRun.lead && node.textContent.trim()) hiddenRun.lead = { label }; }
+        }
+        if (!hiddenOn) hiddenRun = null;
         listLabel(node, session, l, label, attrs, style);
         // Word sizes each line from the runs on it; CSS also counts the paragraph's
         // own font (the strut). When every run shares a font or size, give it to the
@@ -412,6 +444,11 @@ function paragraphPlugin(session) {
             if (auto(node, 'beforeAuto')) style.push('margin-top:0');
             if (auto(prev.node, 'afterAuto')) prev.style.push('margin-bottom:0', '--odx-sa:0px');
           }
+          // None under the last paragraph of a cell either, unless it's a list item (Word's prints of ..\autofit-word
+          // s01-s13: a Normal (Web) paragraph last in its cell, alone or under another, the row as high as its text;
+          // the first of two keeps its space, and so does a list's last item, as in sample 1576. Sample 3143: a row
+          // 18.7px high, the rest of the document that much low).
+          if (parent.type === schema.nodes.table_cell && !l && auto(node, 'afterAuto') && lastIn(parent) === node) style.push('margin-bottom:0', '--odx-sa:0px');
         }
         const bdr = borderKey(node.attrs);
         // Paragraphs with the same borders form one group, as in Word: its top border above the first, its bottom border
@@ -430,6 +467,14 @@ function paragraphPlugin(session) {
           // this one (sample S072: an item turning it off for itself still loses its space before under an empty one that has
           // it), but one with text doesn't (doc 14: "(1) Follow all..." keeps its 6pt under "...I recognize that I must:").
           if (cs || (prev.cs && !prev.node.textContent)) style.push('margin-top:0');
+          // Under one with text, only what this one's space before exceeds that one's space after is left: Word collapses
+          // the two (the larger kept), and the one above's contextual spacing takes its own share away, of both. (Word's
+          // prints of generated documents, compatibility modes 15, 14, 12 and none: 6pt after with contextual spacing, then
+          // 6pt before, no space; then 12pt before, 6pt. A sample's paragraphs so stood 8px low.)
+          else if (prev.cs && !plainAuto && !auto(node, 'beforeAuto') && !auto(prev.node, 'afterAuto')) {
+            const b = Number(spacing(node, 'before')) || 0, a = Number(spacing(prev.node, 'after')) || 0;
+            if (a > 0 && b > 0) style.push(`margin-top:${+twipsToPx(Math.max(0, b - a)).toFixed(2)}px`);
+          }
           if (prev.cs) prev.style.push('margin-bottom:0', '--odx-sa:0px');
         }
         if (cs) {
@@ -510,8 +555,9 @@ function paragraphPlugin(session) {
         if (parent.type === schema.nodes.table_cell && !node.childCount && !l && (parent.attrs.tcPr || []).some((x) => x[0] === 'hideMark') && lastIn(parent) === node) {
           style.push('height:0', 'min-height:0', 'margin-top:0', 'margin-bottom:0', 'padding-top:0', 'padding-bottom:0', 'overflow:hidden');
         }
-        prev = { node, pos, attrs, style, cs, bdr, list: l };
-        decos.push(prev);
+        const me = { node, pos, attrs, style, cs, bdr, list: l };
+        prev = gone ? kept : me;
+        decos.push(me);
       });
     };
     visit(doc, 0);
@@ -735,7 +781,7 @@ export function createEditor(mount, session, { onChange, author = 'Author', coll
   if (collab) collab.seed(doc); // (the first editor in a room gives it its body; the others show the room's)
   const state = EditorState.create({
     doc,
-    plugins: [...formsPlugin(), bindingsPlugin(session), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, sectionJoinPlugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, wrapBothPlugin, tableClearPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, joinsPlugin, marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session), mailMergePlugin(session)],
+    plugins: [...formsPlugin(), bindingsPlugin(session), chartPlugin(), shapeKeysPlugin() /* (before the keymap: its Enter would replace a selected chart, its arrows move the caret off a shape) */, ...(collab ? collab.plugins() : [history()]), autocorrectPlugin, keys, keymap(baseKeymap), columnResizing({ View: StyledTableView }), tableEditing(), paras.plugin, sectionJoinPlugin, activeBlock, pagePushPlugin, textSpansPlugin, justifyPlugin, wrapBothPlugin, tableClearPlugin, lineFixPlugin, widthsPlugin, fitTextPlugin, labelWordPlugin, joinsPluginFor(session), marksPlugin, csFormatPlugin, pastePictures(session), pictureLinks, imageResizePlugin(), textBoxPlugin(), trackPlugin({ on: session.trackRevisions, author }), commentsPlugin(session), protectPlugin(), localStylesPlugin(session), hyphenatePlugin(session), mailMergePlugin(session)],
   });
 
   mount.classList.add('odx-canvas');

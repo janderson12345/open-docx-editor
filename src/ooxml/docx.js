@@ -8,7 +8,7 @@ import { writeDocument, writeStory, writeBlocks, rootPrefixes, chunkSig } from '
 import { chunkKind } from './altchunk.js';
 import { BindingStore, applyBindings } from './databind.js';
 import { syncBound } from '../editor/bindings.js';
-import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, resolveStyle, resolveTableStyle } from './styles.js';
+import { readStyles, readTheme, readNumbering, stylesToCss, styleMenu, listLevel, listCounter, resolveStyle, resolveTableStyle } from './styles.js';
 import { readComments, writeComments } from './comments.js';
 import { loadNotes, saveNotes } from './notes.js';
 import { chartSvg } from './chart.js';
@@ -16,10 +16,13 @@ import { readChart, workbookRel, updateWorkbook } from './chartedit.js';
 import { shapesSvg, diagramSvg, unmeasured, outlineWidth } from './shapes.js';
 import { redrawLater } from '../editor/svgfonts.js';
 import { PRESETS } from './presets.js';
-import { fontAlts } from './fonts.js';
-import { setFontAlts } from './props.js';
+import { fontAlts, fontFallbacks } from './fonts.js';
+import { setFontAlts, setFontFallbacks, themeFace } from './props.js';
 import { setThemeColors } from './texteffects.js';
 import { wordArtRPr } from './wordart.js';
+
+// A run property and the one sharing its font slot with it (props.js readRPr).
+const SLOT = { font: 'themeFont', themeFont: 'font', fontCs: 'themeFontCs', themeFontCs: 'fontCs' };
 import { isEmf, emfToSvg } from './emf.js';
 import { isTiff, tiffToPng } from './tiff.js';
 import { readProtection, withProtection, withoutEnforcement, checkPassword, lockedStyles, markedFinal, withoutFinal } from './protect.js';
@@ -53,6 +56,7 @@ export class DocxSession {
     this.pkg = DocxPackage.fromBytes(bytes);
     this.opts = opts;
     setFontAlts(fontAlts(this.pkg)); // (before the styles: their fonts' stacks and line heights use the stand-ins)
+    setFontFallbacks(fontFallbacks(this.pkg));
     this.theme = readTheme(this.pkg);
     setThemeColors(this.theme.colors); // (for runs' text effects in theme colours: texteffects.js)
     this.styles = readStyles(this.pkg);
@@ -237,14 +241,18 @@ export class DocxSession {
         const sid = id || this.styles.defaultParagraph;
         const st = sid ? resolveStyle(this.styles.styles, sid) : { pPr: {}, rPr: {} };
         const rPr = { ...this.styles.defaults.rPr, ...st.rPr };
-        const font = rPr.font || (rPr.themeFont && this.theme[rPr.themeFont.startsWith('major') ? 'major' : 'minor']) || this.theme.minor;
+        // (The style's font, named or the theme's, over the defaults' whichever way each gives it.)
+        const named = st.rPr.font || st.rPr.themeFont ? st.rPr : rPr;
+        const font = named.font || (named.themeFont && themeFace(this.theme, named.themeFont)) || this.theme.minor;
         return { pPr: { ...this.styles.defaults.pPr, ...st.pPr }, rPr, font, own: st.pPr }; // (own: the style's alone, for a table style to go under)
       };
       const char = (id) => (id ? resolveStyle(this.styles.styles, id).rPr : {});
       // Tables in text boxes: their style's borders, cell margins and paragraph settings (the default table style when
       // they name none).
       const tableStyle = (id) => { const sid = id || this.styles.defaultTable; return (sid && resolveTableStyle(this.styles.styles, sid)) || null; };
-      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph, colW };
+      // (Lists in its text boxes: their levels, and their labels counted in the drawing's own order.)
+      const listLevelOf = (numId, ilvl) => listLevel(this.numbering, numId, ilvl);
+      const sctx = { image, colors: this.theme.colors, font: this.theme.minor, para, char, theme: this.theme, tableStyle, normal: this.styles.defaultParagraph, colW, listLevel: listLevelOf, listLabel: listCounter(this.numbering) };
       // SmartArt: the drawing Word saves beside the diagram's data (its data part's dsp:dataModelExt names it).
       const ids = [...drawing.getElementsByTagName('*')].find((n) => n.localName === 'relIds');
       if (ids) {
@@ -641,7 +649,11 @@ export class DocxSession {
     const id = styleId || this.styles.defaultParagraph;
     this._styleCache ||= new Map();
     if (id && !this._styleCache.has(id)) this._styleCache.set(id, resolveStyle(this.styles.styles, id));
-    return (id && this._styleCache.get(id).rPr?.[prop]) ?? this.styles.defaults.rPr[prop];
+    const rPr = id ? this._styleCache.get(id).rPr || {} : {};
+    // (A style that sets the font slot, by name or theme, holds the other as null: the defaults' don't come back.)
+    const slot = SLOT[prop];
+    if (slot && (rPr[prop] != null || rPr[slot] != null)) return rPr[prop] ?? null;
+    return rPr[prop] ?? this.styles.defaults.rPr[prop];
   }
 
   /** An imported-content part (w:altChunk's relationship): { kind: 'html'|'text', text }, or null when it's missing or

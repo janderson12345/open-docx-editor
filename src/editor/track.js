@@ -48,13 +48,24 @@ export const setTracking = (on) => (state, dispatch) => {
 const REV_MARKS = ['ins', 'del'];
 const fmtChange = (node) => node.marks.find((m) => m.type === schema.marks.rextra && m.attrs.items.some((it) => it[0] === 'rPrChange')) || null;
 const extraItem = (attrs, name) => (attrs.extra || []).find((e) => e[0] === name);
+// A w:rPrChange, self-closing or with its content: a lazy match to the next close tag from every self-closing one had
+// scanned to the string's end each time (16,000 of them, 954ms on every change).
+const RPR_CHANGE = /<w:rPrChange\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/w:rPrChange>)/g;
 /** The paragraph mark's own revision ('ins' | 'del' | null), from w:rPr in the paragraph properties. */
 export const paragraphMarkRev = (attrs) => markRev(attrs);
 function markRev(attrs) {
   const r = extraItem(attrs, 'rPr');
   // (A paragraph moved whole: its mark moved too, a deletion where it was and an insertion where it went.)
-  return r ? (/<w:(ins|moveTo)\b/.test(r[1]) ? 'ins' : /<w:(del|moveFrom)\b/.test(r[1]) ? 'del' : null) : null;
+  // (A mark inserted and then deleted, both in its w:rPr, is deleted: gone in the final view, as in Word's PDF of a
+  // sample's paragraph inserted and deleted whole. Not what w:rPrChange says it was before.)
+  const own = r ? r[1].replace(RPR_CHANGE, '') : '';
+  return /<w:(del|moveFrom)\b/.test(own) ? 'del' : /<w:(ins|moveTo)\b/.test(own) ? 'ins' : null;
 }
+/** True when the paragraph mark was inserted (tracked), deleted since or not. */
+const markInserted = (attrs) => {
+  const r = extraItem(attrs, 'rPr');
+  return !!r && /<w:(ins|moveTo)\b/.test(r[1].replace(RPR_CHANGE, ''));
+};
 /** A table row's own revision ('ins' | 'del' | null), from its w:trPr. */
 export const rowRev = (row) => (row.attrs.trPr ? (/<w:ins\b/.test(row.attrs.trPr) ? 'ins' : /<w:del\b/.test(row.attrs.trPr) ? 'del' : null) : null);
 /** `trPr` with its revision replaced by `rev` (XML, or '' for none); null when nothing is left. */
@@ -497,7 +508,7 @@ export function resolveChanges(tr, from, to, accept) {
     const rev = markRev(attrs);
     const end = pos + node.nodeSize;
     if (rev && end <= to + 1) {
-      const removed = (accept && rev === 'del') || (!accept && rev === 'ins');
+      const removed = (accept && rev === 'del') || (!accept && markInserted(attrs));
       attrs = withMarkRev(attrs, '');
       if (removed) joins.push(end);
     }
@@ -652,7 +663,7 @@ function resolveByRuns(doc, accept) {
   doc.forEach((block) => {
     run.push(block);
     const rev = block.type === schema.nodes.paragraph ? markRev(block.attrs) : null;
-    const joins = (accept && rev === 'del') || (!accept && rev === 'ins');
+    const joins = (accept && rev === 'del') || (!accept && rev && markInserted(block.attrs));
     if (run.length >= RUN_BLOCKS && !joins) flush();
   });
   if (run.length) flush();

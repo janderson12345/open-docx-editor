@@ -70,3 +70,23 @@ test('a block control with a control inside, a locked control, and bookmarks acr
   assert.match(xml, /<w:bookmarkStart w:id="5" w:name="span"\/>[\s\S]*in a control[\s\S]*and after[\s\S]*<w:bookmarkEnd w:id="5"\/>/);
   assert.deepEqual(new DocxSession(out).doc.toJSON(), s.doc.toJSON());
 });
+
+// A control whose content is only another control (forms' fields in fields): the inner control's runs are read with their
+// own formatting (Word draws them so, not in a control's w:sdtPr/w:rPr), and both controls are saved around them.
+test('an inline control holding only another control: its runs read as they are, both controls saved', () => {
+  const sz = (h) => `<w:rPr><w:sz w:val="${h}"/></w:rPr>`;
+  const ctl = (id, rpr, inner) => `<w:sdt><w:sdtPr>${rpr}<w:id w:val="${id}"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+  const body = `<w:p><w:pPr>${sz(16)}</w:pPr>${ctl(1, sz(16), ctl(2, sz(20), `<w:r>${sz(20)}<w:t>Value</w:t></w:r>`))}</w:p>`;
+  const files = unzipSync(blankDocxBytes());
+  const main = new DocxSession(blankDocxBytes()).pkg.mainPath;
+  files[main] = strToU8(strFromU8(files[main]).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`));
+  const s = new DocxSession(zipSync(files));
+  const text = s.doc.firstChild.firstChild;
+  assert.equal(text.text, 'Value');
+  assert.equal(text.marks.find((m) => m.type.name === 'size')?.attrs.val, 20); // (10pt, not the outer control's 8pt)
+  assert.equal(text.marks.filter((m) => m.type.name === 'sdt').length, 1);
+  const out = s.save(s.doc);
+  const xml = strFromU8(unzipSync(out)[s.pkg.mainPath]);
+  assert.match(xml, /<w:sdt><w:sdtPr><w:rPr><w:sz w:val="16"\/><\/w:rPr><w:id w:val="1"\/><\/w:sdtPr><w:sdtContent><w:sdt><w:sdtPr><w:rPr><w:sz w:val="20"\/><\/w:rPr><w:id w:val="2"\/><\/w:sdtPr><w:sdtContent><w:r>.*Value.*<\/w:r><\/w:sdtContent><\/w:sdt><\/w:sdtContent><\/w:sdt>/);
+  assert.deepEqual(new DocxSession(out).doc.toJSON(), s.doc.toJSON());
+});

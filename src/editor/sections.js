@@ -53,8 +53,8 @@ export const columnsIn = (xml, page) => {
 
 /**
  * Section breaks: a paragraph carrying a w:sectPr ends a section, and the next section's w:type says whether it starts
- * on a new page (the default) or continues. `page` is the last section's page; `storyHeight(doc)` measures a header or
- * footer (Word moves the body clear of one that reaches past the margin).
+ * on a new page (the default) or continues. `page` is the last section's page; `storyHeight(doc, footer)` measures a
+ * header or footer (Word moves the body clear of one that reaches past the margin).
  * Returns { ends: block index of each section end -> { page: new page?, next: next section's margins, index }, first:
  * the first section's margins }.
  */
@@ -98,8 +98,8 @@ export function sectionBreaks(doc, session, page, storyHeight) {
     const fit = (type) => {
       const H = m.height || page.height;
       const hs = m.hf.header[type], fs = m.hf.footer[type];
-      const top = hs ? Math.min(Math.max(m.top, m.hf.headerDist + storyHeight(hs)), Math.max(m.top, H - m.bottom - BODY_LINE)) : m.top;
-      const bottom = fs ? Math.min(Math.max(m.bottom, m.hf.footerDist + storyHeight(fs)), Math.max(m.bottom, H - top - BODY_LINE)) : m.bottom;
+      const top = hs ? Math.min(Math.max(m.top, m.hf.headerDist + storyHeight(hs, false, m.hf.headerDist)), Math.max(m.top, H - m.bottom - BODY_LINE)) : m.top;
+      const bottom = fs ? Math.min(Math.max(m.bottom, m.hf.footerDist + storyHeight(fs, true)), Math.max(m.bottom, H - top - BODY_LINE)) : m.bottom;
       return { top, bottom };
     };
     if (m.hf.titlePg) m.first = fit('first');

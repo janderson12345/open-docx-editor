@@ -1,7 +1,7 @@
 // styles.xml, theme fonts and numbering.xml: read once per document, turned
 // into a CSS stylesheet for the editor and a list-label resolver.
 import { kids, kid, attr, onOff, NS, REL_TYPES, missingDecls } from './xml.js';
-import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, mergeTabs, readBorders, shdFill, borderCss, compoundSide, cellLines } from './props.js';
+import { readRPr, readPPr, rPrToCss, pPrToCss, fontStack, fontCss, lineFactor, sizeCss, themeFace, mergeTabs, readBorders, shdFill, borderCss, compoundSide, cellLines, brokenLine } from './props.js';
 import { twipsToPx } from './units.js';
 import { shadowRoom } from './texteffects.js';
 
@@ -64,7 +64,29 @@ export function readStyles(pkg) {
     if (st.type === 'paragraph' && st.isDefault) defaultParagraph = id;
     if (st.type === 'table' && st.isDefault) defaultTable = id;
   }
+  // "Automatically update document styles" (w:linkStyles) with no template named: Word takes the Normal style from its
+  // own Normal template when it opens the file, as it installs it: theme body font, 12pt, 8pt after, 1.16 lines (its
+  // file's docDefaults, which come with the style). The document's defaults and its other styles stay. Word's prints of
+  // generated documents (linkstyles-word): a Normal of Calibri 11pt set at 12pt, 8pt after, 278/240 lines, a style of
+  // its own beside it unchanged, and nothing changed when the template named can't be found. (A sample's tables of
+  // Normal cells in Times New Roman were 1pt a row taller in Word's print, its pages a line or two fuller.)
+  if (defaultParagraph && linksNormalTemplate(pkg)) {
+    const st = styles.get(defaultParagraph);
+    st.rPr = { themeFont: 'minorHAnsi', themeFontCs: 'minorBidi', size: 24, sizeCs: 24, kern: 2 };
+    st.pPr = { after: 160, line: 278, lineRule: 'auto' };
+    st.basedOn = null;
+  }
   return { styles, defaults, defaultParagraph, defaultTable };
+}
+
+/** Whether settings.xml turns on w:linkStyles and names no template (w:attachedTemplate): Normal.dotm's styles. */
+function linksNormalTemplate(pkg) {
+  const path = pkg.partByType(REL_TYPES.settings);
+  const doc = path && pkg.xml(path);
+  const root = doc?.documentElement;
+  if (!root || kid(root, 'attachedTemplate')) return false;
+  const v = onOff(kid(root, 'linkStyles'));
+  return v === true;
 }
 
 /** Merge a style with everything it is based on. */
@@ -74,6 +96,10 @@ export function resolveStyle(styles, id, seen = new Set()) {
   seen.add(id);
   const base = st.basedOn ? resolveStyle(styles, st.basedOn, seen) : { rPr: {}, pPr: {} };
   const pPr = { ...base.pPr, ...st.pPr };
+  // A style that switches the list off itself (w:numId 0) starts its left and first-line indents again from 0, what
+  // it inherits dropped, its own kept, the right indent inherited (Word's print of style-numid0.docx: a "Table TEXT"
+  // style on a bullet style of left 360 at the margin, also over a base with no list; mkstylenum0.mjs).
+  if (st.pPr.numId === '0') for (const k of ['indLeft', 'indFirst']) if (st.pPr[k] == null && base.pPr[k] != null) pPr[k] = 0;
   if (base.pPr.tabs || st.pPr.tabs) pPr.tabs = mergeTabs(base.pPr.tabs, st.pPr.tabs);
   return { rPr: { ...base.rPr, ...st.rPr }, pPr };
 }
@@ -84,11 +110,11 @@ export function stylesToCss(scope, info, theme) {
   const rules = [];
   // With no font in the document defaults Word sets text in Times New Roman, not the theme's (rich: an empty
   // w:rPrDefault, a Calibri theme, Word's PDF in Times); the theme's fonts only where something names them.
-  const baseFont = defaults.rPr.font || (defaults.rPr.themeFont ? theme[defaults.rPr.themeFont.startsWith('major') ? 'major' : 'minor'] : 'Times New Roman');
+  const baseFont = defaults.rPr.font || (defaults.rPr.themeFont ? themeFace(theme, defaults.rPr.themeFont) : 'Times New Roman');
   // With no w:sz in the document defaults Word uses 10pt.
   rules.push(
     // The theme's fonts, for runs that name them (w:asciiTheme): as variables, with their line heights.
-    `${scope}{--odx-font-minor:${fontStack(theme.minor || 'Calibri')};--odx-lh-minor:${lineFactor(theme.minor || 'Calibri')};--odx-font-major:${fontStack(theme.major || theme.minor || 'Calibri')};--odx-lh-major:${lineFactor(theme.major || theme.minor || 'Calibri')}}`,
+    `${scope}{--odx-font-minor:${fontStack(theme.minor || 'Calibri')};--odx-lh-minor:${lineFactor(theme.minor || 'Calibri')};--odx-font-major:${fontStack(theme.major || theme.minor || 'Calibri')};--odx-lh-major:${lineFactor(theme.major || theme.minor || 'Calibri')};--odx-font-majorbidi:${fontStack(themeFace(theme, 'majorBidi'))};--odx-lh-majorbidi:${lineFactor(themeFace(theme, 'majorBidi'))};--odx-font-minorbidi:${fontStack(themeFace(theme, 'minorBidi'))};--odx-lh-minorbidi:${lineFactor(themeFace(theme, 'minorBidi'))}}`,
     `${scope}{${fontCss(baseFont || 'Calibri')};${sizeCss((defaults.rPr.size || 20) / 2)};${rPrToCss({ ...defaults.rPr, font: null, themeFont: null, size: null }, theme)}}`,
   );
   // A document-wide w:kern reaches the text: the editor turns kerning off on the text, notes and header tables (Word
@@ -125,7 +151,10 @@ export function stylesToCss(scope, info, theme) {
   return rules.join('\n');
 }
 
-const cssEsc = (s) => String(s).replace(/["\\]/g, '\\$&');
+const IND_KEYS = ['indLeft', 'indRight', 'indFirst'];
+// (A string in CSS quotes: backslash and quote escaped, and line breaks as hex escapes, a raw one ending the string and
+// letting what follows into the selector.)
+const cssEsc = (s) => String(s).replace(/["\\]/g, '\\$&').replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `);
 
 /** Paragraph styles worth offering in a style picker, Word-gallery order. */
 export function styleMenu(info, used = null) {
@@ -452,6 +481,24 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
       const based = [...info.styles.values()].filter((ps) => ps.id !== def && fromNormal(ps.id)).map((ps) => sel(`td > p[data-style="${cssEsc(ps.id)}"]`));
       if (based.length) rules.push(`${based.join(',')}{${sizeCss(tSize / 2)}}`);
     }
+    // A paragraph style of no size of its own that isn't based on Normal (nor on a style based on it) takes the table
+    // style's size, over the document defaults', whatever size Normal has: Word's prints of 18 generated documents
+    // (why-tests rows, tsz-*: defaults 11pt, Normal of none, 11 or 12pt, a table style of 12, 14 or no size, modes 14 and
+    // 15): such a style's cells 12 and 14pt, a style of its own size or based on Normal as before. (Sample 1283's "Table
+    // Text" under Plain Table 1's 12pt, every row 1.6px short.) Not in a cell whose part of the table style (a first row,
+    // say) sets a size of its own, on the cell: that one, as before (sample 2035's 11pt header row of a 10pt style).
+    if (t.rPr.size != null) {
+      const reachesNormal = (id, seen = new Set()) => {
+        if (id === def) return true;
+        const ps = info.styles.get(id);
+        if (!ps || seen.has(id)) return false;
+        seen.add(id);
+        return !!ps.basedOn && reachesNormal(ps.basedOn, seen);
+      };
+      const free = [...info.styles.values()].filter((ps) => ps.type === 'paragraph' && ps.id !== def && resolveStyle(info.styles, ps.id).rPr.size == null && !reachesNormal(ps.id))
+        .map((ps) => sel(`td:not([style*="font-size"]) > p[data-style="${cssEsc(ps.id)}"]`));
+      if (free.length) rules.push(`${free.join(',')}{${sizeCss(t.rPr.size / 2)}}`);
+    }
     // The table style's spacing beats the Normal style's only where Normal leaves it to the document defaults (unset, or
     // set to the same value): sample S072's Normal sets 12pt after, which its Table Grid's 0 doesn't undo.
     const normal = def ? resolveStyle(info.styles, def).pPr : {};
@@ -459,10 +506,15 @@ export function tableStylesCss(scope, info, theme, { oldSizes = false } = {}) {
     const tp = { align: t.pPr.align };
     for (const k of ['before', 'after']) if (beats(k)) tp[k] = t.pPr[k];
     if (beats('line')) { tp.line = t.pPr.line; tp.lineRule = t.pPr.lineRule; }
+    // Its indents too, each on its own, its own or from the table style it is based on (Word's prints of generated
+    // documents, tblind-word: a style's 0.25in hanging indent, or its base's, on cells in Normal and in a style based on
+    // Normal; one of a style's own indent kept; a direct left indent with the table style's hanging one). A list's
+    // stands (its paragraph's own, pararules.js).
+    for (const k of IND_KEYS) if (beats(k)) tp[k] = t.pPr[k];
     const p = pPrToCss(tp);
     if (p) rules.push(`${sel('td > p:not([data-style]),')}${sel(`td > p[data-style="${cssEsc(def)}"]`)}{${p}}`);
     // Other paragraph styles take the table style's spacing too, for each setting their own chain leaves to the defaults.
-    const keys = ['before', 'after', 'line', 'lineRule'];
+    const keys = ['before', 'after', 'line', 'lineRule', ...IND_KEYS];
     for (const ps of info.styles.values()) {
       if (ps.type !== 'paragraph' || ps.id === def) continue;
       const own = resolveStyle(info.styles, ps.id).pPr;
@@ -606,6 +658,10 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // offsets, most 36 to 71tw, lost lines laid out the other way, 121 documents.)
     if (down) css.push(`margin-top:${+y.toFixed(2)}px`, `shape-outside:inset(${+y.toFixed(2)}px 0 0 0)`);
     else if (y > 0 && v !== 'page') css.push(`top:${y}px`);
+    // Placed up from the paragraph it's anchored to: that far up, and the text after it with it, as in Word (why-tests
+    // flt0898: tables 1, 59 and 400tw up, each that much above its paragraph's top, the text under it that much higher;
+    // also at a page's top, into the margin). (A header's are drawn up by hfstory.js, the text staying.)
+    else if (y < 0 && v === 'text' && !attr(fp, 'tblpYSpec')) css.push(`margin-top:${+Math.max(y, -1440).toFixed(2)}px`);
     return css.join(';');
   }
   // A centred table of a set width wider than the column overhangs both margins equally, as in Word (auto margins
@@ -626,7 +682,8 @@ function placementCss(info, tblPrXml, compatMode, parseXml, gridTw = 0, colW = 0
     // first only or the second only: the whole table in by half the first row's cell's line, and by the table's line
     // where only the second row's cell sets one).
     const own = readBorders(kid(el, 'tblBorders')).left, lb = first || own || ts.borders?.left;
-    const half = lb && lb.val && lb.val !== 'nil' && lb.val !== 'none' ? ((lb.sz / 8) * (4 / 3)) / 2 : 0;
+    // (Not in a document of Word 2010's compatibility or before: there the text is at the indent, tblcompat-word.)
+    const half = compatMode < 15 ? 0 : lb && lb.val && lb.val !== 'nil' && lb.val !== 'none' ? ((lb.sz / 8) * (4 / 3)) / 2 : 0;
     if (left || half) css.push(`margin-left:${+(left + half).toFixed(2)}px`);
   }
   // A right-to-left table (w:bidiVisual): its first column at the right, its indent from the right margin. (Its cells'
@@ -651,7 +708,7 @@ const LOOK_BITS = { firstRow: 0x20, lastRow: 0x40, firstColumn: 0x80, lastColumn
  */
 export const DEFAULT_TBLPR = '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders><w:tblLook w:val="04A0"/></w:tblPr>';
 
-export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, theme) {
+export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, theme, compatMode = 15) {
   tblPrXml ||= DEFAULT_TBLPR; // (as it is saved)
   let styleId = null;
   let direct = {};
@@ -783,38 +840,54 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       if (c.col + c.colspan === m.col && overlaps(m.row, m.row + m.rowspan, c.row, c.row + c.rowspan) && !drawn(r.edge.right) && drawn(n.edge.left)) r.edge.right = n.edge.left;
     }
   }
-  // A row's cells share its top and bottom margins in Word: the largest any of them sets (sample S091's middle column,
-  // with none of its own, sits 80tw down like the cell beside it).
-  const rowTop = new Map();
+  // A row's cells share its bottom margin in Word: the largest any of them sets. (Its top: the row's text band, below.)
   const rowBottom = new Map();
   for (const { c, cellPad } of resolved) {
-    if (cellPad.top != null) rowTop.set(c.row, Math.max(rowTop.get(c.row) ?? 0, cellPad.top));
     const last = c.row + c.rowspan - 1;
     if (cellPad.bottom != null) rowBottom.set(last, Math.max(rowBottom.get(last) ?? 0, cellPad.bottom));
   }
   for (const { c, cellPad } of resolved) {
-    if (rowTop.has(c.row)) cellPad.top = Math.max(cellPad.top ?? 0, rowTop.get(c.row));
     if (rowBottom.has(c.row + c.rowspan - 1)) cellPad.bottom = Math.max(cellPad.bottom ?? 0, rowBottom.get(c.row + c.rowspan - 1));
   }
   // A row's text starts under the widest line over any of its cells (Word's prints: a 3pt line under one cell lowers the
   // whole row below it by 3pt, not the one cell under it).
   const linePx = (b) => { if (!drawn(b)) return 0; const cb = compoundSide(b); return cb ? cb.px : (Math.max(0.25, (b.sz || 0) / 8) * 4) / 3; };
   const rowLine = new Map();
-  for (const { c, edge } of resolved) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
+  // (Not an empty grid slot's, w:gridBefore and w:gridAfter: no cell is there in Word, nor a line over it. A sample's rows
+  // of 0.5pt top lines beside slots under the table's 0.75pt inside line each came out 0.33px taller.)
+  const slot = (c) => !!c.node?.attrs?.phantom;
+  for (const { c, edge } of resolved) if (!slot(c)) rowLine.set(c.row, Math.max(rowLine.get(c.row) ?? 0, linePx(edge.top)));
   // The lower parts of a vertically merged cell too, each in its own row: the top line it sets itself is in that row's
   // height though nothing of it is drawn (Word's own layout of a sample's table: two rows under the start of three
   // merged cells, their own cells with no top line, 19.3px each for the merged parts' 1pt lines; they were 17.9px).
-  for (const { c } of resolved) (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) rowLine.set(c.row + k + 1, Math.max(rowLine.get(c.row + k + 1) ?? 0, (Math.max(0.25, sz / 8) * 4) / 3)); });
+  // The line over such a part is the wider of its own top line and the bottom line of the part above it, the table's
+  // inside line where that sets none (reader.js; Word's prints of ten generated tables, a cell merged down six rows
+  // beside cells of 0.75pt lines: under the table's 1.5pt or 3pt inside line each row was that line's width over its
+  // minimum, a merged part's top of nil or none or its own thinner line or not).
+  const szPx = (sz) => (sz > 0 ? (Math.max(0.25, sz / 8) * 4) / 3 : 0);
+  const ownSz = (v) => (Array.isArray(v) ? v[0] : v); // (a number: as read before the line above was kept)
+  const partLine = (v) => Math.max(szPx(ownSz(v)), Array.isArray(v) ? (v[1] == null ? linePx(tb.insideH) : szPx(v[1])) : 0);
+  for (const { c } of resolved) (c.vmTops || []).forEach((v, k) => { const px = partLine(v); if (px > 0 && k + 1 < c.rowspan) rowLine.set(c.row + k + 1, Math.max(rowLine.get(c.row + k + 1) ?? 0, px)); });
   // The widest top line a row's cells set for themselves, the hidden lower parts of merged cells too, without a wider line
   // from the row above: what a row starting a page leaves room for (ownRoom below). Word's prints of eight generated
   // tables, the row beside merged cells: 3pt lower for a 3pt top line on a merged cell's lower part, none without.)
   const rowOwn = new Map();
   const ownAt = (row, px) => rowOwn.set(row, Math.max(rowOwn.get(row) ?? 0, px));
   for (const { c, edge, ...r } of resolved) {
-    ownAt(c.row, 'ownTop' in r ? linePx(r.ownTop) : linePx(edge.top));
-    (c.vmTops || []).forEach((sz, k) => { if (sz > 0 && k + 1 < c.rowspan) ownAt(c.row + k + 1, (Math.max(0.25, sz / 8) * 4) / 3); });
+    if (!slot(c)) ownAt(c.row, 'ownTop' in r ? linePx(r.ownTop) : linePx(edge.top));
+    (c.vmTops || []).forEach((v, k) => { if (ownSz(v) > 0 && k + 1 < c.rowspan) ownAt(c.row + k + 1, szPx(ownSz(v))); });
   }
   const out = [];
+  // Every cell of a row starts its text at one depth: the most that any of them takes for its own top line and top margin
+  // together (tblrow-word's rowline tables, Word's prints: a 3pt line over one cell and 0.5pt over the three-line cell
+  // beside it, both cells' text 3pt down, the row 4px taller than 0.5pt gave it; 4pt top margin on the 0.5pt cell only,
+  // both 4.5pt down; on the 3pt cell only, both 7pt down. Sample S091's middle column, with no margin of its own, sits
+  // 80tw down like the cell beside it.) Each cell's own first; the row's largest set on all of them after the loop.
+  // (Top and bottom to the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts them down to one, and
+  // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
+  const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);
+  const TOP = '--odx-pt:@';
+  const tops = []; // [{ first (its row), slot, top (px, with css: a top line drawn as a CSS border), own (px: at a page's top, without a wider line from the row above), bob (px: its own bottom line), at (index in out) }]
   for (const { c, lastRow, lastCol, edge, shading, rPr, cellPad, vAlign, dir, ...more } of resolved) {
     // Plain lines are drawn as inset shadows rather than CSS borders: browsers
     // round border widths up to a whole pixel, which made every row of a
@@ -823,6 +896,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     const css = [];
     const shadows = [];
     const grow = { top: 0, bottom: 0, left: 0, right: 0 };
+    let cssTop = 0;
     const outer = { top: c.row === 0, bottom: lastRow, left: c.col === 0, right: lastCol };
     // A line between two rows is all the lower row's in Word: its top border pushes its text down, and the upper row ends
     // where the line starts (sample S109's 1.5pt rule under the funding table's header row). Side lines are shared half and half.
@@ -844,6 +918,7 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     );
     const sideGrow = { left: 0, right: 0 };
     const sideHalf = { left: 0, right: 0 }; // half the width of the solid line on that side (px)
+    const broken = []; // background layers of dotted and dashed lines over and under the cell
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const b = edge[side];
       const cb = compound[side];
@@ -855,8 +930,19 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
         continue;
       }
       const solid = b && b.val && !['nil', 'none'].includes(b.val) && borderCss(b).includes(' solid ');
+      // A dotted or dashed line over or under the cell: the room a solid one takes, drawn as a background (brokenLine).
+      if (!solid && (side === 'top' || side === 'bottom') && brokenLine(b, side, 1)) {
+        css.push(`border-${side}:none`);
+        const w = (Math.max(0.25, b.sz / 8) * 4) / 3;
+        if (side === 'bottom' && below) { css.push(`--odx-bdb:${r3(w)}px`); continue; }
+        const share = outer[side] || side === 'top' ? 1 : 0.5;
+        broken.push(brokenLine(b, side, w * share));
+        grow[side] = w * share + (b.space > 0 ? (b.space * 4) / 3 : 0);
+        continue;
+      }
       if (!solid) {
         css.push(`border-${side}:${b ? borderCss(b) : 'none'}`);
+        if (side === 'top' && drawn(b)) cssTop = linePx(b); // (a CSS border: its room is in the box already)
         if ((side === 'top' || side === 'bottom') && drawn(b) && b.space > 0) grow[side] += (b.space * 4) / 3;
         continue;
       }
@@ -870,7 +956,12 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       // pixel: --odx-hair is 1px on screen and 0px in print, editor.css.)
       const thin = (pt * 4) / 3 < 1 ? `max(${((pt * 4) / 3 * share).toFixed(3)}px, calc(var(--odx-hair, 1px) * ${share}))` : null;
       const off = (d) => (thin && d ? `calc(${d} * ${thin})` : `${d * px}px`);
-      shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${b.color && b.color !== 'auto' ? '#' + b.color : '#000'}`);
+      // (And on screen that whole pixel carries only the line's own ink: a half-point line at two thirds of its colour,
+      // as light as Word draws it. In full black it was half as heavy again as Word's, a table's grid dark beside Word's
+      // grey one at any zoom. In print --odx-hairink is 100%: the line its own width, in its own colour.)
+      const color = b.color && b.color !== 'auto' ? '#' + b.color : '#000';
+      const ink = thin ? `color-mix(in srgb, ${color} var(--odx-hairink, ${Math.round((pt * 4) / 3 * 100)}%), transparent)` : color;
+      shadows.push(`inset ${off(x)} ${off(y)} 0 0 ${ink}`);
       if (thin && side === 'top') css.push('--odx-hairtop:1'); // (for the table's line at a page break, pages.js breakRule)
       grow[side] = (pt * 4) / 3 * share;
       if (side === 'left' || side === 'right') sideHalf[side] = (pt * 4) / 3 / 2;
@@ -879,7 +970,10 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
       if ((side === 'top' || side === 'bottom') && b.space > 0) grow[side] += (b.space * 4) / 3;
     }
     if (shadows.length) css.push(`box-shadow:${shadows.join(',')}`);
-    if (pic) css.push(pic.css, `--odx-lines:${pic.lines}`);
+    if (pic) css.push(`--odx-lines:${pic.lines}`);
+    if (broken.length) css.push(`--odx-dash:${broken.map((l) => l.dash).join(',')}`);
+    const bgs = [...broken, ...(pic ? pic.layers : [])];
+    if (bgs.length) css.push(`background-image:${bgs.map((l) => l.image).join(',')};background-position:${bgs.map((l) => l.pos).join(',')};background-size:${bgs.map((l) => l.size).join(',')};background-repeat:${bgs.map((l) => l.repeat).join(',')}`);
     if (shading) css.push(`background-color:${shading}`);
     if (vAlign) css.push(`vertical-align:${vAlign}`);
     if (dir) css.push(`writing-mode:${dir}`);
@@ -890,34 +984,55 @@ export function tableCellCss(info, tblPrXml, nRows, nCols, cells, parseXml, them
     // (Only over a top line the cell draws itself: with none of its own the line from above counts in full, margin or
     // not, as it did.)
     if (drawn(more.ownTop)) grow.top -= Math.min(Math.max(0, linePx(edge.top) - linePx(more.ownTop)), margin, grow.top);
-    // (A cell that draws a top line of its own, its tcBorders' or its region's, starts under that line whatever the
-    // cells beside it have: corpus 2, and the samples scored with this on and off.)
-    const under = more.setsTop ? 0 : Math.max(0, (rowLine.get(c.row) ?? 0) - linePx(edge.top));
     // The room over the cell's text that is the cell's own: its top margin and its own top line, without what a wider
     // line from the row above adds. A row going on at the next page's top starts under that much only (pages.js
     // splitRow): Word's prints of 12 generated tables, a row of 40 lines broken across two pages: under a top line of
     // its own, 1 to 3pt, the text starts that much down the second page; under none, the line above being the upper
     // row's bottom line, at the page's top.
     const ownRoom = Math.max('ownTop' in more ? (drawn(more.ownTop) ? linePx(more.ownTop) : 0) : grow.top, rowOwn.get(c.row) ?? 0);
-    if (under > 0.01) grow.top += under;
-    const lessAtBreak = ownRoom < grow.top - 0.01;
     // A cell's text keeps clear of the lines at its sides: it starts and ends its side margin in from the cell's edge, or
     // half the line's width where that is more (the line lies half on each side of the edge). Word's prints of 80
     // generated documents, side margins of 0 to 108 twips against lines of 0.5 to 6pt, the table at the margin and
     // centred: with no margin, text 0.33px in from a half-point line and 4px from a 6pt one; a sample's table with no
     // side margins held a third of a pixel more a side than Word's and kept a word on a line that Word wraps.
-    const pad = (side) => (side === 'left' || side === 'right' ? Math.max(cellPad[side] ?? 7, sideHalf[side]) : (cellPad[side] ?? 0) + grow[side]);
-    if (cellPad.left != null || sideGrow.left || sideHalf.left > 7) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
-    if (cellPad.right != null || sideGrow.right || sideHalf.right > 7) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
-    // (Top and bottom to the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts them down to one, and
-    // 0.667px for a half-point line was 0.656 in every row. props.js spacePt.)
-    const step = (v) => +(Math.round(v * 64) / 64).toFixed(6);
-    css.push(`--odx-pt:${step(pad('top'))}px;padding-top:${step(pad('top'))}px`); // pagination adds to --odx-pt
-    if (lessAtBreak) css.push(`--odx-ptc:${step((cellPad.top ?? 0) + ownRoom)}px`);
+    // (In a document of Word 2010's compatibility or before, w:compatibilityMode under 15: the text starts at its margin
+    // from the cell's edge whatever the line there, and ends the larger of its margin and the whole line at its right in
+    // from its edge. Word's prints of tblcompat-word's tables, lines of 0.5 to 6pt, margins of none and 108tw: sample
+    // 1113's form tables 3px right of Word's, a word on a line wrapped early.)
+    const old = compatMode < 15;
+    const pad = (side) => (side === 'left' || side === 'right' ? (old ? (side === 'left' ? cellPad.left ?? 7 : Math.max(cellPad.right ?? 7, sideHalf.right * 2)) : Math.max(cellPad[side] ?? 7, sideHalf[side])) : (cellPad[side] ?? 0) + grow[side]);
+    if (cellPad.left != null || sideGrow.left || sideHalf.left > 7 || old) css.push(`padding-left:${r3(pad('left') + sideGrow.left)}px`);
+    if (cellPad.right != null || sideGrow.right || sideHalf.right > 7 || old) css.push(`padding-right:${r3(pad('right') + sideGrow.right)}px`);
+    tops.push({ slot: slot(c), top: pad('top') + cssTop, css: cssTop, own: (cellPad.top ?? 0) + ownRoom + cssTop, bob: more.ownBottom && drawn(edge.bottom) ? linePx(edge.bottom) : 0, at: out.length, first: c.row });
+    css.push(TOP); // (the row's text band: below)
     css.push(`--odx-pb:${step(pad('bottom'))}px;padding-bottom:${step(pad('bottom'))}px`);
     const r = rPrToCss(rPr, theme);
     if (r) css.push(r);
     out.push(css.join(';'));
+  }
+  // The row's band: the most any of its cells takes for its top line and margin. (And the widest line over the row, the
+  // hidden lower parts of a merged cell's too: rowLine.)
+  const band = new Map(rowLine);
+  const bandOwn = new Map();
+  const tbb = linePx(tb.bottom);
+  for (const t of tops) {
+    if (t.slot) continue;
+    band.set(t.first, Math.max(band.get(t.first) ?? 0, t.top));
+    bandOwn.set(t.first, Math.max(bandOwn.get(t.first) ?? 0, t.own));
+  }
+  for (const t of tops) {
+    // (Less a top line drawn as a CSS border, dotted or dashed: its room is in the cell's box. Counted again in the padding,
+    // a sample's rows under dotted lines came out 0.67px taller each.)
+    const top = step(Math.max(0, (band.get(t.first) ?? t.top) - t.css));
+    const own = step(Math.max(0, Math.max(bandOwn.get(t.first) ?? t.own, rowOwn.get(t.first) ?? 0) - t.css));
+    // pagination adds to --odx-pt; --odx-ptc: what a row starting a page leaves room for (pages.js)
+    // (--odx-tl, --odx-bob: the row's widest top line and the cell's own bottom line, a row at a page's foot: pages.js.)
+    const tl = rowLine.get(t.first) ?? 0;
+    // (--odx-bt: that CSS top line's width, which a minimum row height leaves out in Word as it does a line drawn as a
+    // shadow: the browser counts the border in the cell's height, so it is added to it, editor.css. Sample 1113's
+    // chemical tables, rows of 150tw under dotted lines: 10px where Word's are 11px, its last pages two pages late.)
+    // (--odx-tbb: the table's bottom line, which Word draws under a row's part left at a page's foot: pages.js.)
+    out[t.at] = out[t.at].replace(TOP, `--odx-pt:${top}px;padding-top:${top}px${own < top - 0.01 ? `;--odx-ptc:${own}px` : ''}${tl > 0.01 ? `;--odx-tl:${step(tl)}px` : ''}${t.bob > 0.01 ? `;--odx-bob:${step(t.bob)}px` : ''}${t.css > 0.01 ? `;--odx-bt:${step(t.css)}px` : ''}${tbb > 0.01 ? `;--odx-tbb:${step(tbb)}px` : ''}`);
   }
   return { styleId, css: out };
 }

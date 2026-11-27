@@ -191,6 +191,21 @@ test('a list number formatted as hidden text is not shown, nor the room after it
   assert.deepEqual(run([['rPr', '<w:rPr><w:vanish/></w:rPr>']]), ['', '--odx-hang:0pt']);
 });
 
+test('the text after a list number goes to a tab stop the list level sets, before the default stops', async () => {
+  const { listLabel } = await import('../src/editor/pararules.js');
+  const { schema } = await import('../src/editor/schema.js');
+  const lvl = { start: 1, fmt: 'decimal', text: 'Section %1.0', pPr: { indLeft: 0, indFirst: 0, tabs: [{ val: 'num', pos: 1728 }] }, jc: 'left', suff: 'tab' };
+  const session = { numbering: { nums: new Map([['1', { abstractId: 'a', overrides: {} }]]), abstract: new Map([['a', [lvl]]]) }, styleProp: () => null, defaultTabStop: 1440 };
+  const run = () => {
+    const attrs = {}, style = [];
+    listLabel(schema.nodes.paragraph.create({ numId: '1', ilvl: 0 }), session, { numId: '1', ilvl: 0 }, 'Section 1.0', attrs, style);
+    return style.find((s) => s.startsWith('--odx-hang'));
+  };
+  assert.equal(run(), '--odx-hang:86.4pt');
+  delete lvl.pPr.tabs;
+  assert.equal(run(), '--odx-hang:72pt');
+});
+
 test('a pasted picture given as a data: URL is stored as the document\'s own; a pasted copy gets drawing ids of its own', async () => {
   const { pastePictures } = await import('../src/editor/pastepics.js');
   const { schema } = await import('../src/editor/schema.js');

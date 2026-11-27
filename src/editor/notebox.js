@@ -4,10 +4,12 @@
 // until the headers, footers or notes change (clear()).
 import { DOMSerializer } from 'prosemirror-model';
 import { schema } from './schema.js';
-import { styleStoryTables } from './hfstory.js';
+import { styleStoryTables, sizeStoryLines } from './hfstory.js';
 import { wrapText } from './textspans.js';
 import { noteLabel } from './notes.js';
 import { startTags, tagAttr } from '../ooxml/xml.js';
+import { lineFactor, themeFace } from '../ooxml/props.js';
+import { twipsToPx } from '../ooxml/units.js';
 
 const serializer = DOMSerializer.fromSchema(schema);
 // A note paragraph's table: the element itself or its direct child.
@@ -18,7 +20,7 @@ const ownTable = (el) => (el.tagName === 'TABLE' ? el : el.querySelector(':scope
 export const CONT_SEP_TOP = 9.3, CONT_LEAD = 19.5;
 
 /** The note boxes for one pagination: `page` its first section's page, `sheet` the element they're measured in. */
-export function createNoteBoxes({ page, sheet, session }) {
+export function createNoteBoxes({ page, sheet, session, lineFix = null }) {
   const noteHeights = new Map(); // note doc -> px
   const noteEl = (note, kind, n) => {
     const el = document.createElement('div');
@@ -29,12 +31,26 @@ export function createNoteBoxes({ page, sheet, session }) {
     styleStoryTables(session, note.doc, el, { note: true }); // (a table in a note: its columns, borders and shading, as in the body)
     wrapText(el);
     el.querySelectorAll(`[data-kind="${kind}Ref"]`).forEach((m) => { m.textContent = noteLabel(kind, n); });
+    // Its lines sized as the body's and a header's are: a paragraph whose runs share a font by that font (its style's
+    // may be another), at Word's pitch (lhfix.js). (Word's print of a sample: 10pt Calibri notes in a Times New Roman
+    // style 16.28px a line, the browser's own line 17px, a band of nine lines 6px too tall.) Measured on the sheet.
+    const nodes = new Map();
+    sizeStoryLines(session, note.doc, el, nodes);
+    if (lineFix) {
+      const box = document.createElement('div');
+      box.className = 'odx-notes';
+      box.style.cssText = `visibility:hidden;top:0;left:${page.left}px;right:${page.right}px`;
+      box.append(el);
+      sheet.append(box);
+      try { lineFix(el, (p) => nodes.get(p)); } finally { el.remove(); box.remove(); }
+    }
     return el;
   };
   // The footnote separator goes at the text's right edge when its paragraph is right to left (its own w:bidi, or the
   // document's default paragraph's), as in Word; at the left otherwise, whatever the section's direction.
   // (Footnotes' separator and endnotes' each from their own part: endnotes.xml has a separator of its own.)
   const sepRtl = {};
+  const sepPpr = {}; // kind -> the separator paragraph's w:pPr ('' for none)
   const noteSepRtl = (kind = 'footnote') => {
     if (sepRtl[kind] == null) {
       const bidi = (x) => /<w:bidi(?=[\s/>])(?![^>]*w:val="(?:0|false|off)")/.test(x || '');
@@ -51,6 +67,7 @@ export function createNoteBoxes({ page, sheet, session }) {
         break;
       }
       const ppr = sep && /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(sep)?.[0];
+      sepPpr[kind] = ppr || '';
       const stylesPart = session.pkg?.partByType?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
       const styles = stylesPart ? session.pkg.text(stylesPart) || '' : '';
       const d0 = styles.indexOf('<w:pPrDefault>'), d1 = d0 < 0 ? -1 : styles.indexOf('</w:pPrDefault>', d0);
@@ -67,6 +84,29 @@ export function createNoteBoxes({ page, sheet, session }) {
       sepRtl[kind] = !!sep && (ppr && /<w:bidi\b/.test(ppr) ? bidi(ppr) : normalPpr && /<w:bidi\b/.test(normalPpr) ? bidi(normalPpr) : bidi(defaults));
     }
     return sepRtl[kind];
+  };
+  // The room the separator takes between the text and the notes: its paragraph's height, a line of the default paragraph
+  // style's font and size at its own spacing (or that style's) and its space before and after. (sep-word: Word's prints of
+  // a page of 20pt lines over one note, Normal in six fonts and sizes: under Calibri 11 and 12pt and Times New Roman 8 and
+  // 12pt the page keeps 31 lines, 21px over the note's line; under Calibri 16pt and Arial 20pt, 26 and 30.7px, 30.)
+  let sepRoomPx = null;
+  const noteSepRoom = () => {
+    if (sepRoomPx != null) return sepRoomPx;
+    noteSepRtl('footnote');
+    const ppr = sepPpr.footnote || '';
+    const sp = /<w:spacing\b[^>]*>/.exec(ppr)?.[0] || '';
+    const own = (a) => { const m = new RegExp(`w:${a}="([^"]+)"`).exec(sp); return m ? m[1] : undefined; };
+    const prop = (a) => own(a) ?? session.styleProp?.(null, a);
+    const tf = session.styleRunProp?.(null, 'themeFont');
+    const font = session.styleRunProp?.(null, 'font') || (tf && themeFace(session.theme, String(tf))) || 'Times New Roman';
+    const size = Number(session.styleRunProp?.(null, 'size') || 20) / 2; // pt
+    const single = (lineFactor(font) * size * 4) / 3;
+    const line = Number(prop('line'));
+    const rule = prop('lineRule') || 'auto';
+    const h = !(line > 0) ? single : rule === 'exact' ? twipsToPx(line) : rule === 'atLeast' ? Math.max(twipsToPx(line), single) : (single * line) / 240;
+    const before = Number(prop('before')) || 0, after = Number(prop('after')) || 0;
+    sepRoomPx = h + twipsToPx(before) + twipsToPx(after);
+    return sepRoomPx;
   };
   const noteBounds = new Map(); // note doc -> where each of its paragraphs ends, px from its top
   const noteInks = new Map(); // note doc -> where the text of each of those lines ends, px from its top
@@ -271,7 +311,7 @@ export function createNoteBoxes({ page, sheet, session }) {
   };
 
   return {
-    noteEl, noteSepRtl, noteHeight, bandLayout, bandFill, bandBox,
+    noteEl, noteSepRtl, noteSepRoom, noteHeight, bandLayout, bandFill, bandBox,
     /** Where a note measured at width key `key` may be cut (px from its top), or undefined before it's measured. */
     boundsOf: (doc, key) => noteBounds.get(doc)?.get(key),
     /** Where the text of the line ending at each of those cuts ends (px from the note's top). */

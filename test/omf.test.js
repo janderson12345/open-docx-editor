@@ -40,6 +40,8 @@ test('a font missing from the computer: the open stand-in after the font and the
   assert.equal(fontStack('Grandview'), '"Grandview", "odx-omf Grandview", sans-serif');
   // Aptos keeps the editor's own stand-in first (fitted to Word's prints); the open one draws the letters it lacks.
   assert.match(fontStack('Aptos'), /^"Aptos", "odx-aptos", "odx-omf Aptos", sans-serif$/);
+  // Aptos Narrow's own stand-in (Arial Narrow) is only a guess at its widths: the open one, with Aptos Narrow's, first.
+  assert.equal(fontStack('Aptos Narrow'), '"Aptos Narrow", "odx-omf Aptos Narrow", "odx-aptos-narrow", sans-serif');
   // A font named in another case, and one it doesn't cover.
   assert.match(fontStack('GRANDVIEW'), /"odx-omf Grandview"/);
   assert.equal(fontStack('Comic Sans MS'), '"Comic Sans MS", sans-serif');
@@ -56,7 +58,8 @@ test('a font missing from the computer: the open stand-in after the font and the
 
 test('font names that are names of Object\'s own members are fonts like any other', () => {
   for (const n of ['constructor', 'Constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
-    assert.equal(lineFactor(n), 1.17, n);
-    assert.equal(fontStack(n), `"${n}", sans-serif`, n);
+    // (Missing, with no entry: Word's fallback, Cambria.)
+    assert.equal(lineFactor(n), lineFactor('Cambria'), n);
+    assert.equal(fontStack(n), `"${n}", ${fontStack('Cambria')}`, n);
   }
 });

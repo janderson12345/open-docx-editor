@@ -3,10 +3,26 @@
 // Display only; the drawing's XML is saved back untouched.
 import { esc, elementKids as els, childNamed as child, serializeXml } from './xml.js';
 import { svgTextEffects } from './texteffects.js';
-import { lineFactor, fontStack } from './props.js';
+import { lineFactor, fontStack, themeFace } from './props.js';
 import { geometryPaths, readGeometry, adjustOf } from './geometry.js';
 import { PRESETS } from './presets.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
+import { fontMetrics } from '../fonts/wordmetrics.js';
+
+// A font's ascent in Word's line (per em): its Windows ascent and whatever its hhea total is larger by, where its numbers
+// are known (wordmetrics.js); else its stand-in's, the first font of the stack it is drawn in whose numbers are known (Word
+// sets a missing font's text on its stand-in's ascent: hdrht-word c1, AvantGarde Bk BT 12pt in a header text box at
+// Century Gothic's 16.1px, where 0.778 of its line had put it 1.5px high, as a sample's header on every page); else 0.778
+// of its line, Calibri's.
+const wordAscent = (font) => {
+  const own = fontMetrics((font || '').toLowerCase())?.wordAscent;
+  if (own != null) return own;
+  for (const f of fontStack(font).split(',').slice(1)) {
+    const m = fontMetrics(f.replace(/["']/g, '').trim().toLowerCase());
+    if (m?.wordAscent != null) return m.wordAscent;
+  }
+  return lineFactor(font) * 0.778;
+};
 
 /**
  * Office's default theme colours, for a document without a theme part: the current Office theme's, as Word 365 draws
@@ -272,6 +288,11 @@ function measures() {
   return !!canvas;
 }
 
+/** Small caps' text in a tspan: its lowercase letters as capitals in a smaller tspan of their own (`sc`, px). */
+function smallCapsText(text, sc) {
+  return (text.match(/\p{Ll}+|\P{Ll}+/gu) || []).map((part) => (/\p{Ll}/u.test(part) ? `<tspan font-size="${sc.toFixed(2)}">${esc(part.toUpperCase())}</tspan>` : esc(part))).join('');
+}
+
 /** Width of `text` in px: measured in a browser, else estimated at half an em per character. */
 function textWidth(text, sizePx, bold, font, italic = false) {
   if (canvas == null) canvas = typeof document !== 'undefined' && document.createElement('canvas').getContext?.('2d') || false;
@@ -279,7 +300,11 @@ function textWidth(text, sizePx, bold, font, italic = false) {
   canvas.fontKerning = 'none';
   // (In its italic face where it is italic: Times New Roman's italic letters are narrower than its upright ones, and a
   // text box of italic text, measured upright, broke each line a word or two early.)
-  canvas.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx}px ${fontStack(font)}`;
+  // (At 100px and scaled: the font's design advances, which Word sets text by, not the browser's hinted ones at a small
+  // size: bold Arial at 10pt came out 0.5% narrow, and a box's line kept a word Word wraps, widths.js designWidth's
+  // reason in the body; ..\charscale-word w07, sample 1113 page 60.)
+  const at = 100;
+  canvas.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${at}px ${fontStack(font)}`;
   // (A stand-in not loaded yet is asked for, and noted: this drawing measures in what the page has.)
   try {
     if (document.fonts && text.trim() && !document.fonts.check(canvas.font, text)) {
@@ -288,7 +313,7 @@ function textWidth(text, sizePx, bold, font, italic = false) {
       if ((missed.get(canvas.font) || '').length < 200) missed.set(canvas.font, (missed.get(canvas.font) || '') + text);
     }
   } catch { /* not a font */ }
-  return canvas.measureText(text).width;
+  return (canvas.measureText(text).width * sizePx) / at;
 }
 
 /**
@@ -331,9 +356,19 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const ind = child(pPr, 'ind');
     const align = wa(child(pPr, 'jc'), 'val') ?? st.pPr.align;
     const tabs = els(child(pPr, 'tabs')).map((tab) => twipsToPx(wa(tab, 'pos'))).filter((v) => v > 0).sort((x, z) => x - z);
-    const indL = wa(ind, 'left') ?? wa(ind, 'start') ?? st.pPr.indLeft ?? 0;
-    const indR = wa(ind, 'right') ?? wa(ind, 'end') ?? st.pPr.indRight ?? 0;
-    const indF = wa(ind, 'firstLine') != null || wa(ind, 'hanging') != null ? (Number(wa(ind, 'firstLine')) || 0) - (Number(wa(ind, 'hanging')) || 0) : st.pPr.indFirst ?? 0;
+    // A list paragraph (w:numPr, its own or its style's): its level's indents under the paragraph's own, and its label
+    // (ctx.listLabel, counted in the box's order) at the first line's start, then a tab or a space. (Without them a
+    // sample's lettered lists in its form's boxes lost their letters, and a hanging indent with no left indent of its own
+    // put each item's first letter outside the box, the rest of its first word inside.)
+    const numPr = child(pPr, 'numPr');
+    const numId = numPr ? wa(child(numPr, 'numId'), 'val') : st.pPr.numId;
+    const ilvl = Number(numPr ? wa(child(numPr, 'ilvl'), 'val') ?? 0 : st.pPr.ilvl ?? 0) || 0;
+    const lvl = numId != null && numId !== '0' && ctx.listLevel ? ctx.listLevel(numId, ilvl) : null;
+    const label = lvl && !lvl.hidden && ctx.listLabel ? ctx.listLabel(numId, ilvl) : null;
+    const lp = lvl?.pPr || {};
+    const indL = wa(ind, 'left') ?? wa(ind, 'start') ?? lp.indLeft ?? st.pPr.indLeft ?? 0;
+    const indR = wa(ind, 'right') ?? wa(ind, 'end') ?? lp.indRight ?? st.pPr.indRight ?? 0;
+    const indF = wa(ind, 'firstLine') != null || wa(ind, 'hanging') != null ? (Number(wa(ind, 'firstLine')) || 0) - (Number(wa(ind, 'hanging')) || 0) : lp.indFirst ?? st.pPr.indFirst ?? 0;
     const left = l + twipsToPx(indL);
     const right = R - twipsToPx(indR);
     const first = left + twipsToPx(indF);
@@ -342,6 +377,31 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const newLine = () => lines.push({ pieces: [], x: left });
     let maxSize = 0;
     let lineF = lineFactor(st.font);
+    if (label) {
+      // The label in its level's font, size, colour and weight, else the paragraph mark's.
+      const mark = child(pPr, 'rPr');
+      const size = lvl.size ? lvl.size / 2 : markSz;
+      const sizePx = (size * 4) / 3;
+      const font = lvl.font || wa(child(mark, 'rFonts'), 'ascii') || st.font || font0;
+      const bold = lvl.bold ?? !!st.rPr.bold;
+      const italic = lvl.italic ?? !!st.rPr.italic;
+      const c = lvl.color ?? wa(child(mark, 'color'), 'val') ?? st.rPr.color;
+      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" fill="#${c && c !== 'auto' && /^[0-9A-Fa-f]{6}$/.test(c) ? c : ctx.textColor || '000000'}"${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}>`;
+      const line = lines[0];
+      const w = textWidth(label, sizePx, bold, font, italic);
+      line.pieces.push({ x: line.x, text: label, open, size: sizePx, ink: line.x + w, end: line.x + w });
+      line.one = sizePx * lineFactor(font);
+      line.asc = sizePx * wordAscent(font);
+      maxSize = sizePx;
+      line.x += w;
+      if (lvl.suff === 'space') line.x += textWidth(' ', sizePx, bold, font, italic);
+      else if (lvl.suff !== 'nothing') {
+        // To the next tab stop past it: the paragraph's own, else the hanging indent's, else the next half inch.
+        const stop = tabs.find((v) => l + v > line.x + 0.5);
+        line.x = stop != null ? l + stop : left > line.x + 0.5 ? left : l + (Math.floor((line.x - l) / 48) + 1) * 48;
+        line.tabbed = true;
+      }
+    }
     // A field in the box's text (w:fldChar): its code as it is read, and, once its result starts, the page-number
     // field it is (PAGE, NUMPAGES, SECTIONPAGES, with a number format switch or none), which marks the result's
     // text in the drawing so a header or footer can show each page's own number (pagefields.js).
@@ -349,7 +409,8 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     for (const run of [...p.getElementsByTagName('*')].filter((n) => n.localName === 'r')) {
       const rPr = child(run, 'rPr');
       // Its character style (w:rStyle) between the paragraph style and its own formatting.
-      const cs = { ...st.rPr, ...(ctx.char ? ctx.char(wa(child(rPr, 'rStyle'), 'val')) : {}) };
+      const chr = ctx.char ? ctx.char(wa(child(rPr, 'rStyle'), 'val')) || {} : {};
+      const cs = { ...st.rPr, ...chr };
       const size = Number(wa(child(rPr, 'sz'), 'val')) / 2 || (cs.size ? cs.size / 2 : markSz);
       const sizePx = (size * 4) / 3;
       const c = wa(child(rPr, 'color'), 'val') ?? cs.color;
@@ -359,7 +420,12 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
       const letter = (Number(wa(child(rPr, 'spacing'), 'val')) || 0) / TWIPS_PER_PX;
       const rf = child(rPr, 'rFonts');
       const theme = wa(rf, 'asciiTheme');
-      const font = wa(rf, 'ascii') || wa(rf, 'hAnsi') || (theme && ctx.theme?.[theme.startsWith('major') ? 'major' : 'minor']) || cs.font || st.font || font0;
+      const ofTheme = (k) => k && themeFace(ctx.theme, k);
+      // (A character style's font, named or the theme's (w:asciiTheme), over the paragraph style's and the document
+      // defaults': a cover banner's "cover:title" style in Calibri (minorHAnsi) over Times New Roman defaults, Word's
+      // print in Calibri, had come out in Times.)
+      // (The run's theme font over a named one beside it, w:asciiTheme over w:ascii, as everywhere: props.js readRPr.)
+      const font = ofTheme(theme) || wa(rf, 'ascii') || wa(rf, 'hAnsi') || chr.font || ofTheme(chr.themeFont) || st.font || font0;
       // Word 2010's text effects (WordArt's): fill, outline, shadow, glow (texteffects.js).
       const fx = svgTextEffects(rPr, (ctx.fxN = (ctx.fxN || 0) + 1), serializeXml);
       // (An outline or shadow alone keeps the run's own colour: Word draws the letters in w:color.)
@@ -376,7 +442,11 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           } else if (t === 'end') { fieldCode = null; fieldMark = ''; }
         } else if (n.localName === 'instrText' && fieldCode != null && fieldCode.length < 200) fieldCode += n.textContent;
       }
-      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}${fieldMark}>`;
+      // Small caps (w:smallCaps, not under w:caps): lowercase letters as capitals at 80% of the size, to the half point,
+      // as Word sets them (widths.js; a cover banner's subtitle, Word's print in small capitals).
+      const sc = on('smallCaps', 'smallCaps') && !on('caps', 'caps') ? (Math.round(size * 0.8 * 2) / 2) * 4 / 3 : 0;
+      const tw = (s) => (sc ? (s.match(/\p{Ll}+|\P{Ll}+/gu) || []).reduce((t, part) => t + (/\p{Ll}/u.test(part) ? textWidth(part.toUpperCase(), sc, bold, font, italic) : textWidth(part, sizePx, bold, font, italic)), 0) : textWidth(s, sizePx, bold, font, italic));
+      const open = `<tspan font-family="${esc(fontStack(font))}" font-size="${sizePx.toFixed(2)}" ${paint}${bold ? ' font-weight="bold"' : ''}${italic ? ' font-style="italic"' : ''}${letter ? ` letter-spacing="${letter.toFixed(2)}"` : ''}${sc ? ` data-odx-sc="${sc.toFixed(2)}"` : ''}${fieldMark}>`;
       if (fx?.defs) out.push(`<defs>${fx.defs}</defs>`);
       for (const n of els(run)) {
         const line = lines[lines.length - 1];
@@ -397,13 +467,13 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           // had kept its lower case.)
           const text = on('caps', 'caps') ? n.textContent.toUpperCase() : n.textContent;
           for (const word of text.match(/\S*\s*/g).filter(Boolean)) {
-            if (!fit || textWidth(word.trimEnd(), sizePx, bold, font, italic) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
+            if (!fit || tw(word.trimEnd()) + word.trimEnd().length * letter <= right - left + 0.5) { words.push(word); continue; }
             let part = '', partW = 0;
             for (const ch of word) {
               // (The piece measured whole while short, so kerning counts; then by adding each letter, so a long word
               // costs its length, not its square.)
-              let w = part.length < 64 ? textWidth(part + ch, sizePx, bold, font, italic) : partW + textWidth(ch, sizePx, bold, font, italic);
-              if (part && /\S/.test(ch) && w + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; w = textWidth(ch, sizePx, bold, font, italic); }
+              let w = part.length < 64 ? tw(part + ch) : partW + tw(ch);
+              if (part && /\S/.test(ch) && w + (part.length + 1) * letter > right - left + 0.5) { words.push(part); part = ''; w = tw(ch); }
               part += ch;
               partW = w;
             }
@@ -411,13 +481,14 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
           }
           for (const word of words) {
             let cur = lines[lines.length - 1];
-            const width = textWidth(word, sizePx, bold, font, italic) + word.length * letter;
-            const inked = textWidth(word.trimEnd(), sizePx, bold, font, italic) + word.trimEnd().length * letter;
+            const width = tw(word) + word.length * letter;
+            const inked = tw(word.trimEnd()) + word.trimEnd().length * letter;
             if (wrap && cur.x + inked > right + 0.5 && cur.pieces.length) { cur.wrapped = true; newLine(); cur = lines[lines.length - 1]; }
             const last = cur.pieces[cur.pieces.length - 1];
             cur.one = Math.max(cur.one || 0, sizePx * lineFactor(font)); // (each line as tall as its own text: Word's)
+            cur.asc = Math.max(cur.asc || 0, sizePx * wordAscent(font));
             if (last && last.open === open && last.end === cur.x) last.text += word;
-            else cur.pieces.push({ x: cur.x, text: word, open, filter: fx?.filter, refl: fx?.reflection, size: sizePx, n: ctx.fxN });
+            else cur.pieces.push({ x: cur.x, text: word, open, sc, filter: fx?.filter, refl: fx?.reflection, size: sizePx, n: ctx.fxN });
             cur.pieces[cur.pieces.length - 1].ink = cur.x + inked;
             cur.x += width;
             cur.pieces[cur.pieces.length - 1].end = cur.x;
@@ -449,7 +520,13 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
       // Baseline: the font's ascent (0.778 of its line: 0.95em of Calibri's 1.22) below the line top, centred in an exact
       // line's extra room; a multiple line's extra goes below its text, as in the body (Word's PDF of a text box at
       // 1.08 lines: its first baseline 0.7px higher than centred).
-      const base = y + (rule === 'exact' ? (lineH - one) / 2 : rule === 'atLeast' ? lineH - one : 0) + one * 0.778;
+      // (Not exact: the font's own ascent in Word's line below its top, wordAscent: Word's prints of tboxbase-word's boxes,
+      // a line of Arial, Times New Roman or Calibri at 7 to 14pt, its baseline 0.938, 0.934 and 0.952em down; 0.778 of
+      // the line put Arial's and Times New Roman's 0.3 to 1.1px high, 1113's form footers among them.)
+      // (Exact: at 80% of the line's height, whatever the font and size: Word's prints of tboxbase-word b04, Arial 10pt
+      // and Times New Roman 11pt on lines of 150 to 320tw, each baseline 0.8 of its line down to 0.1px; centred, a line
+      // shorter than the font's was 0.5 to 1.3px low, a taller one up to 2.3px high: sample 1113 page 60.)
+      const base = y + (rule === 'exact' ? lineH * 0.8 : (rule === 'atLeast' ? lineH - one : 0) + (ln.asc || one * 0.778));
       y += lineH;
       if (!ln.pieces.length) continue;
       // Centred and right-aligned lines move as a whole (trailing spaces don't count).
@@ -466,7 +543,7 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
       let before = 0; // the line's spaces before this piece
       for (const [i, pc] of ln.pieces.entries()) {
         const widen = each ? ` style="word-spacing:${each.toFixed(3)}px"` : '';
-        const text = `<text x="${(pc.x + shift + before * each).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''}${widen} xml:space="preserve">${pc.open}${esc(pc.text)}</tspan></text>`;
+        const text = `<text x="${(pc.x + shift + before * each).toFixed(1)}" y="${base.toFixed(1)}"${pc.filter ? ` filter="${pc.filter}"` : ''}${widen} xml:space="preserve">${pc.open}${pc.sc ? smallCapsText(pc.text, pc.sc) : esc(pc.text)}</tspan></text>`;
         before += spacesIn(pc, i === ln.pieces.length - 1);
         out.push(text);
         // A reflection (w14:reflection): the text mirrored about its baseline (where Word starts it), that far
@@ -513,22 +590,45 @@ function textBox(txbx, bodyPr, w, h, ctx, line = 0, fit = false) {
     const top0 = y;
     const rowTops = [];
     const owed = new Map(); // row index -> the lowest a cell merged down to it from above reaches
+    // A line's width (px) from a border element (w:sz eighths of a point), 0 for none; a cell's own side, else the table's.
+    const lineW = (e) => (e && !/^(nil|none)$/.test(wa(e, 'val') || '') ? (Math.max(2, Number(wa(e, 'sz')) || 4) / 8) * (4 / 3) : 0);
+    const cellLine = (tc, side, tableSide) => { const own = child(child(child(tc, 'tcPr'), 'tcBorders'), side); return own ? lineW(own) : lineW(child(bd, tableSide)); };
+    const cellLines = []; // [x0, y0, x1, y1, width] of the cells' own lines, drawn after
     rows.forEach((tr, j) => {
       const top = y;
       rowTops.push(top);
-      let bottom = top;
+      // The row's minimum or exact height (w:trHeight) and the widest line over its cells, which Word puts in the row
+      // over that minimum (as in the body: styles.js, editor.css), its cells' text under it. (Ignored, a sample's codes
+      // table in a text box came out 5 to 17px short, row by row: 1113 page 60.)
+      const trH = child(child(tr, 'trPr'), 'trHeight');
+      const minH = trH ? twipsToPx(Number(wa(trH, 'val')) || 0) : 0;
+      const exact = wa(trH, 'hRule') === 'exact';
+      const tl = Math.max(0, ...cellsOf[j].map(({ tc }) => cellLine(tc, 'top', j === 0 ? 'top' : 'insideH')));
+      let bottom = top + tl + (exact ? 0 : minH);
       for (const { tc, c, span, merge } of cellsOf[j]) {
-        if (merge === 'cont') continue; // (its text is the cell above's)
         const x0 = xs[Math.min(c, grid.length)], x1 = xs[Math.min(c + span, grid.length)];
-        y = top + mT;
+        for (const [side, tside] of [['top', j === 0 ? 'top' : 'insideH'], ['left', c === 0 ? 'left' : 'insideV'], ['right', c + span >= grid.length ? 'right' : 'insideV']]) {
+          if (!child(child(child(tc, 'tcPr'), 'tcBorders'), side)) continue; // (the table's own lines are drawn below)
+          const w = cellLine(tc, side, tside);
+          if (w) cellLines.push({ side, x0, x1, j, w });
+        }
+        if (merge === 'cont') continue; // (its text is the cell above's)
+        y = top + tl + mT;
         prevAfter = 0; prevStyle = null;
         layBlocks(tc, x0 + mL, x1 - mR, ts || {});
         const k = merge === 'restart' ? last(j, c) : j;
         if (k > j) owed.set(k, Math.max(owed.get(k) ?? 0, y + mB));
         else bottom = Math.max(bottom, y + mB);
       }
-      y = Math.max(bottom, owed.get(j) ?? 0);
+      y = exact && minH ? top + minH : Math.max(bottom, owed.get(j) ?? 0);
     });
+    rowTops.push(y);
+    for (const { side, x0, x1, j, w } of cellLines) {
+      const t = rowTops[j], b = rowTops[j + 1];
+      const d = side === 'top' ? `M${x0.toFixed(1)} ${(t + w / 2).toFixed(2)}L${x1.toFixed(1)} ${(t + w / 2).toFixed(2)}` : side === 'left' ? `M${x0.toFixed(1)} ${t.toFixed(1)}L${x0.toFixed(1)} ${b.toFixed(1)}` : `M${x1.toFixed(1)} ${t.toFixed(1)}L${x1.toFixed(1)} ${b.toFixed(1)}`;
+      out.push(`<path d="${d}" stroke="#000" stroke-width="${w.toFixed(2)}" fill="none"/>`);
+    }
+    rowTops.pop();
     prevAfter = 0; prevStyle = null;
     const x0 = xs[0], x1 = xs[xs.length - 1];
     const ln = (a, b, c2, d) => out.push(`<path d="M${a.toFixed(1)} ${b.toFixed(1)}L${c2.toFixed(1)} ${d.toFixed(1)}" stroke="#000" stroke-width="0.67" fill="none"/>`);

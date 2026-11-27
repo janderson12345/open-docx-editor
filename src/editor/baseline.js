@@ -3,19 +3,18 @@
 // so its text sits up to a pixel and a half higher. For printing, each paragraph's text is moved down by the
 // difference, measured once per font, size and line height. (Only the paint moves: pagination is unaffected.)
 import { lineHeightOf } from './util.js';
+import { fontMetrics } from '../fonts/wordmetrics.js';
 
-// hhea ascender + line gap, per em, of the fonts Word documents use most.
-export const ASCENT = {
-  arial: 0.938, 'liberation sans': 0.938, helvetica: 0.938, 'times new roman': 0.9336, 'liberation serif': 0.9336,
-  calibri: 0.9707, 'calibri light': 0.9707, carlito: 0.9707, cambria: 0.9502, caladea: 0.9502, verdana: 1.0054,
-  'dejavu sans': 1.0054, tahoma: 1.0005, 'segoe ui': 1.0791, georgia: 0.917, 'courier new': 0.8325, 'liberation mono': 0.8325,
-  'trebuchet ms': 0.939, 'century schoolbook': 0.9858, century: 0.9858,
-  aptos: 0.939, 'aptos narrow': 0.939, 'aptos display': 0.939, consolas: 0.9136,
-  ubuntu: 0.96, 'ubuntu mono': 0.83, // (embedded in sample S125: its own hhea tables)
-  'arial narrow': 0.9355, // (its hhea ascender, no line gap)
-  garamond: 0.8618, // (its hhea ascender, no line gap: Word's first baselines in 42 generated documents, 13.79px under the line's top at 12pt whatever the spacing)
-  'microsoft sans serif': 0.9219, // (sample S113. Not Comic Sans MS or Century Gothic: their hhea ascents put sample S038's lines low)
-};
+// hhea ascender + line gap, per em (fontMetrics' ascent), of the fonts Word documents use most: the fonts whose text is
+// moved. (Garamond's: Word's first baselines in 42 generated documents, 13.79px under the line's top at 12pt whatever
+// the spacing. Microsoft Sans Serif: sample S113. Not Comic Sans MS or Century Gothic: their hhea ascents put sample
+// S038's lines low.)
+export const ASCENT = Object.fromEntries([
+  'arial', 'liberation sans', 'helvetica', 'times new roman', 'liberation serif', 'calibri', 'calibri light', 'carlito',
+  'cambria', 'caladea', 'verdana', 'dejavu sans', 'tahoma', 'segoe ui', 'georgia', 'courier new', 'liberation mono',
+  'trebuchet ms', 'century schoolbook', 'century', 'aptos', 'aptos narrow', 'aptos display', 'consolas', 'ubuntu',
+  'ubuntu mono', 'arial narrow', 'garamond', 'microsoft sans serif',
+].map((f) => [f, fontMetrics(f).ascent]));
 // What remains, per font, in px whatever the size: the average error of printed lines against Word's own PDFs, by font
 // and size (tools/word-compare). Times New Roman sits 0.33-0.36px high at every size from 8 to 14pt, so it's a
 // fixed amount, not a share of the em. Edge prints each line at a whole pixel, rounded to the nearest.
@@ -32,16 +31,16 @@ const OFFSET = {
   // (Arial and Calibri refitted: after later fixes their lines sat 0.15-0.28px low on average.)
 };
 
-// Word's own ascent where it isn't ASCENT's (the font's Windows ascent plus its external leading, GDI's): what a line of
-// runs in several sizes or fonts is sized from (mixlines.js). Calibri's line is its Windows ascent and descent, 0.9521em
-// above the baseline (Word's PDFs: 12pt Calibri raised 3pt in 10pt text, 17.11pt lines), where ASCENT has hhea's
-// ascender plus line gap, which the print offsets below were fitted on.
-const WORD_ASCENT = { calibri: 0.9521, 'calibri light': 0.9521, carlito: 0.9521, consolas: 0.9199 };
 // (Looked up by the font a document names: no prototype, so "constructor" finds nothing.)
 Object.setPrototypeOf(ASCENT, null);
 Object.setPrototypeOf(OFFSET, null);
-/** Word's ascent per em of a font ASCENT knows (its lowercase family name). */
-export const wordAscent = (family) => (Object.hasOwn(WORD_ASCENT, family) ? WORD_ASCENT[family] : ASCENT[family]);
+/**
+ * Word's ascent per em of a font ASCENT knows (its lowercase family name), else undefined: what a line of runs in several
+ * sizes or fonts is sized from (mixlines.js), the font's Windows ascent plus its external leading (GDI's), where ASCENT
+ * has hhea's ascender plus line gap, which the print offsets below were fitted on. (Calibri's line is its Windows ascent
+ * and descent, 0.9521em above the baseline: Word's PDFs, 12pt Calibri raised 3pt in 10pt text, 17.11pt lines.)
+ */
+export const wordAscent = (family) => (Object.hasOwn(ASCENT, family) ? fontMetrics(family).wordAscent : undefined);
 /** The first family of a computed style's stack that ASCENT knows, lowercase, or ''. */
 export const knownFamily = (cs) => cs.fontFamily.split(',').map((f) => f.replace(/["']/g, '').trim().toLowerCase()).find((f) => Object.hasOwn(ASCENT, f)) || '';
 /** How far (px) a span's text is raised in its paragraph `el`: its wrappers' vertical-align (not its own), or null when one isn't a length. */
@@ -238,14 +237,21 @@ export function shiftFor(el, host, anchored = false) {
   }
   const ncs = fs === parseFloat(rcs.fontSize) && family === known(rcs) ? rcs : pcs;
   const natural = (parseFloat(ncs.getPropertyValue('--odx-lh')) || 1.17) * fs;
-  const room = Math.max(0, parseFloat(lineHeightOf(pcs)) - natural);
+  const raw = parseFloat(lineHeightOf(pcs)) - natural;
+  const room = Math.max(0, raw);
   const atLeast = pcs.getPropertyValue('--odx-lhlen').trim() === '1';
   // (A line on a document grid has its text centred, as the browser sets it: lhfix.js.)
   const grid = el.dataset?.odxGrid === '1';
-  const extra = atLeast ? room : grid ? room / 2 : 0;
+  // Multiple spacing under a single line: Word shortens the text's ascent and descent alike, its baseline that multiple
+  // of the ascent under the line's top; the browser takes half the shortfall off each side (sub-single: Calibri 11pt at
+  // 0.5 lines printed 1.6px low, 16pt Calibri Light 2.6px).
+  const mult = parseFloat(pcs.getPropertyValue('--odx-mult')) || 1;
+  const sub = !atLeast && !grid && raw < 0 && mult < 1;
+  const extra = sub ? (mult - 1) * asc * fs : atLeast ? room : grid ? room / 2 : 0;
   const d = Math.round((asc * fs + extra - browserOffset(pcs, rcs, host) + off) * 100) / 100;
   // (A shift far from the expected half of the extra means something else is going on: left alone.)
-  return Math.abs(d) < 0.05 || (!grid && Math.abs(d - (atLeast ? room / 2 : -room / 2)) > 3) || (grid && Math.abs(d) > 3) ? 0 : d;
+  const expect = sub ? extra - raw / 2 : atLeast ? room / 2 : -room / 2;
+  return Math.abs(d) < 0.05 || (!grid && Math.abs(d - expect) > 3) || (grid && Math.abs(d) > 3) ? 0 : d;
 }
 
 /**
@@ -264,8 +270,12 @@ export function blockShifts(blocks, host) {
   if (blockEpoch !== fontLoads) { blockMemo = new WeakMap(); blockEpoch = fontLoads; }
   for (const { el, i, node } of blocks) {
     const anchored = el.tagName === 'P' && !!el.querySelector(':scope > [style*="position: absolute"], :scope > [style*="position:absolute"]');
-    let d = node ? blockMemo.get(node) : undefined;
-    if (d === undefined) { d = shiftFor(el, host, anchored); if (node) blockMemo.set(node, d); }
+    // (Kept with whether its pictures were out of the flow: one drawn up to its page's foot is set out of it after the
+    // paragraph was first measured, pages.js tbPast; its line's shift as a picture's line, none, left the anchor
+    // paragraph's text of coverpic-word a6 1.3px high.)
+    let m = node ? blockMemo.get(node) : undefined;
+    if (m === undefined || m.anchored !== anchored) { m = { anchored, d: shiftFor(el, host, anchored) }; if (node) blockMemo.set(node, m); }
+    const d = m.d;
     if (d) out.set(i, `${anchored ? '--odx-pshifta' : '--odx-pshift'}:${d}px`);
   }
   return out;
@@ -286,7 +296,9 @@ export function baselineCss(scope) {
   rules.push(`.odx-hf p[style*="--odx-bl:"]{position:relative;top:var(--odx-bl)}`);
   // One holding anchored pictures is moved down by padding instead (position:relative would make it their containing
   // block), and they are moved back up: sample S062's footer "Page 3 of 9" beside its page art, 1.3px high.
-  rules.push(`.odx-hf p[style*="--odx-bla"]{padding-top:var(--odx-bla);margin-bottom:calc(-1 * var(--odx-bla))}`);
+  // (Over a paragraph's own padding-top of 0, which a top border of its own set to none writes: hfShifts sets this only
+  // where its padding is 0.)
+  rules.push(`.odx-hf p[style*="--odx-bla"]{padding-top:var(--odx-bla) !important;margin-bottom:calc(-1 * var(--odx-bla))}`);
   // (Not one set on the page from its top or its margins, hfstory.js placeStoryShapes: its place is the page's, which
   // the padding doesn't move. Word's prints of six generated footers, a text box 9.5in down the page beside the
   // footer's line: its text 1.7px high with this taken off it too.)

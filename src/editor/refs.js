@@ -137,6 +137,9 @@ export function referenceValue(view, instr, at) {
  * last), else the nearest one before the page, else the first after it. In the body: the nearest before the field.
  */
 function styleRef(view, style, at, f) {
+  // (A level, 1 to 9, is that built-in heading style: a caption's chapter number, STYLEREF 1 \s, is Heading 1's number,
+  // "3" in Word's PDF of a sample's "Table 3-1."; it had said to apply a style named "1".)
+  if (/^[1-9]$/.test(style)) style = `heading ${style}`;
   const list = style ? styledParagraphs(view, style) : null;
   // (A style the document doesn't have: Word says to apply it.)
   if (!list) return NO_STYLE;
@@ -150,7 +153,8 @@ function styleRef(view, style, at, f) {
     hit = [...list].reverse().find((x) => x.pos < at.pos) || list[0];
   }
   if (!hit) return NO_STYLE;
-  return f.sw('n') || f.sw('r') || f.sw('w') ? paragraphNumber(view, hit.pos + 1) || hit.text : hit.text;
+  // (\s, the switch a caption's chapter number has: the heading's number too.)
+  return f.sw('n') || f.sw('r') || f.sw('w') || f.sw('s') ? paragraphNumber(view, hit.pos + 1) || hit.text : hit.text;
 }
 
 const fldType = (n) => (n.type === schema.nodes.opaque_inline && n.attrs.kind === 'fldChar' ? /fldCharType="(\w+)"/.exec(n.attrs.xml)?.[1] : null);

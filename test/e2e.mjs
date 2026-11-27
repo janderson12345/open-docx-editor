@@ -45,8 +45,9 @@ for (const f of fixtures) {
   await page.waitForFunction((n) => window.odx.fileName === n, f);
   // (Not in WebKit: Playwright's screenshot waits for the page's fonts, which WebKit can leave loading for good.)
   if (process.env.BROWSER !== 'webkit') await page.screenshot({ path: `${outDir}/${f}.png`, fullPage: true });
-  // Type at the end of the first paragraph, then add a bold word.
-  await page.click('.odx-content p >> nth=0');
+  // Type at the end of the first paragraph that shows, then add a bold word. (Not always the first: autofit-indents.docx
+  // starts in a 40px column whose bulleted paragraphs' indents leave them no width, as in Word.)
+  await page.click('.odx-content p >> visible=true >> nth=0');
   await page.keyboard.press('End');
   await page.keyboard.type(' typed');
   await page.keyboard.press('Control+b');
@@ -56,12 +57,14 @@ for (const f of fixtures) {
   fs.writeFileSync(`${outDir}/${f.replace('.docx', '.edited.docx')}`, Buffer.from(bytes));
   const { value: html } = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) });
   // (After a full stop AutoCorrect capitalises the word, as Word does.) A protected document refuses what it protects
-  // against: the typing when it can only be read, the bold when formatting is limited.
+  // against: the typing when it can only be read, the bold when formatting is limited. Typing at the end of a bold run
+  // types bold, as in Word, and Ctrl+B then turns it off (revprint.docx's first paragraph ends in bold).
   const prot = await page.evaluate(() => window.odx.protection);
   const locked = prot.readOnlyNow || (prot.enforced && (prot.edit === 'readOnly' || prot.edit === 'comments'));
+  const joined = html.replace(/<\/strong><strong>/g, '');
   const ok = locked ? !/typed/.test(html)
     : prot.enforced && prot.formatting ? / [tT]yped bolded/.test(html) && !/<strong>/.test(html)
-      : / [tT]yped<strong> bolded<\/strong>/.test(html.replace(/<\/strong><strong>/g, ''));
+      : / [tT]yped<strong> bolded<\/strong>/.test(joined) || /<strong>[^<]* [tT]yped<\/strong> bolded/.test(joined);
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${f}`);
   if (!ok) { failed++; console.log(html.slice(0, 400)); }
 }

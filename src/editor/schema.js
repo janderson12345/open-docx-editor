@@ -67,7 +67,10 @@ tables.table_row.toDOM = (node) => {
   const m = node.attrs.trPr && /<w:trHeight\b[^>]*w:val="(\d+(?:\.\d+)?)"/.exec(node.attrs.trPr);
   const auto = node.attrs.trPr && /<w:trHeight\b[^>]*w:hRule="auto"/.test(node.attrs.trPr);
   // Word's minimum leaves out the cells' top and bottom margins: the cells' content box gets it (see editor.css).
-  const a = m && !auto && +m[1] ? { style: `--odx-trh:${+m[1] / TWIPS_PER_PX}px` } : {};
+  // (To the nearest 64th of a pixel, the step the browser keeps lengths in: it cuts a row's height down to one, the cell
+  // margins and lines added to it, and a sample's 191-twip rows under 1pt lines came out 0.02px short each, 1.3px over
+  // a page of them.)
+  const a = m && !auto && +m[1] ? { style: `--odx-trh:${Math.round((+m[1] / TWIPS_PER_PX) * 64) / 64}px` } : {};
   // A deleted row (tracked) disappears unless all markup is shown, as in Word.
   if (node.attrs.trPr && /<w:del\b/.test(node.attrs.trPr)) a.class = 'odx-row-del';
   else if (node.attrs.trPr && /<w:ins\b/.test(node.attrs.trPr)) a.class = 'odx-row-ins';
@@ -287,7 +290,18 @@ export const schema = new Schema({
       toDOM(n) {
         const a = { class: 'odx-opaque-inline', 'data-kind': n.attrs.kind, contenteditable: 'false' };
         // A graphic we can't draw yet keeps its size, so lines and pages break where Word's do.
-        if (n.attrs.width != null) a.style = `display:inline-block;width:${n.attrs.width}px;height:${n.attrs.height}px`;
+        // (One showing text, an inline VML group's, keeps it inside its box, the box's foot on the line's baseline as a
+        // picture's: an inline block of text would sit on its last line of text.)
+        // (And the font's descent under it, as Word lays its line out: a sample's form under such a group 2px higher than
+        // Word's, its footer's last line kept on the page where Word's goes on to the next. vml-inline-group: "After group"
+        // 174.7px under "Before" in Word, 172.3 without it. 0.215em: Times New Roman's and Arial's, within 0.1px at 8pt.)
+        if (n.attrs.width != null) a.style = `display:inline-block;width:${n.attrs.width}px;height:${n.attrs.height}px${n.attrs.text ? ';overflow:hidden;vertical-align:baseline;margin-bottom:0.215em' : ''}`;
+        // A positional tab (w:ptab): its alignment and what it is placed against, for hfstory.js layoutPtabs (only the values
+        // ST_PTabAlignment and ST_PTabRelativeTo allow).
+        if (n.attrs.kind === 'ptab') {
+          a['data-ptab'] = ['left', 'center', 'right'].find((v) => v === (/\bw:alignment="(\w+)"/.exec(n.attrs.xml) || [])[1]) || 'left';
+          a['data-ptabrel'] = (/\bw:relativeTo="indent"/.test(n.attrs.xml)) ? 'indent' : 'margin';
+        }
         // Field hints, used to show live page numbers in headers and footers.
         if (n.attrs.kind === 'fldChar') a['data-fld'] = (/fldCharType="(\w+)"/.exec(n.attrs.xml) || [])[1];
         // A field's opening mark in a shaded run: Word draws the field's page number in that run's colour, on its shading,
@@ -377,7 +391,7 @@ export const schema = new Schema({
     },
     // An inline content control (form field), written back as <w:sdt> around its runs.
     sdt: {
-      attrs: { key: { default: 0 }, pr: { default: '' }, endPr: { default: '' }, tag: { default: null }, alias: { default: null }, kind: { default: 'richText' }, phText: { default: null } },
+      attrs: { key: { default: 0 }, pr: { default: '' }, endPr: { default: '' }, tag: { default: null }, alias: { default: null }, kind: { default: 'richText' }, phText: { default: null }, outer: { default: null } }, // outer: [[sdtPr, sdtEndPr] XML] of controls around this one with nothing else in them, outermost first
       inclusive: true,
       excludes: '',
       toDOM: (m) => {
@@ -423,8 +437,10 @@ function rextraCss(items) {
     if (name === 'rFonts' && /w:cs="([^"]+)"/.test(xml)) css.push(`--odx-fcs:${fontStack(/w:cs="([^"]+)"/.exec(xml)[1])}`);
     if (name === 'spacing') css.push(`--odx-csp:${Number(val(xml)) / 20}pt`, 'letter-spacing:var(--odx-csp)');
     else if (name === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(major|minor)/.test(xml)) {
-      // A theme font on a run: the theme's body or heading font (variables set with the document's styles).
-      const t = /w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(xml)[1];
+      // A theme font on a run: the theme's body or heading font (variables set with the document's styles); a Bidi one
+      // the theme's complex-script font (props.js themeFace).
+      const m = /w:(?:ascii|hAnsi)Theme="(major|minor)(\w*)/.exec(xml);
+      const t = m[1] + (/Bidi$/.test(m[2]) ? 'bidi' : '');
       css.push(`font-family:var(--odx-font-${t})`, `--odx-lh:var(--odx-lh-${t})`);
     }
     // Complex-script formatting (editor.css: a run marked w:rtl or w:cs takes it instead of the Latin members).

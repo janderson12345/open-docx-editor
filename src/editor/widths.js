@@ -185,8 +185,9 @@ export function fixStoryWidths(root) {
   if (storyEpoch !== fontEpoch()) { storyMemo.clear(); storyEpoch = fontEpoch(); }
   for (const s of root.querySelectorAll('span.odx-t')) {
     const text = s.textContent;
-    if (text.length < 2 || !s.isConnected || s.closest('.odx-fit')) continue;
+    if (!text.length || !s.isConnected || s.closest('.odx-fit')) continue;
     const cs = getComputedStyle(s);
+    if (text.length < 2 && !(parseFloat(cs.getPropertyValue('--odx-w')) > 0)) continue; // (a single letter only when scaled: applyWidths)
     if (!parseFloat(cs.fontSize)) continue;
     const k = `${cs.fontStyle}|${cs.fontWeight}|${cs.fontFamily}|${cs.fontSize}|${cs.fontVariantCaps}|${cs.getPropertyValue('--odx-w')}|${text}`;
     if (!storyMemo.has(k)) {
@@ -204,7 +205,9 @@ export function applyWidths(view) {
   const decos = [];
   if (memoEpoch !== fontEpoch()) { memo = new WeakMap(); memoEpoch = fontEpoch(); }
   view.state.doc.descendants((node, pos, parent) => {
-    if (!node.isText || node.text.length < 2) return !node.isText;
+    // (A single letter too where it's scaled, w:w: left at scaleCss's estimate, a sample's form text in runs of a letter
+    // or two at 110% came out 0.5-0.8% wider than Word's and wrapped a word early in narrow cells.)
+    if (!node.isText || (node.text.length < 2 && !node.marks.some((m) => JSON.stringify(m.attrs).includes('<w:w ')))) return !node.isText;
     if (fitOf(node)) return false; // (fitted text has its own width: fittext.js)
     // An unchanged run in an unchanged paragraph keeps its correction (ProseMirror keeps both nodes): no style lookups.
     const known = memo.get(parent)?.get(node);
@@ -214,7 +217,8 @@ export function applyWidths(view) {
     }
     if (!memo.has(parent)) memo.set(parent, new WeakMap());
     const remember = (v) => memo.get(parent).set(node, v);
-    const at = view.domAtPos(pos + 1);
+    // (A single letter's end is its node's end, where domAtPos gives the paragraph: from inside it instead, side -1.)
+    const at = view.domAtPos(pos + 1, node.text.length < 2 ? -1 : 0);
     let host = at.node.nodeType === 3 ? at.node.parentElement : at.node;
     if (host && host.classList.contains('odx-wfix')) host = host.parentElement;
     if (!host) return false;

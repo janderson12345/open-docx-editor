@@ -29,7 +29,7 @@ export function fitOf(node) {
 
 let probe = null;
 /** The text's width in its element's font, spaced as plain text. */
-function natural(el, text) {
+export function natural(el, text) {
   if (!probe || !probe.isConnected) {
     probe = document.createElement('span');
     probe.setAttribute('aria-hidden', 'true');

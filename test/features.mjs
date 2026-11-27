@@ -364,7 +364,6 @@ check(updated >= 5 && after.includes('chapter 2, "Methods of measurement", on pa
 await page.click('.odx-content p >> nth=1');
 await page.keyboard.press('Control+z');
 check((await bodyText()).includes('on page 99'), 'one Ctrl+Z puts the saved results back');
-
 // An agent working in the editor: its edit appears as a tracked change under its name; the person accepts it.
 const agentRun = await page.evaluate(() => {
   const a = window.odx.agent({ author: 'Assistant' });
@@ -376,6 +375,15 @@ const agentRun = await page.evaluate(() => {
   return { n, del, ins, after: a.outline()[2].text, left: a.changes().length };
 });
 check(agentRun.n === 1 && agentRun.del === 'Results' && agentRun.ins === 'Findings' && agentRun.after === 'Findings' && agentRun.left === 0, `an agent's edit shows as a tracked change under its name, then accepted (${JSON.stringify(agentRun)})`);
+
+// STYLEREF by heading level (mkstyleref.mjs): a caption's chapter number, as in Word's PDF of it.
+await open('styleref-level.docx');
+await page.evaluate(() => window.odx.updateFields());
+{
+  const text = await bodyText();
+  check(text.includes('Table 3-1.') && text.includes('Plain: Place of Performance | heading 1 by name: Place of Performance | number by name: 3'),
+    `STYLEREF 1 \\s and STYLEREF 1: Heading 1's number and text, as in Word (${text.slice(-160)})`);
+}
 
 await open('tiff.docx');
 const tiffs = await page.evaluate(() => [...document.querySelectorAll('.odx-content img:not(.ProseMirror-separator)')].map((i) => i.complete && i.naturalWidth > 0));
@@ -563,6 +571,33 @@ check(orig.join(' | ') === 'Alpha words old end. | A paragraph deleted whole. | 
   `Original: insertions out, deletions in, paragraphs as they were (${orig.join(' | ')})`);
 check(final.join(' | ') === 'Alpha new words end. | A paragraph inserted whole. | Split here by Enter | and joined again. | First of twoSecond of two.',
   `No Markup still shows the changed document (${final.join(' | ')})`);
+
+// Tracked changes and hidden paragraph marks as Word's default PDF export gives them (mkrevprint.mjs: its PDF of the
+// same file): a hidden mark's paragraph runs on at the next one's indent, a style separator's at its own; a list item
+// whose mark is deleted isn't counted, one whose text is all deleted keeps its number; a mark inserted then deleted is
+// gone. On screen the change bar and the formatting tint stay; on paper neither.
+await open('revprint.docx');
+const rp = await page.evaluate(() => {
+  const ps = [...document.querySelectorAll('.odx-content > p')].filter((p) => getComputedStyle(p).display !== 'none');
+  const find = (t) => ps.find((p) => p.innerText.includes(t));
+  const x = (t) => { const p = find(t); const r = document.createRange(); r.selectNodeContents(p); return Math.round(r.getClientRects()[0].left - find('The end.').getBoundingClientRect().left); };
+  const changed = document.querySelector('.odx-content p.odx-changed');
+  return {
+    texts: ps.map((p) => p.innerText.replace(/\s+/g, ' ').trim()),
+    labels: ps.filter((p) => p.classList.contains('odx-li')).map((p) => p.dataset.label),
+    hidden: x('Runs on at the margin.'), sep: x('Runs on at 2in.'),
+    bar: changed && getComputedStyle(changed).boxShadow, tint: getComputedStyle(document.querySelector('.odx-content .odx-fmt')).backgroundColor,
+  };
+});
+await page.emulateMedia({ media: 'print' });
+const rpPrint = await page.evaluate(() => ({ bar: getComputedStyle(document.querySelector('.odx-content p.odx-changed')).boxShadow, tint: getComputedStyle(document.querySelector('.odx-content .odx-fmt')).backgroundColor }));
+await page.emulateMedia({ media: 'screen' });
+check(rp.texts.some((t) => t === 'Hidden mark A. Runs on at the margin.') && rp.hidden === 0 && rp.sep === 192,
+  `a hidden paragraph mark runs on at the next paragraph's indent, a style separator at its own 2in (${rp.hidden}, ${rp.sep})`);
+check(rp.labels.join(' ') === '1. 2. 3. 1. 2. 3.' && rp.texts.some((t) => t.replace(/\s/g, '').includes('Itemtwo.Itemthree.')) && !rp.texts.some((t) => t.includes('Inserted and deleted')),
+  `list items: one whose mark is deleted not counted, one whose text is deleted numbered, a mark inserted then deleted gone (${rp.labels.join(' ')})`);
+check(rp.bar && rp.bar !== 'none' && rp.tint !== 'rgba(0, 0, 0, 0)' && rpPrint.bar === 'none' && rpPrint.tint === 'rgba(0, 0, 0, 0)',
+  `change bar and formatting tint on screen, neither on paper (${JSON.stringify([rp.bar, rp.tint, rpPrint])})`);
 
 // Wrap Text (Layout > Wrap Text): the selected picture floats with the text square round it, goes behind the text, and
 // back in line; each drawn so and saved as Word writes it.
@@ -1177,6 +1212,29 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   check(Math.abs(r.imgTop - 48) <= 1 && Math.abs(r.imgLeft - 192) <= 1 && r.page1 > 100 && r.page2 < 40,
     `a header's picture placed against the page, as Word draws it; pages without a header from the top margin (${JSON.stringify(r)})`);
 }
+// A header's empty paragraph spaced 6pt before holding a picture wrapped top and bottom that reaches past the top margin,
+// in compatibility mode 15 (mkhdrtb.mjs). Word's PDF of it: the body's first line from 86.7pt (115.6px) down, its
+// paragraph's space before and its mark's line under the picture; it had been 9.6px higher, right under the picture.
+{
+  await open('header-top-bottom.docx');
+  const r = await page.evaluate(() => {
+    const s0 = document.querySelector('.odx-sheet').getBoundingClientRect();
+    const p = [...document.querySelectorAll('.odx-content > p')].find((e) => e.getBoundingClientRect().height);
+    return { body: p && Math.round((p.getBoundingClientRect().top - s0.top) * 10) / 10 };
+  });
+  check(Math.abs(r.body - 115.6) <= 1.5, `a header's picture wrapped top and bottom: the body under its paragraph's space and line, as in Word (${JSON.stringify(r)})`);
+}
+// A table style's hanging indent (mktblind.mjs), its own and its base's: in Word's PDF each Normal cell's first line at
+// the cell's edge and the rest 18pt in, the same under a style based on Normal, none under a style of its own indent,
+// and with a direct 0.5in left indent the first line 18pt in from that.
+{
+  await open('table-style-indent.docx');
+  const r = await page.evaluate(() => [...document.querySelectorAll('.odx-content td p')].filter((p) => p.textContent.length > 10).map((p) => {
+    const cs = getComputedStyle(p);
+    return `${p.textContent.split(':')[0]} ${Math.round(parseFloat(cs.marginLeft) * 0.75)}/${Math.round(parseFloat(cs.textIndent) * 0.75)}`;
+  }).join(', '));
+  check(r === 'Normal 18/-18, Body 18/-18, Own 0/0, Direct 36/-18, Normal 18/-18, Body 18/-18, Own 0/0, Direct 36/-18', `a table style's indent on its cells' paragraphs, as in Word (${r})`);
+}
 // Contextual spacing across a table's edges (mktableedges.mjs): with it, the paragraph above, the cell's and the one
 // under the table meet with no space (Word: each line 13.5pt under the one above, and the border); without it, each
 // keeps its 10pt (the cell's line 33.75pt under the one above, the line under the table 33.75pt under the cell's).
@@ -1198,6 +1256,246 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
     return { hidden: Math.round((at('Third hidden') - at('First hidden')) * 10) / 10, shown: Math.round((at('Third shown') - at('First shown')) * 10) / 10 };
   });
   check(Math.abs(r.hidden - 19) <= 1.5 && Math.abs(r.shown - 49) <= 1.5, `a row of empty cells with hidden end marks takes no room, as in Word (${JSON.stringify(r)})`);
+}
+// Autofit columns and cells' auto spacing as Word lays them (mkautofit.mjs; Word's prints of the same files).
+// A 40px first column holding empty bulleted paragraphs, or "x" after a first-line indent, stays 40px; "x" bulleted at
+// a 720 indent widens it to 68.8px (its indent, word and margins).
+{
+  await open('autofit-indents.docx');
+  const ws = await page.evaluate(() => [...document.querySelectorAll('.odx-content table')].map((t) => +t.rows[0].cells[0].getBoundingClientRect().width.toFixed(2)));
+  check(ws.length === 3 && Math.abs(ws[0] - 40) < 1 && Math.abs(ws[1] - 40) < 1 && Math.abs(ws[2] - 68.8) < 1, `an autofit column needs no room for an empty paragraph's indent or a first-line indent (${ws})`);
+}
+// A Normal (Web) paragraph last in its cell has no auto space under it (its row as high as the next, but for the
+// table's top line); first of two, it keeps 14pt, and so does a list's last item ending a cell.
+{
+  await open('cell-auto-space.docx');
+  const r = await page.evaluate(() => {
+    const ts = [...document.querySelectorAll('.odx-content table')];
+    const b = [...document.querySelectorAll('.odx-content td p')].find((q) => q.textContent === 'B1b');
+    const a = b?.previousElementSibling;
+    const item = [...document.querySelectorAll('.odx-content td p')].find((q) => q.textContent === 'B2b');
+    return { rows: ts[0] ? [...ts[0].rows].map((tr) => +tr.getBoundingClientRect().height.toFixed(2)) : [], gap: a ? +(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom).toFixed(2) : null, item: item ? parseFloat(getComputedStyle(item).marginBottom) : null };
+  });
+  check(r.rows.length === 2 && Math.abs(r.rows[0] - r.rows[1]) < 1 && Math.abs(r.gap - 18.67) < 0.5 && Math.abs(r.item - 18.67) < 0.5, `no auto space after a cell's last paragraph but a list item, 14pt after its first (${JSON.stringify(r)})`);
+}
+// Table rows and notes as Word lays them (mktablerows.mjs; Word's prints of the same files).
+// A note at the foot of its own row's page, not of the table's first page: page 1 has notes 1-15, page 3 notes 32-40.
+{
+  await open('table-row-notes.docx');
+  const b = await bands();
+  const ids = (k) => (b[k]?.parts || []).flatMap((q) => q.ids).join();
+  const want = (a, z) => Array.from({ length: z - a + 1 }, (_, i) => String(a + i)).join();
+  check(ids(0) === want(1, 15) && ids(2) === want(32, 40), `a table's notes on the pages of their rows (${[0, 1, 2].map(ids).join(' | ')})`);
+}
+// Each cell's text under its row's widest top line: a 3pt line over the one-line cell, 0.5pt over the three-line one,
+// both 3pt down, the rows 62.67px apart.
+{
+  await open('table-row-band.docx');
+  const r = await placeOf(['Alpha1', 'B1 one', 'B2 one']);
+  const [a, b1, b2] = r.at;
+  check(a && b1 && b2 && Math.abs(a.top - b1.top) < 0.5 && Math.abs(b2.top - b1.top - 62.67) < 0.5, `a row's text under its widest top line, its own thinner one or not (${JSON.stringify(r.at.map((x) => x && +x.top.toFixed(2)))})`);
+}
+// A row of at least 32.25pt with 33.75pt left at the page's foot, its own 1pt top line and the next row's under it: it
+// splits there (its first two lines on page 1), as in Word.
+{
+  await open('table-row-foot.docx');
+  // (Where each line's text is: a line carried on is drawn under a spacer at its paragraph's start.)
+  const at = await page.evaluate((ts) => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    return ts.map((t) => {
+      const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent === t);
+      const node = p && [...p.querySelectorAll('span.odx-t')].pop()?.firstChild;
+      if (!node) return null;
+      const rg = document.createRange();
+      rg.selectNodeContents(node);
+      const top = rg.getBoundingClientRect().top;
+      return sheets.findIndex((q) => top >= q.top && top < q.bottom);
+    });
+  }, ['R1 first', 'R1 second', 'R1 third']);
+  check(at.join() === '0,0,1', `a row of at least height splits at the page's foot with room for it and its own lines (${at})`);
+}
+// Notes in a Times New Roman style, their text in Calibri after a Times quote mark: Calibri's lines, 16.28px apart (the
+// browser's own would be 17px; the style's Times 15.33px).
+{
+  await open('notes-mixed-font.docx');
+  const hs = await page.evaluate(() => [...document.querySelectorAll('.odx-sheet .odx-notes .odx-note p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+  check(hs.length === 3 && hs.every((h) => Math.abs(h - 2 * 16.276) < 0.6), `notes' lines at their text's font, not their style's (${hs}: two lines each)`);
+}
+// Normal in 16pt: the separator a line of it, page 1 keeps 30 lines of 20pt over the note (31 under Normal in 12pt).
+{
+  await open('notes-separator-16pt.docx');
+  const n = await page.evaluate(() => {
+    const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect();
+    return [...document.querySelectorAll('.odx-content p')].filter((p) => p.textContent.startsWith('Body line') && p.getBoundingClientRect().top < s.bottom).length;
+  });
+  check(n === 30, `the note separator a line of the Normal style: ${n} lines on page 1 (Word: 30)`);
+}
+// A form's merged cells, framed text boxes and columns as Word lays them out (mkrowspan.mjs; Word's prints of the same
+// files). Where a paragraph's text is: its sheet, and its top on it (a moved column's too: its transform counts).
+{
+  const tops = (ts) => page.evaluate((list) => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    const ps = [...document.querySelectorAll('.odx-content p')];
+    return list.map((t) => {
+      const p = ps.find((q) => q.textContent === t);
+      if (!p) return null;
+      const top = p.getBoundingClientRect().top;
+      const k = sheets.findIndex((q) => top >= q.top && top < q.bottom);
+      return { sheet: k, top: +(top - (sheets[k]?.top ?? 0)).toFixed(2) };
+    });
+  }, ts);
+  // A merged cell whose text fits the rows' own minimum heights doesn't make the last of them taller (Word: "After
+  // table" 132.7px under "Before").
+  await open('rowspan-mixed.docx');
+  let [a, b] = await tops(['Before', 'After table']);
+  check(a && b && Math.abs(b.top - a.top - 132.7) < 1, `rows beside a merged cell keep their minimum heights when its text fits them (${a && b && (b.top - a.top).toFixed(2)}; Word: 132.7)`);
+  // The table's 1.5pt inside line under each hidden part of a merged cell (its top nil) is in its row's height, over
+  // the side cells' own 0.75pt lines (Word: "Side 6" 108px under "Side 1").
+  await open('rowspan-inside.docx');
+  [a, b] = await tops(['Side 1', 'Side 6']);
+  check(a && b && Math.abs(b.top - a.top - 108) < 1, `rows beside a merged cell take the inside line its parts sit under (${a && b && (b.top - a.top).toFixed(2)}; Word: 108)`);
+  // An inline VML group of text boxes, 120pt tall: its line that tall (Word: "After group" 174.7px under "Before"; ours
+  // 2px less, the font's descent under the box: TODO.md).
+  await open('vml-inline-group.docx');
+  [a, b] = await tops(['Before', 'After group']);
+  check(a && b && Math.abs(b.top - a.top - 174.7) < 3, `an inline VML group takes its own size in its line (${a && b && (b.top - a.top).toFixed(2)}; Word: 174.7)`);
+  // Rows of a minimum height under dashed 1pt and dotted 0.75pt lines (mkrowlines.mjs): each row its minimum and its
+  // top line, the text under such a line as under a solid one (Word: "A row 2" 14.08px under "A row 1", 14.07px a row
+  // to "A row 12"; "C row 12" 11.0px a row under "C row 1").
+  await open('row-dash-lines.docx');
+  const rl = await tops(['A row 1', 'A row 2', 'A row 12', 'C row 1', 'C row 12']);
+  check(rl.every(Boolean) && Math.abs(rl[1].top - rl[0].top - 14.08) < 0.5 && Math.abs((rl[2].top - rl[0].top) / 11 - 14.065) < 0.05 && Math.abs((rl[4].top - rl[3].top) / 11 - 11.0) < 0.05, `rows under dashed and dotted lines take their minimum and the line (${JSON.stringify(rl)})`);
+  // Tables 341tw in, lines of 0.5 to 6pt, in a Word 2007 document (mktblcompat.mjs): each first cell's text where the
+  // indents put it, 29.5px in from the paragraphs' (Word's print: "A one", "C one", "D one", "E one" all at 125.5px).
+  await open('table-left-compat12.docx');
+  const xs = await page.evaluate(() => ['Before A', 'A one', 'C one', 'D one', 'E one'].map((t) => {
+    const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent === t);
+    const r = document.createRange(); r.selectNodeContents(p); return p ? +r.getClientRects()[0].left.toFixed(2) : null;
+  }));
+  check(xs.every((x) => x != null) && xs.slice(1).every((x) => Math.abs(x - xs[0] - 29.5) < 0.5), `a Word 2007 document's tables set their text at the indent, whatever their lines (${JSON.stringify(xs)}; Word: 29.5 in)`);
+  // A hanging paragraph "Label<tab><tab>Text" whose own stop lies 0 to 20tw past the hanging indent (mktabnear.mjs): the
+  // second tab to that stop however near, to the next default one where the stop is the indent itself (Word: the text
+  // at 297.5-298.8px, and 336.1px for the stop at the indent).
+  await open('tab-near-stop.docx');
+  const tn = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => {
+    const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (/^Text after/.test(n.data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    const t = w.nextNode(); if (!t) return null; const r = document.createRange(); r.selectNodeContents(t);
+    return +(r.getClientRects()[0].left - p.getBoundingClientRect().left).toFixed(2);
+  }));
+  check(tn.length === 5 && tn.slice(1).every((x) => Math.abs(x - tn[1]) < 1.5) && tn[0] - tn[1] > 30, `a tab goes to a stop however near it (${JSON.stringify(tn)}; Word: the stop at the indent 38.6px further)`);
+  // Cells of text turned on its side (mkturned.mjs): a paragraph's space before across the cell, its indent along it
+  // (Word: "Before 105" 7px further across its cell than "Plain one", "Left 335" starting 22.4px further up hers).
+  await open('turned-cells.docx');
+  const tc = await page.evaluate(() => ['Plain one', 'Before 105', 'Left 335'].map((t) => {
+    const p = [...document.querySelectorAll('.odx-content td p')].find((q) => q.textContent === t);
+    if (!p) return null;
+    const r = document.createRange(); r.selectNodeContents(p); const q = r.getClientRects()[0];
+    return { left: +q.left.toFixed(2), bottom: +q.bottom.toFixed(2), cell: +p.closest('td').getBoundingClientRect().left.toFixed(2) };
+  }));
+  check(tc.every(Boolean) && Math.abs((tc[1].left - tc[1].cell) - (tc[0].left - tc[0].cell) - 7) < 1 && Math.abs(tc[0].bottom - tc[2].bottom - 22.4) < 1.5, `turned cells: space before across the cell, indents along it (${JSON.stringify(tc)})`);
+  // A row carried to the next page starting with a paragraph spaced 195tw before (mksplitspace.mjs): its space kept there
+  // (Word: "Spaced item" on page 2, its baseline 122px down, 12.7px under where a plain line starts, 109.3px).
+  await open('split-row-space.docx');
+  // (Where its text is, not its box: pagination moves a cell's lines inside their paragraph, by a spacer in it.)
+  const ss = await page.evaluate((list) => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    return list.map((t) => {
+      const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent === t);
+      if (!p) return null;
+      const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.data.trim() && !n.parentElement.closest('.odx-push') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+      const tn = w.nextNode(); if (!tn) return null;
+      const r = document.createRange(); r.selectNodeContents(tn); const top = r.getClientRects()[0]?.top;
+      const k = sheets.findIndex((q) => top >= q.top && top < q.bottom);
+      return { sheet: k, top: +(top - (sheets[k]?.top ?? 0)).toFixed(2) };
+    });
+  }, ['Line 55', 'Spaced item', 'After 1']);
+  check(ss.every(Boolean) && ss[1].sheet === ss[0].sheet + 1 && Math.abs(ss[2].top - ss[1].top - 15.36) < 1 && Math.abs(ss[1].top - 109.5) < 1.5, `a paragraph starting a row's part on the next page keeps its space before (${JSON.stringify(ss)}; Word: its line 13px down)`);
+  // Text-less VML shapes wrapped top and bottom (mkbandshape.mjs): an empty paragraph's line over a grey band 14pt down,
+  // the next paragraph under the band; a ruled line 15pt under a line of text, the next paragraph under it (Word: "After
+  // band" 73.28px under "Before", "After rule" 20.96px under the rule's line of text).
+  await open('band-shapes.docx');
+  const bs = await tops(['Before', 'After band', 'Text of the anchor paragraph', 'After rule']);
+  check(bs.every(Boolean) && Math.abs(bs[1].top - bs[0].top - 73.28) < 1 && Math.abs(bs[3].top - bs[2].top - 20.96) < 1, `text-less bands wrapped top and bottom keep the text after them under them (${JSON.stringify(bs)})`);
+  // Text at 110% (w:w) in one run, then in runs of one to five letters (mkcharscale.mjs): each as wide as Word sets it,
+  // the one-letter runs scaled too (Word: 474.55, 477.53 and 482.97px; one-letter runs left at the estimate, ~2px more).
+  await open('char-scale.docx');
+  const ws = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].slice(0, 3).map((p) => {
+    const r = document.createRange(); r.selectNodeContents(p); const rs = [...r.getClientRects()].filter((q) => q.width);
+    return +(Math.max(...rs.map((q) => q.right)) - Math.min(...rs.map((q) => q.left))).toFixed(2);
+  }));
+  check(ws.length === 3 && [474.55, 477.53, 482.97].every((w, i) => Math.abs(ws[i] - w) < 1.2), `scaled text as wide as Word's, in runs of one letter too (${JSON.stringify(ws)}; Word: 474.55, 477.53, 482.97)`);
+  // Two columns part way down a portrait page, the last section landscape, a paragraph starting with a column break:
+  // the second column level with the first, on its page, and the text after the columns 16.6px under their last lines
+  // (Word: "Left item 2" and "Right item 1" level; "After columns" 16.6px under "Right item 3").
+  await open('cols-break-landscape.docx');
+  const [l2, r1, r3, ac] = await tops(['Left item 2', 'Right item 1', 'Right item 3', 'After columns']);
+  check(l2 && r1 && r3 && ac && r1.sheet === l2.sheet && Math.abs(r1.top - l2.top) < 1 && ac.sheet === r3.sheet && Math.abs(ac.top - r3.top - 16.6) < 1, `a column after a column break level with the first, the text after them under them (${JSON.stringify([l2, r1, r3, ac])})`);
+  // The same columns in sections of a 1440tw bottom margin and a footer 720tw up, part way down a page of 600tw and a
+  // footer 405tw up: the page filled to its own margin (Word: 62 of the lines after them on page 1; a line's leeway for
+  // fonts that differ from Windows').
+  await open('cols-footer.docx');
+  const n = await page.evaluate(() => {
+    const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect();
+    return [...document.querySelectorAll('.odx-content p')].filter((p) => /^Line \d+$/.test(p.textContent) && p.getBoundingClientRect().top < s.bottom).length;
+  });
+  check(n >= 61 && n <= 62, `a continuous section starting part way down a page keeps the page's own margins on it: ${n} lines on page 1 (Word: 62; its own, 58)`);
+}
+// A form's header and footer lines in floating VML text boxes placed against the page, in one paragraph of a 14/240
+// line (mkvmlhf.mjs): drawn at their places out of the flow, the footer a line of 1px, so the body runs to its bottom
+// margin (Word: 59 lines on page 1, "Page 1 of 68" 10.5px under "TEST 4/20.B"'s line).
+{
+  await open('vml-hf-boxes.docx');
+  const r = await page.evaluate(() => {
+    const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect();
+    const n = [...document.querySelectorAll('.odx-content p')].filter((p) => /^Line \d+$/.test(p.textContent) && p.getBoundingClientRect().top < s.bottom).length;
+    const foot = document.querySelector('.odx-footer');
+    const imgs = [...foot.querySelectorAll('img')].map((i) => i.getBoundingClientRect().top - s.top);
+    return { n, foot: foot.querySelector('p').getBoundingClientRect().height, imgs: imgs.map((v) => +v.toFixed(1)), text: foot.textContent.trim() };
+  });
+  check(r.n === 59 && r.foot < 2 && !r.text && r.imgs.length === 3 && Math.abs(r.imgs[0] - 981.5) < 1.5 && Math.abs(r.imgs[2] - 1006.5) < 1.5, `floating VML text boxes in a footer drawn at their places, out of the flow (${JSON.stringify(r)}; Word: 59 lines, boxes at 981.5 and 1006.5px)`);
+}
+// An empty next-page section-break paragraph holding two bookmarks after a table ending 20px into its room
+// (mksectbreak.mjs): kept on its page past the margin, as Word does ("Next section" on page 2, of 2).
+{
+  await open('sect-after-table.docx');
+  const s2 = await page.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((e) => e.getBoundingClientRect());
+    const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent === 'Next section');
+    return [sheets.length, p ? sheets.findIndex((q) => p.getBoundingClientRect().top >= q.top && p.getBoundingClientRect().top < q.bottom) + 1 : 0];
+  });
+  check(s2[0] === 2 && s2[1] === 2, `an empty section-break paragraph with bookmarks, after a table, kept on its page past the margin (sheets, "Next section" on: ${s2}; Word: 2, 2)`);
+}
+// A cover's lines (mkcover.mjs): a bare break in a 48pt style over 36pt text, its line the style's size (Word: 195px for
+// the paragraph); a 20pt line closing on a 36pt space, which sizes nothing (Word: 65px for its two lines).
+{
+  await open('cover-lines.docx');
+  const h = await page.evaluate(() => [...document.querySelectorAll('.odx-content > p')].map((p) => +p.getBoundingClientRect().height.toFixed(2)));
+  check(Math.abs(h[1] - 195) < 0.6 && Math.abs(h[2] - 65) < 0.6, `a leading break's line in its style's size, a closing space no taller line (${h.slice(1, 3)}; Word 195, 65)`);
+}
+// Symbol bullets over 10pt Calibri at least 13pt: 13pt apart, the bullet's reach inside the set height (Word: 17.33px).
+{
+  await open('list-bullet-atleast.docx');
+  const t = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return ps.length === 30 ? (ps[29].getBoundingClientRect().top - ps[0].getBoundingClientRect().top) / 29 : null; });
+  check(t != null && Math.abs(t - 17.333) < 0.05, `bullets under at-least spacing as Word spaces them (${t && t.toFixed(3)}px; Word 17.33)`);
+}
+// Shapes behind the text in a drawing order unlike the document's: each over the page's white sheet, not under it.
+{
+  await open('behind-shapes-order.docx');
+  const z = await page.evaluate(() => {
+    const sheets = Number(getComputedStyle(document.querySelector('.odx-sheets')).zIndex);
+    return [...document.querySelectorAll('.odx-content img')].filter((i) => getComputedStyle(i).position === 'absolute').map((i) => Number(getComputedStyle(i).zIndex) > sheets);
+  });
+  check(z.length === 4 && z.every(Boolean), `shapes behind the text drawn over the page, in any drawing order (${z})`);
+  // (The fourth, 600pt wide from the column, cut off at the page's right edge: 1in margin + 800px, 97px past 816px.)
+  const cut = await page.evaluate(() => { const i = [...document.querySelectorAll('.odx-content img')].filter((x) => getComputedStyle(x).position === 'absolute').pop(); const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(); const m = /inset\(\S+ (\S+)px/.exec(getComputedStyle(i).clipPath); return m ? +(i.getBoundingClientRect().right - Number(m[1]) - s.right).toFixed(1) : null; });
+  check(cut != null && Math.abs(cut) < 1, `a drawing past the page's edge cut off there, as Word shows it (${cut}px from the edge)`);
+}
+// A grey picture shown in black and white at 75% (a:biLevel, mkcover.mjs): drawn through the page's threshold filter
+// (Word: its mid-grey half black, its light half white).
+{
+  await open('picture-bilevel.docx');
+  const f = await page.evaluate(() => { const i = document.querySelector('.odx-content img:not(.ProseMirror-separator)'); const m = /url\("?#([\w-]+)"?\)/.exec(i ? getComputedStyle(i).filter : ''); const el = m && document.getElementById(m[1]); return el ? el.querySelector('feFuncR')?.getAttribute('tableValues').split(' ').indexOf('1') : null; });
+  check(f === 75, `a picture in black and white through a threshold at its 75% (${f})`);
 }
 // A floating table with no vertical anchor, 2in down (mktableedges.mjs): against the margin, as Word reads it, with the
 // paragraphs after it above it until it (Word: "After 1" 139.5pt down the page, under "Before 5"; the table's first
@@ -1260,6 +1558,36 @@ check(hy.onA && !hy.onB && hy.linesA > 1 && hy.linesA <= hy.linesB && !hySaved.i
   await open('sect-hang.docx');
   const sheets = await page.evaluate(() => document.querySelectorAll('.odx-sheet').length);
   check(sheets === 2, `a section's closing paragraph of only a picture stays on its page, as an empty one does (${sheets} pages; Word 2)`);
+}
+// Where the body starts under a header (mkhfbody.mjs; Calibri 11pt, the header 24px down, Word's PDFs of documents made
+// like these): two pictures with tabs between them, a line as tall as the taller picture (body at 110px; the tabs had
+// added their descent, 4.4px); a paragraph closing with a line break over a 6pt mark, its empty line the mark's (69.6px;
+// it had been lost); a rule of no height wrapped top and bottom 13pt below its paragraph's top, no text kept clear of it
+// (77.7px; it had pushed the body 13px down); a positional tab, a tight logo across the line, spaces and a positional
+// tab, the spaces' line and the tab's below the logo (155.6px; the body had started at the top margin, 96px).
+for (const [f, want, what] of [['hf-pic-tabs.docx', 110, 'tabs beside header pictures size no line'],
+  ['hf-end-break.docx', 69.6, "a header paragraph closing with a line break keeps its mark's empty line"],
+  ['hf-zero-rule.docx', 77.7, 'a header rule of no height wrapped top and bottom keeps no text clear of it'],
+  ['hf-ptab-logo.docx', 155.6, 'a header line of positional tabs round a logo across it goes on below the logo']]) {
+  await open(f);
+  const body = await page.evaluate(() => {
+    const s0 = document.querySelector('.odx-sheet').getBoundingClientRect();
+    return Math.round((document.querySelector('.odx-content > p').getBoundingClientRect().top - s0.top) * 10) / 10;
+  });
+  check(Math.abs(body - want) < 1, `${what} (body at ${body}px; Word ${want})`);
+}
+// A header line of positional tabs (mkhfbody.mjs hf-ptabs): the centred one's text centred between the margins, the
+// right one's ending at the right margin, as Word's PDF has them (408.2px and 720.3px from the page's left).
+{
+  await open('hf-ptabs.docx');
+  const r = await page.evaluate(() => {
+    const s0 = document.querySelector('.odx-sheet').getBoundingClientRect();
+    const spans = [...document.querySelectorAll('.odx-sheet .odx-hf.odx-header span.odx-t')];
+    const at = (t) => { const s = spans.find((x) => x.textContent === t); if (!s) return null; const q = s.getBoundingClientRect(); return { mid: Math.round((q.left + q.right) / 2 - s0.left), right: Math.round(q.right - s0.left), top: Math.round(q.top - s0.top) }; };
+    return { left: at('Left words'), centre: at('Centre words'), right: at('Right words') };
+  });
+  check(r.centre && r.right && Math.abs(r.centre.mid - 408) <= 1 && Math.abs(r.right.right - 720) <= 1 && r.right.top === r.left.top,
+    `positional tabs set their text centred and at the right margin, on one line (${JSON.stringify(r)})`);
 }
 // The hyphenation zone (Word 2010's layout: a word left whole where wrapping it leaves no more than the zone at the
 // line's end; 1in leaves almost none hyphenated) and the consecutive-hyphen limit (here one line in a row), against the
@@ -1410,6 +1738,55 @@ await open('semibold-bold.docx');
     else check(sameAsWord(fends), `SemiBold with Bold in Firefox: lines end as in Word's PDF (${JSON.stringify(fends)})`);
     await ff.close();
   }
+}
+
+// Text spaced under a single line (mksubsingle.mjs): each paragraph that multiple of the font's single line, however tall
+// its text. Word's PDF: "Single A" to "Single C" 276.8px; the 16pt headings at 0.5 lines under 12pt before, 29.0px apart.
+// (At the 1.15em floor of a paragraph, 353.6px and 40.5px.)
+await open('sub-single.docx');
+{
+  const tops = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.odx-content p')].map((p) => [p.textContent, p.getBoundingClientRect().top])));
+  const span = tops['Single C'] - tops['Single A'], heads = tops['Head three'] - tops['Head two'];
+  check(Math.abs(span - 276.8) < 1.5 && Math.abs(heads - 29.0) < 1, `text under a single line: as tall as Word's lines (${span?.toFixed(2)}px, headings ${heads?.toFixed(2)}px)`);
+}
+
+// Aptos Narrow (mkaptosnarrow.mjs): drawn in the open-metric-fonts stand-in, at Aptos Narrow's widths, ahead of the
+// editor's Arial Narrow (6.5% narrower). Word's PDF: the lines end on "limited", "keeping", "year." and "as", "two",
+// "period.". Skipped where the stand-in doesn't load (no network); elsewhere than Windows, the font's order only.
+await open('aptos-narrow.docx');
+{
+  const r = await page.evaluate(async () => {
+    const span = document.querySelector('.odx-content p span');
+    const family = span ? getComputedStyle(span).fontFamily : '';
+    let loaded = false;
+    for (let i = 0; i < 30 && !loaded; i++) {
+      await document.fonts.ready;
+      await new Promise((res) => setTimeout(res, 500));
+      loaded = [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'odx-omf Aptos Narrow' && f.status === 'loaded');
+    }
+    await new Promise((res) => setTimeout(res, 1000));
+    const ends = [];
+    for (const p of document.querySelectorAll('.odx-content > p')) {
+      let top = null, word = '';
+      const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+        for (const m of t.data.matchAll(/\S+/g)) {
+          const rg = document.createRange();
+          rg.setStart(t, m.index);
+          rg.setEnd(t, m.index + 1);
+          const at = rg.getClientRects()[0]?.top;
+          if (top != null && at - top > 3) ends.push(word);
+          top = at;
+          word = m[0];
+        }
+      }
+      ends.push(word);
+    }
+    return { loaded, ahead: family.indexOf('odx-omf Aptos Narrow') >= 0 && family.indexOf('odx-omf Aptos Narrow') < family.indexOf('odx-aptos-narrow'), ends };
+  });
+  check(r.ahead, `Aptos Narrow: the open-metric-fonts stand-in ahead of Arial Narrow (${JSON.stringify(r)})`);
+  if (!r.loaded) console.log('skip Aptos Narrow line ends (the open-metric-fonts stand-in did not load)');
+  else if (process.platform === 'win32') check(r.ends.join(' ') === 'limited keeping year. as two period.', `Aptos Narrow: lines end as in Word's PDF (${r.ends.join(' ')})`);
 }
 
 // Mailings: recipients from the host, Preview Results (values in place of the fields on screen, the document keeping
@@ -2332,6 +2709,52 @@ const fmd = await page.evaluate(() => {
 });
 check(fmd[0] === 2 && Math.abs(fmd[1] - 108.13) < 0.6 && Math.abs(fmd[2] - 96) < 1.5, `a floating table moved on keeps its drop, the text after it with it (${JSON.stringify(fmd)}, want the table at 108.13px and the text at 96px on page 2)`);
 
+// A table set down on its page (vertAnchor page) with text before it in the file: past its place, it and the text after
+// it go on to the next page, the text before staying; at its place, the text before it on that page goes under it
+// (mksetdown.mjs; Word's prints: row 1 at 612.7px on page 2 and the paragraph after it at 111.3px there; row 1 at
+// 114.7px on page 2, the caption before it in the file at 472.7px under it).
+const sdAt = async (f, words) => { await open(f); await page.waitForTimeout(400); return page.evaluate((ws) => {
+  const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  return ws.map((w) => {
+    const walk = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+    for (let n; (n = walk.nextNode());) {
+      if (!n.data.startsWith(w)) continue;
+      const r = document.createRange(); r.selectNodeContents(n); const a = r.getClientRects()[0];
+      const s = sh.findIndex((x) => a.top >= x.top && a.top < x.bottom);
+      return [s + 1, +(a.top - sh[s].top).toFixed(1)];
+    }
+    return null;
+  });
+}, words); };
+const sdB = await sdAt('float-setdown-before.docx', ['Row 1 label', 'Text after the table.']);
+const sdC = await sdAt('float-setdown-caption.docx', ['Row 1 label', 'Table 2 A caption']);
+check(sdB[0]?.[0] === 2 && sdB[1]?.[0] === 2 && sdB[1][1] < 110 && sdC[0]?.[0] === 2 && sdC[0][1] < 115 && sdC[1]?.[0] === 2 && sdC[1][1] > 400,
+  `a table set down on its page: past its place on to the next page, the text before it under it (${JSON.stringify([sdB, sdC])})`);
+
+// A floating table placed up from its text (tblpY -59) doesn't break where it starts: past the page's foot it goes on to
+// the next page whole, 59tw above the top margin; one longer than a page breaks there, and the empty paragraphs after it
+// go beside its last rows (mkfloatup.mjs; Word's prints: row 1 on page 2, 3.9px above where a row at the top margin
+// would be; the 70-row table's text after it on page 3 at the third line, beside its rows).
+const fuAt = async (f, words) => { await open(f); await page.waitForTimeout(400); return page.evaluate((ws) => {
+  const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const t = document.querySelector('.odx-content table').getBoundingClientRect();
+  const at = (y) => sh.findIndex((x) => y >= x.top && y < x.bottom);
+  return [[at(t.top + 1) + 1, +(t.top - sh[at(t.top + 1)].top).toFixed(1)], ...ws.map((w) => {
+    const walk = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+    for (let n; (n = walk.nextNode());) {
+      if (n.data !== w) continue;
+      const r = document.createRange(); r.selectNodeContents(n); const a = r.getClientRects()[0];
+      const s = at(a.top);
+      return [s + 1, +(a.top - sh[s].top).toFixed(1)];
+    }
+    return null;
+  })];
+}, words); };
+const fuM = await fuAt('float-up-moves.docx', ['Row 30']);
+const fuL = await fuAt('float-up-long-beside.docx', ['Row 70', 'After the table.']);
+check(fuM[0][0] === 2 && Math.abs(fuM[0][1] - 92.07) < 0.6 && fuM[1]?.[0] === 2 && fuL[0][0] === 2 && fuL[1]?.[0] === 3 && fuL[2]?.[0] === 3 && fuL[2][1] < fuL[1][1],
+  `a floating table placed up from its text moves on whole, drawn up, and the empty paragraphs after a long one go beside it (${JSON.stringify([fuM, fuL])}, want the table on page 2 at 92.07px, the text after the long one on page 3 above its last row)`);
+
 // A floating table goes where its tblpXSpec puts it, against the margin or the page (why-tests gen2.py fltx3; Word: a 4in
 // table centred in a 6.5in column starts 216px across; at the page's right its 0.5pt line ends at the page's edge).
 const fltBox = async (f) => { await open(f); await page.waitForTimeout(300); return page.evaluate(() => { const s = document.querySelector('.odx-sheets > .odx-sheet').getBoundingClientRect(), t = document.querySelector('.odx-content table').getBoundingClientRect(); return [+(t.left - s.left).toFixed(2), +(t.right - s.left).toFixed(2)]; }); };
@@ -2394,6 +2817,189 @@ const sideRows = await page.evaluate(() => [...document.querySelector('.odx-cont
 }));
 check(sideRows.every((d) => Math.abs(d) <= 1), `sideways merged cells don't stretch their rows (each row's height less its text cell's: ${JSON.stringify(sideRows)})`);
 
+// Tables at a page's foot, as Word's prints of these generated documents break them (one-column tables of Times New
+// Roman 12pt rows under lines of text). For each text: the sheet its first line is on, its top on the sheet, how often
+// it is drawn (header rows repeat as copies) and whether its last line ends above the bottom margin.
+const rowsAt = (texts) => page.evaluate((ts) => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const out = {};
+  const w = document.createTreeWalker(document.querySelector('.odx-canvas') || document.body, NodeFilter.SHOW_TEXT);
+  const r = document.createRange();
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    const t = ts.find((x) => (x.endsWith('*') ? n.data.startsWith(x.slice(0, -1)) : n.data === x));
+    if (!t) continue;
+    r.selectNodeContents(n);
+    const rs = [...r.getClientRects()].filter((q) => q.height > 0);
+    if (!rs.length) continue;
+    const k = sheets.findIndex((s) => rs[0].top >= s.top - 0.5 && rs[0].top < s.bottom);
+    const last = rs[rs.length - 1];
+    const kl = sheets.findIndex((s) => last.top >= s.top - 0.5 && last.top < s.bottom);
+    const o = out[t] || (out[t] = { sheet: k, top: Math.round(rs[0].top - sheets[k].top), n: 0, inside: true });
+    o.n++;
+    if (kl < 0 || last.bottom > sheets[kl].bottom - 96 + 1) o.inside = false; // (1in margins)
+  }
+  return out;
+}, texts);
+// A keep-with-next heading row at the foot stays there when the next row can split, two of its lines with it (Word);
+// with room for one line only (widow control) both go on; a row whose second paragraph alone keeps with the next
+// doesn't keep (why-tests\tblbrk kn-f43, kn-f44, knml-f43).
+await open('table-keep-row-split.docx');
+let tb = await rowsAt(['Heading row', 'Row one*', 'Row two']);
+check(tb['Heading row']?.sheet === 0 && tb['Row one*']?.sheet === 0 && tb['Row two']?.sheet === 1, `a keep-with-next row stays at the page's foot with the next row split under it (${JSON.stringify(tb)})`);
+await open('table-keep-row-widow.docx');
+tb = await rowsAt(['Heading row', 'Row one*']);
+check(tb['Heading row']?.sheet === 1 && tb['Row one*']?.sheet === 1, `a keep-with-next row goes on with a next row that can leave only one line (${JSON.stringify(tb)})`);
+await open('table-keep-row-second-paragraph.docx');
+tb = await rowsAt(['Heading row line two', 'Row one*']);
+check(tb['Heading row line two']?.sheet === 0 && tb['Row one*']?.sheet === 1, `a row whose second paragraph keeps with the next doesn't keep (${JSON.stringify(tb)})`);
+// A row of 60 lines that can't split, under 20 lines of text: on to page 2's top and broken across pages 2 and 3
+// (cstall-f20); it had stayed on page 1 and run past the bottom margin.
+await open('table-tall-cantsplit-row.docx');
+tb = await rowsAt(['Row zero', 'Row one*', 'Row two']);
+check(tb['Row zero']?.sheet === 0 && tb['Row one*']?.sheet === 1 && tb['Row one*'].top < 110 && tb['Row two']?.sheet === 2, `a row taller than a page that can't split goes to the next page's top and breaks there (${JSON.stringify(tb)})`);
+// Thirty rows, every one a header row, under 30 lines of text: the table starts page 2 (hdrall-f30-n30). In compatibility
+// mode 14, three header rows with room for two: they break there and none repeats (hdr314-f44-n5).
+await open('table-all-header-rows.docx');
+tb = await rowsAt(['Row 0', 'Row 29']);
+check(tb['Row 0']?.sheet === 1 && tb['Row 0'].n === 1 && tb['Row 29']?.sheet === 1, `a table of header rows that doesn't fit moves to the next page (${JSON.stringify(tb)})`);
+await open('table-header-rows-mode14.docx');
+tb = await rowsAt(['Row 0', 'Row 1', 'Row 2', 'Row 4']);
+check(tb['Row 1']?.sheet === 0 && tb['Row 0'].n === 1 && tb['Row 2']?.sheet === 1 && tb['Row 4']?.sheet === 1, `mode-14 header rows at the foot break there, none repeating (${JSON.stringify(tb)})`);
+// A table with a tracked-deleted row (shown without markup, as Word prints it): it breaks at the foot like any other, its
+// rows inside the margins (delrow-f44: rows 0 and 2 on page 1, 3 to 9 on page 2).
+await open('table-deleted-row.docx');
+tb = await rowsAt(['Row 0', 'Row 2', 'Row 3', 'Row 9']);
+check(tb['Row 2']?.sheet === 0 && tb['Row 3']?.sheet === 1 && tb['Row 9']?.sheet === 1 && Object.values(tb).every((x) => x.inside), `a table with a deleted row breaks at the page's foot (${JSON.stringify(tb)})`);
+// In mode 14 a cell's three-line paragraph with room for two at the foot leaves two there, widow control or not (Word's
+// print of ..\cellwidow-word two-def-m14-f42: "Leftaa" and "Leftbb" on page 1, "Leftcc" on page 2; mode 15 moves it).
+// (The sheet each word of the cell's paragraph "Leftaa Leftbb Leftcc", one to a line, is on.)
+const cellLines = () => page.evaluate(() => {
+  const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+  const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+  const r = document.createRange();
+  const out = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    for (const word of ['Leftaa', 'Leftbb', 'Leftcc']) {
+      const i = n.data.indexOf(word);
+      if (i < 0) continue;
+      r.setStart(n, i);
+      r.setEnd(n, i + word.length);
+      const q = r.getBoundingClientRect();
+      out.push(sheets.findIndex((s) => q.top >= s.top - 0.5 && q.top < s.bottom));
+    }
+  }
+  return out;
+});
+await open('table-cell-widow-mode14.docx');
+let cl = await cellLines();
+check(JSON.stringify(cl) === '[0,0,1]', `mode 14: no widow control inside a cell at the page's foot (${JSON.stringify(cl)})`);
+// The same row as a header row (w:tblHeader, under another): it doesn't split in mode 14, all of it on page 2 (Word's
+// print of ..\cellwidow-word hdr2-m14-f42; sample 2133's table of header rows).
+await open('table-header-row-whole-mode14.docx');
+tb = await rowsAt(['Row zero']);
+cl = await cellLines();
+check(tb['Row zero']?.sheet === 0 && JSON.stringify(cl) === '[1,1,1]', `mode 14: a header row at the page's foot moves whole (${JSON.stringify([tb, cl])})`);
+// In mode 14 a repeated header row keeps its own 2.25pt bottom line: on page 2 the next row's text is as far under the
+// header's as on page 1 (..\hdrline-word h18-style-whole-m14: Word 33.4px both; it had been 2px less on page 2).
+await open('table-header-line-mode14.docx');
+{
+  const d = await page.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((s) => s.getBoundingClientRect());
+    const at = {};
+    const w = document.createTreeWalker(document.querySelector('.odx-canvas') || document.body, NodeFilter.SHOW_TEXT);
+    const r = document.createRange();
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (!/^(Head one|Row \d+)$/.test(n.data)) continue;
+      r.selectNodeContents(n);
+      const q = r.getClientRects()[0];
+      if (!q) continue;
+      const k = sheets.findIndex((s) => q.top >= s.top - 0.5 && q.top < s.bottom);
+      (at[k] ||= []).push([n.data, q.top]);
+    }
+    const gap = (k) => { const l = (at[k] || []).sort((a, b) => a[1] - b[1]); const h = l.find((x) => x[0] === 'Head one'); const row = l.find((x) => x[0] !== 'Head one'); return h && row ? +(row[1] - h[1]).toFixed(2) : null; };
+    return [gap(0), gap(1)];
+  });
+  check(d[0] != null && d[1] != null && Math.abs(d[1] - d[0]) < 0.75, `mode 14: a repeated header row keeps its wide bottom line (${JSON.stringify(d)})`);
+}
+// A paragraph style that switches its bulleted base style's list off (w:numId 0) starts its indents from 0: its own
+// kept, its base's right indent too (style-numid0.docx, mkstylenum0.mjs; Word's print of it, 38 lines as Word's).
+await open('style-numid0.docx');
+{
+  const m = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.odx-content p')].map((p) => {
+    const s = getComputedStyle(p);
+    return [p.textContent.split(' ')[0], [+parseFloat(s.marginLeft).toFixed(1), +parseFloat(s.marginRight).toFixed(1), +parseFloat(s.textIndent).toFixed(1)]];
+  })));
+  const want = { dLx: [0, 0, 0], ddLx: [0, 0, 0], dPx: [0, 0, 0], dL540x: [36, 0, 0], dLrx: [0, 24.3, 0], dLfx: [0, 0, 13.3], dQx: [0, 96, 0], dQhx: [0, 96, -20], Px: [24, 0, 0] };
+  const bad = Object.entries(want).filter(([k, v]) => !m[k] || m[k].some((x, i) => Math.abs(x - v[i]) > 0.2));
+  check(!bad.length, `a style's own numId 0 drops the indents it inherits (${JSON.stringify(bad.map(([k]) => [k, m[k]]))})`);
+}
+
+// A picture wrapped top and bottom, placed down from its paragraph past the page's foot: Word keeps it on that page,
+// drawn up to end at the page's edge (mode 12) or its bottom margin (mode 15), the text after it above it, a page's
+// width wide across the margins (coverpic-word m12-a1, m15-b2; Word's prints: the picture at 387-792pt with the eight
+// lines after it above, one page; at 390-720pt, "After 1" above it, "After 2" at page 2's top).
+const pastFoot = (n) => page.evaluate((k) => {
+  const sh = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((x) => x.getBoundingClientRect());
+  const on = (r) => { const s = sh.findIndex((x) => r.top >= x.top - 1 && r.top < x.bottom); return [s + 1, s < 0 ? null : +(r.top - sh[s].top).toFixed(1)]; };
+  const img = document.querySelector('.odx-content img.odx-wrap-block').getBoundingClientRect();
+  const ps = [...document.querySelectorAll('.odx-content > p')];
+  return { sheets: sh.length, img: [...on(img), +(img.bottom - img.top).toFixed(1), +img.width.toFixed(1)], after: [on(ps[k].getBoundingClientRect()), on(ps[k + 1].getBoundingClientRect())] };
+}, n);
+await open('picture-past-foot-mode12.docx');
+await page.waitForTimeout(800);
+const pf12 = await pastFoot(10);
+check(pf12.sheets === 1 && pf12.img[0] === 1 && Math.abs(pf12.img[1] - 516) < 1.5 && Math.abs(pf12.img[3] - 816) < 1 && pf12.after.every((a) => a[0] === 1 && a[1] < 516), `a picture past the page's edge drawn up to it, the text after it above it (${JSON.stringify(pf12)}, want one page, the picture 516px down, 816px wide)`);
+await open('picture-past-foot-mode15.docx');
+await page.waitForTimeout(800);
+const pf15 = await pastFoot(22);
+check(pf15.sheets === 2 && pf15.img[0] === 1 && Math.abs(pf15.img[1] - 520) < 1.5 && pf15.after[0][0] === 1 && pf15.after[1][0] === 2 && Math.abs(pf15.after[1][1] - 96) < 1.5, `a picture past the bottom margin (mode 15) drawn up to it, the page's text ending at its top (${JSON.stringify(pf15)}, want it 520px down on page 1, "After 2" at page 2's top)`);
+// Spaces alone on a centred paragraph's last line, after a break, keep that line as tall as a left-aligned one's
+// (coverpic-word sp-c, sp-l; Word: both 24pt from the text's line to the spaces'; centred, the line had come out a sliver,
+// sample 1387's text after its centred heading 15px high).
+await open('centred-break-spaces.docx');
+const cbsp = await page.evaluate(() => { const ps = [...document.querySelectorAll('.odx-content > p')]; return [ps[1], ps[3]].map((p) => +p.getBoundingClientRect().height.toFixed(1)); });
+check(Math.abs(cbsp[0] - cbsp[1]) < 0.5 && cbsp[0] > 40, `a centred line of spaces after a break as tall as a left-aligned one (${JSON.stringify(cbsp)})`);
+
+// Gaps between body paragraphs (test/fixtures/mkgaps.mjs; Word's prints of the same documents): how far below the
+// first plain line each plain line after the feature starts, in Word's PDF (baselines, all 12pt Times New Roman).
+const plainTops = () => page.evaluate(() => {
+  const at = {};
+  const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT);
+  const r = document.createRange();
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    const m = /^Plain line (\d+)/.exec(n.data);
+    if (!m || at[m[1]] != null) continue;
+    r.setStart(n, 0); r.setEnd(n, 1);
+    at[m[1]] = r.getBoundingClientRect().top;
+  }
+  return Object.fromEntries(Object.entries(at).map(([k, v]) => [k, +(v - at[1]).toFixed(2)]));
+});
+for (const [f, want, what] of [
+  ['gaps-theme-bidi.docx', { 4: 110.4 }, 'text in the theme\'s majorBidi font is Times New Roman'],
+  ['gaps-deleted-neighbour.docx', { 2: 74.24 }, 'a paragraph deleted whole is no neighbour: the heading above keeps its space after'],
+  ['gaps-bullet-missing-font.docx', { 2: 116 }, 'a 14pt bullet in a missing font makes its line Calibri\'s'],
+  ['gaps-closing-tabs.docx', { 2: 128.8 }, 'tabs alone on a paragraph\'s last line make a line'],
+  ['gaps-contextual-before.docx', { 2: 118.4 }, 'contextual spacing above leaves the space before less the space after'],
+  ['gaps-border-groups.docx', { 2: 98.56, 3: 222.28 }, 'bordered paragraphs group where their boxes line up'],
+  ['gaps-trailing-space-exact.docx', { 2: 90.08 }, 'a centred line\'s closing space adds no height on an exact line'],
+]) {
+  await open(f);
+  const got = await plainTops();
+  check(Object.entries(want).every(([k, v]) => got[k] != null && Math.abs(got[k] - v) < 1), `${what} (${JSON.stringify(got)}, Word ${JSON.stringify(want)})`);
+}
+// (A picture wrapped top and bottom 0.7in below a one-line paragraph: the next paragraph's first line above it, its second
+// under it. Under it a line comes 0.9px lower than Word's, the browser setting lines past a float's shape on its pixels.)
+{
+  await open('gaps-band-below-lines.docx');
+  const got = await plainTops();
+  check(Math.abs(got[2] - 55.2) < 1 && Math.abs(got[3] - 146.08) < 1.5, `a top-and-bottom picture below a paragraph's lines leaves the lines above it there (${JSON.stringify(got)}, Word {"2":55.2,"3":146.08})`);
+}
+{
+  await open('gaps-theme-bidi.docx');
+  const ff = await page.evaluate(() => { const w = document.createTreeWalker(document.querySelector('.odx-content'), NodeFilter.SHOW_TEXT); for (let n = w.nextNode(); n; n = w.nextNode()) if (n.data.startsWith('Themed line')) return getComputedStyle(n.parentElement).fontFamily; return ''; });
+  check(/^"?Times New Roman/.test(ff), `a majorBidi run is drawn in Times New Roman (${ff})`);
+}
+
 // The same contents in Firefox: its first answer for where a tab sits, read just after the tab before it on the line was
 // sized, was where it had stood before; the leader came out 6px long and every page number went to a second line.
 // (Where Playwright's Firefox is installed: CI installs only Chromium.)
@@ -2411,6 +3017,57 @@ check(sideRows.every((d) => Math.abs(d) <= 1), `sideways merged cells don't stre
     check(ffE.length === 9 && ffE.every((e) => e.line && (!e.large || e.clip >= 96)), `contents entries in Firefox: page numbers on their lines (${JSON.stringify(ffE.map((e) => e.line))})`);
     await ff.close();
   }
+}
+
+// Row and line heights (mkrowparts.mjs; Word's prints of the same documents).
+{
+  // A paragraph style of no base and no size takes its table style's size (14pt); Normal's own 12pt, a style's own
+  // 10pt and one based on Normal stay.
+  await open('table-style-size.docx');
+  const sz = await page.evaluate(() => Object.fromEntries(['Normal0', 'Free0', 'FreeSz0', 'OnNormal0'].map((k) => {
+    const p = [...document.querySelectorAll('.odx-content td > p')].find((q) => q.textContent.startsWith(k + ' '));
+    const t = p && p.querySelector('span.odx-t');
+    return [k, t ? +parseFloat(getComputedStyle(t).fontSize).toFixed(2) : null];
+  })));
+  check(sz.Normal0 === 16 && sz.Free0 === 18.67 && sz.FreeSz0 === 13.33 && sz.OnNormal0 === 16, `a style of no base and no size takes its table style's size in a cell (${JSON.stringify(sz)})`);
+  // Where lines of text are, from their sheet's top: [sheet, top] of each line of the paragraph starting with `t`.
+  const linesOf = (t) => page.evaluate((s) => {
+    const sheets = [...document.querySelectorAll('.odx-sheets > .odx-sheet')].map((q) => q.getBoundingClientRect());
+    const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent.replace(/\s+/g, ' ').trim().startsWith(s));
+    if (!p) return [];
+    const tops = [];
+    for (const n of p.querySelectorAll('span.odx-t')) {
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      for (const q of r.getClientRects()) if (q.height > 0 && !tops.some((y) => Math.abs(y - q.bottom) < 2)) tops.push(q.bottom);
+    }
+    return tops.sort((a, b) => a - b).map((y) => { const k = sheets.findIndex((q) => y > q.top && y <= q.bottom); return [k, +(y - sheets[k].top).toFixed(2)]; });
+  }, t);
+  // A row's empty last paragraph carried to page 2 alone: the row's part there is its whole minimum height (485tw), the
+  // next row's text where Word has it, 15.4px lower than under that paragraph alone. (Its line's foot 145.67px down page
+  // 2 on screen; printed, its baseline 143.5px, Word's 143.39; 130.3 under the empty paragraph alone.)
+  await open('table-row-empty-part.docx');
+  const nx = (await linesOf('NextRow marker'))[0];
+  check(nx && nx[0] === 1 && Math.abs(nx[1] - 145.67) < 1, `a row's part holding only its empty last paragraph is its minimum height (${JSON.stringify(nx)})`);
+  // Bullets typed by hand in Symbol before Calibri text in a Times New Roman paragraph: Calibri's lines, 17.92px apart.
+  await open('symbol-bullet-lines.docx');
+  const sl = (await page.evaluate(() => {
+    const p = [...document.querySelectorAll('.odx-content p')].find((q) => q.textContent.includes('alpha bravo'));
+    const r = document.createRange();
+    r.selectNodeContents(p);
+    const ys = [];
+    for (const q of r.getClientRects()) if (q.height > 10 && !ys.some((y) => Math.abs(y - q.bottom) < 2)) ys.push(q.bottom);
+    return ys.sort((a, b) => a - b);
+  }));
+  const pitch = sl.slice(1).map((y, i) => +(y - sl[i]).toFixed(2));
+  check(pitch.length >= 3 && pitch.slice(1).every((d) => Math.abs(d - 17.92) < 0.25), `a hand-typed Symbol bullet's lines are the text font's (${JSON.stringify(pitch)})`);
+  // Spaces and a closing tab under a larger mark: one line, the mark's (Times New Roman 12pt, 18.4px).
+  await open('blank-tab-line.docx');
+  const bh = await page.evaluate(() => {
+    const p = [...document.querySelectorAll('.odx-content td > p')].find((q) => !q.textContent.trim());
+    return p ? +p.getBoundingClientRect().height.toFixed(2) : null;
+  });
+  check(bh != null && Math.abs(bh - 18.4) < 0.3, `a line of spaces and a tab is the paragraph mark's one line (${bh})`);
 }
 
 check(!errors.length, `no page errors ${errors.join(' | ')}`);

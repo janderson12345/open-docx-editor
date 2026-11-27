@@ -1,5 +1,6 @@
 // What a paragraph's text runs share, for sizing its lines.
 import { schema } from './schema.js';
+import { themeFace } from '../ooxml/props.js';
 
 /** The font and size shared by every text run of a paragraph (each null if they differ or are unset). */
 export function uniformRun(node, charStyle, theme) {
@@ -22,8 +23,8 @@ export function uniformRun(node, charStyle, theme) {
     const cst = charStyle && (!s || !f) ? charStyle(c.marks.find((m) => m.type.name === 'cstyle')?.attrs.val) || null : null;
     const sv = s ? s.attrs.val : cst?.size ? String(cst.size) : null;
     // A run naming a theme font (w:asciiTheme, kept raw) is in that font too.
-    const tf = !f && theme && c.marks.find((m) => m.type.name === 'rextra')?.attrs.items?.find(([n, x]) => n === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(major|minor)/.test(x));
-    const fv = f ? f.attrs.val : tf ? theme[/w:(?:ascii|hAnsi)Theme="(major|minor)/.exec(tf[1])[1]] || null : cst?.font || null;
+    const tf = !f && theme && c.marks.find((m) => m.type.name === 'rextra')?.attrs.items?.find(([n, x]) => n === 'rFonts' && /w:(?:ascii|hAnsi)Theme="(?:major|minor)/.test(x));
+    const fv = f ? f.attrs.val : tf ? themeFace(theme, /w:(?:ascii|hAnsi)Theme="((?:major|minor)\w*)/.exec(tf[1])[1]) : cst?.font || null;
     most = most === null || sv == null ? null : Math.max(most || 0, Number(sv));
     const up = c.marks.some((m) => m.type.name === 'rextra' && (m.attrs.items || []).some(([n, x]) => n === 'position' && Number((/w:val="(-?\d+)"/.exec(x) || [])[1]) > 0));
     raised = raised !== false && up;
@@ -48,9 +49,9 @@ export function uniformRun(node, charStyle, theme) {
     const rf = mark && /<w:rFonts\b[^>]*\bw:ascii="([^"]+)"/.exec(mark[1]);
     // (Or a theme font, w:asciiTheme: an empty line whose mark is the theme's Calibri under a Times style is Calibri's
     // 19.5px at 12pt, not Times's 18.4px; Word's PDFs.)
-    const rt = !rf && mark && theme && /<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)Theme="(major|minor)/.exec(mark[1]);
+    const rt = !rf && mark && theme && /<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)Theme="((?:major|minor)\w*)/.exec(mark[1]);
     if (rf && font === undefined) font = rf[1];
-    else if (rt && font === undefined && theme[rt[1]]) font = theme[rt[1]];
+    else if (rt && font === undefined && themeFace(theme, rt[1])) font = themeFace(theme, rt[1]);
     else if (cs.font && font === undefined) font = cs.font;
   }
   // Runs of different sizes, all set: the paragraph's own size (its style's) is in none of them, so Word's lines never

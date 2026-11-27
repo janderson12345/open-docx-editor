@@ -77,7 +77,10 @@ test('laid out as Word 2010 or older, a 12pt Normal gives way to a table style t
 
 test('fonts Word substitutes when missing, and faces named as fonts', async () => {
   const { fontStack, lineFactor, faceCss, fontCss } = await import('../src/ooxml/props.js');
-  assert.match(fontStack('Palatino'), /^"Palatino", "Palatino Linotype"/);
+  assert.match(fontStack('Palatino'), /^"Palatino", "Book Antiqua"/);
+  // (Windows' own substitute for MS Shell Dlg, whatever the file's altName.)
+  assert.equal(fontStack('MS Shell Dlg'), fontStack('Microsoft Sans Serif'));
+  assert.equal(fontStack('MS Shell Dlg 2'), fontStack('Tahoma'));
   assert.match(fontStack('Helvetica Neue'), /^"Helvetica Neue", "Arial"/);
   assert.equal(lineFactor('Helvetica Neue'), lineFactor('Arial'));
   assert.equal(lineFactor('Futura Md BT'), 1.2261);
@@ -116,12 +119,32 @@ test('the table\'s own inside line gives way to a thinner top line a cell sets i
   assert.equal(padTop(c[3]), 0.328125);
 });
 
-test('a cell that draws its own top line keeps its place beside a cell under a thicker one', () => {
+test('every cell of a row starts its text under the row\'s widest top line, its own thinner line or not', () => {
   const top = (sz) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${sz}" w:space="0" w:color="000000"/></w:tcBorders>`]];
   const c = grid((row, col) => (row === 1 ? (col === 0 ? top(2) : col === 1 ? top(12) : []) : []));
-  assert.equal(padTop(c[3]), 0.328125); // its own 0.25pt line
-  assert.equal(padTop(c[4]), 2);
-  assert.equal(padTop(c[5]), 2); // the table's 0.5pt line: lowered to the row's widest
+  assert.deepEqual([padTop(c[3]), padTop(c[4]), padTop(c[5])], [2, 2, 2]); // 1.5pt, over its own 0.25pt line too
+  assert.match(c[3], /--odx-tl:2px/); // (the row's widest line: pages.js, a row at a page's foot)
+});
+
+test('a dotted top line takes the room a solid one does, drawn as a background, not a CSS border', () => {
+  // (Word's prints of rowlines-word's tables: text under a dotted or dashed line its whole width down, as under a solid
+  // one; drawn as a collapsed CSS border, half of it had gone to the row above.)
+  const dotted = [['tcBorders', '<w:tcBorders><w:top w:val="dotted" w:sz="4" w:space="0" w:color="000000"/></w:tcBorders>']];
+  const c = grid((row) => (row === 1 ? dotted : []), '');
+  assert.deepEqual([padTop(c[3]), padTop(c[4]), padTop(c[5])], [0.671875, 0.671875, 0.671875]);
+  assert.match(c[3], /border-top:none/);
+  assert.match(c[3], /background-image:linear-gradient\(to right,#000000 0px 1px,transparent 1px 2px\)/);
+  assert.match(c[3], /--odx-dash:top 0\.667 dotted #000000/);
+});
+
+test('a row\'s text band is the most any cell takes for its own top line and top margin together', () => {
+  const cell = (sz, mar) => [['tcBorders', `<w:tcBorders><w:top w:val="single" w:sz="${sz}" w:space="0" w:color="000000"/></w:tcBorders>`], ...(mar ? [['tcMar', `<w:tcMar><w:top w:w="${mar}" w:type="dxa"/></w:tcMar>`]] : [])];
+  // A 3pt line over a cell with no margin, a 0.5pt line over one with 4pt: both 4.5pt down, not 3pt + 4pt.
+  const b = grid((row, col) => (row === 1 ? (col === 0 ? cell(24, 0) : cell(4, 80)) : []), '');
+  assert.deepEqual([padTop(b[3]), padTop(b[4])], [6, 6]);
+  // The 4pt margin under the 3pt line: both 7pt down.
+  const a = grid((row, col) => (row === 1 ? (col === 0 ? cell(24, 80) : cell(4, 0)) : []), '');
+  assert.deepEqual([padTop(a[3]), padTop(a[4])], [9.328125, 9.328125]);
 });
 
 test('a wider line from the row above takes its room out of the top margin of a cell with a top line of its own', () => {

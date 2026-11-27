@@ -2,11 +2,12 @@
 // Recognised structure becomes editable nodes and marks; everything else is
 // kept as raw XML (opaque nodes, `extra` attrs) so it can be written back.
 import { shapesPad, shapeTurn, pictureFlip, turnedInside } from './shapes.js';
-import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, missingDecls, parseHtml, childNamed, elementKids } from './xml.js';
+import { NS, kids, kid, attr, onOff, outerXml, nsDecls, textOf, parseXml, missingDecls, parseHtml, childNamed, elementKids, serializeXml, esc } from './xml.js';
 import { chunkToWml } from './altchunk.js';
 import { readPPr, hexColor } from './props.js';
 import { EMU_PER_PX, TWIPS_PER_PX, emuToPx, twipsToPx } from './units.js';
 import { placeVar, cssDecls, cssText } from './place.js';
+import { biLevelFilter } from './texteffects.js';
 
 // w:pPr children we model as attrs; all others go to `extra`.
 const PPR_MODELLED = new Set(['pStyle', 'numPr', 'jc']);
@@ -241,13 +242,28 @@ function readInline(els, marks, ctx, out) {
         break;
       case 'sdt': {
         // An inline content control (form field): its runs are read normally, marked as belonging to it.
-        const content = kid(el, 'sdtContent');
+        let content = kid(el, 'sdtContent');
         if (!content || marks.some((m) => m.type === 'sdt')) { out.push(opaque(ctx.xml(el), textOf(el), 'sdt', marks)); break; }
-        const pr = kid(el, 'sdtPr');
-        const endPr = kid(el, 'sdtEndPr');
+        // A control whose content is only another control (a form's field in a field): one field, the inner control's,
+        // its runs read as they are; the outer controls are kept as wrappers for saving. (Word draws the runs in their own
+        // formatting, not a control's w:sdtPr/w:rPr: ctl-nested.docx, the outer control's rPr 8pt, the runs' 10pt.)
+        let cur = el;
+        const outer = [];
+        for (;;) {
+          const only = kids(content);
+          const next = only.length === 1 && only[0].namespaceURI === NS.w && only[0].localName === 'sdt' ? only[0] : null;
+          const nextContent = next && kid(next, 'sdtContent');
+          if (!nextContent) break;
+          const opr = kid(cur, 'sdtPr'), oend = kid(cur, 'sdtEndPr');
+          outer.push([opr ? ctx.xml(opr) : '', oend ? ctx.xml(oend) : '']);
+          cur = next;
+          content = nextContent;
+        }
+        const pr = kid(cur, 'sdtPr');
+        const endPr = kid(cur, 'sdtEndPr');
         const prXml = pr ? ctx.xml(pr) : '';
         const before = out.length;
-        const field = { type: 'sdt', attrs: { key: ++sdtGroup, pr: prXml, endPr: endPr ? ctx.xml(endPr) : '', ...fieldInfo(prXml), phText: /<w:showingPlcHdr(?![^>]*w:val="(?:0|false)")/.test(prXml) ? textOf(content) : null } };
+        const field = { type: 'sdt', attrs: { key: ++sdtGroup, pr: prXml, endPr: endPr ? ctx.xml(endPr) : '', ...fieldInfo(prXml), phText: /<w:showingPlcHdr(?![^>]*w:val="(?:0|false)")/.test(prXml) ? textOf(content) : null, ...(outer.length ? { outer } : {}) } };
         readInline(kids(content), [...marks, field], ctx, out);
         if (out.length === before) { out.length = before; out.push(opaque(ctx.xml(el), '', 'sdt', marks)); }
         break;
@@ -436,12 +452,222 @@ function readGraphic(el, ctx, rPrXml) {
       const place = `position:absolute;${left}margin-top:${off('margin-top')}px;z-index:${z && Number(z) < 0 ? -1 : 1}`;
       return { type: 'image', attrs: { xml, src, width: len('width'), height: len('height'), alt, place } };
     }
+    // An inline VML shape or group with no picture (text boxes framed on a form): its box in the line, the size its
+    // style gives, as Word lays it out; its text shown in it. (Unsized, its text took the room it wrapped to: a sample's
+    // 146pt group of two boxes 42px short, the page's foot under it that much higher than Word's.)
+    const top = [...pict.childNodes].find((n) => n.nodeType === 1 && n.localName !== 'shapetype' && n.namespaceURI === 'urn:schemas-microsoft-com:vml');
+    const vcss = (top && top.getAttribute('style')) || '';
+    const vlen = (k) => { const m = new RegExp(`(?:^|;)\\s*${k}:\\s*([\\d.]+)(pt|in|px)?\\s*(?:;|$)`).exec(vcss); return m ? Math.round(Number(m[1]) * ({ in: 96, px: 1 }[m[2]] || 4 / 3)) : null; };
+    const vw = vlen('width'), vh = vlen('height');
+    // A floating VML text box (position:absolute with a v:textbox: older Word files, and forms made from PDFs, whose
+    // headers and footers hold each line in one placed against the page): drawn at its place, out of the flow, as the
+    // DrawingML text box it stands for. Its text had been shown in its paragraph's line (sample 1113's form footers taking
+    // room from the body: a page's last lines on a page of their own, every page after it a page late).
+    if (top && /position:\s*absolute/.test(vcss)) {
+      const dml = vmlTextBoxDrawing(top, ctx);
+      const img = dml && readDrawing(dml, ctx, rPrXml);
+      // A shape with no text wrapped top and bottom (a band, a ruled line), placed down from its paragraph: drawn at its
+      // place as a float that takes no width, so its paragraph's own lines above it stay, and its paragraph holds it
+      // (editor.css), so what follows starts under it, as Word sets them (..andshape-word b01-b03: an empty paragraph's
+      // line over a band 14pt down, a ruled line 15pt under a line of text, the next paragraph under each; sample 1113
+      // pages 6 and 66). As a block it took its paragraph's text below it; not drawn, the text after it ran over it.
+      // (A whole line of the next paragraph that fits between this one and the band stays above it in Word, b04: not so.)
+      const textless = dml && ![...dml.getElementsByTagName('*')].some((e) => e.localName === 'txbx');
+      // (One starting within its paragraph's first line, under 15px down, takes that line under it in Word, b03 and b05:
+      // a block first in its paragraph, as bandFloats sets one.)
+      const down = parseFloat(/^display:block;margin-top:\s*(?:calc\()?(-?[\d.]+)px/.exec(img?.attrs.place || '')?.[1]);
+      if (img && textless && down >= 15) {
+        const pl = img.attrs.place;
+        const ml = /margin-left:\s*(calc\([^;]*\)|-?[\d.]+px)/.exec(pl)?.[1] || '0px';
+        const w = Number(img.attrs.width) || 0;
+        // (Not the next paragraph's space before again under it, fromParagraphTop's --odx-sbtb: that paragraph keeps its
+        // own, after its paragraph that holds the band.)
+        const own = pl.replace(/^display:block;/, 'float:left;').replace(/(margin-bottom:)calc\((-?[\d.]+px) \+ min\(var\(--odx-sbtb[^;]*/, '$1$2');
+        img.attrs.place = own + `;margin-right:calc(-1 * (${w}px + ${ml}));--odx-bandfloat:1`;
+        img.attrs.xml = xml;
+        return img;
+      }
+      // (Under 15px down: the block keeps its paragraph's own line under it, --odx-band, an empty paragraph's too, b03.)
+      if (img && textless && down < 15) { img.attrs.place += ';--odx-band:1'; img.attrs.xml = xml; return img; }
+      if (img) {
+        // (Its place down the page to the hundredth of a px, as VML gives it in fractions of a point: a footer's 7pt
+        // line at 736.1pt had been 0.5px high, rounded.)
+        const ay = dml.getElementsByTagNameNS(NS.wp, 'positionV')[0]?.getElementsByTagNameNS(NS.wp, 'posOffset')[0];
+        if (ay) img.attrs.place = img.attrs.place.replace(/--odx-ay:-?[\d.]+px/, `--odx-ay:${Math.round(emuToPx(Number(ay.textContent)) * 100) / 100}px`);
+        img.attrs.xml = xml;
+        return img;
+      }
+    }
+    // An inline one of text boxes: drawn as the DrawingML Word would save for it, each box at its place (vmlInlineDrawing).
+    if (top && !/position:\s*absolute/.test(vcss)) {
+      const dml = vmlInlineDrawing(top, ctx);
+      const img = dml && readDrawing(dml, ctx, rPrXml);
+      // (At its own size on a line narrower than it, as Word sets it, running past the line's end: sample 1113's titled
+      // box in a centred paragraph of a table cell, drawn at the line's width, its text a third of its size.)
+      if (img) return (img.attrs.xml = xml), (img.attrs.place = `${img.attrs.place ? `${img.attrs.place};` : ''}max-width:none`), img;
+    }
+    if (top && !/position:\s*absolute/.test(vcss) && vw > 0 && vh > 0 && vw < 5000 && vh < 5000 && pict.getElementsByTagNameNS(NS.w, 't').length) {
+      return { type: 'opaque_inline', attrs: { xml, text: previewText(pict), kind: 'pict', width: vw, height: vh } };
+    }
   }
   const inline = drawing && byLocal(drawing, 'inline')[0];
   const extent = inline && byLocal(inline, 'extent')[0];
   if (!extent) return null;
   const px = (v) => Math.round(emuToPx(v));
   return { type: 'opaque_inline', attrs: { xml, text: '', kind: 'drawing', width: px(extent.getAttribute('cx')), height: px(extent.getAttribute('cy')) } };
+}
+
+/**
+ * A floating VML text box (v:shape, v:rect or v:roundrect with position:absolute and a v:textbox) as the w:drawing
+ * Word would save for it today: wp:anchor at the shape's place (its margin-left/top against the page, the margin or its
+ * paragraph, or aligned), its size, wrapping (w10:wrap) and z-order, and a wps:wsp of its fill, outline, insets and text.
+ * A group of them (v:group) too, as a wpg:wgp. Null for any other VML (a turned or flipped one, vertical text, WordArt,
+ * a picture): those keep what they had.
+ */
+function vmlTextBoxDrawing(shape, ctx) {
+  const group = shape.localName === 'group';
+  // (A box with no text too where it's wrapped top and bottom, a band the text keeps clear of: readGraphic.)
+  const band = elementKids(shape).find((n) => n.localName === 'wrap')?.getAttribute('type') === 'topAndBottom';
+  const s = group ? null : vmlShape(shape, !band);
+  if (!group && !s) return null;
+  const css = shape.getAttribute('style') || '';
+  const prop = s ? s.prop : (k) => new RegExp(`(?:^|;)\\s*${k}\\s*:\\s*([^;]*)`).exec(css)?.[1].trim() ?? null;
+  const emu = vmlEmu;
+  const cx = emu(prop('width')), cy = emu(prop('height'));
+  if (!(cx > 0 && cy > 0 && cx < 5e7 && cy < 5e7)) return null;
+  // (A group of text boxes, a form's titled box: its shapes in a wpg:wgp, each at its place: vmlGroup.)
+  const g = group && !Number(parseFloat(prop('rotation') || 0)) && !/[xy]/.test(prop('flip') || '') ? vmlGroup(shape, cx, cy) : null;
+  if (group && !g) return null;
+  const H_REL = { page: 'page', margin: 'margin', text: 'column', char: 'character', 'left-margin-area': 'leftMargin', 'right-margin-area': 'rightMargin', 'inner-margin-area': 'insideMargin', 'outer-margin-area': 'outsideMargin' };
+  const V_REL = { page: 'page', margin: 'margin', text: 'paragraph', line: 'line', 'top-margin-area': 'topMargin', 'bottom-margin-area': 'bottomMargin', 'inner-margin-area': 'insideMargin', 'outer-margin-area': 'outsideMargin' };
+  const hRel = H_REL[prop('mso-position-horizontal-relative')] || 'column';
+  const vRel = V_REL[prop('mso-position-vertical-relative')] || 'paragraph';
+  const hAlign = ['left', 'center', 'right', 'inside', 'outside'].find((a) => a === prop('mso-position-horizontal'));
+  const vAlign = ['top', 'center', 'bottom', 'inside', 'outside'].find((a) => a === prop('mso-position-vertical'));
+  const pos = (axis, rel, align, a, b) => `<wp:position${axis} relativeFrom="${rel}">${align ? `<wp:align>${align}</wp:align>` : `<wp:posOffset>${emu(prop(a)) + emu(prop(b))}</wp:posOffset>`}</wp:position${axis}>`;
+  // Wrapping: none unless w10:wrap says (square, tight and through wrap square, as Word draws a box's rectangle).
+  const w10 = elementKids(shape).find((n) => n.localName === 'wrap');
+  const type = w10?.getAttribute('type');
+  const side = { left: 'left', right: 'right', largest: 'largest' }[w10?.getAttribute('side')] || 'bothSides';
+  const wrap = type === 'topAndBottom' ? '<wp:wrapTopAndBottom/>' : ['square', 'tight', 'through'].includes(type) ? `<wp:wrapSquare wrapText="${side}"/>` : '<wp:wrapNone/>';
+  const dist = (k, d) => (prop(`mso-wrap-distance-${k}`) != null ? Math.max(0, emu(prop(`mso-wrap-distance-${k}`))) : d);
+  const behind = Number(prop('z-index')) < 0 ? 1 : 0;
+  const xml = `<w:drawing><wp:anchor distT="${dist('top', 0)}" distB="${dist('bottom', 0)}" distL="${dist('left', 114300)}" distR="${dist('right', 114300)}" simplePos="0" relativeHeight="0" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1">`
+    + `<wp:simplePos x="0" y="0"/>${pos('H', hRel, hAlign, 'margin-left', 'left')}${pos('V', vRel, vAlign, 'margin-top', 'top')}<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>${wrap}<wp:docPr id="1" name="${esc(shape.getAttribute('id') || 'Text Box')}"/>`
+    + `<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/${g ? `wordprocessingGroup">${g.xml}` : `wordprocessingShape">${s.wsp(0, 0, cx, cy)}`}</a:graphicData></a:graphic></wp:anchor></w:drawing>`;
+  return drawingEl(xml);
+}
+
+/**
+ * An inline VML text box, or an inline VML group of text boxes and plain boxes (forms made from PDFs: a titled box drawn
+ * as a group of two), as the inline w:drawing Word would save for it today: a wps:wsp, or a wpg:wgp whose shapes keep
+ * their places in the group's coordinates (v:group coordsize, coordorigin). Each box is then drawn at its place, as
+ * Word does, not its text from the group's top in file order (sample 1113's box titles under their
+ * boxes' text). Null for anything else (a picture, a line, a group inside the group, lengths in units): it keeps what
+ * it had.
+ */
+function vmlInlineDrawing(top, ctx) {
+  const css = top.getAttribute('style') || '';
+  const prop = (k) => new RegExp(`(?:^|;)\\s*${k}\\s*:\\s*([^;]*)`).exec(css)?.[1].trim() ?? null;
+  const own = vmlShape(top, false);
+  const emu = own ? own.emu : vmlEmu;
+  const cx = emu(prop('width')), cy = emu(prop('height'));
+  if (!(cx > 0 && cy > 0 && cx < 5e7 && cy < 5e7) || Number(parseFloat(prop('rotation') || 0)) || /[xy]/.test(prop('flip') || '')) return null;
+  // (Its outlines' outer halves, past its box, take room on its line too, as an effect extent: Word's prints of
+  // vmlgroup-word's groups, the line under a group of 1.44pt outlines 1.9px lower than under one of none.)
+  let half = 0;
+  const inline = (uri, body) => `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="${half}" t="${half}" r="${half}" b="${half}"/><wp:docPr id="1" name="${esc(top.getAttribute('id') || 'Group')}"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/${uri}">${body}</a:graphicData></a:graphic></wp:inline></w:drawing>`;
+  if (top.localName !== 'group') return own && own.text ? ((half = own.half), drawingEl(inline('wordprocessingShape', own.wsp(0, 0, cx, cy)))) : null;
+  const g = vmlGroup(top, cx, cy);
+  if (!g) return null;
+  half = g.half;
+  return drawingEl(inline('wordprocessingGroup', g.xml));
+}
+
+/**
+ * A VML group (v:group) of text boxes and plain boxes as a wpg:wgp of `cx` x `cy` EMUs, its shapes at their places in
+ * its coordinates (coordsize, coordorigin), and `half`, its widest outline's outer half (EMUs). Null for anything else
+ * in it (a picture, a line, a group inside the group, lengths in units) or none of them text boxes.
+ */
+function vmlGroup(top, cx, cy) {
+  const pair = (v, d) => { const p = (v || '').split(',').map((x) => x.trim()); const n = p.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? Number(x) : NaN)); return [Number.isFinite(n[0]) ? n[0] : d[0], Number.isFinite(n[1]) ? n[1] : d[1]]; };
+  const [ow, oh] = pair(top.getAttribute('coordsize'), [1000, 1000]);
+  const [ox, oy] = pair(top.getAttribute('coordorigin'), [0, 0]);
+  if (!(ow > 0 && oh > 0)) return null;
+  const kids = elementKids(top).filter((n) => n.namespaceURI === 'urn:schemas-microsoft-com:vml' && !['shapetype', 'stroke', 'fill', 'path', 'shadow', 'textbox'].includes(n.localName));
+  if (!kids.length || kids.length > 50) return null;
+  const shapes = [];
+  let half = 0;
+  for (const k of kids) {
+    const s = vmlShape(k, true, false);
+    if (!s) return null;
+    // Its place and size in the group's coordinates: bare numbers only (a length in units isn't in them).
+    const num = (v) => (/^\s*-?\d+(\.\d+)?\s*$/.test(v || '') ? Number(v) : null);
+    const [l, t, w, h] = ['left', 'top', 'width', 'height'].map((a) => num(s.prop(a)));
+    if ([l, t, w, h].some((v) => v == null) || !(w > 0 && h > 0)) return null;
+    shapes.push(s.wsp(Math.round(l), Math.round(t), Math.round(w), Math.round(h)));
+    half = Math.max(half, s.half);
+  }
+  if (!shapes.some((x) => x.includes('<wps:txbx>'))) return null;
+  return { half, xml: `<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/><a:chOff x="${Math.round(ox)}" y="${Math.round(oy)}"/><a:chExt cx="${Math.round(ow)}" cy="${Math.round(oh)}"/></a:xfrm></wpg:grpSpPr>${shapes.join('')}</wpg:wgp>` };
+}
+
+// A VML length (pt, in, cm, mm, pc, em or px; a bare number is px) in EMUs, bounded.
+const VML_UNIT = { pt: 12700, in: 914400, cm: 360000, mm: 36000, pc: 152400, px: EMU_PER_PX, '': EMU_PER_PX };
+export function vmlEmu(v) {
+  // (Trimmed first, one run of spaces left to match: two around an optional unit split a long run of them in n ways.)
+  const m = /^(-?[\d.]+)\s*(pt|in|cm|mm|pc|px)?$/.exec(String(v || '').trim());
+  const n = m ? Number(m[1]) * VML_UNIT[m[2] || ''] : 0;
+  return Number.isFinite(n) ? Math.round(Math.max(-1e9, Math.min(1e9, n))) : 0;
+}
+
+/**
+ * A VML box (v:shape, v:rect or v:roundrect; `needText`: with a v:textbox; `sized`: of a size of its own, not a group's
+ * shape's in the group's coordinates) read for a wps:wsp: its style's properties,
+ * its size (EMUs) and `wsp(x, y, cx, cy)`, the shape at that place and size with its fill, outline, insets and text.
+ * Null for a turned or flipped one, vertical text, WordArt or a picture.
+ */
+function vmlShape(shape, needText, sized = true) {
+  if (!['shape', 'rect', 'roundrect'].includes(shape.localName)) return null;
+  const tb = elementKids(shape).find((n) => n.localName === 'textbox');
+  const content = tb && elementKids(tb).find((n) => n.localName === 'txbxContent');
+  if (needText && !content) return null;
+  if (elementKids(shape).some((n) => ['imagedata', 'textpath'].includes(n.localName))) return null;
+  // (One with no text drawn as its box: a plain shape, or one whose path is a single straight line, a ruled line; any
+  // other path keeps what it had.)
+  const path = (shape.getAttribute('path') || '').replace(/\s+/g, '');
+  if (!content && path && !/^m-?\d+,-?\d+l-?\d+,-?\d+(x)?e$/.test(path)) return null;
+  const css = shape.getAttribute('style') || '';
+  const prop = (k) => new RegExp(`(?:^|;)\\s*${k}\\s*:\\s*([^;]*)`).exec(css)?.[1].trim() ?? null;
+  if (Number(parseFloat(prop('rotation') || 0)) || /[xy]/.test(prop('flip') || '') || /vertical|rotate/i.test(prop('layout-flow') || '') || (tb && /vertical|rotate/.test(tb.getAttribute('style') || ''))) return null;
+  const emu = vmlEmu;
+  const cx = emu(prop('width')), cy = emu(prop('height'));
+  if (needText && sized && !(cx > 0 && cy > 0 && cx < 5e7 && cy < 5e7)) return null;
+  // Fill and outline: VML's are on (white, a 0.75pt black line) unless the shape or its v:fill / v:stroke says not.
+  const sub = (k) => elementKids(shape).find((n) => n.localName === k);
+  const off = (el, a) => /^(f|false|0)$/i.test(el?.getAttribute(a) || '');
+  const hex = (c, d) => { const m = /^#?([0-9a-f]{6})\b/i.exec(c || ''); if (m) return m[1]; const n = { white: 'FFFFFF', black: '000000' }[(c || '').split(' ')[0].toLowerCase()]; return n || d; };
+  const fill = off(shape, 'filled') || off(sub('fill'), 'on') ? '<a:noFill/>' : `<a:solidFill><a:srgbClr val="${hex(shape.getAttribute('fillcolor'), 'FFFFFF')}"/></a:solidFill>`;
+  const lineW = Math.max(0, Math.min(1e6, emu(shape.getAttribute('strokeweight') || '0.75pt')));
+  const line = off(shape, 'stroked') || off(sub('stroke'), 'on') ? '<a:ln><a:noFill/></a:ln>' : `<a:ln w="${lineW}"><a:solidFill><a:srgbClr val="${hex(shape.getAttribute('strokecolor'), '000000')}"/></a:solidFill></a:ln>`;
+  // Insets (v:textbox inset: left, top, right, bottom; an empty one Word's default).
+  const ins = (tb?.getAttribute('inset') || '').split(',');
+  const inset = (i, d) => (ins[i] != null && ins[i].trim() !== '' ? Math.max(0, emu(ins[i].trim())) : d);
+  const anchor = { middle: 'ctr', bottom: 'b' }[prop('v-text-anchor')] || 't';
+  const fit = tb && /mso-fit-shape-to-text:\s*t/.test(tb.getAttribute('style') || '') ? '<a:spAutoFit/>' : '';
+  const geom = shape.localName === 'roundrect' ? 'roundRect' : 'rect';
+  const text = content ? `<wps:txbx>${serializeXml(content)}</wps:txbx>` : '';
+  const wsp = (x, y, w, h) => `<wps:wsp><wps:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${geom}"><a:avLst/></a:prstGeom>${fill}${line}</wps:spPr>`
+    + `${text}<wps:bodyPr lIns="${inset(0, 91440)}" tIns="${inset(1, 45720)}" rIns="${inset(2, 91440)}" bIns="${inset(3, 45720)}" anchor="${anchor}">${fit}</wps:bodyPr></wps:wsp>`;
+  const stroked = !(off(shape, 'stroked') || off(sub('stroke'), 'on'));
+  return { prop, emu, cx, cy, text: !!content, wsp, half: stroked ? Math.round(lineW / 2) : 0 };
+}
+
+/** A w:drawing element from its XML, or null. */
+function drawingEl(xml) {
+  let el = null;
+  try { el = parseXml(xml.replace('<w:drawing>', `<w:drawing${missingDecls(xml)}>`)).documentElement; } catch { return null; }
+  return el && el.localName === 'drawing' ? el : null;
 }
 
 /**
@@ -603,6 +829,12 @@ function anchorCss(drawing, page, compatMode = 15) {
   const extW = px(childNamed(anchor, 'extent')?.getAttribute('cx'));
   const band = page && /^wrap(Square|Tight|Through)$/.test(wrap) && extW >= page.w - page.left - page.right;
   if (band) wrap = 'wrapTopAndBottom';
+  // Wrapped top and bottom but no height (a line across, distances none): nothing for the text to keep clear of, it
+  // stays where it is in Word, as with no wrapping (hfbody-word l1-l4, l8, l9: a header's rule 13px below its empty
+  // paragraph's top, at 0, 30 or -5px, in mode 14 or 15, the next line where it is without the rule; one 2px tall pushes
+  // it 15px down). A sample's header rule had put the body 13px low on every page.
+  if (wrap === 'wrapTopAndBottom' && !band && !(Number(childNamed(anchor, 'extent')?.getAttribute('cy')) > 0)
+    && !(Number(anchor.getAttribute('distT')) > 0) && !(Number(anchor.getAttribute('distB')) > 0)) wrap = 'wrapNone';
   const fromPage = hRel === 'page';
   const inFlowX = fromPage ? `calc(${x}px - var(--odx-page-left, 96px))` : `${x}px`;
   if (wrap === 'wrapTopAndBottom') {
@@ -675,8 +907,11 @@ function anchorCss(drawing, page, compatMode = 15) {
   // Placed against the page or its margins (not its paragraph): pagination lifts it to that page's first paragraph, at
   // that height (pages.js liftFloats). sample S125's arrows, at the top corners of the margins of the page their
   // paragraph is on, with that page's first lines wrapping between them.
+  // (--odx-lbelow: the room kept clear under it, for a header line Word moves below it, hfstory.js dropBelowLogo:
+  // wrapped square its distance below; tight or through its side distance, hfbody-word p10/p11, 12.4px lower than square.)
+  const below = /^wrap(Tight|Through)$/.test(wrap) ? Math.max(px(anchor.getAttribute('distL')), px(anchor.getAttribute('distR'))) : px(anchor.getAttribute('distB')) + shapeFx('b');
   const lift = ['page', 'margin', 'topMargin'].includes(vRel)
-    ? `;--odx-lrel:${vRel};--odx-ly:${px(childNamed(posV, 'posOffset')?.textContent)}px;--odx-lyalign:${vAlign}` : '';
+    ? `;--odx-lrel:${vRel};--odx-ly:${px(childNamed(posV, 'posOffset')?.textContent)}px;--odx-lyalign:${vAlign};--odx-lbelow:${+below.toFixed(2)}px` : '';
   // (Aligned right, its own edge is at the margin: its wrap distance is on the text's side only. sample S125's arrow 12px
   // in from the margin otherwise.)
   // Tight and through wrapping go round the wrap polygon (in 21600ths of the picture), not the picture's box: the text
@@ -720,9 +955,29 @@ function anchorCss(drawing, page, compatMode = 15) {
  */
 function bandFloats(content) {
   const imgs = content.filter((n) => n.type === 'image' && n.attrs?.place);
+  const top = (pl) => parseFloat((/margin(?:-top)?:\s*(?:calc\()?(-?[\d.]+)px/.exec(pl) || [])[1]) || 0;
+  // Two or more pictures of a band each (top and bottom) in one paragraph: each at its own place down from the
+  // paragraph's top in Word, side by side where they meet, the text under the lowest. The browser stacks blocks, each
+  // from the one before, so the one reaching lowest keeps its band and the others are drawn out of the flow at their
+  // places (sample 1113 page 60: two text boxes of codes side by side and a third under them, the second under the first
+  // and the third two boxes lower, on the next page).
+  const blocks = imgs.filter((n) => /^display:block/.test(n.attrs.place));
+  if (blocks.length > 1 && blocks.every((n) => /^display:block;margin-top:/.test(n.attrs.place))) {
+    const span = (n) => { const t = top(n.attrs.place); return [t, t + Number(n.attrs.height || 0)]; };
+    const keep = blocks.reduce((a, n) => (span(n)[1] > span(a)[1] ? n : a));
+    for (const n of blocks) {
+      if (n === keep) continue;
+      const ml = /margin-left:\s*(calc\([^;]*\)|-?[\d.]+px)/.exec(n.attrs.place)?.[1] || '0px';
+      // (With its outline's room, --odx-pad, which sizes its box: without it its picture came out squeezed, 1.6% short.)
+      const pad = /--odx-pad:\s*[\d.]+px/.exec(n.attrs.place)?.[0];
+      const at = `position:absolute;left:calc(var(--odx-page-left, 96px) + ${ml});margin-top:${span(n)[0]}px;z-index:1${pad ? `;${pad}` : ''}`;
+      n.attrs.place = /--odx-sb/.test(n.attrs.place) ? fromParagraphTop(at) : at;
+      content.splice(content.indexOf(n), 1);
+      content.unshift(n); // (first: its place down from the paragraph's top, not from under the band)
+    }
+  }
   const band = imgs.find((n) => /^display:block/.test(n.attrs.place));
   if (!band) return;
-  const top = (pl) => parseFloat((/margin(?:-top)?:\s*(?:calc\()?(-?[\d.]+)px/.exec(pl) || [])[1]) || 0;
   const b0 = top(band.attrs.place);
   const b1 = b0 + Number(band.attrs.height || 0);
   // A band placed from its paragraph's top that starts within its first line takes that line's place: Word moves every
@@ -741,6 +996,19 @@ function bandFloats(content) {
     const x = right ? `right:var(--odx-page-right, 96px)` : `left:var(--odx-page-left, 96px)`;
     const at = `position:absolute;${x};margin-top:${y}px;z-index:1`;
     n.attrs.place = /--odx-sb/.test(n.attrs.place) ? fromParagraphTop(at) : at; // (from its paragraph's top, as it was)
+  }
+  // A band 15px or more down from its paragraph's top, first in a paragraph with text: Word sets every line that fits above
+  // it there, its paragraph's and the next paragraphs', and moves each line it would cross below it (Word's prints of
+  // generated documents: a 0.44in picture 0.7in down under two, three and five lines of text, under one line and the next
+  // paragraph's first; 0.23in down, the second line under it). As a block it took all its paragraph's text under it (a
+  // sample's paragraphs under such pictures 72px low each). Drawn as a float a column wide whose shape starts at the picture's top
+  // (shape-outside), not held by its paragraph (editor.css --odx-shapeband), so the lines above it keep their place.
+  if (b0 >= 15 && imgs.length === 1 && content.indexOf(band) === 0 && content.some((n) => n.type === 'text' && n.text.trim())) {
+    const m = /^display:block;margin-top:((?:calc\([^;]*\)|-?[\d.]+px));margin-left:([^;]+);(margin-bottom:[^;]+)$/.exec(band.attrs.place);
+    if (m) {
+      const w = Number(band.attrs.width) || 0;
+      band.attrs.place = `display:block;float:left;box-sizing:content-box;margin-top:0;padding-top:${m[1]};shape-outside:inset(${m[1]} 0 0 0);margin-left:${m[2]};margin-right:calc(100% - ${w}px - ${m[2]});${m[3]};--odx-shapeband:1`;
+    }
   }
 }
 
@@ -860,7 +1128,8 @@ function readDrawing(drawing, ctx, rPrXml) {
       src,
       width,
       height,
-      place: placeOf(drawing, ctx, { width, height, effect, floatPad, grown }),
+      // (Shown in black and white, a:biLevel on its picture: through a filter of the page's, biLevelFilter.)
+      place: ((pl) => { const bl = blip && elementKids(blip).find((n) => n.localName === 'biLevel'); return bl ? `${pl};--odx-bl:${biLevelFilter(bl.getAttribute('thresh'))}` : pl; })(placeOf(drawing, ctx, { width, height, effect, floatPad, grown })),
       alt: docPr ? docPr.getAttribute('descr') || docPr.getAttribute('name') || '' : '',
       // A picture that is a link (a:hlinkClick on its wp:docPr: a logo linking to a web site), followed on Ctrl+click.
       ...(() => {
@@ -1092,6 +1361,14 @@ function readTable(tbl, ctx) {
   const rows = [];
   // vertical-merge bookkeeping: grid column -> the cell that started the merge
   const open = new Map();
+  const vmBottom = new Map(); // a merged cell -> the bottom line its last part read so far sets itself (lineSz)
+  // A cell's own line on one side, in eighths of a point: undefined when it sets none, 0 for nil or none.
+  const lineSz = (tcPr, side) => {
+    const b = kid(kid(tcPr, 'tcBorders'), side);
+    if (!b) return undefined;
+    const v = attr(b, 'val');
+    return v && v !== 'nil' && v !== 'none' ? Math.min(96, Math.max(0, Number(attr(b, 'sz')) || 0)) : 0;
+  };
   // Rows, including rows inside row-level content controls (w:sdt), which keep their wrapper in `sdt`.
   // (Controls inside controls too, a repeating section's items in the section: each row's wrapper knows the one around
   // it, `parent`, and the writer opens and closes them as a stack.)
@@ -1145,11 +1422,12 @@ function readTable(tbl, ctx) {
       const vMerge = vMergeEl ? attr(vMergeEl, 'val') || 'continue' : null;
       if (vMerge === 'continue' && open.has(col)) {
         open.get(col).attrs.rowspan++;
-        // (The top line this hidden part of the merged cell sets for itself, in eighths of a point: Word counts it in
-        // its row's height, styles.js tableCellCss.)
-        const top = kid(kid(tcPr, 'tcBorders'), 'top');
-        const tv = top && attr(top, 'val');
-        (open.get(col).attrs.vmTops ||= []).push(tv && tv !== 'nil' && tv !== 'none' ? Math.min(96, Math.max(0, Number(attr(top, 'sz')) || 0)) : 0);
+        // (The top line this hidden part of the merged cell sets for itself, in eighths of a point, and the bottom line
+        // the part above it sets (null: none, the table's inside line there): Word counts the wider in its row's height,
+        // a top of nil not taking the line above away. styles.js tableCellCss.)
+        const m = open.get(col);
+        (m.attrs.vmTops ||= []).push([lineSz(tcPr, 'top') || 0, vmBottom.get(m) ?? null]);
+        vmBottom.set(m, lineSz(tcPr, 'bottom'));
         col += span;
         continue;
       }
@@ -1161,6 +1439,7 @@ function readTable(tbl, ctx) {
         attrs: { colspan: span, rowspan: 1, colwidth: widths, colwidth0: widths, tcPr: extra, sdt: cellSdt, vmTops: null },
         content: blocks.length ? blocks : [{ type: 'paragraph' }],
       };
+      if (vMerge === 'restart') vmBottom.set(cell, lineSz(tcPr, 'bottom'));
       if (vMerge === 'restart') for (let i = 0; i < span; i++) open.set(col + i, cell);
       else for (let i = 0; i < span; i++) open.delete(col + i);
       row.content.push(cell);

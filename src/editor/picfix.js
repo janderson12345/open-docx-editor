@@ -10,11 +10,8 @@
 // taller than the text, added (or taken off) under the paragraph by --odx-picb (editor.css), and for at-least and exact
 // lines a margin above each picture (--odx-picmt) that puts its line's top where Word's is.
 import { ASCENT } from './baseline.js';
+import { fontMetrics } from '../fonts/wordmetrics.js';
 import { layoutRect, lineHeightOf } from './util.js';
-
-// A font's descent where Word takes it from the Windows metrics (OS/2 usWinDescent, larger than hhea's): Calibri's 0.2686em,
-// not 0.25 (its picture lines 0.2pt short a line with hhea's; Aptos and Times New Roman sit right on hhea's).
-const DESCENT = { calibri: 0.2686, 'calibri light': 0.2686, carlito: 0.2686 };
 
 const cache = new Map();
 // (Until fonts load: one measured in the fallback while a web font was on its way stayed for good otherwise.)
@@ -68,7 +65,9 @@ export function pictureFix(el, box, lhv) {
   const fs = parseFloat(rcs.fontSize);
   const lf = parseFloat(rcs.getPropertyValue('--odx-lh')) || 1.17;
   const asc = ASCENT[family] * fs;
-  const desc = (Object.hasOwn(DESCENT, family) ? DESCENT[family] : Math.max(0, lf - ASCENT[family])) * fs;
+  // (Word takes the font's Windows descent where it's larger than hhea's, fontMetrics' winDescent: Calibri's 0.2686em,
+  // not 0.25, its picture lines 0.2pt short a line with hhea's; Aptos and Times New Roman sit right on hhea's.)
+  const desc = (fontMetrics(family).winDescent ?? Math.max(0, lf - ASCENT[family])) * fs;
   const exact = parseFloat(pcs.getPropertyValue('--odx-runmult')) === 0;
   const atLeast = !exact && pcs.getPropertyValue('--odx-lhlen').trim() === '1';
   const mult = exact || atLeast ? 1 : parseFloat(pcs.getPropertyValue('--odx-mult')) || 1;
